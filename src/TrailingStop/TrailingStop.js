@@ -14,14 +14,22 @@ class TrailingStop {
   constructor(strategyType = null) {
     const finalStrategyType = strategyType || 'DEFAULT';
     console.log(`🔧 [TRAILING_INIT] Inicializando TrailingStop com estratégia: ${finalStrategyType}`);
-    this.stopLossStrategy = StopLossFactory.createStopLoss(finalStrategyType);
-    console.log(`🔧 [TRAILING_INIT] Stop loss strategy criada: ${this.stopLossStrategy.constructor.name}`);
+    this.strategyType = finalStrategyType;
+    this.stopLossStrategy = null; // Será inicializado de forma assíncrona
     this.lastVolumeCheck = 0;
     this.cachedVolume = null;
     this.volumeCacheTimeout = 24 * 60 * 60 * 1000; // 24 horas em ms
     
     // Loga a configuração do trailing stop
     TrailingStop.logTrailingStopConfig();
+  }
+
+  async initializeStopLoss() {
+    if (!this.stopLossStrategy) {
+      this.stopLossStrategy = await StopLossFactory.createStopLoss(this.strategyType);
+      console.log(`🔧 [TRAILING_INIT] Stop loss strategy criada: ${this.stopLossStrategy.constructor.name}`);
+    }
+    return this.stopLossStrategy;
   }
 
   // Gerenciador de estado do trailing stop para cada posição
@@ -421,12 +429,13 @@ class TrailingStop {
    * Re-inicializa o stop loss com uma nova estratégia
    * @param {string} strategyType - Novo tipo de estratégia
    */
-  reinitializeStopLoss(strategyType) {
+  async reinitializeStopLoss(strategyType) {
     if (!strategyType) {
       return;
     }
     
-    this.stopLossStrategy = StopLossFactory.createStopLoss(strategyType);
+    this.strategyType = strategyType;
+    this.stopLossStrategy = await StopLossFactory.createStopLoss(strategyType);
   }
 
   /**
@@ -1333,7 +1342,8 @@ class TrailingStop {
       const Account = await AccountController.get();
 
       for (const position of positions) {
-        const stopLossDecision = this.stopLossStrategy.shouldClosePosition(position, Account);
+        const stopLossStrategy = await this.initializeStopLoss();
+        const stopLossDecision = stopLossStrategy.shouldClosePosition(position, Account);
 
         if (stopLossDecision && stopLossDecision.shouldClose) {
           TrailingStop.colorLogger.positionClosed(`🛑 [STOP_LOSS] ${position.symbol}: Fechando por stop loss principal - ${stopLossDecision.reason}`);

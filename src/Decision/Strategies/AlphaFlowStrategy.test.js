@@ -1,0 +1,324 @@
+import { AlphaFlowStrategy } from './AlphaFlowStrategy.js';
+
+describe('AlphaFlowStrategy', () => {
+  let strategy;
+
+  beforeEach(() => {
+    strategy = new AlphaFlowStrategy();
+  });
+
+  describe('Níveis de Convicção', () => {
+    test('deve retornar um sinal BRONZE quando apenas os 3 indicadores principais se alinham', () => {
+      const mockData = {
+        vwap: {
+          vwap: 50000,
+          lowerBands: [49000, 48000, 47000],
+          upperBands: [51000, 52000, 53000]
+        },
+        momentum: {
+          isBullish: true,
+          isBearish: false
+        },
+        moneyFlow: {
+          isBullish: true,
+          isBearish: false
+        },
+        macroMoneyFlow: {
+          macroBias: 0 // Neutro
+        },
+        cvdDivergence: {
+          bullish: false,
+          bearish: false
+        }
+      };
+
+      const result = strategy.analyzeTrade(0.001, mockData, 1000, 50);
+      
+      expect(result).toBeNull(); // Não deve retornar sinal pois precisa do macro bias
+    });
+
+    test('deve retornar um sinal SILVER quando os 3 indicadores + o Macro se alinham', () => {
+      const mockData = {
+        vwap: {
+          vwap: 50000,
+          lowerBands: [49000, 48000, 47000],
+          upperBands: [51000, 52000, 53000]
+        },
+        momentum: {
+          isBullish: true,
+          isBearish: false
+        },
+        moneyFlow: {
+          isBullish: true,
+          isBearish: false
+        },
+        macroMoneyFlow: {
+          macroBias: 1 // Bullish
+        },
+        cvdDivergence: {
+          bullish: false,
+          bearish: false
+        }
+      };
+
+      const result = strategy.analyzeTrade(0.001, mockData, 1000, 50);
+      
+      expect(result).not.toBeNull();
+      expect(result.action).toBe('long');
+      expect(result.conviction).toBe('SILVER');
+      expect(result.reason).toContain('Confluência Alta');
+      expect(result.signals.momentum).toBe(true);
+      expect(result.signals.vwap).toBe(true);
+      expect(result.signals.moneyFlow).toBe(true);
+      expect(result.signals.macroBias).toBe(true);
+      expect(result.signals.cvdDivergence).toBe(false);
+    });
+
+    test('deve retornar um sinal GOLD quando os 3 indicadores + o Macro + a divergência de CVD se alinham', () => {
+      const mockData = {
+        vwap: {
+          vwap: 50000,
+          lowerBands: [49000, 48000, 47000],
+          upperBands: [51000, 52000, 53000]
+        },
+        momentum: {
+          isBullish: true,
+          isBearish: false
+        },
+        moneyFlow: {
+          isBullish: true,
+          isBearish: false
+        },
+        macroMoneyFlow: {
+          macroBias: 1 // Bullish
+        },
+        cvdDivergence: {
+          bullish: true,
+          bearish: false
+        }
+      };
+
+      const result = strategy.analyzeTrade(0.001, mockData, 1000, 50);
+      
+      expect(result).not.toBeNull();
+      expect(result.action).toBe('long');
+      expect(result.conviction).toBe('GOLD');
+      expect(result.reason).toContain('Confluência Máxima');
+      expect(result.signals.momentum).toBe(true);
+      expect(result.signals.vwap).toBe(true);
+      expect(result.signals.moneyFlow).toBe(true);
+      expect(result.signals.macroBias).toBe(true);
+      expect(result.signals.cvdDivergence).toBe(true);
+    });
+
+    test('deve retornar null quando não há confluência suficiente', () => {
+      const mockData = {
+        vwap: {
+          vwap: 50000,
+          lowerBands: [49000, 48000, 47000],
+          upperBands: [51000, 52000, 53000]
+        },
+        momentum: {
+          isBullish: false,
+          isBearish: true
+        },
+        moneyFlow: {
+          isBullish: true,
+          isBearish: false
+        },
+        macroMoneyFlow: {
+          macroBias: 1
+        },
+        cvdDivergence: {
+          bullish: false,
+          bearish: false
+        }
+      };
+
+      const result = strategy.analyzeTrade(0.001, mockData, 1000, 50);
+      
+      expect(result).toBeNull();
+    });
+
+    test('deve retornar sinal SHORT GOLD para dados bearish', () => {
+      const mockData = {
+        vwap: {
+          vwap: 50000,
+          lowerBands: [49000, 48000, 47000],
+          upperBands: [51000, 52000, 53000]
+        },
+        momentum: {
+          isBullish: false,
+          isBearish: true
+        },
+        moneyFlow: {
+          isBullish: false,
+          isBearish: true
+        },
+        macroMoneyFlow: {
+          macroBias: -1 // Bearish
+        },
+        cvdDivergence: {
+          bullish: false,
+          bearish: true
+        }
+      };
+
+      const result = strategy.analyzeTrade(0.001, mockData, 1000, 50);
+      
+      expect(result).not.toBeNull();
+      expect(result.action).toBe('short');
+      expect(result.conviction).toBe('GOLD');
+      expect(result.reason).toContain('Confluência Máxima');
+      expect(result.signals.momentum).toBe(true);
+      expect(result.signals.vwap).toBe(true);
+      expect(result.signals.moneyFlow).toBe(true);
+      expect(result.signals.macroBias).toBe(true);
+      expect(result.signals.cvdDivergence).toBe(true);
+    });
+
+    test('deve retornar sinal SHORT SILVER para dados bearish sem divergência', () => {
+      const mockData = {
+        vwap: {
+          vwap: 50000,
+          lowerBands: [49000, 48000, 47000],
+          upperBands: [51000, 52000, 53000]
+        },
+        momentum: {
+          isBullish: false,
+          isBearish: true
+        },
+        moneyFlow: {
+          isBullish: false,
+          isBearish: true
+        },
+        macroMoneyFlow: {
+          macroBias: -1 // Bearish
+        },
+        cvdDivergence: {
+          bullish: false,
+          bearish: false
+        }
+      };
+
+      const result = strategy.analyzeTrade(0.001, mockData, 1000, 50);
+      
+      expect(result).not.toBeNull();
+      expect(result.action).toBe('short');
+      expect(result.conviction).toBe('SILVER');
+      expect(result.reason).toContain('Confluência Alta');
+      expect(result.signals.momentum).toBe(true);
+      expect(result.signals.vwap).toBe(true);
+      expect(result.signals.moneyFlow).toBe(true);
+      expect(result.signals.macroBias).toBe(true);
+      expect(result.signals.cvdDivergence).toBe(false);
+    });
+  });
+
+  describe('Validação de Dados', () => {
+    test('deve retornar null quando dados são inválidos', () => {
+      const invalidData = {
+        vwap: {
+          vwap: null,
+          lowerBands: [],
+          upperBands: []
+        }
+      };
+
+      const result = strategy.analyzeTrade(0.001, invalidData, 1000, 50);
+      
+      expect(result).toBeNull();
+    });
+
+    test('deve retornar null quando dados estão incompletos', () => {
+      const incompleteData = {
+        vwap: {
+          vwap: 50000,
+          lowerBands: [49000],
+          upperBands: [51000]
+        },
+        momentum: null,
+        moneyFlow: null
+      };
+
+      const result = strategy.analyzeTrade(0.001, incompleteData, 1000, 50);
+      
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('Métodos Auxiliares', () => {
+    test('checkBronzeSignal deve retornar true para sinais bullish válidos', () => {
+      const mockData = {
+        vwap: {
+          vwap: 50000,
+          lowerBands: [49000, 48000, 47000],
+          upperBands: [51000, 52000, 53000]
+        },
+        momentum: {
+          isBullish: true,
+          isBearish: false
+        },
+        moneyFlow: {
+          isBullish: true,
+          isBearish: false
+        }
+      };
+
+      const result = strategy.checkBronzeSignal(mockData, 'long');
+      expect(result).toBe(true);
+    });
+
+    test('checkSilverSignal deve retornar true para sinais com macro bias', () => {
+      const mockData = {
+        vwap: {
+          vwap: 50000,
+          lowerBands: [49000, 48000, 47000],
+          upperBands: [51000, 52000, 53000]
+        },
+        momentum: {
+          isBullish: true,
+          isBearish: false
+        },
+        moneyFlow: {
+          isBullish: true,
+          isBearish: false
+        },
+        macroMoneyFlow: {
+          macroBias: 1
+        }
+      };
+
+      const result = strategy.checkSilverSignal(mockData, 'long');
+      expect(result).toBe(true);
+    });
+
+    test('checkGoldSignal deve retornar true para sinais com divergência', () => {
+      const mockData = {
+        vwap: {
+          vwap: 50000,
+          lowerBands: [49000, 48000, 47000],
+          upperBands: [51000, 52000, 53000]
+        },
+        momentum: {
+          isBullish: true,
+          isBearish: false
+        },
+        moneyFlow: {
+          isBullish: true,
+          isBearish: false
+        },
+        macroMoneyFlow: {
+          macroBias: 1
+        },
+        cvdDivergence: {
+          bullish: true,
+          bearish: false
+        }
+      };
+
+      const result = strategy.checkGoldSignal(mockData, 'long');
+      expect(result).toBe(true);
+    });
+  });
+}); 

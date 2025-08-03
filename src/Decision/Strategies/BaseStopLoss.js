@@ -1,5 +1,3 @@
-import TrailingStop from '../../TrailingStop/TrailingStop.js';
-
 export class BaseStopLoss {
   /**
    * Analisa se uma posição deve ser fechada baseado na estratégia
@@ -39,15 +37,18 @@ export class BaseStopLoss {
    * @param {object} account - Dados da conta
    * @returns {object|null} - Decisão de take profit parcial ou null
    */
-  monitorTakeProfitMinimum(position, account) {
+  async monitorTakeProfitMinimum(position, account) {
     try {
       const ENABLE_TP_VALIDATION = process.env.ENABLE_TP_VALIDATION === 'true';
       if (!ENABLE_TP_VALIDATION) {
         return null;
       }
 
+      // Importação dinâmica para evitar circular dependency
+      const TrailingStop = await import('../../TrailingStop/TrailingStop.js');
+      
       // Usa a função calculatePnL do TrailingStop
-      const { pnl, pnlPct } = TrailingStop.calculatePnL(position, account);
+      const { pnl, pnlPct } = TrailingStop.default.calculatePnL(position, account);
       
       // Só monitora se há lucro
       if (pnl <= 0) {
