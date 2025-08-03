@@ -5,6 +5,14 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
   let strategy;
 
   beforeEach(() => {
+    // Define variáveis de ambiente necessárias para os testes
+    process.env.ORDER_1_WEIGHT_PCT = '50';
+    process.env.ORDER_2_WEIGHT_PCT = '30';
+    process.env.ORDER_3_WEIGHT_PCT = '20';
+    process.env.CAPITAL_PERCENTAGE_BRONZE = '50';
+    process.env.CAPITAL_PERCENTAGE_SILVER = '75';
+    process.env.CAPITAL_PERCENTAGE_GOLD = '100';
+    
     strategy = new AlphaFlowStrategy();
   });
 

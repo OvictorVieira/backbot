@@ -240,7 +240,7 @@ export class AlphaFlowStrategy extends BaseStrategy {
         quantity: quantity,
         stopLoss: stopLoss,
         takeProfit: takeProfit,
-        weight: weight,
+        weight: weight / 100, // Converte de porcentagem para decimal
         spreadMultiplier: spreadMultiplier
       });
     }
