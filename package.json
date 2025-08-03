@@ -5,6 +5,7 @@
   "main": "app.js",
   "scripts": {
     "start": "cross-env NODE_TLS_REJECT_UNAUTHORIZED=0 TRADING_STRATEGY=DEFAULT nodemon bootstrap-app.js",
+    "alphaflow": "cross-env NODE_TLS_REJECT_UNAUTHORIZED=0 TRADING_STRATEGY=ALPHA_FLOW nodemon bootstrap-app.js",
     "backtest": "node backtest.js",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
