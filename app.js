@@ -295,13 +295,14 @@ async function showModeSelectionMenu(hasMultiAccountConfig) {
     console.log('      • Take profit único');
     console.log('      • Ideal para corretoras que pagam por volume\n');
     
-    console.log('2️⃣  Estratégia LUCRO (PRO MAX) [BETA]');
-    console.log('   📈 Foco: Lucro por operação');
-    console.log('   🎯 Ideal para: Lucro por operação, com stop loss dinâmico e take profit com alvos.');
+    console.log('2️⃣  Estratégia ALPHA FLOW [NOVA]');
+    console.log('   🧠 Foco: Análise avançada de momentum e money flow');
+    console.log('   🎯 Ideal para: Trading baseado em análise técnica avançada');
     console.log('   💡 Características:');
-    console.log('      • Sinais filtrados por qualidade (BRONZE/SILVER/GOLD/DIAMOND)');
-    console.log('      • Múltiplos take profits');
-    console.log('      • Stop loss baseado em ATR\n');
+    console.log('      • Análise de momentum e money flow');
+    console.log('      • Detecção de divergência CVD');
+    console.log('      • Sinais BRONZE, PRATA e OURO');
+    console.log('      • Ordens escalonadas com pirâmide invertida\n');
     
     console.log('3️⃣  Sair\n');
     
@@ -319,7 +320,7 @@ async function showModeSelectionMenu(hasMultiAccountConfig) {
       if (choice === 1) {
         resolve('DEFAULT');
       } else if (choice === 2) {
-        resolve('PRO_MAX');
+        resolve('ALPHA_FLOW');
       } else if (choice === 3) {
         resolve('exit');
       } else {
