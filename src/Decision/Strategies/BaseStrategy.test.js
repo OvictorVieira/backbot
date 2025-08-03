@@ -1,9 +1,17 @@
 import { jest } from '@jest/globals';
-import { BaseStrategy } from './BaseStrategy.js';
-import AccountController from '../../Controllers/AccountController.js';
 
-// Mock o módulo ANTES de todos os testes
-jest.mock('../../Controllers/AccountController.js');
+// Mock dos módulos usando ES modules
+const mockAccountController = {
+  get: jest.fn()
+};
+
+// Mock dos módulos ANTES da importação
+jest.unstable_mockModule('../../Controllers/AccountController.js', () => ({
+  default: mockAccountController
+}));
+
+// Importa o BaseStrategy após o mock
+const { BaseStrategy } = await import('./BaseStrategy.js');
 
 describe('BaseStrategy', () => {
   let baseStrategy;
@@ -188,7 +196,7 @@ describe('BaseStrategy', () => {
   describe('calculateStopAndTarget', () => {
     test('should calculate stop and target correctly for long position', async () => {
       // Simula o retorno de AccountController.get()
-      AccountController.get.mockResolvedValue({
+      mockAccountController.get.mockResolvedValue({
         leverage: 10,
         markets: [{ symbol: 'BTC_USDC_PERP', decimal_quantity: 4 }]
       });
@@ -214,7 +222,7 @@ describe('BaseStrategy', () => {
 
     test('should calculate stop and target correctly for short position', async () => {
       // Simula o retorno de AccountController.get()
-      AccountController.get.mockResolvedValue({
+      mockAccountController.get.mockResolvedValue({
         leverage: 10,
         markets: [{ symbol: 'BTC_USDC_PERP', decimal_quantity: 4 }]
       });
