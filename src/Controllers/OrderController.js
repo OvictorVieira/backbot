@@ -1365,22 +1365,43 @@ class OrderController {
         }
       }
 
-      // Chama o método openHybridOrder com os dados fornecidos
-      const result = await OrderController.openHybridOrder({
-        entry: orderData.entry,
-        stop: orderData.stop,
-        target: orderData.target,
-        action: orderData.action,
-        market: orderData.market,
-        volume: orderData.volume,
-        decimal_quantity: orderData.decimal_quantity,
-        decimal_price: orderData.decimal_price,
-        stepSize_quantity: orderData.stepSize_quantity,
-        accountId: orderData.accountId || 'DEFAULT',
-        originalSignalData: orderData.originalSignalData
-      });
+      // Verifica se é uma ordem da Alpha Flow Strategy (com orderNumber)
+      if (orderData.orderNumber) {
+        console.log(`🔄 [openOrder] Ordem Alpha Flow detectada: ${orderData.market} (Ordem ${orderData.orderNumber})`);
+        
+        // Usa o método específico para ordens com triggers
+        const result = await OrderController.createLimitOrderWithTriggers({
+          market: orderData.market,
+          action: orderData.action,
+          entry: orderData.entry,
+          quantity: orderData.volume / orderData.entry, // Calcula quantidade baseada no volume
+          stop: orderData.stop,
+          target: orderData.target,
+          decimal_quantity: orderData.decimal_quantity,
+          decimal_price: orderData.decimal_price,
+          stepSize_quantity: orderData.stepSize_quantity,
+          accountId: orderData.accountId || 'DEFAULT'
+        });
 
-      return result;
+        return result;
+      } else {
+        // Chama o método openHybridOrder com os dados fornecidos (estratégias tradicionais)
+        const result = await OrderController.openHybridOrder({
+          entry: orderData.entry,
+          stop: orderData.stop,
+          target: orderData.target,
+          action: orderData.action,
+          market: orderData.market,
+          volume: orderData.volume,
+          decimal_quantity: orderData.decimal_quantity,
+          decimal_price: orderData.decimal_price,
+          stepSize_quantity: orderData.stepSize_quantity,
+          accountId: orderData.accountId || 'DEFAULT',
+          originalSignalData: orderData.originalSignalData
+        });
+
+        return result;
+      }
     } catch (error) {
       console.error(`❌ [openOrder] Erro ao executar ordem:`, error.message);
       return { error: error.message };
@@ -2553,6 +2574,127 @@ class OrderController {
    */
   static async cleanupOrphanedConditionalOrders(accountId = 'DEFAULT') {
     return await OrderController.monitorAndCleanupOrphanedStopLoss(accountId);
+  }
+
+  /**
+   * Cria uma ordem LIMIT com triggers de stop loss e take profit anexados
+   * @param {object} orderData - Dados da ordem
+   * @returns {object} - Resultado da criação da ordem
+   */
+  static async createLimitOrderWithTriggers(orderData) {
+    try {
+      const {
+        market,
+        action,
+        entry,
+        quantity,
+        stop,
+        target,
+        decimal_quantity,
+        decimal_price,
+        stepSize_quantity,
+        accountId = 'DEFAULT'
+      } = orderData;
+
+      // Define as variáveis de ambiente corretas baseado no accountId
+      if (accountId === 'CONTA2') {
+        process.env.API_KEY = process.env.ACCOUNT2_API_KEY;
+        process.env.API_SECRET = process.env.ACCOUNT2_API_SECRET;
+      } else {
+        process.env.API_KEY = process.env.ACCOUNT1_API_KEY;
+        process.env.API_SECRET = process.env.ACCOUNT1_API_SECRET;
+      }
+
+      const formatPrice = (value) => parseFloat(value).toFixed(decimal_price).toString();
+      const formatQuantity = (value) => parseFloat(value).toFixed(decimal_quantity).toString();
+
+      // Prepara o corpo da requisição para a ordem LIMIT
+      const orderBody = {
+        symbol: market,
+        orderType: 'Limit',
+        side: action === 'long' ? 'Bid' : 'Ask',
+        quantity: formatQuantity(quantity),
+        price: formatPrice(entry),
+        clientId: Date.now(),
+        postOnly: true
+      };
+
+      console.log(`📝 Criando ordem LIMIT com triggers: ${market} ${action.toUpperCase()} @ ${formatPrice(entry)}`);
+
+      // Cria a ordem LIMIT principal
+      const limitOrder = await Order.createOrder(orderBody);
+
+      if (!limitOrder || !limitOrder.success) {
+        throw new Error(`Falha ao criar ordem LIMIT: ${limitOrder?.message || 'Erro desconhecido'}`);
+      }
+
+      console.log(`✅ Ordem LIMIT criada: ${market} ${action.toUpperCase()} @ ${formatPrice(entry)}`);
+
+      // Cria ordens condicionais de stop loss e take profit
+      const conditionalOrders = [];
+
+      // Stop Loss
+      if (stop) {
+        const stopOrderBody = {
+          symbol: market,
+          orderType: 'Stop',
+          side: action === 'long' ? 'Ask' : 'Bid',
+          quantity: formatQuantity(quantity),
+          triggerPrice: formatPrice(stop),
+          clientId: Date.now() + 1
+        };
+
+        try {
+          const stopOrder = await Order.createOrder(stopOrderBody);
+          if (stopOrder && stopOrder.success) {
+            console.log(`🛑 Stop Loss criado: ${market} @ ${formatPrice(stop)}`);
+            conditionalOrders.push({ type: 'stop', order: stopOrder });
+          } else {
+            console.warn(`⚠️ Falha ao criar Stop Loss: ${stopOrder?.message || 'Erro desconhecido'}`);
+          }
+        } catch (error) {
+          console.warn(`⚠️ Erro ao criar Stop Loss: ${error.message}`);
+        }
+      }
+
+      // Take Profit
+      if (target) {
+        const targetOrderBody = {
+          symbol: market,
+          orderType: 'TakeProfit',
+          side: action === 'long' ? 'Ask' : 'Bid',
+          quantity: formatQuantity(quantity),
+          triggerPrice: formatPrice(target),
+          clientId: Date.now() + 2
+        };
+
+        try {
+          const targetOrder = await Order.createOrder(targetOrderBody);
+          if (targetOrder && targetOrder.success) {
+            console.log(`🎯 Take Profit criado: ${market} @ ${formatPrice(target)}`);
+            conditionalOrders.push({ type: 'target', order: targetOrder });
+          } else {
+            console.warn(`⚠️ Falha ao criar Take Profit: ${targetOrder?.message || 'Erro desconhecido'}`);
+          }
+        } catch (error) {
+          console.warn(`⚠️ Erro ao criar Take Profit: ${error.message}`);
+        }
+      }
+
+      return {
+        success: true,
+        limitOrder: limitOrder,
+        conditionalOrders: conditionalOrders,
+        message: `Ordem LIMIT criada com ${conditionalOrders.length} triggers`
+      };
+
+    } catch (error) {
+      console.error(`❌ Erro ao criar ordem LIMIT com triggers: ${error.message}`);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
   }
 
 }

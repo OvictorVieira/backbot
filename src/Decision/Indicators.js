@@ -277,6 +277,55 @@ function calculateMoneyFlow(candles, mfiPeriod = 14, signalPeriod = 9) {
   };
 }
 
+/**
+ * Calcula o Macro Money Flow (MFI diário) para análise de tendência de longo prazo
+ * @param {Array<Object>} dailyCandles - Array de candles diários
+ * @returns {Object} - Objeto com macroBias e dados do MFI diário
+ */
+function calculateMacroMoneyFlow(dailyCandles) {
+  if (!dailyCandles || dailyCandles.length < 15) {
+    return {
+      macroBias: 0,
+      mfiCurrent: 50,
+      mfiPrevious: 50,
+      isBullish: false,
+      isBearish: false,
+      direction: 'NEUTRAL'
+    };
+  }
+
+  // Calcula o MFI para os dados diários
+  const mfiResult = calculateMoneyFlow(dailyCandles, 14, 9);
+  
+  // Obtém os valores atuais e anteriores do MFI
+  const mfiCurrent = mfiResult.mfi || 50;
+  const mfiPrevious = mfiResult.history && mfiResult.history.length >= 2 
+    ? mfiResult.history[mfiResult.history.length - 2] 
+    : 50;
+  
+  // Calcula o macroBias baseado na direção do MFI
+  let macroBias = 0;
+  let direction = 'NEUTRAL';
+  
+  if (mfiCurrent > mfiPrevious) {
+    macroBias = 1;
+    direction = 'UP';
+  } else if (mfiCurrent < mfiPrevious) {
+    macroBias = -1;
+    direction = 'DOWN';
+  }
+  
+  return {
+    macroBias,
+    mfiCurrent,
+    mfiPrevious,
+    isBullish: macroBias === 1,
+    isBearish: macroBias === -1,
+    direction,
+    history: mfiResult.history || []
+  };
+}
+
 function findEMACross(ema9Arr, ema21Arr) {
   const len = Math.min(ema9Arr.length, ema21Arr.length);
 
@@ -438,6 +487,155 @@ function calculateMomentum(closes) {
   };
 }
 
+/**
+ * Calcula o CVD (Cumulative Volume Delta) Periódico
+ * @param {Array<Object>} candles - Array de candles
+ * @param {number} period - Período para o CVD (padrão: 8)
+ * @returns {Array<number>} - Array de valores de CVD
+ */
+function calculateCVD(candles, period = 8) {
+  if (candles.length === 0) {
+    return [];
+  }
+
+  const cvdValues = [];
+  
+  for (let i = 0; i < candles.length; i++) {
+    let cvd = 0;
+    
+    // Calcula o CVD para as últimas 'period' velas, ou todas as velas disponíveis se menos que period
+    const actualPeriod = Math.min(period, i + 1);
+    const startIndex = Math.max(0, i - actualPeriod + 1);
+    
+    for (let j = startIndex; j <= i; j++) {
+      const candle = candles[j];
+      const open = parseFloat(candle.open);
+      const close = parseFloat(candle.close);
+      const volume = parseFloat(candle.volume);
+      
+      // Calcula o delta de volume para esta vela
+      let delta = 0;
+      if (close > open) {
+        delta = volume; // Vela de alta
+      } else if (close < open) {
+        delta = -volume; // Vela de baixa
+      }
+      // Se close === open, delta = 0
+      
+      cvd += delta;
+    }
+    
+    cvdValues.push(cvd);
+  }
+  
+  return cvdValues;
+}
+
+/**
+ * Encontra pivots (topos e fundos) em uma série de dados
+ * @param {Array<number>} values - Array de valores
+ * @param {number} fractalPeriod - Período do fractal (padrão: 1)
+ * @returns {Array<Object>} - Array de pivots com {index, value, type}
+ */
+function findPivots(values, fractalPeriod = 1) {
+  const pivots = [];
+  
+  for (let i = fractalPeriod; i < values.length - fractalPeriod; i++) {
+    const current = values[i];
+    let isTop = true;
+    let isBottom = true;
+    
+    // Verifica se é um topo
+    for (let j = 1; j <= fractalPeriod; j++) {
+      if (values[i - j] >= current || values[i + j] >= current) {
+        isTop = false;
+        break;
+      }
+    }
+    
+    // Verifica se é um fundo
+    for (let j = 1; j <= fractalPeriod; j++) {
+      if (values[i - j] <= current || values[i + j] <= current) {
+        isBottom = false;
+        break;
+      }
+    }
+    
+    if (isTop) {
+      pivots.push({ index: i, value: current, type: 'top' });
+    } else if (isBottom) {
+      pivots.push({ index: i, value: current, type: 'bottom' });
+    }
+  }
+  
+  return pivots;
+}
+
+/**
+ * Detecta divergências entre preço e CVD
+ * @param {Array<Object>} candles - Array de candles
+ * @param {Array<number>} cvdValues - Array de valores de CVD
+ * @returns {Object} - Objeto com divergências detectadas
+ */
+function findCvdDivergences(candles, cvdValues) {
+  if (candles.length < 10 || cvdValues.length < 10) {
+    return { bullish: false, bearish: false };
+  }
+  
+  // Extrai preços de fechamento
+  const prices = candles.map(c => parseFloat(c.close));
+  
+  // Encontra pivots de preço e CVD
+  const pricePivots = findPivots(prices, 1);
+  const cvdPivots = findPivots(cvdValues, 1);
+  
+  if (pricePivots.length < 2 || cvdPivots.length < 2) {
+    return { bullish: false, bearish: false };
+  }
+  
+  let bullishDivergence = false;
+  let bearishDivergence = false;
+  
+  // Verifica divergência bullish (preço faz fundo mais baixo, CVD faz fundo mais alto)
+  const priceBottoms = pricePivots.filter(p => p.type === 'bottom');
+  const cvdBottoms = cvdPivots.filter(p => p.type === 'bottom');
+  
+  if (priceBottoms.length >= 2 && cvdBottoms.length >= 2) {
+    const currentPriceBottom = priceBottoms[priceBottoms.length - 1];
+    const previousPriceBottom = priceBottoms[priceBottoms.length - 2];
+    const currentCvdBottom = cvdBottoms[cvdBottoms.length - 1];
+    const previousCvdBottom = cvdBottoms[cvdBottoms.length - 2];
+    
+    // Verifica se o preço fez um fundo mais baixo mas o CVD fez um fundo mais alto
+    if (currentPriceBottom.value < previousPriceBottom.value && 
+        currentCvdBottom.value > previousCvdBottom.value) {
+      bullishDivergence = true;
+    }
+  }
+  
+  // Verifica divergência bearish (preço faz topo mais alto, CVD faz topo mais baixo)
+  const priceTops = pricePivots.filter(p => p.type === 'top');
+  const cvdTops = cvdPivots.filter(p => p.type === 'top');
+  
+  if (priceTops.length >= 2 && cvdTops.length >= 2) {
+    const currentPriceTop = priceTops[priceTops.length - 1];
+    const previousPriceTop = priceTops[priceTops.length - 2];
+    const currentCvdTop = cvdTops[cvdTops.length - 1];
+    const previousCvdTop = cvdTops[cvdTops.length - 2];
+    
+    // Verifica se o preço fez um topo mais alto mas o CVD fez um topo mais baixo
+    if (currentPriceTop.value > previousPriceTop.value && 
+        currentCvdTop.value < previousCvdTop.value) {
+      bearishDivergence = true;
+    }
+  }
+  
+  return {
+    bullish: bullishDivergence,
+    bearish: bearishDivergence
+  };
+}
+
 export function calculateIndicators(candles) {
   // Validação de entrada
   if (!candles || !Array.isArray(candles) || candles.length === 0) {
@@ -540,6 +738,24 @@ export function calculateIndicators(candles) {
         direction: null,
         history: [],
         mfiPrev: null
+      },
+      cvd: {
+        values: [],
+        current: null,
+        history: []
+      },
+      cvdDivergence: {
+        bullish: false,
+        bearish: false
+      },
+      macroMoneyFlow: {
+        macroBias: 0,
+        mfiCurrent: null,
+        mfiPrevious: null,
+        isBullish: false,
+        isBearish: false,
+        direction: null,
+        history: []
       }
     };
   }
@@ -617,7 +833,11 @@ export function calculateIndicators(candles) {
   const volumeAnalyse = analyzeTrends(volumesUSD)
 
   const emaAnalysis = analyzeEMA(ema9, ema21);
-  const emaCrossInfo = findEMACross(ema9, ema21); 
+  const emaCrossInfo = findEMACross(ema9, ema21);
+
+  // NOVO: CVD Periódico e Divergências
+  const cvdValues = calculateCVD(candles, 8);
+  const cvdDivergence = findCvdDivergences(candles, cvdValues);
 
   return {
     ema: {
@@ -716,8 +936,28 @@ export function calculateIndicators(candles) {
       isStrong: customMoneyFlow.isStrong,
       direction: customMoneyFlow.direction,
       history: customMoneyFlow.history,
-    
       mfiPrev: customMoneyFlow.history[customMoneyFlow.history.length - 2] ?? 50
+    },
+    // NOVO: CVD Periódico
+    cvd: {
+      values: cvdValues,
+      current: cvdValues[cvdValues.length - 1] ?? null,
+      history: cvdValues
+    },
+    // NOVO: Divergências de CVD
+    cvdDivergence: {
+      bullish: cvdDivergence.bullish,
+      bearish: cvdDivergence.bearish
+    },
+    // NOVO: Macro Money Flow (MFI diário)
+    macroMoneyFlow: {
+      macroBias: 0, // Será calculado quando dados diários estiverem disponíveis
+      mfiCurrent: null,
+      mfiPrevious: null,
+      isBullish: false,
+      isBearish: false,
+      direction: null,
+      history: []
     }
   };
 }

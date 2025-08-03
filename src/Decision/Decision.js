@@ -599,7 +599,7 @@ class Decision {
     const rows = await this.analyzeTrades(fee, dataset, investmentUSD, media_rsi, config, btcTrend)
 
     // Executa ordens em paralelo usando Promise.all
-    console.log(`\n🚀 Executando ${rows.length} ordens em paralelo...`);
+    console.log(`\n🚀 Executando ordens em paralelo...`);
     
     // Prepara todas as ordens
     const orderPromises = rows.map(async (row, index) => {
@@ -608,40 +608,94 @@ class Decision {
 
         // Verifica se o market foi encontrado
         if (!marketInfo) {
-          console.error(`❌ [${accountId}] Market não encontrado para ${row.market}. Markets disponíveis: ${Account.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`);
+          console.error(`❌ [${config?.accountId || 'DEFAULT'}] Market não encontrado para ${row.market}. Markets disponíveis: ${Account.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`);
           return { index, market: row.market, result: { error: `Market não encontrado para ${row.market}` } };
         }
 
-        // Usa os dados fornecidos pela estratégia ou fallback para os padrões
-        row.volume = row.volume || investmentUSD
-        row.decimal_quantity = row.decimal_quantity || marketInfo.decimal_quantity
-        row.decimal_price = row.decimal_price || marketInfo.decimal_price
-        row.stepSize_quantity = row.stepSize_quantity || marketInfo.stepSize_quantity
+        // Verifica se é uma estratégia Alpha Flow com múltiplas ordens
+        if (row.orders && Array.isArray(row.orders) && row.orders.length > 0) {
+          console.log(`   🔄 ${row.market}: Processando ${row.orders.length} ordens escalonadas (${row.conviction})`);
+          
+          // Processa múltiplas ordens para Alpha Flow Strategy
+          const orderResults = [];
+          for (let i = 0; i < row.orders.length; i++) {
+            const order = row.orders[i];
+            
+            // Prepara dados da ordem
+            const orderData = {
+              ...row,
+              volume: order.quantity * order.entryPrice,
+              entry: order.entryPrice,
+              stop: order.stopLoss,
+              target: order.takeProfit,
+              decimal_quantity: marketInfo.decimal_quantity,
+              decimal_price: marketInfo.decimal_price,
+              stepSize_quantity: marketInfo.stepSize_quantity,
+              orderNumber: order.orderNumber,
+              weight: order.weight
+            };
 
-        // Verifica se já existe uma posição ativa para este mercado
-        const positions = await Futures.getOpenPositions();
-        const existingPosition = positions.find(p => p.symbol === row.market && Math.abs(Number(p.netQuantity)) > 0);
-        
-        if (existingPosition) {
-          // Já existe posição ativa, não criar nova ordem
-          console.log(`   ⏸️ ${row.market}: Posição ativa existe (${existingPosition.netQuantity}), pulando...`);
-          return { index, market: row.market, result: null };
-        }
+            // Verifica se já existe uma posição ativa para este mercado
+            const positions = await Futures.getOpenPositions();
+            const existingPosition = positions.find(p => p.symbol === row.market && Math.abs(Number(p.netQuantity)) > 0);
+            
+            if (existingPosition) {
+              console.log(`   ⏸️ ${row.market} (Ordem ${order.orderNumber}): Posição ativa existe, pulando...`);
+              orderResults.push({ orderNumber: order.orderNumber, result: null });
+              continue;
+            }
 
-        // Verifica se já existe uma ordem pendente
-        const orders = await OrderController.getRecentOpenOrders(row.market)
+            // Verifica se já existe uma ordem pendente
+            const orders = await OrderController.getRecentOpenOrders(row.market);
 
-        if(orders.length > 0) {
-          if(orders[0].minutes > 3) {
-            await Order.cancelOpenOrders(row.market);
-            const result = await OrderController.openOrder({ ...row, accountId: config?.accountId || 'DEFAULT' })
-            return { index, market: row.market, result };
-          } else {
+            if (orders.length > 0) {
+              if (orders[0].minutes > 3) {
+                await Order.cancelOpenOrders(row.market);
+                const result = await OrderController.openOrder({ ...orderData, accountId: config?.accountId || 'DEFAULT' });
+                orderResults.push({ orderNumber: order.orderNumber, result });
+              } else {
+                orderResults.push({ orderNumber: order.orderNumber, result: null });
+              }
+            } else {
+              const result = await OrderController.openOrder({ ...orderData, accountId: config?.accountId || 'DEFAULT' });
+              orderResults.push({ orderNumber: order.orderNumber, result });
+            }
+          }
+          
+          return { index, market: row.market, result: { orders: orderResults, conviction: row.conviction } };
+        } else {
+          // Processa ordem única (estratégias tradicionais)
+          // Usa os dados fornecidos pela estratégia ou fallback para os padrões
+          row.volume = row.volume || investmentUSD;
+          row.decimal_quantity = row.decimal_quantity || marketInfo.decimal_quantity;
+          row.decimal_price = row.decimal_price || marketInfo.decimal_price;
+          row.stepSize_quantity = row.stepSize_quantity || marketInfo.stepSize_quantity;
+
+          // Verifica se já existe uma posição ativa para este mercado
+          const positions = await Futures.getOpenPositions();
+          const existingPosition = positions.find(p => p.symbol === row.market && Math.abs(Number(p.netQuantity)) > 0);
+          
+          if (existingPosition) {
+            // Já existe posição ativa, não criar nova ordem
+            console.log(`   ⏸️ ${row.market}: Posição ativa existe (${existingPosition.netQuantity}), pulando...`);
             return { index, market: row.market, result: null };
           }
-        } else {
-          const result = await OrderController.openOrder({ ...row, accountId: config?.accountId || 'DEFAULT' })
-          return { index, market: row.market, result };
+
+          // Verifica se já existe uma ordem pendente
+          const orders = await OrderController.getRecentOpenOrders(row.market);
+
+          if (orders.length > 0) {
+            if (orders[0].minutes > 3) {
+              await Order.cancelOpenOrders(row.market);
+              const result = await OrderController.openOrder({ ...row, accountId: config?.accountId || 'DEFAULT' });
+              return { index, market: row.market, result };
+            } else {
+              return { index, market: row.market, result: null };
+            }
+          } else {
+            const result = await OrderController.openOrder({ ...row, accountId: config?.accountId || 'DEFAULT' });
+            return { index, market: row.market, result };
+          }
         }
         
       } catch (error) {
@@ -662,19 +716,53 @@ class Decision {
     orderResults.sort((a, b) => a.index - b.index);
     
     orderResults.forEach(({ market, result }) => {
-      if (result && result.success) {
-        console.log(`   ✅ ${market}: Executada`);
-      } else if (result && result.error) {
-        console.log(`   ❌ ${market}: Falhou - ${result.error}`);
-        console.log(`[DEBUG][ORDER_FAIL] Detalhes do result para ${market}:`, JSON.stringify(result, null, 2));
+      // Verifica se é resultado de múltiplas ordens (Alpha Flow)
+      if (result && result.orders && Array.isArray(result.orders)) {
+        console.log(`   🔄 ${market} (${result.conviction}): ${result.orders.length} ordens escalonadas`);
+        
+        result.orders.forEach((orderResult, orderIndex) => {
+          const orderNumber = orderResult.orderNumber || orderIndex + 1;
+          if (orderResult.result && orderResult.result.success) {
+            console.log(`      ✅ Ordem ${orderNumber}: Executada`);
+          } else if (orderResult.result && orderResult.result.error) {
+            console.log(`      ❌ Ordem ${orderNumber}: Falhou - ${orderResult.result.error}`);
+          } else {
+            console.log(`      ⏸️ Ordem ${orderNumber}: Pulada`);
+          }
+        });
       } else {
-        console.log(`   ⏸️ ${market}: Pulado (ordem recente)`);
+        // Resultado de ordem única (estratégias tradicionais)
+        if (result && result.success) {
+          console.log(`   ✅ ${market}: Executada`);
+        } else if (result && result.error) {
+          console.log(`   ❌ ${market}: Falhou - ${result.error}`);
+          console.log(`[DEBUG][ORDER_FAIL] Detalhes do result para ${market}:`, JSON.stringify(result, null, 2));
+        } else {
+          console.log(`   ⏸️ ${market}: Pulado (ordem recente)`);
+        }
       }
     });
     
     // Log dos resultados
-    const successfulOrders = orderResults.filter(({ result }) => result && !result.error);
-    const failedOrders = orderResults.filter(({ result }) => !result || result.error);
+    const successfulOrders = orderResults.filter(({ result }) => {
+      if (result && result.orders && Array.isArray(result.orders)) {
+        // Para Alpha Flow, conta ordens individuais
+        return result.orders.some(orderResult => orderResult.result && orderResult.result.success);
+      } else {
+        // Para estratégias tradicionais
+        return result && result.success;
+      }
+    });
+    
+    const failedOrders = orderResults.filter(({ result }) => {
+      if (result && result.orders && Array.isArray(result.orders)) {
+        // Para Alpha Flow, conta ordens individuais
+        return result.orders.every(orderResult => !orderResult.result || orderResult.result.error);
+      } else {
+        // Para estratégias tradicionais
+        return !result || result.error;
+      }
+    });
     
     // Log detalhado das ordens
     const detailsMsg = `📊 Detalhes das ordens:`;
@@ -692,22 +780,37 @@ class Decision {
     console.log(`   • Operações falharam: ${failedOrders.length}`);
     
     orderResults.forEach(({ market, result }) => {
-      const status = result && !result.error ? '✅' : '❌';
-      const errorMsg = result?.error ? ` - ${result.error}` : '';
-      
-      // Para estratégia PRO_MAX, inclui o nível do sinal
-      let orderMsg;
-      const row = rows.find(r => r.market === market);
-      if (this.strategy.constructor.name === 'ProMaxStrategy' && row?.signalLevel) {
-        orderMsg = `${status} ${market} (${row.signalLevel}): ${result && !result.error ? 'Executada' : 'Falhou' + errorMsg}`;
+      // Para Alpha Flow Strategy com múltiplas ordens
+      if (result && result.orders && Array.isArray(result.orders)) {
+        const successfulCount = result.orders.filter(orderResult => orderResult.result && orderResult.result.success).length;
+        const totalCount = result.orders.length;
+        const status = successfulCount > 0 ? '✅' : '❌';
+        const orderMsg = `${status} ${market} (${result.conviction}): ${successfulCount}/${totalCount} ordens executadas`;
+        
+        if (logger) {
+          logger.order(orderMsg);
+        } else {
+          console.log(orderMsg);
+        }
       } else {
-        orderMsg = `${status} ${market}: ${result && !result.error ? 'Executada' : 'Falhou' + errorMsg}`;
-      }
-      
-      if (logger) {
-        logger.order(orderMsg);
-      } else {
-        console.log(orderMsg);
+        // Para estratégias tradicionais
+        const status = result && result.success ? '✅' : '❌';
+        const errorMsg = result?.error ? ` - ${result.error}` : '';
+        
+        // Para estratégia PRO_MAX, inclui o nível do sinal
+        let orderMsg;
+        const row = rows.find(r => r.market === market);
+        if (this.strategy.constructor.name === 'ProMaxStrategy' && row?.signalLevel) {
+          orderMsg = `${status} ${market} (${row.signalLevel}): ${result && result.success ? 'Executada' : 'Falhou' + errorMsg}`;
+        } else {
+          orderMsg = `${status} ${market}: ${result && result.success ? 'Executada' : 'Falhou' + errorMsg}`;
+        }
+        
+        if (logger) {
+          logger.order(orderMsg);
+        } else {
+          console.log(orderMsg);
+        }
       }
     });
     
