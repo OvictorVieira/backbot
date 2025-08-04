@@ -27,8 +27,8 @@ describe('Macro Money Flow', () => {
       
       // Verifica se o macroMoneyFlow está presente
       expect(indicators.macroMoneyFlow).toBeDefined();
-      expect(indicators.macroMoneyFlow.macroBias).toBe(0); // Por enquanto, será 0 pois não temos dados diários separados
-      expect(indicators.macroMoneyFlow.isBullish).toBe(false);
+      expect(indicators.macroMoneyFlow.macroBias).toBe(1); // Agora retorna valor real baseado no MFI
+      expect(indicators.macroMoneyFlow.isBullish).toBe(true);
       expect(indicators.macroMoneyFlow.isBearish).toBe(false);
     });
 
@@ -57,8 +57,8 @@ describe('Macro Money Flow', () => {
       
       // Verifica se o macroMoneyFlow está presente
       expect(indicators.macroMoneyFlow).toBeDefined();
-      expect(indicators.macroMoneyFlow.macroBias).toBe(0); // Por enquanto, será 0 pois não temos dados diários separados
-      expect(indicators.macroMoneyFlow.isBullish).toBe(false);
+      expect(indicators.macroMoneyFlow.macroBias).toBe(1); // Agora retorna valor real baseado no MFI
+      expect(indicators.macroMoneyFlow.isBullish).toBe(true);
       expect(indicators.macroMoneyFlow.isBearish).toBe(false);
     });
 

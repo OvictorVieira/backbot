@@ -950,15 +950,7 @@ export function calculateIndicators(candles) {
       bearish: cvdDivergence.bearish
     },
     // NOVO: Macro Money Flow (MFI diário)
-    macroMoneyFlow: {
-      macroBias: 0, // Será calculado quando dados diários estiverem disponíveis
-      mfiCurrent: null,
-      mfiPrevious: null,
-      isBullish: false,
-      isBearish: false,
-      direction: null,
-      history: []
-    }
+    macroMoneyFlow: calculateMacroMoneyFlow(candles) // Usa os candles atuais como aproximação
   };
 }
 
