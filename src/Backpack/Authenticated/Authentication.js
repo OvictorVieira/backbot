@@ -22,6 +22,10 @@ export function auth({ instruction, params = {}, timestamp, window = 30000, stra
         apiKey = process.env.ACCOUNT1_API_KEY;
         apiSecret = process.env.ACCOUNT1_API_SECRET;
       }
+    } else if (finalStrategy === 'ALPHA_FLOW') {
+      // Para estratégia ALPHA_FLOW, usa credenciais da CONTA1
+      apiKey = process.env.ACCOUNT1_API_KEY;
+      apiSecret = process.env.ACCOUNT1_API_SECRET;
     } else {
       // Fallback para credenciais padrão (compatibilidade)
       apiKey = process.env.API_KEY;

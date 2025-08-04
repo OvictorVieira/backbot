@@ -1,5 +1,8 @@
 import { jest } from '@jest/globals';
 import OrderController from './OrderController.js';
+import AccountController from './AccountController.js';
+import { StrategyFactory } from '../Decision/Strategies/StrategyFactory.js';
+import Decision from '../Decision/Decision.js';
 
 describe('OrderController Module', () => {
   describe('calcSlippagePct', () => {
@@ -233,5 +236,182 @@ describe('OrderController Module', () => {
       // Verifica se foi removido
       expect(OrderController.validatedStopLossPositions.has(positionKey)).toBe(false);
     });
+  });
+});
+
+describe('Market Data Validation', () => {
+  test('should validate market data is passed correctly to strategy', async () => {
+    // Mock dos dados de mercado
+    const mockMarketData = {
+      symbol: 'BTC_USDC_PERP',
+      decimal_quantity: 4,
+      decimal_price: 2,
+      stepSize_quantity: 0.0001,
+      min_quantity: 0.001
+    };
+
+    // Mock dos dados da conta
+    const mockAccount = {
+      markets: [mockMarketData],
+      capitalAvailable: 1000,
+      leverage: 5
+    };
+
+    // Mock do AccountController
+    jest.spyOn(AccountController, 'get').mockResolvedValue(mockAccount);
+
+    // Mock da estratégia
+    const mockStrategy = {
+      analyzeTrade: jest.fn().mockReturnValue({
+        action: 'long',
+        conviction: 'BRONZE',
+        orders: [
+          {
+            market: 'BTC_USDC_PERP',
+            action: 'long',
+            entry: 50000,
+            quantity: 0.001,
+            decimal_quantity: 4,
+            decimal_price: 2,
+            stepSize_quantity: 0.0001,
+            min_quantity: 0.001
+          }
+        ]
+      })
+    };
+
+    // Mock da StrategyFactory
+    jest.spyOn(StrategyFactory, 'createStrategy').mockReturnValue(mockStrategy);
+
+    const decision = new Decision('ALPHA_FLOW');
+    
+    // Mock dos dados de entrada
+    const mockData = {
+      symbol: 'BTC_USDC_PERP',
+      momentum: { isBullish: true },
+      moneyFlow: { isBullish: true },
+      vwap: { vwap: 50000 },
+      atr: { atr: 1000 }
+    };
+
+    const result = await decision.analyzeTrades(0.001, [mockData], 100, 50, { accountId: 'DEFAULT' });
+
+    // Verifica se a estratégia foi chamada com os dados de mercado
+    expect(mockStrategy.analyzeTrade).toHaveBeenCalledWith(
+      0.001,
+      expect.objectContaining({
+        symbol: 'BTC_USDC_PERP',
+        market: mockMarketData
+      }),
+      100,
+      50,
+      { accountId: 'DEFAULT' },
+      'NEUTRAL'
+    );
+
+    // Verifica se o resultado contém ordens com dados de mercado
+    expect(result[0].orders[0]).toHaveProperty('decimal_quantity', 4);
+    expect(result[0].orders[0]).toHaveProperty('decimal_price', 2);
+    expect(result[0].orders[0]).toHaveProperty('min_quantity', 0.001);
+  });
+
+  test('should handle missing market data gracefully', async () => {
+    // Mock dos dados da conta sem o mercado específico
+    const mockAccount = {
+      markets: [],
+      capitalAvailable: 1000,
+      leverage: 5
+    };
+
+    jest.spyOn(AccountController, 'get').mockResolvedValue(mockAccount);
+
+    const decision = new Decision('ALPHA_FLOW');
+    
+    const mockData = {
+      symbol: 'BTC_USDC_PERP',
+      momentum: { isBullish: true }
+    };
+
+    const result = await decision.analyzeTrades(0.001, [mockData], 100, 50, { accountId: 'DEFAULT' });
+
+    // Verifica se retorna array vazio quando não encontra o mercado
+    expect(result).toEqual([]);
+  });
+
+  test('should validate margin before analysis', async () => {
+    // Mock dos dados da conta com capital insuficiente
+    const mockAccount = {
+      markets: [],
+      capitalAvailable: 0, // Capital zero
+      leverage: 5,
+      fee: 0.001
+    };
+
+    jest.spyOn(AccountController, 'get').mockResolvedValue(mockAccount);
+
+    // Mock do Futures.getOpenPositions para evitar erro de autenticação
+    const Futures = await import('../Backpack/Authenticated/Futures.js');
+    jest.spyOn(Futures.default, 'getOpenPositions').mockResolvedValue([]);
+
+    // Mock do Order.getOpenOrders para evitar erro de autenticação
+    const Order = await import('../Backpack/Authenticated/Order.js');
+    jest.spyOn(Order.default, 'getOpenOrders').mockResolvedValue([]);
+
+    const decision = new Decision('ALPHA_FLOW');
+    
+    // Mock do console.log para capturar a mensagem de aviso
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+
+    await decision.analyze(null, null, { accountId: 'DEFAULT' });
+
+    // Verifica se a mensagem de margem insuficiente foi logada
+    const calls = consoleSpy.mock.calls;
+    const marginMessage = calls.find(call => 
+      call[0] && typeof call[0] === 'string' && 
+      call[0].includes('⚠️ [CAPITAL] Margem insuficiente para iniciar nova análise')
+    );
+    
+    expect(marginMessage).toBeDefined();
+
+    consoleSpy.mockRestore();
+  });
+
+  test('should validate symbol before processing orders', async () => {
+    // Mock dos dados da conta
+    const mockAccount = {
+      markets: [
+        {
+          symbol: 'BTC_USDC_PERP',
+          decimal_quantity: 4,
+          decimal_price: 2,
+          stepSize_quantity: 0.0001,
+          min_quantity: 0.001
+        }
+      ],
+      capitalAvailable: 1000,
+      leverage: 5,
+      fee: 0.001
+    };
+
+    jest.spyOn(AccountController, 'get').mockResolvedValue(mockAccount);
+
+    // Mock da estratégia retornando decisão sem símbolo
+    const mockStrategy = {
+      analyzeTrade: jest.fn().mockReturnValue(null) // Retorna null para simular decisão inválida
+    };
+
+    jest.spyOn(StrategyFactory, 'createStrategy').mockReturnValue(mockStrategy);
+
+    const decision = new Decision('ALPHA_FLOW');
+    
+    const mockData = {
+      symbol: 'BTC_USDC_PERP',
+      momentum: { isBullish: true }
+    };
+
+    const result = await decision.analyzeTrades(0.001, [mockData], 100, 50, { accountId: 'DEFAULT' });
+
+    // Verifica se retorna array vazio quando não há símbolo válido
+    expect(result).toEqual([]);
   });
 }); 

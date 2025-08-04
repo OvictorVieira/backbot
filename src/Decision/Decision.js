@@ -230,6 +230,7 @@ class Decision {
             candles,
             market,
             marketPrice,
+            symbol: market.symbol, // Adiciona o símbolo diretamente
             ...analyze
           };
         } catch (error) {
@@ -318,7 +319,7 @@ class Decision {
     entry: entry,
     marketPrice: marketPrice,
     volume: volume,
-    market: market
+    market: market.symbol
   };
   }
 
@@ -467,45 +468,50 @@ class Decision {
     }
 
     // ANÁLISE DO BTC PRIMEIRO (antes das altcoins)
-    console.log(`\n📊 ANÁLISE DO BTC (${currentTimeframe}):`);
+    // Pula análise do BTC para AlphaFlow (cada moeda tem suas particularidades)
     let btcTrend = 'NEUTRAL';
-    try {
-      // Usa 100 candles para garantir que todos os indicadores tenham dados suficientes
-      const btcCandles = await Markets.getKLines('BTC_USDC_PERP', currentTimeframe, 100);
-      if (btcCandles && btcCandles.length > 0) {
-        const btcIndicators = calculateIndicators(btcCandles);
-        
-        // Validação adicional dos indicadores do BTC
-        if (!btcIndicators || !btcIndicators.rsi || !btcIndicators.stoch || !btcIndicators.macd || !btcIndicators.adx) {
-          console.log(`   ⚠️ BTC: Dados de indicadores insuficientes`);
-        } else {
-          const btcAnalysis = this.strategy.analyzeSignals(btcIndicators, true, config);
+    if (this.strategy.constructor.name !== 'AlphaFlowStrategy') {
+      console.log(`\n📊 ANÁLISE DO BTC (${currentTimeframe}):`);
+      try {
+        // Usa 100 candles para garantir que todos os indicadores tenham dados suficientes
+        const btcCandles = await Markets.getKLines('BTC_USDC_PERP', currentTimeframe, 100);
+        if (btcCandles && btcCandles.length > 0) {
+          const btcIndicators = calculateIndicators(btcCandles);
           
-          if (btcAnalysis && btcAnalysis.hasSignal) {
-            console.log(`   🟢 BTC: ${btcAnalysis.signalType}`);
-            if (btcAnalysis.analysisDetails && btcAnalysis.analysisDetails.length > 0) {
-              btcAnalysis.analysisDetails.forEach(detail => {
-                console.log(`      • ${detail}`);
-              });
-            }
-            // Define tendência do BTC baseada no sinal
-            btcTrend = btcAnalysis.isLong ? 'BULLISH' : 'BEARISH';
+          // Validação adicional dos indicadores do BTC
+          if (!btcIndicators || !btcIndicators.rsi || !btcIndicators.stoch || !btcIndicators.macd || !btcIndicators.adx) {
+            console.log(`   ⚠️ BTC: Dados de indicadores insuficientes`);
           } else {
-            console.log(`\n⚪ BTC: Sem sinais (NEUTRO - não permite operações em altcoins)`);
-            if (btcAnalysis && btcAnalysis.analysisDetails && btcAnalysis.analysisDetails.length > 0) {
-              btcAnalysis.analysisDetails.forEach(detail => {
-                console.log(`      • ${detail}`);
-              });
+            const btcAnalysis = this.strategy.analyzeSignals(btcIndicators, true, config);
+            
+            if (btcAnalysis && btcAnalysis.hasSignal) {
+              console.log(`   🟢 BTC: ${btcAnalysis.signalType}`);
+              if (btcAnalysis.analysisDetails && btcAnalysis.analysisDetails.length > 0) {
+                btcAnalysis.analysisDetails.forEach(detail => {
+                  console.log(`      • ${detail}`);
+                });
+              }
+              // Define tendência do BTC baseada no sinal
+              btcTrend = btcAnalysis.isLong ? 'BULLISH' : 'BEARISH';
+            } else {
+              console.log(`\n⚪ BTC: Sem sinais (NEUTRO - não permite operações em altcoins)`);
+              if (btcAnalysis && btcAnalysis.analysisDetails && btcAnalysis.analysisDetails.length > 0) {
+                btcAnalysis.analysisDetails.forEach(detail => {
+                  console.log(`      • ${detail}`);
+                });
+              }
+              btcTrend = 'NEUTRAL';
             }
-            btcTrend = 'NEUTRAL';
           }
+        } else {
+          console.log(`   ⚠️ BTC: Dados de candles insuficientes`);
         }
-      } else {
-        console.log(`   ⚠️ BTC: Dados de candles insuficientes`);
+      } catch (error) {
+        console.log(`   ❌ BTC: Erro na análise - ${error.message}`);
+        console.log(`      Detalhes: ${error.stack?.split('\n')[1] || 'Erro desconhecido'}`);
       }
-    } catch (error) {
-      console.log(`   ❌ BTC: Erro na análise - ${error.message}`);
-      console.log(`      Detalhes: ${error.stack?.split('\n')[1] || 'Erro desconhecido'}`);
+    } else {
+      console.log(`\n🧠 ALPHAFLOW: Análise BTC desabilitada (cada moeda tem suas particularidades)`);
     }
 
     const dataset = await this.getDataset(Account, allClosedMarkets, currentTimeframe, logger)
@@ -513,8 +519,20 @@ class Decision {
     // Otimiza o cálculo da média RSI
     const media_rsi = dataset.reduce((sum, row) => sum + row.rsi.value, 0) / dataset.length;
 
-    // Log de resumo das validações implementadas
-    const validationSummary = `\n🔍 RESUMO DAS VALIDAÇÕES IMPLEMENTADAS:
+    // Log de resumo das validações implementadas (personalizado por estratégia)
+    let validationSummary;
+    if (this.strategy.constructor.name === 'AlphaFlowStrategy') {
+      validationSummary = `\n🧠 ALPHAFLOW - RESUMO DAS VALIDAÇÕES:
+   • 📊 Momentum: Análise de momentum avançado (RSI + tendência)
+   • 💰 Money Flow: Filtro de fluxo de dinheiro (MFI)
+   • 🏛️  Macro Money Flow: Viés macro do mercado
+   • 📊 CVD Divergence: Detecção de divergência CVD
+   • 📈 VWAP: Filtro de tendência intradiária
+   • 📊 ATR: Cálculo de spread para ordens escalonadas
+   • 🎯 Sinais BRONZE/SILVER/GOLD: Níveis de convicção escalonados
+   • 📋 Ordens Escalonadas: 3 ordens com pirâmide invertida (50%/30%/20%)`;
+    } else {
+      validationSummary = `\n🔍 RESUMO DAS VALIDAÇÕES IMPLEMENTADAS:
    • 📊 Momentum (RSI Avançado): Primeira prioridade - Cruzamentos GREEN/RED + Sobrevenda/Sobrecompra
    • 🎯 Stochastic: Segunda prioridade - Cruzamentos K/D em zonas extremas
    • 📈 MACD: Terceira prioridade - Momentum e tendência (histograma + cruzamentos)
@@ -523,6 +541,7 @@ class Decision {
    • 📊 VWAP: Filtro de tendência intradiária - Preço > VWAP (LONG) / < VWAP (SHORT)
    • 🏛️ BTC Trend: Filtro macro - Correlação com tendência do Bitcoin
    • 🎯 Stop/Target: Cálculo baseado em VWAP + StdDev`;
+    }
 
     if (logger) {
       logger.info(validationSummary);
@@ -530,9 +549,21 @@ class Decision {
       console.log(validationSummary);
     }
 
-    // Só loga a média RSI se não for estratégia PRO_MAX
-    // Verifica a estratégia atual da instância ao invés da variável de ambiente
-    if (this.strategy.constructor.name !== 'ProMaxStrategy') {
+    // Log personalizado por estratégia
+    if (this.strategy.constructor.name === 'AlphaFlowStrategy') {
+      // AlphaFlow não usa média RSI, mostra configurações específicas
+      const alphaFlowMsg = `🧠 ALPHAFLOW CONFIGURAÇÕES:
+   • Capital BRONZE: ${process.env.CAPITAL_PERCENTAGE_BRONZE || 50}%
+   • Capital SILVER: ${process.env.CAPITAL_PERCENTAGE_SILVER || 75}%
+   • Capital GOLD: ${process.env.CAPITAL_PERCENTAGE_GOLD || 100}%
+   • Ordem 1: ${process.env.ORDER_1_WEIGHT_PCT || 50}% | Ordem 2: ${process.env.ORDER_2_WEIGHT_PCT || 30}% | Ordem 3: ${process.env.ORDER_3_WEIGHT_PCT || 20}%`;
+      if (logger) {
+        logger.info(alphaFlowMsg);
+      } else {
+        console.log(alphaFlowMsg);
+      }
+    } else if (this.strategy.constructor.name !== 'ProMaxStrategy') {
+      // Outras estratégias mostram média RSI
       const rsiMsg = `📊 Média do RSI: ${media_rsi.toFixed(2)}`;
       if (logger) {
         logger.info(rsiMsg);
@@ -596,6 +627,7 @@ class Decision {
 
     const fee = Account.fee
 
+    console.log(`🔍 [DEBUG] Investment USD sendo usado: $${investmentUSD.toFixed(2)}`);
     const rows = await this.analyzeTrades(fee, dataset, investmentUSD, media_rsi, config, btcTrend)
 
     // Executa ordens em paralelo usando Promise.all
@@ -603,18 +635,47 @@ class Decision {
     
     // Prepara todas as ordens
     const orderPromises = rows.map(async (row, index) => {
-      try {
-        const marketInfo = Account.markets.find((el) => el.symbol === row.market);
+      try {        
+        // Determina o market baseado na estrutura do objeto
+        let marketSymbol;
+        if (row.orders && Array.isArray(row.orders) && row.orders.length > 0) {
+          // Alpha Flow Strategy: market está dentro de orders[0]
+          marketSymbol = row.orders[0].market;
+        } else {
+          // Estratégias tradicionais: market está no nível raiz
+          marketSymbol = row.market;
+        }
+        
+        const marketInfo = Account.markets.find((el) => el.symbol === marketSymbol);
 
         // Verifica se o market foi encontrado
         if (!marketInfo) {
-          console.error(`❌ [${config?.accountId || 'DEFAULT'}] Market não encontrado para ${row.market}. Markets disponíveis: ${Account.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`);
-          return { index, market: row.market, result: { error: `Market não encontrado para ${row.market}` } };
+          console.error(`❌ [${config?.accountId || 'DEFAULT'}] Market não encontrado para ${marketSymbol}. Markets disponíveis: ${Account.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`);
+          return { index, market: marketSymbol, result: { error: `Market não encontrado para ${marketSymbol}` } };
+        }
+
+        // Valida se os dados de decimal estão disponíveis (aceita 0 como valor válido)
+        if (marketInfo.decimal_quantity === undefined || marketInfo.decimal_quantity === null || 
+            marketInfo.decimal_price === undefined || marketInfo.decimal_price === null || 
+            marketInfo.stepSize_quantity === undefined || marketInfo.stepSize_quantity === null) {
+          console.error(`❌ [${config?.accountId || 'DEFAULT'}] Dados de decimal ausentes para ${marketSymbol}. Dados disponíveis:`, {
+            decimal_quantity: marketInfo.decimal_quantity,
+            decimal_price: marketInfo.decimal_price,
+            stepSize_quantity: marketInfo.stepSize_quantity
+          });
+          return { index, market: marketSymbol, result: { error: `Dados de decimal ausentes para ${marketSymbol}` } };
         }
 
         // Verifica se é uma estratégia Alpha Flow com múltiplas ordens
         if (row.orders && Array.isArray(row.orders) && row.orders.length > 0) {
-          console.log(`   🔄 ${row.market}: Processando ${row.orders.length} ordens escalonadas (${row.conviction})`);
+          console.log(`   🔄 ${marketSymbol}: Processando ${row.orders.length} ordens escalonadas (${row.conviction})`);
+          
+          // Verifica se já há muitas ordens abertas (limite de 5 por token)
+          const existingOrders = await OrderController.getRecentOpenOrders(marketSymbol);
+          if (existingOrders.length >= 5) {
+            console.log(`   ⚠️  ${marketSymbol}: Muitas ordens abertas (${existingOrders.length}), pulando...`);
+            return { index, market: marketSymbol, result: { error: `Muitas ordens abertas: ${existingOrders.length}` } };
+          }
           
           // Processa múltiplas ordens para Alpha Flow Strategy
           const orderResults = [];
@@ -623,8 +684,9 @@ class Decision {
             
             // Prepara dados da ordem
             const orderData = {
-              ...row,
-              volume: order.quantity * order.entryPrice,
+              market: marketSymbol, // Adiciona o market explicitamente
+              action: order.action, // Usa o action da ordem individual
+              quantity: order.quantity, // Quantidade diretamente da ordem
               entry: order.entryPrice,
               stop: order.stopLoss,
               target: order.takeProfit,
@@ -632,37 +694,67 @@ class Decision {
               decimal_price: marketInfo.decimal_price,
               stepSize_quantity: marketInfo.stepSize_quantity,
               orderNumber: order.orderNumber,
-              weight: order.weight
+              weight: order.weight,
+              // Mantém dados da estratégia para compatibilidade
+              conviction: row.conviction,
+              reason: row.reason,
+              signals: row.signals
             };
+
+
 
             // Verifica se já existe uma posição ativa para este mercado
             const positions = await Futures.getOpenPositions();
-            const existingPosition = positions.find(p => p.symbol === row.market && Math.abs(Number(p.netQuantity)) > 0);
+            const existingPosition = positions.find(p => p.symbol === marketSymbol && Math.abs(Number(p.netQuantity)) > 0);
             
             if (existingPosition) {
-              console.log(`   ⏸️ ${row.market} (Ordem ${order.orderNumber}): Posição ativa existe, pulando...`);
+              console.log(`   ⏸️ ${marketSymbol} (Ordem ${order.orderNumber}): Posição ativa existe, pulando...`);
               orderResults.push({ orderNumber: order.orderNumber, result: null });
               continue;
             }
 
             // Verifica se já existe uma ordem pendente
-            const orders = await OrderController.getRecentOpenOrders(row.market);
+            const orders = await OrderController.getRecentOpenOrders(marketSymbol);
 
+            // Calcula o valor da ordem para verificar se vale a pena criar
+            const orderValue = orderData.quantity * orderData.entry;
+            console.log(`   💰 [DEBUG] ${marketSymbol} (Ordem ${order.orderNumber}): Valor = $${orderValue.toFixed(2)}`);
+
+            // Verifica se o valor da ordem é muito pequeno
+            if (orderValue < 0.5) {
+              console.log(`   ⚠️  ${marketSymbol} (Ordem ${order.orderNumber}): Valor muito pequeno ($${orderValue.toFixed(2)}), pulando...`);
+              orderResults.push({ orderNumber: order.orderNumber, result: { error: `Valor muito pequeno: $${orderValue.toFixed(2)}` } });
+              continue;
+            }
+
+            // Cancela ordens antigas (mais de 5 minutos) antes de criar novas
             if (orders.length > 0) {
-              if (orders[0].minutes > 3) {
-                await Order.cancelOpenOrders(row.market);
-                const result = await OrderController.openOrder({ ...orderData, accountId: config?.accountId || 'DEFAULT' });
-                orderResults.push({ orderNumber: order.orderNumber, result });
-              } else {
-                orderResults.push({ orderNumber: order.orderNumber, result: null });
+              const oldestOrder = orders[0];
+              const orderAge = (Date.now() - new Date(oldestOrder.createdAt).getTime()) / (1000 * 60); // em minutos
+              
+              if (orderAge > 5) {
+                console.log(`   🗑️  ${marketSymbol}: Cancelando ordens antigas (${orderAge.toFixed(1)} min)`);
+                await Order.cancelOpenOrders(marketSymbol);
               }
+            }
+
+            // Verifica se já há muitas ordens abertas (limite de 3 por token)
+            const existingOrdersCount = orders.length;
+            if (existingOrdersCount >= 3) {
+              console.log(`   ⚠️  ${marketSymbol} (Ordem ${order.orderNumber}): Muitas ordens abertas (${existingOrdersCount}), pulando...`);
+              orderResults.push({ orderNumber: order.orderNumber, result: { error: `Muitas ordens abertas: ${existingOrdersCount}` } });
+              continue;
+            }
+
+            if (orders.length > 0 && orders[0].minutes <= 3) {
+              orderResults.push({ orderNumber: order.orderNumber, result: null });
             } else {
               const result = await OrderController.openOrder({ ...orderData, accountId: config?.accountId || 'DEFAULT' });
               orderResults.push({ orderNumber: order.orderNumber, result });
             }
           }
           
-          return { index, market: row.market, result: { orders: orderResults, conviction: row.conviction } };
+          return { index, market: marketSymbol, result: { orders: orderResults, conviction: row.conviction } };
         } else {
           // Processa ordem única (estratégias tradicionais)
           // Usa os dados fornecidos pela estratégia ou fallback para os padrões
@@ -673,39 +765,39 @@ class Decision {
 
           // Verifica se já existe uma posição ativa para este mercado
           const positions = await Futures.getOpenPositions();
-          const existingPosition = positions.find(p => p.symbol === row.market && Math.abs(Number(p.netQuantity)) > 0);
+          const existingPosition = positions.find(p => p.symbol === marketSymbol && Math.abs(Number(p.netQuantity)) > 0);
           
           if (existingPosition) {
             // Já existe posição ativa, não criar nova ordem
-            console.log(`   ⏸️ ${row.market}: Posição ativa existe (${existingPosition.netQuantity}), pulando...`);
-            return { index, market: row.market, result: null };
+            console.log(`   ⏸️ ${marketSymbol}: Posição ativa existe (${existingPosition.netQuantity}), pulando...`);
+            return { index, market: marketSymbol, result: null };
           }
 
           // Verifica se já existe uma ordem pendente
-          const orders = await OrderController.getRecentOpenOrders(row.market);
+          const orders = await OrderController.getRecentOpenOrders(marketSymbol);
 
           if (orders.length > 0) {
             if (orders[0].minutes > 3) {
-              await Order.cancelOpenOrders(row.market);
+              await Order.cancelOpenOrders(marketSymbol);
               const result = await OrderController.openOrder({ ...row, accountId: config?.accountId || 'DEFAULT' });
-              return { index, market: row.market, result };
+              return { index, market: marketSymbol, result };
             } else {
-              return { index, market: row.market, result: null };
+              return { index, market: marketSymbol, result: null };
             }
           } else {
             const result = await OrderController.openOrder({ ...row, accountId: config?.accountId || 'DEFAULT' });
-            return { index, market: row.market, result };
+            return { index, market: marketSymbol, result };
           }
         }
         
       } catch (error) {
-        const errorMsg = `❌ Erro ao executar ordem para ${row.market}: ${error.message}`;
+        const errorMsg = `❌ Erro ao executar ordem para ${marketSymbol}: ${error.message}`;
         if (logger) {
           logger.error(errorMsg);
         } else {
           console.error(errorMsg);
         }
-        return { index, market: row.market, result: { error: error.message } };
+        return { index, market: marketSymbol, result: { error: error.message } };
       }
     });
 

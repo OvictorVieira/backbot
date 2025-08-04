@@ -3,6 +3,15 @@ import { StrategyFactory } from './StrategyFactory.js';
 
 describe('AlphaFlowStrategy - Testes de Integração', () => {
   let strategy;
+  
+  // Mock do objeto market para os testes
+  const mockMarket = {
+    symbol: 'BTC_USDC_PERP',
+    decimal_quantity: 4,
+    decimal_price: 2,
+    stepSize_quantity: 0.0001,
+    min_quantity: 0.001
+  };
 
   beforeEach(() => {
     // Define variáveis de ambiente necessárias para os testes
@@ -30,7 +39,7 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
 
       // Dados de mercado que simulam indicadores bullish
       const marketData = {
-        market: 'BTC_USDC_PERP',
+        market: mockMarket,
         candles: candles,
         vwap: {
           vwap: 50800,
@@ -75,7 +84,7 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
       ];
 
       const marketData = {
-        market: 'BTC_USDC_PERP',
+        market: mockMarket,
         candles: candles,
         vwap: {
           vwap: 50800,
@@ -146,7 +155,7 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
       ];
 
       const marketData = {
-        market: 'BTC_USDC_PERP',
+        market: mockMarket,
         candles: candles,
         vwap: {
           vwap: 50800,
@@ -213,7 +222,7 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
       ];
 
       const marketData = {
-        market: 'BTC_USDC_PERP',
+        market: mockMarket,
         candles: candles,
         vwap: {
           vwap: 51800,
@@ -274,7 +283,7 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
       ];
 
       const marketData = {
-        market: 'BTC_USDC_PERP',
+        market: mockMarket,
         candles: candles,
         vwap: {
           vwap: 50800,
@@ -313,7 +322,7 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
       ];
 
       const marketData = {
-        market: 'BTC_USDC_PERP',
+        market: mockMarket,
         candles: candles,
         vwap: {
           vwap: 50800,
@@ -357,7 +366,7 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
       ];
 
       const marketData = {
-        market: 'BTC_USDC_PERP',
+        market: mockMarket,
         candles: candles,
         vwap: {
           vwap: 50800,
@@ -503,7 +512,7 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
   describe('Cenários Edge Cases', () => {
     test('deve lidar com dados incompletos', async () => {
       const incompleteData = {
-        market: 'BTC_USDC_PERP',
+        market: mockMarket,
         candles: [],
         vwap: null,
         momentum: null,
@@ -523,7 +532,7 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
       ];
 
       const marketData = {
-        market: 'BTC_USDC_PERP',
+        market: mockMarket,
         candles: candles,
         vwap: {
           vwap: 50800,
@@ -568,7 +577,7 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
       ];
 
       const marketData = {
-        market: 'BTC_USDC_PERP',
+        market: mockMarket,
         candles: candles,
         vwap: {
           vwap: 50800,
@@ -613,7 +622,7 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
       ];
 
       const marketData = {
-        market: 'BTC_USDC_PERP',
+        market: mockMarket,
         candles: candles,
         vwap: {
           vwap: 508000,
@@ -656,7 +665,7 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
   describe('Validação de Cálculos de Ordens', () => {
     test('deve calcular ordens LONG com spreads corretos', async () => {
       const marketData = {
-        market: 'BTC_USDC_PERP',
+        market: mockMarket,
         candles: [],
         vwap: { 
           vwap: 50000,
@@ -686,7 +695,7 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
 
     test('deve calcular ordens SHORT com spreads corretos', async () => {
       const marketData = {
-        market: 'BTC_USDC_PERP',
+        market: mockMarket,
         candles: [],
         vwap: { 
           vwap: 50000,
@@ -716,7 +725,7 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
 
     test('deve calcular stop loss e take profit corretamente', async () => {
       const marketData = {
-        market: 'BTC_USDC_PERP',
+        market: mockMarket,
         candles: [],
         vwap: { 
           vwap: 50000,
@@ -746,7 +755,7 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
 
     test('deve calcular pesos da pirâmide invertida corretamente', async () => {
       const marketData = {
-        market: 'BTC_USDC_PERP',
+        market: mockMarket,
         candles: [],
         vwap: { 
           vwap: 50000,
@@ -781,7 +790,7 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
       ];
 
       const marketData = {
-        market: 'BTC_USDC_PERP',
+        market: mockMarket,
         candles: candles,
         vwap: {
           vwap: 60000,
@@ -835,7 +844,7 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
       ];
 
       const marketData = {
-        market: 'BTC_USDC_PERP',
+        market: mockMarket,
         candles: candles,
         vwap: {
           vwap: 39000,
@@ -890,7 +899,7 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
       ];
 
       const marketData = {
-        market: 'BTC_USDC_PERP',
+        market: mockMarket,
         candles: candles,
         vwap: {
           vwap: 50000,

@@ -15,7 +15,11 @@ export class StopLossFactory {
         const { ProMaxStopLoss } = await import('./ProMaxStopLoss.js');
         return new ProMaxStopLoss();
       default:
-        console.log(`⚠️ Stop loss para estratégia "${strategy}" não encontrado, usando DEFAULT`);
+        if (strategy === 'ALPHA_FLOW') {
+          console.log(`🧠 ALPHAFLOW: Stop loss calculado internamente (-10% do preço de entrada)`);
+        } else {
+          console.log(`⚠️ Stop loss para estratégia "${strategy}" não encontrado, usando DEFAULT`);
+        }
         const { DefaultStopLoss: DefaultStopLossDefault } = await import('./DefaultStopLoss.js');
         return new DefaultStopLossDefault();
     }
