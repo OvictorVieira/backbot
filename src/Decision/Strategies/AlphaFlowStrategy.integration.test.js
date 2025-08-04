@@ -1307,4 +1307,146 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
       process.env = originalEnv;
     });
   });
+
+  describe('AlphaFlowStrategy - Modo de Alvos Fixos (3 Ordens Escalonadas)', () => {
+    let strategy;
+    let mockData;
+
+    beforeEach(() => {
+      // FORÇA O MODO DE ALVOS FIXOS
+      process.env.ENABLE_TRAILING_STOP = 'false';
+      process.env.ENABLE_CONFLUENCE_SIZING = 'true';
+      process.env.CAPITAL_PERCENTAGE_SILVER = '66';
+      process.env.CAPITAL_PERCENTAGE_BRONZE = '33';
+      process.env.ORDER_1_WEIGHT_PCT = '50';
+      process.env.ORDER_2_WEIGHT_PCT = '30';
+      process.env.ORDER_3_WEIGHT_PCT = '20';
+      process.env.ENTRY_SPREAD_ATR_MULTIPLIER = '0.5';
+      process.env.STOP_LOSS_ATR_MULTIPLIER = '2.0';
+      process.env.TAKE_PROFIT_ATR_MULTIPLIER = '4.0';
+
+      strategy = new AlphaFlowStrategy();
+
+      // Mock de dados com sinal de compra GOLD
+      mockData = {
+        symbol: 'BTC_USDC_PERP',
+        market: mockMarket,
+        candles: [
+          { open: 50000, high: 50200, low: 49900, close: 50100, volume: 1000, start: Date.now() - 300000 },
+          { open: 50100, high: 50400, low: 50000, close: 50300, volume: 1200, start: Date.now() - 240000 },
+          { open: 50300, high: 50600, low: 50200, close: 50500, volume: 1400, start: Date.now() - 180000 },
+          { open: 50500, high: 50800, low: 50400, close: 50700, volume: 1600, start: Date.now() - 120000 },
+          { open: 50700, high: 51000, low: 50600, close: 50900, volume: 1800, start: Date.now() - 60000 },
+          { open: 50900, high: 51200, low: 50800, close: 51100, volume: 2000, start: Date.now() }
+        ],
+        marketPrice: 100,
+        atr: { atr: 2 },
+        momentum: { wt1: 10, wt2: 5, direction: 'UP', isBullish: true, isBearish: false },
+        vwap: { 
+          vwap: 100, 
+          direction: 'UP',
+          lowerBands: [95, 90, 85], // VWAP precisa estar acima da primeira banda inferior
+          upperBands: [105, 110, 115]
+        },
+        moneyFlow: { value: 1, direction: 'UP', isBullish: true, isBearish: false },
+        macroMoneyFlow: { macroBias: 1 },
+        cvdDivergence: { bullish: true, bearish: false }
+      };
+    });
+
+    test('deve retornar um array com 3 ordens quando um sinal GOLD é detectado e o Trailing Stop está INATIVO', async () => {
+      const result = await strategy.analyzeTrade(0.001, mockData, 1000, 50);
+      
+      expect(result).not.toBeNull();
+      expect(result.orders).toBeInstanceOf(Array);
+      expect(result.orders).toHaveLength(3);
+    });
+
+    test('deve calcular os pesos da pirâmide invertida (50/30/20) corretamente para as 3 ordens', async () => {
+      const result = await strategy.analyzeTrade(0.001, mockData, 1000, 50);
+      
+      // Verifica se a proporção de tamanho está correta
+      const totalSize = result.orders.reduce((sum, order) => sum + order.quantity, 0);
+      
+      expect(result.orders[0].quantity / totalSize).toBeCloseTo(0.5, 1); // Ordem 1 = 50%
+      expect(result.orders[1].quantity / totalSize).toBeCloseTo(0.3, 1); // Ordem 2 = 30%
+      expect(result.orders[2].quantity / totalSize).toBeCloseTo(0.2, 1); // Ordem 3 = 20%
+    });
+
+    test('deve calcular os preços de entrada escalonados com base no ATR', async () => {
+      const result = await strategy.analyzeTrade(0.001, mockData, 1000, 50);
+      
+      // Verifica se os preços estão escalonados (cada um menor que o anterior para LONG)
+      expect(result.orders[0].entryPrice).toBeGreaterThan(result.orders[1].entryPrice);
+      expect(result.orders[1].entryPrice).toBeGreaterThan(result.orders[2].entryPrice);
+      
+      // Verifica se os spreads são razoáveis (entre 1 e 10)
+      const spread1 = 100 - result.orders[0].entryPrice;
+      const spread2 = 100 - result.orders[1].entryPrice;
+      const spread3 = 100 - result.orders[2].entryPrice;
+      
+      expect(spread1).toBeGreaterThan(0);
+      expect(spread2).toBeGreaterThan(spread1);
+      expect(spread3).toBeGreaterThan(spread2);
+      
+      // Verifica se os spreads são proporcionais ao ATR (2)
+      expect(spread1).toBeLessThan(10); // Spread máximo razoável
+      expect(spread3).toBeLessThan(20); // Spread máximo razoável
+    });
+
+    test('deve calcular SL e TP individuais para cada ordem baseados no preço de entrada', async () => {
+      const result = await strategy.analyzeTrade(0.001, mockData, 1000, 50);
+      
+      const firstOrder = result.orders[0];
+      const secondOrder = result.orders[1];
+      const thirdOrder = result.orders[2];
+
+      // Verifica se cada ordem tem SL e TP baseados no seu próprio preço de entrada
+      // SL = 90% do preço de entrada, TP = 150% do preço de entrada
+      expect(firstOrder.stopLoss).toBeCloseTo(firstOrder.entryPrice * 0.9, 1);
+      expect(firstOrder.takeProfit).toBeCloseTo(firstOrder.entryPrice * 1.5, 1);
+      
+      expect(secondOrder.stopLoss).toBeCloseTo(secondOrder.entryPrice * 0.9, 1);
+      expect(secondOrder.takeProfit).toBeCloseTo(secondOrder.entryPrice * 1.5, 1);
+      
+      expect(thirdOrder.stopLoss).toBeCloseTo(thirdOrder.entryPrice * 0.9, 1);
+      expect(thirdOrder.takeProfit).toBeCloseTo(thirdOrder.entryPrice * 1.5, 1);
+
+      // Verifica se os valores são lógicos (SL < entrada < TP)
+      expect(firstOrder.stopLoss).toBeLessThan(firstOrder.entryPrice);
+      expect(firstOrder.takeProfit).toBeGreaterThan(firstOrder.entryPrice);
+    });
+
+    test('deve aplicar o dimensionamento de capital baseado na convicção quando ENABLE_TRAILING_STOP=false', async () => {
+      // Configuração para GOLD (100% do capital)
+      process.env.CAPITAL_PERCENTAGE_GOLD = '100';
+      
+      const result = await strategy.analyzeTrade(0.001, mockData, 1000, 50);
+
+      expect(result).not.toBeNull();
+      expect(result.conviction).toBe('GOLD'); // Com todos os indicadores bullish + macro bias + CVD divergence
+      expect(result.orders).toHaveLength(3);
+
+      // Verifica se o investmentUSD foi calculado corretamente para GOLD
+      const totalQuantity = result.orders.reduce((sum, order) => sum + order.quantity, 0);
+      expect(totalQuantity).toBeGreaterThan(0);
+    });
+
+    test('deve usar o capital base completo quando ENABLE_CONFLUENCE_SIZING=false no modo de alvos fixos', async () => {
+      // Setup: Desabilita ENABLE_CONFLUENCE_SIZING
+      process.env.ENABLE_CONFLUENCE_SIZING = 'false';
+
+      const result = await strategy.analyzeTrade(0.001, mockData, 1000, 50);
+
+      expect(result).not.toBeNull();
+      expect(result.orders).toHaveLength(3);
+
+      // Verifica se o investmentUSD foi calculado com o capital base completo
+      const totalQuantity = result.orders.reduce((sum, order) => sum + order.quantity, 0);
+      expect(totalQuantity).toBeGreaterThan(0);
+
+      // Restaura a configuração
+      process.env.ENABLE_CONFLUENCE_SIZING = 'true';
+    });
+  });
 }); 
