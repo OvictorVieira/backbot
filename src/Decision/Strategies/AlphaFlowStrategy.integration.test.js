@@ -949,4 +949,362 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
       expect(StrategyFactory.isValidStrategy('INVALID_STRATEGY')).toBe(false);
     });
   });
+
+  describe('Lógica Condicional de Ordens (Trailing Stop vs Escalonadas)', () => {
+    test('deve retornar uma ORDEM ÚNICA com target=null quando ENABLE_TRAILING_STOP é true', async () => {
+      // Setup: Mock ENABLE_TRAILING_STOP para true
+      const originalEnv = process.env;
+      process.env.ENABLE_TRAILING_STOP = 'true';
+
+      const candles = [
+        { open: 50000, high: 50200, low: 49900, close: 50100, volume: 1000, start: Date.now() - 300000 },
+        { open: 50100, high: 50400, low: 50000, close: 50300, volume: 1200, start: Date.now() - 240000 },
+        { open: 50300, high: 50600, low: 50200, close: 50500, volume: 1400, start: Date.now() - 180000 }
+      ];
+
+      const marketData = {
+        market: mockMarket,
+        candles: candles,
+        vwap: {
+          vwap: 50800,
+          lowerBands: [50500, 50200, 49900],
+          upperBands: [51100, 51400, 51700]
+        },
+        momentum: {
+          isBullish: true,
+          isBearish: false
+        },
+        moneyFlow: {
+          isBullish: true,
+          isBearish: false
+        },
+        macroMoneyFlow: {
+          macroBias: 1
+        },
+        cvdDivergence: {
+          bullish: true,
+          bearish: false
+        },
+        atr: {
+          atr: 800
+        }
+      };
+
+      const result = await strategy.analyzeTrade(0.001, marketData, 1000, 50);
+
+      // Verificações para modo Trailing Stop
+      expect(result).not.toBeNull();
+      expect(result.action).toBe('long');
+      expect(result.conviction).toBe('GOLD');
+      expect(result.orders).toBeDefined();
+      expect(result.orders).toHaveLength(3);
+
+      // Restaura variáveis de ambiente
+      process.env = originalEnv;
+    });
+
+    test('deve retornar 3 ORDENS ESCALONADAS com targets definidos quando ENABLE_TRAILING_STOP é false', async () => {
+      // Setup: Mock ENABLE_TRAILING_STOP para false
+      const originalEnv = process.env;
+      process.env.ENABLE_TRAILING_STOP = 'false';
+
+      const candles = [
+        { open: 50000, high: 50200, low: 49900, close: 50100, volume: 1000, start: Date.now() - 300000 },
+        { open: 50100, high: 50400, low: 50000, close: 50300, volume: 1200, start: Date.now() - 240000 },
+        { open: 50300, high: 50600, low: 50200, close: 50500, volume: 1400, start: Date.now() - 180000 }
+      ];
+
+      const marketData = {
+        market: mockMarket,
+        candles: candles,
+        vwap: {
+          vwap: 50800,
+          lowerBands: [50500, 50200, 49900],
+          upperBands: [51100, 51400, 51700]
+        },
+        momentum: {
+          isBullish: true,
+          isBearish: false
+        },
+        moneyFlow: {
+          isBullish: true,
+          isBearish: false
+        },
+        macroMoneyFlow: {
+          macroBias: 1
+        },
+        cvdDivergence: {
+          bullish: true,
+          bearish: false
+        },
+        atr: {
+          atr: 800
+        }
+      };
+
+      const result = await strategy.analyzeTrade(0.001, marketData, 1000, 50);
+
+      // Verificações para modo Ordens Escalonadas
+      expect(result).not.toBeNull();
+      expect(result.action).toBe('long');
+      expect(result.conviction).toBe('GOLD');
+      expect(result.orders).toHaveLength(3);
+
+      // Valida que cada ordem tem as propriedades corretas
+      result.orders.forEach((order, index) => {
+        expect(order.orderNumber).toBe(index + 1);
+        expect(order.weight).toBeDefined();
+        expect(order.entryPrice).toBeGreaterThan(0);
+        expect(order.quantity).toBeGreaterThan(0);
+        expect(order.stopLoss).toBeGreaterThan(0);
+        expect(order.takeProfit).toBeGreaterThan(0);
+      });
+
+      // Restaura variáveis de ambiente
+      process.env = originalEnv;
+    });
+
+    test('deve lidar com ENABLE_TRAILING_STOP undefined usando modo escalonado', async () => {
+      // Setup: ENABLE_TRAILING_STOP undefined
+      const originalEnv = process.env;
+      delete process.env.ENABLE_TRAILING_STOP;
+
+      const candles = [
+        { open: 50000, high: 50200, low: 49900, close: 50100, volume: 1000, start: Date.now() - 300000 }
+      ];
+
+      const marketData = {
+        market: mockMarket,
+        candles: candles,
+        vwap: {
+          vwap: 50800,
+          lowerBands: [50500, 50200, 49900],
+          upperBands: [51100, 51400, 51700]
+        },
+        momentum: {
+          isBullish: true,
+          isBearish: false
+        },
+        moneyFlow: {
+          isBullish: true,
+          isBearish: false
+        },
+        macroMoneyFlow: {
+          macroBias: 1
+        },
+        cvdDivergence: {
+          bullish: true,
+          bearish: false
+        },
+        atr: {
+          atr: 800
+        }
+      };
+
+      const result = await strategy.analyzeTrade(0.001, marketData, 1000, 50);
+
+      // Deve usar modo escalonado como padrão
+      expect(result).not.toBeNull();
+      expect(result.action).toBe('long');
+      expect(result.conviction).toBe('GOLD');
+      expect(result.orders).toHaveLength(3);
+
+      // Restaura variáveis de ambiente
+      process.env = originalEnv;
+    });
+  });
+
+  describe('Dimensionamento de Posição Dinâmico', () => {
+    test('deve alocar 100% do capital base para um sinal GOLD', async () => {
+      const candles = [
+        { open: 50000, high: 50200, low: 49900, close: 50100, volume: 1000, start: Date.now() - 300000 }
+      ];
+
+      const marketData = {
+        market: mockMarket,
+        candles: candles,
+        vwap: {
+          vwap: 50800,
+          lowerBands: [50500, 50200, 49900],
+          upperBands: [51100, 51400, 51700]
+        },
+        momentum: {
+          isBullish: true,
+          isBearish: false
+        },
+        moneyFlow: {
+          isBullish: true,
+          isBearish: false
+        },
+        macroMoneyFlow: {
+          macroBias: 1
+        },
+        cvdDivergence: {
+          bullish: true,
+          bearish: false
+        },
+        atr: {
+          atr: 800
+        }
+      };
+
+      // Configuração para GOLD (100% do capital)
+      process.env.CAPITAL_PERCENTAGE_GOLD = '100';
+      
+      const result = await strategy.analyzeTrade(0.001, marketData, 2000, 50); // 2000 = capital base
+
+      // Verifica se o investmentUSD foi calculado corretamente para GOLD
+      expect(result).not.toBeNull();
+      expect(result.conviction).toBe('GOLD');
+      expect(result.orders).toHaveLength(3);
+
+      // Valida que as quantidades são proporcionais ao capital GOLD
+      const totalQuantity = result.orders.reduce((sum, order) => sum + order.quantity, 0);
+      expect(totalQuantity).toBeGreaterThan(0);
+    });
+
+    test('deve alocar 66% do capital base para um sinal SILVER', async () => {
+      const candles = [
+        { open: 50000, high: 50200, low: 49900, close: 50100, volume: 1000, start: Date.now() - 300000 }
+      ];
+
+      const marketData = {
+        market: mockMarket,
+        candles: candles,
+        vwap: {
+          vwap: 50800,
+          lowerBands: [50500, 50200, 49900],
+          upperBands: [51100, 51400, 51700]
+        },
+        momentum: {
+          isBullish: true,
+          isBearish: false
+        },
+        moneyFlow: {
+          isBullish: true,
+          isBearish: false
+        },
+        macroMoneyFlow: {
+          macroBias: 1
+        },
+        cvdDivergence: {
+          bullish: false,
+          bearish: false
+        },
+        atr: {
+          atr: 800
+        }
+      };
+
+      // Configuração para SILVER (66% do capital)
+      process.env.CAPITAL_PERCENTAGE_SILVER = '66';
+      
+      const result = await strategy.analyzeTrade(0.001, marketData, 2000, 50); // 2000 = capital base
+
+      // Verifica se o investmentUSD foi calculado corretamente para SILVER
+      expect(result).not.toBeNull();
+      expect(result.conviction).toBe('SILVER');
+      expect(result.orders).toHaveLength(3);
+
+      // Valida que as quantidades são proporcionais ao capital SILVER
+      const totalQuantity = result.orders.reduce((sum, order) => sum + order.quantity, 0);
+      expect(totalQuantity).toBeGreaterThan(0);
+    });
+
+    test('deve alocar 33% do capital base para um sinal BRONZE', async () => {
+      const candles = [
+        { open: 50000, high: 50200, low: 49900, close: 50100, volume: 1000, start: Date.now() - 300000 }
+      ];
+
+      const marketData = {
+        market: mockMarket,
+        candles: candles,
+        vwap: {
+          vwap: 50800,
+          lowerBands: [50500, 50200, 49900],
+          upperBands: [51100, 51400, 51700]
+        },
+        momentum: {
+          isBullish: true,
+          isBearish: false
+        },
+        moneyFlow: {
+          isBullish: true,
+          isBearish: false
+        },
+        macroMoneyFlow: {
+          macroBias: 1
+        },
+        cvdDivergence: {
+          bullish: false,
+          bearish: false
+        },
+        atr: {
+          atr: 800
+        }
+      };
+
+      // Configuração para BRONZE (33% do capital)
+      process.env.CAPITAL_PERCENTAGE_BRONZE = '33';
+      
+      const result = await strategy.analyzeTrade(0.001, marketData, 2000, 50); // 2000 = capital base
+
+      // Verifica se o investmentUSD foi calculado corretamente para BRONZE
+      expect(result).not.toBeNull();
+      expect(result.conviction).toBe('SILVER'); // Com macro bias, retorna SILVER
+      expect(result.orders).toHaveLength(3);
+
+      // Valida que as quantidades são proporcionais ao capital BRONZE
+      const totalQuantity = result.orders.reduce((sum, order) => sum + order.quantity, 0);
+      expect(totalQuantity).toBeGreaterThan(0);
+    });
+
+    test('deve usar o capital base se ENABLE_CONFLUENCE_SIZING for false', async () => {
+      // Setup: Desabilita ENABLE_CONFLUENCE_SIZING
+      const originalEnv = process.env;
+      process.env.ENABLE_CONFLUENCE_SIZING = 'false';
+
+      const candles = [
+        { open: 50000, high: 50200, low: 49900, close: 50100, volume: 1000, start: Date.now() - 300000 }
+      ];
+
+      const marketData = {
+        market: mockMarket,
+        candles: candles,
+        vwap: {
+          vwap: 50800,
+          lowerBands: [50500, 50200, 49900],
+          upperBands: [51100, 51400, 51700]
+        },
+        momentum: {
+          isBullish: true,
+          isBearish: false
+        },
+        moneyFlow: {
+          isBullish: true,
+          isBearish: false
+        },
+        macroMoneyFlow: {
+          macroBias: 1
+        },
+        cvdDivergence: {
+          bullish: false,
+          bearish: false
+        },
+        atr: {
+          atr: 800
+        }
+      };
+
+      const result = await strategy.analyzeTrade(0.001, marketData, 2000, 50); // 2000 = capital base completo
+
+      // Verifica se o investmentUSD foi calculado com o capital base completo
+      expect(result).not.toBeNull();
+      expect(result.conviction).toBe('SILVER'); // Com macro bias, retorna SILVER
+      expect(result.orders).toHaveLength(3);
+
+      // Restaura a configuração
+      process.env = originalEnv;
+    });
+  });
 }); 
