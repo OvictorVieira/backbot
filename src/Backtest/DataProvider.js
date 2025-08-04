@@ -594,7 +594,8 @@ export class DataProvider {
       this.logger.info(`🔍 ${symbol}: Período solicitado: ${(requestedDuration / (24 * 60 * 60 * 1000)).toFixed(1)} dias, candles necessários: ${requiredCandles}, limit usado: ${actualLimit}`);
       
       // Chama a API com o limit calculado (a API sempre retorna candles até o momento atual)
-      const candles = await Markets.getKLines(backpackSymbol, interval, actualLimit);
+              const markets = new Markets();
+        const candles = await markets.getKLines(backpackSymbol, interval, actualLimit);
       
       if (!candles || !Array.isArray(candles)) {
         this.logger.warn(`⚠️ ${symbol}: API Backpack retornou dados inválidos`);

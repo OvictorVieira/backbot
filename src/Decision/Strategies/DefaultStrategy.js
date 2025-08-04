@@ -783,7 +783,8 @@ export class DefaultStrategy extends BaseStrategy {
       }
 
       // Obtém dados do BTC
-      const btcCandles = await Markets.getKLines('BTC_USDC_PERP', process.env.TIME || '5m', 30);
+      const markets = new Markets();
+      const btcCandles = await markets.getKLines('BTC_USDC_PERP', process.env.TIME || '5m', 30);
       if (!btcCandles || btcCandles.length === 0) {
         return { isValid: true, btcTrend: 'NO_DATA', reason: 'Dados do BTC não disponíveis' };
       }

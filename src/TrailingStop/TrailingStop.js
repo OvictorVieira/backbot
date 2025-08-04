@@ -564,7 +564,8 @@ class TrailingStop {
   static async getAtrValue(symbol) {
     try {
       const timeframe = process.env.ACCOUNT1_TIME || '30m';
-      const candles = await Markets.getKLines(symbol, timeframe, 30);
+      const markets = new Markets();
+      const candles = await markets.getKLines(symbol, timeframe, 30);
       
       if (!candles || candles.length < 14) {
         return null;
@@ -1505,7 +1506,8 @@ class TrailingStop {
       }
 
       const timeframe = process.env.TIME || '5m';
-      const candles = await Markets.getKLines(position.symbol, timeframe, 30);
+      const markets = new Markets();
+      const candles = await markets.getKLines(position.symbol, timeframe, 30);
       
       if (!candles || candles.length < 20) {
         return null;

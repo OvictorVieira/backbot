@@ -235,7 +235,8 @@ class OrderController {
       // Para o cálculo, precisamos de dados de mercado (ATR, etc). Usamos o último candle disponível.
       // Usa o timeframe da ordem ou fallback para variável de ambiente
       const timeframe = orderData?.time || process.env.TIME || '5m';
-      const candles = await Markets.getKLines(market, timeframe, 30);
+      const markets = new Markets();
+      const candles = await markets.getKLines(market, timeframe, 30);
       const { calculateIndicators } = await import('../Decision/Indicators.js');
       const indicators = calculateIndicators(candles);
       const data = { ...indicators, market: marketInfo, marketPrice: entryPrice };
@@ -411,7 +412,8 @@ class OrderController {
       
       // Usa timeframe padrão
       const timeframe = process.env.TIME || '5m';
-      const candles = await Markets.getKLines(position.symbol, timeframe, 30);
+      const markets = new Markets();
+      const candles = await markets.getKLines(position.symbol, timeframe, 30);
       const { calculateIndicators } = await import('../Decision/Indicators.js');
       const indicators = calculateIndicators(candles);
       const data = { ...indicators, market: marketInfo, marketPrice: entryPrice };
@@ -1043,7 +1045,8 @@ class OrderController {
 
       // Obtém dados de mercado atualizados
       const timeframe = process.env.TIME || '5m';
-      const candles = await Markets.getKLines(market, timeframe, 30);
+      const markets = new Markets();
+      const candles = await markets.getKLines(market, timeframe, 30);
       
       if (!candles || candles.length < 20) {
         console.warn(`⚠️ [${accountId}] ${market}: Dados insuficientes para revalidação. Assumindo sinal válido.`);
@@ -1261,7 +1264,8 @@ class OrderController {
       console.log(`🔍 [${accountId}] ${market}: Revalidando sinal e verificando slippage...`);
       
       const signalValid = await OrderController.revalidateSignal({ market, accountId, originalSignalData });
-      const markPrices2 = await Markets.getAllMarkPrices(market);
+              const markets = new Markets();
+        const markPrices2 = await markets.getAllMarkPrices(market);
       const priceCurrent = parseFloat(markPrices2[0]?.markPrice || entryPrice);
       const slippage = OrderController.calcSlippagePct(entryPrice, priceCurrent);
       
@@ -1644,7 +1648,8 @@ class OrderController {
       
       if (enableHybridStrategy) {
         // Usa ATR para calcular o stop loss tático (mais apertado)
-        const atrValue = await OrderController.calculateATR(await Markets.getKLines(position.symbol, process.env.ACCOUNT1_TIME || '30m', 30), 14);
+        const markets = new Markets();
+      const atrValue = await OrderController.calculateATR(await markets.getKLines(position.symbol, process.env.ACCOUNT1_TIME || '30m', 30), 14);
         
         if (atrValue && atrValue > 0) {
           const atrMultiplier = Number(process.env.INITIAL_STOP_ATR_MULTIPLIER || 2.0);
@@ -2747,7 +2752,7 @@ class OrderController {
       });
 
       try {
-        const response = await Order.createOrder(orderBody);
+        const response = await Order.executeOrder(orderBody);
         
         if (response && response.orderId) {
           console.log(`✅ [${accountId}] Ordem criada com sucesso: ${market} (ID: ${response.orderId})`);
@@ -2817,8 +2822,9 @@ class OrderController {
    */
   static async getCurrentPrice(market) {
     try {
-      const { Markets } = await import('../Backpack/Public/Markets.js');
-      const ticker = await Markets.getTicker(market);
+      const { default: Markets } = await import('../Backpack/Public/Markets.js');
+      const markets = new Markets();
+      const ticker = await markets.getTicker(market);
       
       if (ticker && ticker.last) {
         return parseFloat(ticker.last);

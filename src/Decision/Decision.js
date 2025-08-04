@@ -203,9 +203,10 @@ class Decision {
             }
           } else {
             // Busca dados novos
+            const markets = new Markets();
             [getAllMarkPrices, candles] = await Promise.all([
-              Markets.getAllMarkPrices(market.symbol),
-              Markets.getKLines(market.symbol, currentTimeframe, candleCount)
+              markets.getAllMarkPrices(market.symbol),
+              markets.getKLines(market.symbol, currentTimeframe, candleCount)
             ]);
             
             // Salva no cache
@@ -527,7 +528,8 @@ class Decision {
       console.log(`\n📊 ANÁLISE DO BTC (${currentTimeframe}):`);
       try {
         // Usa 100 candles para garantir que todos os indicadores tenham dados suficientes
-        const btcCandles = await Markets.getKLines('BTC_USDC_PERP', currentTimeframe, 100);
+        const markets = new Markets();
+      const btcCandles = await markets.getKLines('BTC_USDC_PERP', currentTimeframe, 100);
         if (btcCandles && btcCandles.length > 0) {
           const btcIndicators = calculateIndicators(btcCandles);
           
