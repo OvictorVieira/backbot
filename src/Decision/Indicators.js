@@ -269,10 +269,10 @@ function calculateMoneyFlow(candles, mfiPeriod = 14, signalPeriod = 9) {
     value: mfiValue,
     mfi: currentMfi,
     mfiAvg: currentMfiAvg,
-    isBullish: mfiValue > 20,        // ✅ CORRIGIDO: Validação rigorosa para LONG
-    isBearish: mfiValue < -20,       // ✅ CORRIGIDO: Validação rigorosa para SHORT
+    isBullish: mfiValue > 0,
+    isBearish: mfiValue < 0,
     isStrong: Math.abs(mfiValue) > 10,
-    direction: mfiValue > 20 ? 'UP' : (mfiValue < -20 ? 'DOWN' : 'NEUTRAL'),
+    direction: mfiValue > 0 ? 'UP' : (mfiValue < 0 ? 'DOWN' : 'NEUTRAL'),
     history: mfiHistory
   };
 }
