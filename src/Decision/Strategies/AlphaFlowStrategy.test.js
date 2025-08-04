@@ -34,7 +34,15 @@ describe('AlphaFlowStrategy', () => {
 
       const result = strategy.analyzeTrade(0.001, mockData, 1000, 50);
       
-      expect(result).toBeNull(); // Não deve retornar sinal pois precisa do macro bias
+      expect(result).not.toBeNull();
+      expect(result.action).toBe('long');
+      expect(result.conviction).toBe('BRONZE');
+      expect(result.reason).toContain('Sinal de Entrada');
+      expect(result.signals.momentum).toBe(true);
+      expect(result.signals.vwap).toBe(true);
+      expect(result.signals.moneyFlow).toBe(true);
+      expect(result.signals.macroBias).toBe(false); // BRONZE não requer macro bias
+      expect(result.signals.cvdDivergence).toBe(false);
     });
 
     test('deve retornar um sinal SILVER quando os 3 indicadores + o Macro se alinham', () => {

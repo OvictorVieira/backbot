@@ -125,21 +125,16 @@ export class AlphaFlowStrategy extends BaseStrategy {
       };
     }
 
-    // BRONZE requer macro bias - se não há macro bias, não retorna sinal
-    if (data.macroMoneyFlow?.macroBias !== 1) {
-      return null;
-    }
-
-    // BRONZE é o sinal de entrada - retorna imediatamente
+    // BRONZE é o sinal de entrada - retorna imediatamente (não requer macro bias)
     return {
       action: 'long',
       conviction: 'BRONZE',
-      reason: 'Sinal de Entrada: VWAP + Momentum + Money Flow + Macro Bias (CypherPunk 1-2-3)',
+      reason: 'Sinal de Entrada: VWAP + Momentum + Money Flow (CypherPunk 1-2-3)',
       signals: {
         momentum: data.momentum?.isBullish,
         vwap: data.vwap?.vwap > data.vwap?.lowerBands[0],
         moneyFlow: data.moneyFlow?.isBullish,
-        macroBias: true,
+        macroBias: false,
         cvdDivergence: false
       }
     };
@@ -189,21 +184,16 @@ export class AlphaFlowStrategy extends BaseStrategy {
       };
     }
 
-    // BRONZE requer macro bias - se não há macro bias, não retorna sinal
-    if (data.macroMoneyFlow?.macroBias !== -1) {
-      return null;
-    }
-
-    // BRONZE é o sinal de entrada - retorna imediatamente
+    // BRONZE é o sinal de entrada - retorna imediatamente (não requer macro bias)
     return {
       action: 'short',
       conviction: 'BRONZE',
-      reason: 'Sinal de Entrada: VWAP + Momentum + Money Flow + Macro Bias (CypherPunk 1-2-3)',
+      reason: 'Sinal de Entrada: VWAP + Momentum + Money Flow (CypherPunk 1-2-3)',
       signals: {
         momentum: data.momentum?.isBearish,
         vwap: data.vwap?.vwap < data.vwap?.upperBands[0],
         moneyFlow: data.moneyFlow?.isBearish,
-        macroBias: true,
+        macroBias: false,
         cvdDivergence: false
       }
     };
