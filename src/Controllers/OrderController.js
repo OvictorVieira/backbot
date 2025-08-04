@@ -2045,7 +2045,7 @@ class OrderController {
   }
 
   /**
-   * Detecta quando uma posição foi aberta e cria ordens de segurança
+   * Detecta quando uma posição é aberta e cria ordens de segurança (failsafe)
    * @param {string} market - Símbolo do mercado
    * @param {string} accountId - ID da conta
    * @param {object} orderResult - Resultado da ordem de entrada
@@ -2066,6 +2066,27 @@ class OrderController {
       }
 
       console.log(`🎯 [FAILSAFE] ${market}: Posição detectada, criando ordens de segurança...`);
+      
+      // Salva o nome da estratégia no estado da posição se disponível
+      if (orderResult && orderResult.strategyName) {
+        const TrailingStop = await import('../TrailingStop/TrailingStop.js');
+        const trailingState = TrailingStop.default.trailingState.get(market);
+        
+        if (trailingState) {
+          trailingState.strategyName = orderResult.strategyName;
+          
+          // Para Alpha Flow Strategy, salva também o preço do alvo
+          if (orderResult.strategyName === 'AlphaFlowStrategy' && orderResult.target) {
+            trailingState.takeProfitPrice = orderResult.target;
+            console.log(`📋 [STRATEGY_TAG] ${market}: Estratégia marcada como "${orderResult.strategyName}" com alvo $${orderResult.target}`);
+          } else {
+            console.log(`📋 [STRATEGY_TAG] ${market}: Estratégia marcada como "${orderResult.strategyName}"`);
+          }
+          
+          // Salva o estado atualizado
+          await TrailingStop.default.saveStateToFile();
+        }
+      }
       
       // Cria ordens de segurança
       const failsafeResult = await OrderController.createFailsafeOrders(position, accountId);
@@ -2619,7 +2640,12 @@ class OrderController {
         process.env.API_SECRET = process.env.ACCOUNT1_API_SECRET;
       }
 
-
+      // Valida se os dados de decimal estão disponíveis
+      if (decimal_quantity === undefined || decimal_quantity === null || 
+          decimal_price === undefined || decimal_price === null || 
+          stepSize_quantity === undefined || stepSize_quantity === null) {
+        throw new Error(`Dados de decimal ausentes para ${market}. decimal_quantity: ${decimal_quantity}, decimal_price: ${decimal_price}, stepSize_quantity: ${stepSize_quantity}`);
+      }
 
       const formatPrice = (value) => parseFloat(value).toFixed(decimal_price).toString();
       const formatQuantity = (value) => {
@@ -2643,10 +2669,16 @@ class OrderController {
       console.log(`   • Quantity (formatted): ${formatQuantity(quantity)}`);
       console.log(`   • Entry (raw): ${entry}`);
       console.log(`   • Entry (formatted): ${formatPrice(entry)}`);
+      console.log(`   • Market decimals: quantity=${decimal_quantity}, price=${decimal_price}`);
 
       // Valida se a quantidade é positiva
       if (quantity <= 0) {
         throw new Error(`Quantidade inválida: ${quantity}. Quantity: ${orderData.quantity}, Entry: ${entry}`);
+      }
+      
+      // Valida se a quantidade é menor que o mínimo permitido
+      if (orderData.min_quantity && quantity < orderData.min_quantity) {
+        throw new Error(`Quantidade abaixo do mínimo: ${quantity} < ${orderData.min_quantity}`);
       }
       
       // Calcula o valor da ordem para verificar margem
@@ -2703,63 +2735,71 @@ class OrderController {
         console.log(`🎯 Take Profit configurado: ${market} @ ${formatPrice(target)}`);
       }
 
-      console.log(`📝 Criando ordem LIMIT com triggers integrados: ${market} ${action.toUpperCase()} @ ${formatPrice(entry)}`);
+      console.log(`🚀 [${accountId}] Criando ordem LIMIT: ${market} ${action.toUpperCase()} @ $${formatPrice(entry)}`);
+      console.log(`   📋 Detalhes da ordem:`, {
+        symbol: market,
+        side: orderBody.side,
+        quantity: formatQuantity(quantity),
+        price: formatPrice(entry),
+        stopLoss: stop ? formatPrice(stop) : 'N/A',
+        takeProfit: target ? formatPrice(target) : 'N/A',
+        orderValue: (quantity * entry).toFixed(2)
+      });
 
-      // Primeira tentativa com postOnly
-      let limitOrder;
       try {
-        limitOrder = await Order.executeOrder(orderBody);
+        const response = await Order.createOrder(orderBody);
         
-        if (!limitOrder || !limitOrder.success) {
-          console.error(`❌ [DEBUG] Resposta da API:`, JSON.stringify(limitOrder, null, 2));
-          throw new Error(`Falha ao criar ordem LIMIT: ${limitOrder?.message || limitOrder?.error || 'Erro desconhecido'}`);
-        }
-        
-        console.log(`✅ Ordem LIMIT criada com sucesso: ${market} ${action.toUpperCase()} @ ${formatPrice(entry)}`);
-        
-      } catch (error) {
-        // Se o erro for "Order would immediately match and take", tenta sem postOnly
-        if (error.message && error.message.includes('Order would immediately match and take')) {
-          console.log(`🔄 [FALLBACK] Tentando sem postOnly para ${market}...`);
+        if (response && response.orderId) {
+          console.log(`✅ [${accountId}] Ordem criada com sucesso: ${market} (ID: ${response.orderId})`);
           
-          const fallbackOrderBody = {
-            ...orderBody,
-            postOnly: false // Remove postOnly para permitir execução imediata
-          };
-          
-          try {
-            limitOrder = await Order.executeOrder(fallbackOrderBody);
-            
-            if (!limitOrder || !limitOrder.success) {
-              console.error(`❌ [FALLBACK] Resposta da API:`, JSON.stringify(limitOrder, null, 2));
-              throw new Error(`Falha ao criar ordem LIMIT (fallback): ${limitOrder?.message || limitOrder?.error || 'Erro desconhecido'}`);
-            }
-            
-            console.log(`✅ [FALLBACK] Ordem executada imediatamente: ${market} ${action.toUpperCase()} @ ${formatPrice(entry)}`);
-            
-          } catch (fallbackError) {
-            console.error(`❌ [FALLBACK] Falha também sem postOnly: ${fallbackError.message}`);
-            throw fallbackError;
+          // Registra a ordem para monitoramento (apenas para estratégia PRO_MAX)
+          if (accountId === 'CONTA2') {
+            OrderController.addPendingEntryOrder(market, {
+              stop: stop,
+              isLong: action === 'long',
+              orderId: response.orderId
+            }, accountId);
           }
+          
+          return {
+            success: true,
+            orderId: response.orderId,
+            market: market,
+            action: action,
+            entry: entry,
+            quantity: quantity,
+            stop: stop,
+            target: target,
+            strategyName: orderData.strategyName // Adiciona o nome da estratégia
+          };
         } else {
-          // Se não for o erro específico, re-lança o erro original
-          throw error;
+          throw new Error(`Resposta inválida da API: ${JSON.stringify(response)}`);
         }
+      } catch (error) {
+        // Log detalhado do erro com todos os parâmetros
+        const errorDetails = {
+          market: market,
+          action: action,
+          entry: entry,
+          quantity: quantity,
+          stop: stop,
+          target: target,
+          decimal_quantity: decimal_quantity,
+          decimal_price: decimal_price,
+          stepSize_quantity: stepSize_quantity,
+          orderValue: (quantity * entry).toFixed(2),
+          formattedQuantity: formatQuantity(quantity),
+          formattedEntry: formatPrice(entry)
+        };
+        
+        console.error(`❌ [ORDER_FAIL] Falha ao criar ordem para ${market}. Detalhes: ${JSON.stringify(errorDetails)}. Erro: ${error.message}`);
+        
+        return {
+          success: false,
+          error: error.message,
+          details: errorDetails
+        };
       }
-
-      console.log(`✅ Ordem LIMIT criada com triggers: ${market} ${action.toUpperCase()} @ ${formatPrice(entry)}`);
-      
-      // Retorna sucesso com informações dos triggers
-      return {
-        success: true,
-        orderId: limitOrder.orderId,
-        market: market,
-        action: action,
-        entry: formatPrice(entry),
-        stop: stop ? formatPrice(stop) : null,
-        target: target ? formatPrice(target) : null,
-        message: `Ordem criada com sucesso - Stop: ${stop ? formatPrice(stop) : 'N/A'}, Target: ${target ? formatPrice(target) : 'N/A'}`
-      };
 
     } catch (error) {
       console.error(`❌ Erro ao criar ordem LIMIT com triggers: ${error.message}`);

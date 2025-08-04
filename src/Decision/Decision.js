@@ -271,14 +271,36 @@ class Decision {
     // Paraleliza a análise de todos os datasets
     const analysisPromises = datasets.map(async (data) => {
       try {
-        return await this.strategy.analyzeTrade(fee, data, investmentUSD, media_rsi, config, btcTrend);
-      } catch (error) {
-        const errorMsg = `❌ Erro na análise de ${data.market?.symbol}: ${error.message}`;
-        if (logger) {
-          logger.error(errorMsg);
-        } else {
-          console.error(errorMsg);
+        // Obtém os dados de mercado para o símbolo atual
+        const marketInfo = await this.getMarketInfo(data.symbol, config);
+        
+        if (!marketInfo) {
+          console.error(`❌ [${config?.accountId || 'DEFAULT'}] Market não encontrado para ${data.symbol}`);
+          return null;
         }
+
+        // Valida se os dados de decimal estão disponíveis
+        if (marketInfo.decimal_quantity === undefined || marketInfo.decimal_quantity === null || 
+            marketInfo.decimal_price === undefined || marketInfo.decimal_price === null || 
+            marketInfo.stepSize_quantity === undefined || marketInfo.stepSize_quantity === null) {
+          console.error(`❌ [${config?.accountId || 'DEFAULT'}] Dados de decimal ausentes para ${data.symbol}. Dados disponíveis:`, {
+            decimal_quantity: marketInfo.decimal_quantity,
+            decimal_price: marketInfo.decimal_price,
+            stepSize_quantity: marketInfo.stepSize_quantity
+          });
+          return null;
+        }
+
+        // Adiciona os dados de mercado ao objeto data
+        const dataWithMarket = {
+          ...data,
+          market: marketInfo
+        };
+
+        return await this.strategy.analyzeTrade(fee, dataWithMarket, investmentUSD, media_rsi, config, btcTrend);
+      } catch (error) {
+        const errorMsg = `❌ Erro na análise de ${data.symbol}: ${error.message}`;
+        console.error(errorMsg);
         return null;
       }
     });
@@ -290,6 +312,37 @@ class Decision {
     return analysisResults
       .filter(result => result !== null)
       .sort((a, b) => b.pnl - a.pnl);
+  }
+
+  /**
+   * Obtém informações de mercado para um símbolo específico
+   * @param {string} symbol - Símbolo do mercado
+   * @param {object} config - Configuração da conta
+   * @returns {object|null} - Dados de mercado ou null se não encontrado
+   */
+  async getMarketInfo(symbol, config = null) {
+    try {
+      // Obtém os dados da conta
+      const Account = await AccountController.get(config);
+      
+      if (!Account || !Account.markets) {
+        console.error(`❌ [${config?.accountId || 'DEFAULT'}] Dados da conta não disponíveis`);
+        return null;
+      }
+
+      // Encontra o market correspondente ao símbolo
+      const marketInfo = Account.markets.find((el) => el.symbol === symbol);
+      
+      if (!marketInfo) {
+        console.error(`❌ [${config?.accountId || 'DEFAULT'}] Market não encontrado para ${symbol}. Markets disponíveis: ${Account.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`);
+        return null;
+      }
+
+      return marketInfo;
+    } catch (error) {
+      console.error(`❌ Erro ao obter dados de mercado para ${symbol}: ${error.message}`);
+      return null;
+    }
   }
 
   analyzeMarket(candles, marketPrice, market) {
@@ -627,8 +680,25 @@ class Decision {
 
     const fee = Account.fee
 
+    // Verificação de margem antes de iniciar análise
+    if (Account.capitalAvailable <= 0) {
+      const marginMsg = `⚠️ [CAPITAL] Margem insuficiente para iniciar nova análise. Capital disponível: $${Account.capitalAvailable.toFixed(2)}`;
+      if (logger) {
+        logger.warn(marginMsg);
+      } else {
+        console.log(marginMsg);
+      }
+      return;
+    }
+
     console.log(`🔍 [DEBUG] Investment USD sendo usado: $${investmentUSD.toFixed(2)}`);
     const rows = await this.analyzeTrades(fee, dataset, investmentUSD, media_rsi, config, btcTrend)
+
+    // Validação de resultados antes de executar ordens
+    if (!rows || rows.length === 0) {
+      console.log(`📊 Nenhuma oportunidade de trading encontrada nesta análise`);
+      return;
+    }
 
     // Executa ordens em paralelo usando Promise.all
     console.log(`\n🚀 Executando ordens em paralelo...`);
@@ -643,7 +713,19 @@ class Decision {
           marketSymbol = row.orders[0].market;
         } else {
           // Estratégias tradicionais: market está no nível raiz
-          marketSymbol = row.market;
+          marketSymbol = row.market || row.symbol;
+        }
+
+        // Validação de símbolo antes de processar
+        if (!row || !marketSymbol) {
+          console.error(`❌ [${config?.accountId || 'DEFAULT'}] Decisão sem símbolo válido:`, row);
+          return { index, market: 'UNKNOWN', result: { error: 'Decisão sem símbolo válido' } };
+        }
+
+        // Validação adicional do símbolo
+        if (!marketSymbol) {
+          console.error(`❌ [${config?.accountId || 'DEFAULT'}] Símbolo de mercado não encontrado na decisão:`, row);
+          return { index, market: 'UNKNOWN', result: { error: 'Símbolo de mercado não encontrado' } };
         }
         
         const marketInfo = Account.markets.find((el) => el.symbol === marketSymbol);
@@ -698,7 +780,9 @@ class Decision {
               // Mantém dados da estratégia para compatibilidade
               conviction: row.conviction,
               reason: row.reason,
-              signals: row.signals
+              signals: row.signals,
+              // Adiciona o nome da estratégia para o TrailingStop
+              strategyName: this.strategy.constructor.name
             };
 
 
