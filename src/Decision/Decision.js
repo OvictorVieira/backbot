@@ -217,7 +217,7 @@ class Decision {
             });
           }
           
-          const analyze = calculateIndicators(candles, currentTimeframe);
+          const analyze = await calculateIndicators(candles, currentTimeframe, market.symbol);
           const marketPrice = getAllMarkPrices[0].markPrice;
 
           // const analyzeMsg = `🔍 Analyzing ${String(market.symbol).replace("_USDC_PERP", "")}`;
@@ -533,7 +533,7 @@ class Decision {
         const markets = new Markets();
       const btcCandles = await markets.getKLines('BTC_USDC_PERP', currentTimeframe, 100);
         if (btcCandles && btcCandles.length > 0) {
-          const btcIndicators = calculateIndicators(btcCandles, currentTimeframe);
+          const btcIndicators = await calculateIndicators(btcCandles, currentTimeframe, 'BTC_USDC_PERP');
           
           // Validação adicional dos indicadores do BTC
           if (!btcIndicators || !btcIndicators.rsi || !btcIndicators.stoch || !btcIndicators.macd || !btcIndicators.adx) {

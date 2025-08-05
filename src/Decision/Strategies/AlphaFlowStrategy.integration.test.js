@@ -705,12 +705,18 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
       expect(result).not.toBeNull();
       expect(result.orders).toHaveLength(3);
       
-      // Valida spreads baseados no ATR
-      // O cálculo real é: spread = atr * multiplier * (index + 1)
-      const expectedEntryPrices = [49500, 48000, 45500]; // Calculados corretamente
+      // Valida spreads com nova lógica: primeira ordem usa porcentagem fixa
+      // Ordem 1: 0.8% de 50000 = 49600
+      // Ordem 2: ATR * 1.0 * 2 = 48000  
+      // Ordem 3: ATR * 1.5 * 3 = 45500
+      const expectedEntryPrices = [49600, 48000, 45500]; // Nova lógica
       result.orders.forEach((order, index) => {
         expect(order.entryPrice).toBeCloseTo(expectedEntryPrices[index], -2); // Tolerância de 100
-        expect(order.spreadMultiplier).toBe([0.5, 1.0, 1.5][index]);
+        if (index === 0) {
+          expect(order.spreadMultiplier).toBe(0); // Primeira ordem não usa ATR
+        } else {
+          expect(order.spreadMultiplier).toBe([1.0, 1.5][index - 1]); // Segunda e terceira usam ATR
+        }
       });
     });
 
@@ -736,12 +742,18 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
       expect(result).not.toBeNull();
       expect(result.orders).toHaveLength(3);
       
-      // Valida spreads baseados no ATR para SHORT
-      // O cálculo real é: spread = atr * multiplier * (index + 1)
-      const expectedEntryPrices = [50500, 52000, 54500]; // Calculados corretamente
+      // Valida spreads com nova lógica para SHORT: primeira ordem usa porcentagem fixa
+      // Ordem 1: 0.8% de 50000 = 50400
+      // Ordem 2: ATR * 1.0 * 2 = 52000  
+      // Ordem 3: ATR * 1.5 * 3 = 54500
+      const expectedEntryPrices = [50400, 52000, 54500]; // Nova lógica
       result.orders.forEach((order, index) => {
         expect(order.entryPrice).toBeCloseTo(expectedEntryPrices[index], -2); // Tolerância de 100
-        expect(order.spreadMultiplier).toBe([0.5, 1.0, 1.5][index]);
+        if (index === 0) {
+          expect(order.spreadMultiplier).toBe(0); // Primeira ordem não usa ATR
+        } else {
+          expect(order.spreadMultiplier).toBe([1.0, 1.5][index - 1]); // Segunda e terceira usam ATR
+        }
       });
     });
 
@@ -840,9 +852,11 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
       expect(result.conviction).toBe('GOLD');
       expect(result.orders).toHaveLength(3);
       
-      // Valida que os spreads são proporcionais ao ATR alto
-      // O cálculo real é: spread = atr * multiplier * (index + 1)
-      const expectedEntryPrices = [58500, 54000, 46500]; // Calculados corretamente
+      // Valida que os spreads seguem a nova lógica com ATR alto
+      // Ordem 1: 0.1% de 60000 = 59940
+      // Ordem 2: ATR * 1.0 * 2 = 54000  
+      // Ordem 3: ATR * 1.5 * 3 = 46500
+      const expectedEntryPrices = [59940, 54000, 46500]; // Nova lógica
       result.orders.forEach((order, index) => {
         expect(order.entryPrice).toBeCloseTo(expectedEntryPrices[index], -3);
         
@@ -896,9 +910,11 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
       expect(result.action).toBe('short');
       expect(result.orders).toHaveLength(3);
       
-      // Valida que os spreads são proporcionais ao ATR alto para SHORT
-      // O cálculo real é: spread = atr * multiplier * (index + 1)
-      const expectedEntryPrices = [40250, 44000, 50250]; // Calculados corretamente
+      // Valida que os spreads seguem a nova lógica com ATR alto para SHORT
+      // Ordem 1: 0.1% de 39000 = 39039
+      // Ordem 2: ATR * 1.0 * 2 = 44000  
+      // Ordem 3: ATR * 1.5 * 3 = 50250
+      const expectedEntryPrices = [39039, 44000, 50250]; // Nova lógica
       result.orders.forEach((order, index) => {
         expect(order.entryPrice).toBeCloseTo(expectedEntryPrices[index], -3);
         
@@ -1347,9 +1363,6 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
       process.env.ORDER_1_WEIGHT_PCT = '50';
       process.env.ORDER_2_WEIGHT_PCT = '30';
       process.env.ORDER_3_WEIGHT_PCT = '20';
-      process.env.ENTRY_SPREAD_ATR_MULTIPLIER = '0.5';
-      process.env.STOP_LOSS_ATR_MULTIPLIER = '2.0';
-      process.env.TAKE_PROFIT_ATR_MULTIPLIER = '4.0';
 
       strategy = new AlphaFlowStrategy();
 
@@ -1417,11 +1430,11 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
       expect(spread2).toBeGreaterThan(spread1);
       expect(spread3).toBeGreaterThan(spread2);
       
-      // Verifica se os spreads são proporcionais ao ATR
-      // Ordem 1: ATR * 0.5 * 1 = 500
-      // Ordem 2: ATR * 1.0 * 2 = 2000  
-      // Ordem 3: ATR * 1.5 * 3 = 4500
-      expect(spread1).toBeCloseTo(500, -2); // ATR * 0.5
+      // Verifica se os spreads seguem a nova lógica
+      // Ordem 1: 0.8% do preço atual = 400 pontos
+      // Ordem 2: ATR * 1.0 * 2 = 2000 pontos  
+      // Ordem 3: ATR * 1.5 * 3 = 4500 pontos
+      expect(spread1).toBeCloseTo(400, -2); // 0.8% de 50000 = 400
       expect(spread2).toBeCloseTo(2000, -2); // ATR * 1.0 * 2
       expect(spread3).toBeCloseTo(4500, -2); // ATR * 1.5 * 3
     });

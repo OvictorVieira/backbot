@@ -790,7 +790,7 @@ export class DefaultStrategy extends BaseStrategy {
       }
 
       // Calcula indicadores do BTC
-      const btcIndicators = calculateIndicators(btcCandles, config?.time || '5m');
+              const btcIndicators = await calculateIndicators(btcCandles, config?.time || '5m', 'BTC_USDC_PERP');
       
       // Análise de tendência do BTC usando a mesma lógica da estratégia
       const btcSignals = this.analyzeSignals(btcIndicators, true);

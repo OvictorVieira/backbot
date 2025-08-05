@@ -3,14 +3,14 @@ import { calculateIndicators } from './Indicators.js';
 describe('CVD Periódico e Divergências', () => {
   
   describe('Cálculo do CVD Periódico', () => {
-    it('deve calcular o CVD corretamente para velas de alta', () => {
+    it('deve calcular o CVD corretamente para velas de alta', async () => {
       const candles = [
         { open: 100, close: 110, volume: 1000, high: 110, low: 100, start: 1000 },
         { open: 110, close: 120, volume: 1500, high: 120, low: 110, start: 2000 },
         { open: 120, close: 125, volume: 800, high: 125, low: 120, start: 3000 }
       ];
       
-      const indicators = calculateIndicators(candles, '5m');
+      const indicators = await calculateIndicators(candles, '5m', 'BTC_USDC_PERP');
       
       expect(indicators.cvd).toBeDefined();
       expect(indicators.cvd.values).toBeDefined();
@@ -22,41 +22,41 @@ describe('CVD Periódico e Divergências', () => {
       expect(indicators.cvd.current).toBe(3300);
     });
 
-    it('deve calcular o CVD corretamente para velas de baixa', () => {
+    it('deve calcular o CVD corretamente para velas de baixa', async () => {
       const candles = [
         { open: 100, close: 90, volume: 1000, high: 100, low: 90, start: 1000 },
         { open: 90, close: 80, volume: 1500, high: 90, low: 80, start: 2000 },
         { open: 80, close: 75, volume: 800, high: 80, low: 75, start: 3000 }
       ];
       
-      const indicators = calculateIndicators(candles, '5m');
+      const indicators = await calculateIndicators(candles, '5m', 'BTC_USDC_PERP');
       
       // Vela 1: -1000 (baixa), Vela 2: -1500 (baixa), Vela 3: -800 (baixa)
       // Total esperado: -3300
       expect(indicators.cvd.current).toBe(-3300);
     });
 
-    it('deve calcular o CVD corretamente para velas mistas', () => {
+    it('deve calcular o CVD corretamente para velas mistas', async () => {
       const candles = [
         { open: 100, close: 110, volume: 1000, high: 110, low: 100, start: 1000 }, // +1000
         { open: 110, close: 105, volume: 1500, high: 110, low: 105, start: 2000 }, // -1500
         { open: 105, close: 115, volume: 800, high: 115, low: 105, start: 3000 }   // +800
       ];
       
-      const indicators = calculateIndicators(candles, '5m');
+      const indicators = await calculateIndicators(candles, '5m', 'BTC_USDC_PERP');
       
       // Total esperado: +1000 - 1500 + 800 = +300
       expect(indicators.cvd.current).toBe(300);
     });
 
-    it('deve lidar com velas com preço de abertura igual ao fechamento', () => {
+    it('deve lidar com velas com preço de abertura igual ao fechamento', async () => {
       const candles = [
         { open: 100, close: 100, volume: 1000, high: 100, low: 100, start: 1000 }, // 0
         { open: 100, close: 110, volume: 1500, high: 110, low: 100, start: 2000 }, // +1500
         { open: 110, close: 110, volume: 800, high: 110, low: 110, start: 3000 }   // 0
       ];
       
-      const indicators = calculateIndicators(candles, '5m');
+      const indicators = await calculateIndicators(candles, '5m', 'BTC_USDC_PERP');
       
       // Total esperado: 0 + 1500 + 0 = 1500
       expect(indicators.cvd.current).toBe(1500);
@@ -64,7 +64,7 @@ describe('CVD Periódico e Divergências', () => {
   });
 
   describe('Detecção de Divergências', () => {
-    it('deve detectar uma DIVERGÊNCIA BULLISH corretamente', () => {
+    it('deve detectar uma DIVERGÊNCIA BULLISH corretamente', async () => {
       // Cria dados mock onde o preço faz um fundo mais baixo e o volume na segunda queda é menor
       const candles = [
         // Primeira queda - preço alto, volume alto
@@ -93,14 +93,14 @@ describe('CVD Periódico e Divergências', () => {
         { open: 50, close: 60, volume: 500, high: 60, low: 50, start: 20000, quoteVolume: 500 }
       ];
       
-      const indicators = calculateIndicators(candles, '5m');
+      const indicators = await calculateIndicators(candles, '5m', 'BTC_USDC_PERP');
       
       expect(indicators.cvdDivergence).toBeDefined();
       expect(indicators.cvdDivergence.bullish).toBe(true);
       expect(indicators.cvdDivergence.bearish).toBe(false);
     });
 
-    it('deve detectar uma DIVERGÊNCIA BEARISH corretamente', () => {
+    it('deve detectar uma DIVERGÊNCIA BEARISH corretamente', async () => {
       // Cria dados mock onde o preço faz um topo mais alto mas o volume na segunda alta é menor
       const candles = [
         // Primeira alta - preço baixo, volume alto
@@ -129,14 +129,14 @@ describe('CVD Periódico e Divergências', () => {
         { open: 100, close: 90, volume: 500, high: 100, low: 90, start: 20000, quoteVolume: 500 }
       ];
       
-      const indicators = calculateIndicators(candles, '5m');
+      const indicators = await calculateIndicators(candles, '5m', 'BTC_USDC_PERP');
       
       expect(indicators.cvdDivergence).toBeDefined();
       expect(indicators.cvdDivergence.bullish).toBe(false);
       expect(indicators.cvdDivergence.bearish).toBe(true);
     });
 
-    it('deve retornar false quando não há divergência', () => {
+    it('deve retornar false quando não há divergência', async () => {
       const candles = [
         { open: 100, close: 110, volume: 1000, high: 110, low: 100, start: 1000 },
         { open: 110, close: 120, volume: 1500, high: 120, low: 110, start: 2000 },
@@ -150,14 +150,14 @@ describe('CVD Periódico e Divergências', () => {
         { open: 150, close: 160, volume: 600, high: 160, low: 150, start: 10000 }
       ];
       
-      const indicators = calculateIndicators(candles, '5m');
+      const indicators = await calculateIndicators(candles, '5m', 'BTC_USDC_PERP');
       
       expect(indicators.cvdDivergence).toBeDefined();
       expect(indicators.cvdDivergence.bullish).toBe(false);
       expect(indicators.cvdDivergence.bearish).toBe(false);
     });
 
-    it('deve lidar com dados insuficientes', () => {
+    it('deve lidar com dados insuficientes', async () => {
       // Dados com menos de 10 candles
       const candles = [
         { open: 100, close: 110, volume: 1000, high: 110, low: 100, start: 1000 },
@@ -165,15 +165,15 @@ describe('CVD Periódico e Divergências', () => {
         { open: 120, close: 125, volume: 800, high: 125, low: 120, start: 3000 }
       ];
       
-      const indicators = calculateIndicators(candles, '5m');
+      const indicators = await calculateIndicators(candles, '5m', 'BTC_USDC_PERP');
       
       expect(indicators.cvdDivergence).toBeDefined();
       expect(indicators.cvdDivergence.bullish).toBe(false);
       expect(indicators.cvdDivergence.bearish).toBe(false);
     });
 
-    it('deve lidar com dados vazios', () => {
-      const indicators = calculateIndicators([], '5m');
+    it('deve lidar com dados vazios', async () => {
+      const indicators = await calculateIndicators([], '5m', 'BTC_USDC_PERP');
       
       expect(indicators.cvdDivergence).toBeDefined();
       expect(indicators.cvdDivergence.bullish).toBe(false);
@@ -182,14 +182,14 @@ describe('CVD Periódico e Divergências', () => {
   });
 
   describe('Integração com calculateIndicators', () => {
-    it('deve incluir CVD e divergências no objeto de retorno', () => {
+    it('deve incluir CVD e divergências no objeto de retorno', async () => {
       const candles = [
         { open: 100, close: 110, volume: 1000, high: 110, low: 100, start: 1000 },
         { open: 110, close: 120, volume: 1500, high: 120, low: 110, start: 2000 },
         { open: 120, close: 125, volume: 800, high: 125, low: 120, start: 3000 }
       ];
       
-      const indicators = calculateIndicators(candles, '5m');
+      const indicators = await calculateIndicators(candles, '5m', 'BTC_USDC_PERP');
       
       // Verifica se os novos campos estão presentes
       expect(indicators.cvd).toBeDefined();
@@ -207,8 +207,8 @@ describe('CVD Periódico e Divergências', () => {
       expect(indicators.macd).toBeDefined();
     });
 
-    it('deve lidar com array vazio', () => {
-      const indicators = calculateIndicators([], '5m');
+    it('deve lidar com array vazio', async () => {
+      const indicators = await calculateIndicators([], '5m', 'BTC_USDC_PERP');
       
       expect(indicators.cvd).toBeDefined();
       expect(indicators.cvd.values).toEqual([]);

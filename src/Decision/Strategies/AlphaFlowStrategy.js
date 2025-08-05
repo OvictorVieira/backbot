@@ -33,21 +33,13 @@ export class AlphaFlowStrategy extends BaseStrategy {
     console.log(`   🔍 ${symbol}: Verificando sinais LONG...`);
     const longSignal = this.analyzeLongSignal(data);
     if (longSignal) {
-      console.log(`   🟢 ${symbol}: Sinal LONG encontrado (${longSignal.conviction})`);
-      console.log(`      • Razão: ${longSignal.reason}`);
-      
       // Calcula as 3 ordens escalonadas
       const currentPrice = data.vwap?.vwap; // Preço atual (VWAP como referência)
       const atr = data.atr?.atr; // ATR para cálculo de spread
       const orders = this.calculateOrders(longSignal, currentPrice, atr, investmentUSD, symbol, data.market);
       
-      console.log(`      • Preço atual: $${currentPrice?.toFixed(4) || 'N/A'}`);
-      console.log(`      • ATR: ${atr?.toFixed(4) || 'N/A'}`);
-      console.log(`      • Ordens calculadas: ${orders.length}`);
-      
       // Retorna null se não há ordens válidas
       if (!orders || orders.length === 0) {
-        console.log(`      ❌ ${symbol}: Nenhuma ordem válida calculada para LONG`);
         return null;
       }
       
@@ -55,29 +47,17 @@ export class AlphaFlowStrategy extends BaseStrategy {
         ...longSignal,
         orders: orders
       };
-    } else {
-      console.log(`   ⚪ ${symbol}: Nenhum sinal LONG encontrado`);
     }
 
-    // Análise de confluência para sinais SHORT
-    console.log(`   🔍 ${symbol}: Verificando sinais SHORT...`);
     const shortSignal = this.analyzeShortSignal(data);
     if (shortSignal) {
-      console.log(`   🔴 ${symbol}: Sinal SHORT encontrado (${shortSignal.conviction})`);
-      console.log(`      • Razão: ${shortSignal.reason}`);
-      
       // Calcula as 3 ordens escalonadas
       const currentPrice = data.vwap?.vwap; // Preço atual (VWAP como referência)
       const atr = data.atr?.atr; // ATR para cálculo de spread
       const orders = this.calculateOrders(shortSignal, currentPrice, atr, investmentUSD, symbol, data.market);
       
-      console.log(`      • Preço atual: $${currentPrice?.toFixed(4) || 'N/A'}`);
-      console.log(`      • ATR: ${atr?.toFixed(4) || 'N/A'}`);
-      console.log(`      • Ordens calculadas: ${orders.length}`);
-      
       // Retorna null se não há ordens válidas
       if (!orders || orders.length === 0) {
-        console.log(`      ❌ ${symbol}: Nenhuma ordem válida calculada para SHORT`);
         return null;
       }
       
@@ -85,11 +65,8 @@ export class AlphaFlowStrategy extends BaseStrategy {
         ...shortSignal,
         orders: orders
       };
-    } else {
-      console.log(`   ⚪ ${symbol}: Nenhum sinal SHORT encontrado`);
     }
 
-    console.log(`   ❌ ${symbol}: Nenhum sinal encontrado`);
     return null;
   }
 
@@ -365,81 +342,43 @@ export class AlphaFlowStrategy extends BaseStrategy {
     // CORREÇÃO: Usa o investmentUSD diretamente, pois ele já representa o capital disponível para este token
     const adjustedCapital = investmentUSD; // Usa o investmentUSD total, sem aplicar porcentagem novamente
     
-
-    console.log(`      • Investment USD: ${investmentUSD}`);
-    console.log(`      • Adjusted Capital: ${adjustedCapital}`);
-    console.log(`      • Conviction Level: ${conviction}`);
-    console.log(`      • Market decimals: quantity=${market.decimal_quantity}, price=${market.decimal_price}`);
-    
     const weights = [
       Number(process.env.ORDER_1_WEIGHT_PCT) || 50,
       Number(process.env.ORDER_2_WEIGHT_PCT) || 30,
       Number(process.env.ORDER_3_WEIGHT_PCT) || 20
     ];
-    const spreads = [0.5, 1.0, 1.5]; // Multiplicadores do ATR para spread
-    
-
-    
     for (let i = 0; i < 3; i++) {
 
       const weight = weights[i];
-      const spreadMultiplier = spreads[i];
+      let entryPrice;
+      let spreadMultiplier;
       
-      // Calcula preço de entrada com spread baseado no ATR
-      const spread = atr * spreadMultiplier;
-      let entryPrice = action === 'long' 
-        ? currentPrice - (spread * (i + 1))
-        : currentPrice + (spread * (i + 1));
-      
-
-      console.log(`            • Current Price: ${currentPrice}`);
-      console.log(`            • ATR: ${atr}`);
-      console.log(`            • Spread Multiplier: ${spreadMultiplier}`);
-      console.log(`            • Spread: ${spread}`);
-      console.log(`            • Entry Price (antes do min): ${entryPrice}`);
-      
-      // Garante um spread mínimo de 0.1% para evitar "Order would immediately match"
-      const minSpreadPercent = 0.001; // 0.1%
-      const minSpread = currentPrice * minSpreadPercent;
-      
-      if (action === 'long') {
-        const currentSpread = currentPrice - entryPrice;
-        if (currentSpread < minSpread) {
-          console.log(`            • Spread mínimo aplicado: ${currentSpread} < ${minSpread}`);
-          entryPrice = currentPrice - minSpread;
-        }
+      if (i === 0) {
+        // PRIMEIRA ORDEM: Muito próxima do preço atual (0.8% máximo de spread)
+        const percentageSpread = 0.008; // 0.8% - muito mais próxima
+        entryPrice = action === 'long' 
+          ? currentPrice - (currentPrice * percentageSpread)
+          : currentPrice + (currentPrice * percentageSpread);
+        spreadMultiplier = 0; // Não usa ATR para primeira ordem
       } else {
-        const currentSpread = entryPrice - currentPrice;
-        if (currentSpread < minSpread) {
-          console.log(`            • Spread mínimo aplicado: ${currentSpread} < ${minSpread}`);
-          entryPrice = currentPrice + minSpread;
-        }
+        // SEGUNDA E TERCEIRA ORDEM: Usam ATR com escalonamento
+        const atrMultipliers = [1.0, 1.5]; // Para ordem 2 e 3
+        const atrMultiplier = atrMultipliers[i - 1];
+        const spread = atr * atrMultiplier * (i + 1); // Mantém escalonamento
+        
+        entryPrice = action === 'long' 
+          ? currentPrice - spread
+          : currentPrice + spread;
+        spreadMultiplier = atrMultiplier;
       }
-      
-      console.log(`            • Entry Price (final): ${entryPrice}`);
-      console.log(`            • Current Spread: ${action === 'long' ? currentPrice - entryPrice : entryPrice - currentPrice}`);
-      console.log(`            • Min Spread: ${minSpread}`);
-      
+
       // Calcula quantidade baseada no peso (dos 2% do capital)
       const orderCapital = (adjustedCapital * weight) / 100; // weight já é em porcentagem
       const rawQuantity = orderCapital / entryPrice;
       
-
-      
       // Formata a quantidade usando os dados de mercado
       const formattedQuantity = formatQuantity(rawQuantity);
       const finalQuantity = parseFloat(formattedQuantity);
-      
-      console.log(`      📋 [DEBUG] Ordem ${i + 1}:`);
-      console.log(`         • Weight: ${weight}%`);
-      console.log(`         • Entry Price: $${formatPrice(entryPrice)}`);
-      console.log(`         • Capital for this order: $${orderCapital.toFixed(2)}`);
-      console.log(`         • Raw Quantity: ${rawQuantity}`);
-      console.log(`         • Formatted Quantity: ${formattedQuantity}`);
-      console.log(`         • Final Quantity: ${finalQuantity}`);
-      console.log(`         • Min Quantity: ${market.min_quantity}`);
-      console.log(`         • Is Valid Quantity: ${finalQuantity > 0 ? '✅' : '❌'}`);
-      console.log(`         • Above Min: ${market.min_quantity ? (finalQuantity >= market.min_quantity ? '✅' : '❌') : 'N/A'}`);
       
       // Valida se a quantidade é válida
       if (finalQuantity <= 0) {
@@ -479,14 +418,6 @@ export class AlphaFlowStrategy extends BaseStrategy {
       } else {
         stopLoss = Math.max(stopLoss, maxStopLossPrice);
       }
-      
-
-      console.log(`            • ATR: ${atr ? atr.toFixed(4) : 'undefined'}`);
-      console.log(`            • Stop ATR Distance: ${atrStopDistance ? atrStopDistance.toFixed(4) : 'undefined'}`);
-      console.log(`            • Take Profit ATR Distance: ${atrTakeProfitDistance ? atrTakeProfitDistance.toFixed(4) : 'undefined'}`);
-      console.log(`            • Stop Loss Final: ${stopLoss ? stopLoss.toFixed(4) : 'undefined'}`);
-      console.log(`            • Take Profit Final: ${takeProfit ? takeProfit.toFixed(4) : 'undefined'}`);
-      console.log(`            • Max Stop Loss Price: ${maxStopLossPrice ? maxStopLossPrice.toFixed(4) : 'undefined'}`);
       
       const order = {
         market: symbol, // Adiciona o market à ordem (compatibilidade com o sistema)

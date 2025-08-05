@@ -518,6 +518,54 @@ export class DataProvider {
   }
 
   /**
+   * NOVO: Obtém dados históricos para um timeframe específico (para indicadores macro)
+   * SEMPRE busca dados reais - primeiro Backpack, depois Binance obrigatoriamente
+   * @param {string} symbol - Símbolo do mercado
+   * @param {string} timeframe - Timeframe desejado (ex: '1d', '4h', '1h')
+   * @param {number} days - Período em dias
+   * @param {Date} startTime - Data de início (opcional)
+   * @param {Date} endTime - Data de fim (opcional)
+   * @returns {Array} - Array de candles do timeframe específico
+   */
+  async getTimeframeData(symbol, timeframe, days = 50, startTime = null, endTime = null) {
+    try {
+      this.logger.info(`📊 [MACRO] Obtendo dados ${timeframe} para ${symbol} (${days} dias)`);
+      
+      const end = endTime ? endTime.getTime() : Date.now();
+      const start = startTime ? startTime.getTime() : end - (days * 24 * 60 * 60 * 1000);
+      
+      // Tenta Backpack primeiro
+      let candles = [];
+      try {
+        candles = await this.getBackpackSymbolData(symbol, timeframe, days * 24, start, end);
+        if (candles && candles.length > 0) {
+          this.logger.info(`✅ [MACRO] ${symbol}: ${candles.length} candles ${timeframe} obtidos da Backpack`);
+          return candles;
+        } else {
+          this.logger.warn(`⚠️ [MACRO] ${symbol}: Backpack não retornou dados para ${timeframe}, tentando Binance...`);
+        }
+      } catch (e) {
+        this.logger.warn(`⚠️ [MACRO] ${symbol}: Erro na Backpack para ${timeframe}: ${e.message}. Tentando Binance...`);
+      }
+      
+      // OBRIGATORIAMENTE busca dados reais da Binance
+      this.logger.info(`🔄 [MACRO] ${symbol}: Buscando dados ${timeframe} na Binance...`);
+      candles = await this.getBinanceSymbolData(this.convertSymbolToBinance(symbol), timeframe, days * 24, start, end);
+      
+      if (!candles || candles.length === 0) {
+        throw new Error(`❌ [MACRO] ${symbol}: Nenhum dado real obtido da Binance para ${timeframe}`);
+      }
+      
+      this.logger.info(`✅ [MACRO] ${symbol}: ${candles.length} candles ${timeframe} obtidos da Binance`);
+      return candles;
+      
+    } catch (error) {
+      this.logger.error(`❌ [MACRO] Erro fatal ao obter dados ${timeframe} para ${symbol}: ${error.message}`);
+      throw error; // Re-throw para que o chamador saiba que não há dados
+    }
+  }
+
+  /**
    * Obtém dados históricos para um símbolo específico (método original mantido para compatibilidade)
    */
   async getSymbolData(symbol, interval, limit, startTime, endTime) {
@@ -569,86 +617,7 @@ export class DataProvider {
    * @param {number} endTime - Timestamp de fim
    * @returns {Array} - Array de candles
    */
-  async getBackpackSymbolData(symbol, interval, limit, startTime, endTime) {
-    try {
-      // Converte símbolo para formato Backpack se necessário
-      const backpackSymbol = this.convertSymbolToBackpack(symbol);
-      
-      // CORRIGIDO: Verifica se o período solicitado não está no futuro
-      const now = Date.now();
-      if (startTime > now) {
-        this.logger.warn(`⚠️ ${symbol}: Período solicitado está no futuro (${new Date(startTime).toISOString()}). Usando dados até o momento atual.`);
-        return [];
-      }
-      
-      this.logger.info(`🔍 ${symbol}: Buscando dados Backpack - ${new Date(startTime).toISOString()} até ${new Date(endTime).toISOString()}`);
-      
-      // CORRIGIDO: Calcula o limit correto baseado no período solicitado
-      const intervalMs = this.getIntervalMs(interval);
-      const requestedDuration = endTime - startTime;
-      const requiredCandles = Math.ceil(requestedDuration / intervalMs);
-      
-      // Usa o maior entre o limit solicitado e o necessário para cobrir o período
-      const actualLimit = Math.max(limit, requiredCandles);
-      
-      this.logger.info(`🔍 ${symbol}: Período solicitado: ${(requestedDuration / (24 * 60 * 60 * 1000)).toFixed(1)} dias, candles necessários: ${requiredCandles}, limit usado: ${actualLimit}`);
-      
-      // Chama a API com o limit calculado (a API sempre retorna candles até o momento atual)
-              const markets = new Markets();
-        const candles = await markets.getKLines(backpackSymbol, interval, actualLimit);
-      
-      if (!candles || !Array.isArray(candles)) {
-        this.logger.warn(`⚠️ ${symbol}: API Backpack retornou dados inválidos`);
-        return [];
-      }
-      
-      this.logger.info(`🔍 ${symbol}: API retornou ${candles.length} candles`);
-      
-      // CORRIGIDO: Filtra candles que estão dentro do período solicitado com logs detalhados
-      const filteredCandles = candles.filter(candle => {
-        const candleTime = candle.start || candle.timestamp;
-        const isInRange = candleTime >= startTime && candleTime <= endTime;
-        
-        // Log detalhado para debug (apenas para os primeiros candles)
-        if (candles.indexOf(candle) < 3) {
-          this.logger.info(`🔍 ${symbol}: Candle ${new Date(candleTime).toISOString()} - ${isInRange ? '✅' : '❌'} no período solicitado`);
-        }
-        
-        return isInRange;
-      });
-      
-      this.logger.info(`🔍 ${symbol}: ${candles.length} candles retornados, ${filteredCandles.length} filtrados para o período solicitado`);
-      
-      // CORRIGIDO: Se nenhum candle foi filtrado, mostra o range de timestamps disponíveis
-      if (filteredCandles.length === 0 && candles.length > 0) {
-        const firstCandle = candles[0];
-        const lastCandle = candles[candles.length - 1];
-        const firstTime = firstCandle.start || firstCandle.timestamp;
-        const lastTime = lastCandle.start || lastCandle.timestamp;
-        
-        this.logger.warn(`⚠️ ${symbol}: Nenhum candle no período solicitado. Dados disponíveis: ${new Date(firstTime).toISOString()} até ${new Date(lastTime).toISOString()}`);
-        this.logger.warn(`⚠️ ${symbol}: Período solicitado: ${new Date(startTime).toISOString()} até ${new Date(endTime).toISOString()}`);
-      }
-      
-      // Formata candles para o formato padrão
-      return filteredCandles.map(candle => ({
-        timestamp: candle.start || candle.timestamp,
-        open: parseFloat(candle.open),
-        high: parseFloat(candle.high),
-        low: parseFloat(candle.low),
-        close: parseFloat(candle.close),
-        volume: parseFloat(candle.volume),
-        quoteVolume: parseFloat(candle.quoteVolume || 0),
-        trades: parseInt(candle.trades || 0),
-        start: candle.start || candle.timestamp,
-        end: candle.end || (candle.start || candle.timestamp) + this.getIntervalMs(interval) - 1
-      }));
-      
-    } catch (error) {
-      this.logger.warn(`⚠️ Erro ao obter dados do Backpack para ${symbol}: ${error.message}`);
-      return [];
-    }
-  }
+
 
   /**
    * Converte símbolo para formato Backpack
@@ -670,138 +639,27 @@ export class DataProvider {
    * @param {number} endTime - Timestamp de fim (ms)
    * @returns {Array} - Array de candles reais
    */
-  async getBinanceSymbolData(symbol, interval, totalLimit, startTime, endTime) {
-    const axios = (await import('axios')).default;
-    const maxBatch = 1000; // Limite da Binance por requisição
-    let allCandles = [];
-    let currentStart = startTime;
-    let batchCount = 0;
-    let lastTimestamp = null;
-    let safety = 0;
-    const maxSafety = Math.ceil(totalLimit / maxBatch) * 2;
-    try {
-      while (allCandles.length < totalLimit && currentStart < endTime && safety < maxSafety) {
-        safety++;
-        batchCount++;
-        const batchLimit = Math.min(maxBatch, totalLimit - allCandles.length);
-        const params = {
-          symbol,
-          interval,
-          limit: batchLimit,
-          startTime: currentStart,
-          endTime: endTime
-        };
-        this.logger.info(`🔍 Binance: Lote ${batchCount} | ${symbol} | ${interval} | startTime=${new Date(currentStart).toISOString()} | endTime=${new Date(endTime).toISOString()} | limit=${batchLimit}`);
-        let response;
-        try {
-          response = await axios.get('https://api.binance.com/api/v3/klines', { params });
-        } catch (err) {
-          this.logger.error(`❌ Erro na API Binance: ${err.message}`);
-          throw new Error(`Erro ao buscar dados reais da Binance: ${err.message}`);
-        }
-        if (!response.data || !Array.isArray(response.data) || response.data.length === 0) {
-          this.logger.warn(`⚠️ Binance retornou 0 candles no lote ${batchCount}.`);
-          break;
-        }
-        // Mapeia para o formato padrão
-        const candles = response.data.map(candle => ({
-          timestamp: candle[0],
-          open: parseFloat(candle[1]),
-          high: parseFloat(candle[2]),
-          low: parseFloat(candle[3]),
-          close: parseFloat(candle[4]),
-          volume: parseFloat(candle[5]),
-          quoteVolume: parseFloat(candle[7]),
-          trades: parseInt(candle[8]),
-          start: candle[0],
-          end: candle[6]
-        }));
-        // Evita duplicatas (caso a Binance retorne o último candle do lote anterior)
-        if (lastTimestamp !== null) {
-          while (candles.length && candles[0].timestamp <= lastTimestamp) {
-            candles.shift();
-          }
-        }
-        if (candles.length === 0) {
-          this.logger.warn(`⚠️ Nenhum novo candle após remoção de duplicatas no lote ${batchCount}.`);
-          break;
-        }
-        allCandles.push(...candles);
-        lastTimestamp = candles[candles.length - 1].timestamp;
-        currentStart = lastTimestamp + 1;
-        this.logger.info(`✅ Binance: Lote ${batchCount} - ${candles.length} candles obtidos (total: ${allCandles.length})`);
-        // Delay para respeitar rate limit
-        await this.delay(200);
-      }
-      if (safety >= maxSafety) {
-        throw new Error('Loop de paginação interrompido por segurança. Verifique os parâmetros.');
-      }
-      // Limita ao total solicitado e filtra por período
-      const filtered = allCandles.filter(c => c.timestamp >= startTime && c.timestamp <= endTime);
-      this.logger.info(`✅ Binance: ${filtered.length} candles finais obtidos para ${symbol} (${interval})`);
-      if (filtered.length === 0) {
-        throw new Error('Nenhum dado real retornado da Binance para o período solicitado.');
-      }
-      return filtered.slice(0, totalLimit);
-    } catch (error) {
-      this.logger.error(`❌ Erro fatal ao buscar dados reais da Binance: ${error.message}`);
-      throw error;
-    }
-  }
+
 
   /**
    * Converte símbolo para formato Binance
    * @param {string} symbol - Símbolo original
    * @returns {string} - Símbolo no formato Binance
    */
-  convertSymbolToBinance(symbol) {
-    // Remove sufixos e converte para formato Binance
-    return symbol
-      .replace('_PERP', '')
-      .replace('_USDC', 'USDC')
-      .replace('_USDT', 'USDT');
-  }
+
 
   /**
    * @param {Array} candles - Array de candles
    * @returns {Array} - Array sem duplicatas
    */
-  removeDuplicates(candles) {
-    const unique = new Map();
-    let duplicatesCount = 0;
-    
-    for (const candle of candles) {
-      if (!unique.has(candle.timestamp)) {
-        unique.set(candle.timestamp, candle);
-      } else {
-        duplicatesCount++;
-      }
-    }
-    
-    const uniqueCandles = Array.from(unique.values());
-    
-    if (duplicatesCount > 0) {
-      this.logger.warn(`🔄 Removidas ${duplicatesCount} duplicatas de ${candles.length} candles (${uniqueCandles.length} únicos restantes)`);
-    }
-    
-    return uniqueCandles;
-  }
+
 
   /**
    * Formata período para exibição
    * @param {Array} candles - Array de candles
    * @returns {string} - Período formatado
    */
-  formatPeriod(candles) {
-    if (!candles || candles.length === 0) {
-      return 'Sem dados';
-    }
-    
-    const start = new Date(candles[0].timestamp);
-    const end = new Date(candles[candles.length - 1].timestamp);
-    
-    return `${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
-  }
+
 
   /**
    * Obtém símbolos disponíveis

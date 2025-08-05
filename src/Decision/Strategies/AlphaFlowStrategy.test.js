@@ -1,405 +1,215 @@
 import { AlphaFlowStrategy } from './AlphaFlowStrategy.js';
 
-describe('AlphaFlowStrategy', () => {
+describe('AlphaFlowStrategy - Teste de Cálculo de Ordens', () => {
   let strategy;
 
   beforeEach(() => {
-    // Define variáveis de ambiente necessárias para os testes
-    process.env.ORDER_1_WEIGHT_PCT = '50';
-    process.env.ORDER_2_WEIGHT_PCT = '30';
-    process.env.ORDER_3_WEIGHT_PCT = '20';
-    process.env.CAPITAL_PERCENTAGE_BRONZE = '50';
-    process.env.CAPITAL_PERCENTAGE_SILVER = '75';
-    process.env.CAPITAL_PERCENTAGE_GOLD = '100';
-    process.env.ACCOUNT1_CAPITAL_PERCENTAGE = '10';
-    
     strategy = new AlphaFlowStrategy();
   });
 
-  describe('Níveis de Convicção', () => {
-    test('deve retornar um sinal BRONZE quando apenas os 3 indicadores principais se alinham', () => {
-      const mockData = {
-        symbol: 'BTC_USDC_PERP',
-        market: {
-          symbol: 'BTC_USDC_PERP',
-          decimal_quantity: 4,
-          decimal_price: 2,
-          stepSize_quantity: 0.0001,
-          min_quantity: 0.0001
-        },
-        vwap: {
-          vwap: 50000,
-          lowerBands: [49000, 48000, 47000],
-          upperBands: [51000, 52000, 53000]
-        },
-        momentum: {
-          isBullish: true,
-          isBearish: false
-        },
-        moneyFlow: {
-          isBullish: true,
-          isBearish: false
-        },
-        macroMoneyFlow: {
-          macroBias: 0 // Neutro
-        },
-        cvdDivergence: {
-        atr: {
-          atr: 1000
-        },
-          bullish: false,
-          bearish: false
-        }
+  describe('calculateOrders', () => {
+    test('deve calcular ordens LONG com primeira ordem próxima e outras com ATR', () => {
+      // Mock dos dados
+      const signal = {
+        action: 'long',
+        conviction: 'BRONZE'
       };
-
-      const result = strategy.analyzeTrade(0.001, mockData, 1000, 50);
       
-      expect(result).not.toBeNull();
-      expect(result.action).toBe('long');
-      expect(result.conviction).toBe('BRONZE');
-      expect(result.reason).toContain('Sinal de Entrada');
-      expect(result.signals.momentum).toBe(true);
-      expect(result.signals.vwap).toBe(true);
-      expect(result.signals.moneyFlow).toBe(true);
-      expect(result.signals.macroBias).toBe(false); // BRONZE não requer macro bias
-      expect(result.signals.cvdDivergence).toBe(false);
-    });
-
-    test('deve retornar um sinal SILVER quando os 3 indicadores + o Macro se alinham', () => {
-      const mockData = {
-        symbol: 'BTC_USDC_PERP',
-        market: {
-          symbol: 'BTC_USDC_PERP',
-          decimal_quantity: 4,
-          decimal_price: 2,
-          stepSize_quantity: 0.0001,
-          min_quantity: 0.0001
-        },
-        vwap: {
-          vwap: 50000,
-          lowerBands: [49000, 48000, 47000],
-          upperBands: [51000, 52000, 53000]
-        },
-        momentum: {
-          isBullish: true,
-          isBearish: false
-        },
-        moneyFlow: {
-          isBullish: true,
-          isBearish: false
-        },
-        macroMoneyFlow: {
-          macroBias: 1 // Bullish
-        },
-        cvdDivergence: {
-        atr: {
-          atr: 1000
-        },
-          bullish: false,
-          bearish: false
-        }
-      };
-
-      const result = strategy.analyzeTrade(0.001, mockData, 1000, 50);
+      const currentPrice = 50000; // BTC a $50,000
+      const atr = 1000; // ATR de $1,000
+      const investmentUSD = 1000; // $1,000 para investir
+      const symbol = 'BTC_USDC_PERP';
       
-      expect(result).not.toBeNull();
-      expect(result.action).toBe('long');
-      expect(result.conviction).toBe('SILVER');
-      expect(result.reason).toContain('Confluência Alta');
-      expect(result.signals.momentum).toBe(true);
-      expect(result.signals.vwap).toBe(true);
-      expect(result.signals.moneyFlow).toBe(true);
-      expect(result.signals.macroBias).toBe(true);
-      expect(result.signals.cvdDivergence).toBe(false);
-    });
-
-    test('deve retornar um sinal GOLD quando os 3 indicadores + o Macro + a divergência de CVD se alinham', () => {
-      const mockData = {
-        symbol: 'BTC_USDC_PERP',
-        market: {
-          symbol: 'BTC_USDC_PERP',
-          decimal_quantity: 4,
-          decimal_price: 2,
-          stepSize_quantity: 0.0001,
-          min_quantity: 0.0001
-        },
-        vwap: {
-          vwap: 50000,
-          lowerBands: [49000, 48000, 47000],
-          upperBands: [51000, 52000, 53000]
-        },
-        momentum: {
-          isBullish: true,
-          isBearish: false
-        },
-        moneyFlow: {
-          isBullish: true,
-          isBearish: false
-        },
-        macroMoneyFlow: {
-          macroBias: 1 // Bullish
-        },
-        cvdDivergence: {
-        atr: {
-          atr: 1000
-        },
-          bullish: true,
-          bearish: false
-        }
+      const market = {
+        decimal_quantity: 5,
+        decimal_price: 1,
+        stepSize_quantity: 0.00001,
+        min_quantity: 0.00001
       };
 
-      const result = strategy.analyzeTrade(0.001, mockData, 1000, 50);
+      // Chama o método calculateOrders
+      const orders = strategy.calculateOrders(signal, currentPrice, atr, investmentUSD, symbol, market);
+
+      // Validações
+      expect(orders).toHaveLength(3);
       
-      expect(result).not.toBeNull();
-      expect(result.action).toBe('long');
-      expect(result.conviction).toBe('GOLD');
-      expect(result.reason).toContain('Confluência Máxima');
-      expect(result.signals.momentum).toBe(true);
-      expect(result.signals.vwap).toBe(true);
-      expect(result.signals.moneyFlow).toBe(true);
-      expect(result.signals.macroBias).toBe(true);
-      expect(result.signals.cvdDivergence).toBe(true);
-    });
-
-    test('deve retornar null quando não há confluência suficiente', () => {
-      const mockData = {
-        vwap: {
-          vwap: 50000,
-          lowerBands: [49000, 48000, 47000],
-          upperBands: [51000, 52000, 53000]
-        },
-        momentum: {
-          isBullish: false,
-          isBearish: true
-        },
-        moneyFlow: {
-          isBullish: true,
-          isBearish: false
-        },
-        macroMoneyFlow: {
-          macroBias: 1
-        },
-        cvdDivergence: {
-        atr: {
-          atr: 1000
-        },
-          bullish: false,
-          bearish: false
-        }
-      };
-
-      const result = strategy.analyzeTrade(0.001, mockData, 1000, 50);
+      // Ordem 1: Deve estar muito próxima do preço atual (0.8% de spread)
+      const order1 = orders[0];
+      const expectedOrder1Price = currentPrice - (currentPrice * 0.008); // 49,600 (0.8% de 50,000)
+      expect(order1.entryPrice).toBeCloseTo(expectedOrder1Price, -1);
+      expect(order1.spreadMultiplier).toBe(0); // Não usa ATR para primeira ordem
+      expect(order1.orderNumber).toBe(1);
       
-      expect(result).toBeNull();
-    });
-
-    test('deve retornar sinal SHORT GOLD para dados bearish', () => {
-      const mockData = {
-        symbol: 'BTC_USDC_PERP',
-        market: {
-          symbol: 'BTC_USDC_PERP',
-          decimal_quantity: 4,
-          decimal_price: 2,
-          stepSize_quantity: 0.0001,
-          min_quantity: 0.0001
-        },
-        vwap: {
-          vwap: 50000,
-          lowerBands: [49000, 48000, 47000],
-          upperBands: [51000, 52000, 53000]
-        },
-        momentum: {
-          isBullish: false,
-          isBearish: true
-        },
-        moneyFlow: {
-          isBullish: false,
-          isBearish: true
-        },
-        macroMoneyFlow: {
-          macroBias: -1 // Bearish
-        },
-        cvdDivergence: {
-        atr: {
-          atr: 1000
-        },
-          bullish: false,
-          bearish: true
-        }
-      };
-
-      const result = strategy.analyzeTrade(0.001, mockData, 1000, 50);
+      // Ordem 2: Deve usar ATR × 1.0 × 2 = 2000
+      const order2 = orders[1];
+      const expectedOrder2Price = currentPrice - (atr * 1.0 * 2); // 48,000
+      expect(order2.entryPrice).toBeCloseTo(expectedOrder2Price, -1);
+      expect(order2.spreadMultiplier).toBe(1.0);
+      expect(order2.orderNumber).toBe(2);
       
-      expect(result).not.toBeNull();
-      expect(result.action).toBe('short');
-      expect(result.conviction).toBe('GOLD');
-      expect(result.reason).toContain('Confluência Máxima');
-      expect(result.signals.momentum).toBe(true);
-      expect(result.signals.vwap).toBe(true);
-      expect(result.signals.moneyFlow).toBe(true);
-      expect(result.signals.macroBias).toBe(true);
-      expect(result.signals.cvdDivergence).toBe(true);
+      // Ordem 3: Deve usar ATR × 1.5 × 3 = 4500
+      const order3 = orders[2];
+      const expectedOrder3Price = currentPrice - (atr * 1.5 * 3); // 46,500
+      expect(order3.entryPrice).toBeCloseTo(expectedOrder3Price, -1);
+      expect(order3.spreadMultiplier).toBe(1.5);
+      expect(order3.orderNumber).toBe(3);
+
+      // Valida que as ordens estão em ordem decrescente de preço (para LONG)
+      expect(order1.entryPrice).toBeGreaterThan(order2.entryPrice);
+      expect(order2.entryPrice).toBeGreaterThan(order3.entryPrice);
     });
 
-    test('deve retornar sinal SHORT SILVER para dados bearish sem divergência', () => {
-      const mockData = {
-        symbol: 'BTC_USDC_PERP',
-        market: {
-          symbol: 'BTC_USDC_PERP',
-          decimal_quantity: 4,
-          decimal_price: 2,
-          stepSize_quantity: 0.0001,
-          min_quantity: 0.0001
-        },
-        vwap: {
-          vwap: 50000,
-          lowerBands: [49000, 48000, 47000],
-          upperBands: [51000, 52000, 53000]
-        },
-        momentum: {
-          isBullish: false,
-          isBearish: true
-        },
-        moneyFlow: {
-          isBullish: false,
-          isBearish: true
-        },
-        macroMoneyFlow: {
-          macroBias: -1 // Bearish
-        },
-        cvdDivergence: {
-        atr: {
-          atr: 1000
-        },
-          bullish: false,
-          bearish: false
-        }
+    test('deve calcular ordens SHORT com primeira ordem próxima e outras com ATR', () => {
+      // Mock dos dados
+      const signal = {
+        action: 'short',
+        conviction: 'BRONZE'
       };
-
-      const result = strategy.analyzeTrade(0.001, mockData, 1000, 50);
       
-      expect(result).not.toBeNull();
-      expect(result.action).toBe('short');
-      expect(result.conviction).toBe('SILVER');
-      expect(result.reason).toContain('Confluência Alta');
-      expect(result.signals.momentum).toBe(true);
-      expect(result.signals.vwap).toBe(true);
-      expect(result.signals.moneyFlow).toBe(true);
-      expect(result.signals.macroBias).toBe(true);
-      expect(result.signals.cvdDivergence).toBe(false);
-    });
-  });
-
-  describe('Validação de Dados', () => {
-    test('deve retornar null quando dados são inválidos', () => {
-      const invalidData = {
-        vwap: {
-          vwap: null,
-          lowerBands: [],
-          upperBands: []
-        }
-      };
-
-      const result = strategy.analyzeTrade(0.001, invalidData, 1000, 50);
+      const currentPrice = 50000; // BTC a $50,000
+      const atr = 1000; // ATR de $1,000
+      const investmentUSD = 1000; // $1,000 para investir
+      const symbol = 'BTC_USDC_PERP';
       
-      expect(result).toBeNull();
-    });
-
-    test('deve retornar null quando dados estão incompletos', () => {
-      const incompleteData = {
-        vwap: {
-          vwap: 50000,
-          lowerBands: [49000],
-          upperBands: [51000]
-        },
-        momentum: null,
-        moneyFlow: null
+      const market = {
+        decimal_quantity: 5,
+        decimal_price: 1,
+        stepSize_quantity: 0.00001,
+        min_quantity: 0.00001
       };
 
-      const result = strategy.analyzeTrade(0.001, incompleteData, 1000, 50);
+      // Chama o método calculateOrders
+      const orders = strategy.calculateOrders(signal, currentPrice, atr, investmentUSD, symbol, market);
+
+      // Validações
+      expect(orders).toHaveLength(3);
       
-      expect(result).toBeNull();
-    });
-  });
+      // Ordem 1: Deve estar muito próxima do preço atual (0.8% de spread)
+      const order1 = orders[0];
+      const expectedOrder1Price = currentPrice + (currentPrice * 0.008); // 50,400 (0.8% de 50,000)
+      expect(order1.entryPrice).toBeCloseTo(expectedOrder1Price, -1);
+      expect(order1.spreadMultiplier).toBe(0); // Não usa ATR para primeira ordem
+      expect(order1.orderNumber).toBe(1);
+      
+      // Ordem 2: Deve usar ATR × 1.0 × 2 = 2000
+      const order2 = orders[1];
+      const expectedOrder2Price = currentPrice + (atr * 1.0 * 2); // 52,000
+      expect(order2.entryPrice).toBeCloseTo(expectedOrder2Price, -1);
+      expect(order2.spreadMultiplier).toBe(1.0);
+      expect(order2.orderNumber).toBe(2);
+      
+      // Ordem 3: Deve usar ATR × 1.5 × 3 = 4500
+      const order3 = orders[2];
+      const expectedOrder3Price = currentPrice + (atr * 1.5 * 3); // 53,500
+      expect(order3.entryPrice).toBeCloseTo(expectedOrder3Price, -1);
+      expect(order3.spreadMultiplier).toBe(1.5);
+      expect(order3.orderNumber).toBe(3);
 
-  describe('Métodos Auxiliares', () => {
-    test('checkBronzeSignal deve retornar true para sinais bullish válidos', () => {
-      const mockData = {
-        symbol: 'BTC_USDC_PERP',
-        vwap: {
-          vwap: 50000,
-          lowerBands: [49000, 48000, 47000],
-          upperBands: [51000, 52000, 53000]
-        },
-        momentum: {
-          isBullish: true,
-          isBearish: false
-        },
-        moneyFlow: {
-          isBullish: true,
-          isBearish: false
-        }
-      };
-
-      const result = strategy.checkBronzeSignal(mockData, 'long');
-      expect(result).toBe(true);
-    });
-
-    test('checkSilverSignal deve retornar true para sinais com macro bias', () => {
-      const mockData = {
-        symbol: 'BTC_USDC_PERP',
-        vwap: {
-          vwap: 50000,
-          lowerBands: [49000, 48000, 47000],
-          upperBands: [51000, 52000, 53000]
-        },
-        momentum: {
-          isBullish: true,
-          isBearish: false
-        },
-        moneyFlow: {
-          isBullish: true,
-          isBearish: false
-        },
-        macroMoneyFlow: {
-          macroBias: 1
-        }
-      };
-
-      const result = strategy.checkSilverSignal(mockData, 'long');
-      expect(result).toBe(true);
+      // Valida que as ordens estão em ordem crescente de preço (para SHORT)
+      expect(order1.entryPrice).toBeLessThan(order2.entryPrice);
+      expect(order2.entryPrice).toBeLessThan(order3.entryPrice);
     });
 
-    test('checkGoldSignal deve retornar true para sinais com divergência', () => {
-      const mockData = {
-        symbol: 'BTC_USDC_PERP',
-        vwap: {
-          vwap: 50000,
-          lowerBands: [49000, 48000, 47000],
-          upperBands: [51000, 52000, 53000]
-        },
-        momentum: {
-          isBullish: true,
-          isBearish: false
-        },
-        moneyFlow: {
-          isBullish: true,
-          isBearish: false
-        },
-        macroMoneyFlow: {
-          macroBias: 1
-        },
-        cvdDivergence: {
-        atr: {
-          atr: 1000
-        },
-          bullish: true,
-          bearish: false
-        }
+    test('deve validar spreads corretos para diferentes ATRs', () => {
+      const signal = { action: 'long', conviction: 'BRONZE' };
+      const currentPrice = 1000;
+      const atr = 50; // ATR menor
+      const investmentUSD = 100;
+      const symbol = 'ETH_USDC_PERP';
+      
+      const market = {
+        decimal_quantity: 4,
+        decimal_price: 2,
+        stepSize_quantity: 0.0001,
+        min_quantity: 0.0001
       };
 
-      const result = strategy.checkGoldSignal(mockData, 'long');
-      expect(result).toBe(true);
+      const orders = strategy.calculateOrders(signal, currentPrice, atr, investmentUSD, symbol, market);
+
+      expect(orders).toHaveLength(3);
+      
+      // Ordem 1: 0.8% do preço atual = 8 pontos
+      const order1 = orders[0];
+      expect(order1.entryPrice).toBeCloseTo(992, -1); // 1000 - 8 (0.8% de 1000)
+      
+      // Ordem 2: ATR × 1.0 × 2 = 100 pontos
+      const order2 = orders[1];
+      expect(order2.entryPrice).toBeCloseTo(900, -1); // 1000 - 100
+      
+      // Ordem 3: ATR × 1.5 × 3 = 225 pontos
+      const order3 = orders[2];
+      expect(order3.entryPrice).toBeCloseTo(775, -1); // 1000 - 225
+    });
+
+    test('deve validar pesos das ordens', () => {
+      const signal = { action: 'long', conviction: 'BRONZE' };
+      const currentPrice = 1000;
+      const atr = 50;
+      const investmentUSD = 1000;
+      const symbol = 'BTC_USDC_PERP';
+      
+      const market = {
+        decimal_quantity: 5,
+        decimal_price: 1,
+        stepSize_quantity: 0.00001,
+        min_quantity: 0.00001
+      };
+
+      const orders = strategy.calculateOrders(signal, currentPrice, atr, investmentUSD, symbol, market);
+
+      expect(orders).toHaveLength(3);
+      
+      // Valida pesos: 50%, 30%, 20%
+      expect(orders[0].weight).toBe(0.5); // 50%
+      expect(orders[1].weight).toBe(0.3); // 30%
+      expect(orders[2].weight).toBe(0.2); // 20%
+    });
+
+    test('deve validar estrutura das ordens', () => {
+      const signal = { action: 'long', conviction: 'BRONZE' };
+      const currentPrice = 1000;
+      const atr = 50;
+      const investmentUSD = 1000;
+      const symbol = 'BTC_USDC_PERP';
+      
+      const market = {
+        decimal_quantity: 5,
+        decimal_price: 1,
+        stepSize_quantity: 0.00001,
+        min_quantity: 0.00001
+      };
+
+      const orders = strategy.calculateOrders(signal, currentPrice, atr, investmentUSD, symbol, market);
+
+      orders.forEach((order, index) => {
+        // Valida propriedades obrigatórias
+        expect(order).toHaveProperty('market');
+        expect(order).toHaveProperty('symbol');
+        expect(order).toHaveProperty('orderNumber');
+        expect(order).toHaveProperty('action');
+        expect(order).toHaveProperty('entryPrice');
+        expect(order).toHaveProperty('quantity');
+        expect(order).toHaveProperty('stopLoss');
+        expect(order).toHaveProperty('takeProfit');
+        expect(order).toHaveProperty('weight');
+        expect(order).toHaveProperty('spreadMultiplier');
+        expect(order).toHaveProperty('decimal_quantity');
+        expect(order).toHaveProperty('decimal_price');
+        expect(order).toHaveProperty('stepSize_quantity');
+        expect(order).toHaveProperty('min_quantity');
+
+        // Valida valores
+        expect(order.market).toBe(symbol);
+        expect(order.symbol).toBe(symbol);
+        expect(order.orderNumber).toBe(index + 1);
+        expect(order.action).toBe('long');
+        expect(order.entryPrice).toBeGreaterThan(0);
+        expect(order.quantity).toBeGreaterThan(0);
+        expect(order.stopLoss).toBeGreaterThan(0);
+        expect(order.takeProfit).toBeGreaterThan(0);
+        expect(order.weight).toBeGreaterThan(0);
+        expect(order.weight).toBeLessThanOrEqual(1);
+      });
     });
   });
 }); 

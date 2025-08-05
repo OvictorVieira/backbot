@@ -238,7 +238,7 @@ class OrderController {
       const markets = new Markets();
       const candles = await markets.getKLines(market, timeframe, 30);
       const { calculateIndicators } = await import('../Decision/Indicators.js');
-      const indicators = calculateIndicators(candles, timeframe);
+      const indicators = await calculateIndicators(candles, timeframe, market);
       const data = { ...indicators, market: marketInfo, marketPrice: entryPrice };
       const action = isLong ? 'long' : 'short';
       const stopAndTargets = strategy.calculateStopAndMultipleTargets(data, entryPrice, action);
@@ -313,7 +313,16 @@ class OrderController {
       // Ajusta targets para o número real de TPs
       const usedTargets = targets.slice(0, actualTargets);
       const formatPrice = (value) => parseFloat(value).toFixed(decimal_price).toString();
-      const formatQuantity = (value) => parseFloat(value).toFixed(decimal_quantity).toString();
+      const formatQuantity = (value) => {
+        if (value <= 0) {
+          throw new Error(`Quantidade deve ser positiva: ${value}`);
+        }
+        let formatted = parseFloat(value).toFixed(decimal_quantity);
+        if (parseFloat(formatted) === 0 && stepSize_quantity > 0) {
+          return stepSize_quantity.toString();
+        }
+        return formatted.toString();
+      };
       console.log(`🎯 [PRO_MAX] ${market}: Criando ${actualTargets} take profits. Quantidades: [${quantities.join(', ')}] (total: ${totalQuantity})`);
       // Cria ordens de take profit
       for (let i = 0; i < actualTargets; i++) {
@@ -415,7 +424,7 @@ class OrderController {
       const markets = new Markets();
       const candles = await markets.getKLines(position.symbol, timeframe, 30);
       const { calculateIndicators } = await import('../Decision/Indicators.js');
-      const indicators = calculateIndicators(candles, timeframe);
+      const indicators = await calculateIndicators(candles, timeframe, position.symbol);
       const data = { ...indicators, market: marketInfo, marketPrice: entryPrice };
       const action = isLong ? 'long' : 'short';
       
@@ -492,7 +501,16 @@ class OrderController {
       // Ajusta targets para o número real de TPs
       const usedTargets = targets.slice(0, actualTargets);
       const formatPrice = (value) => parseFloat(value).toFixed(decimal_price).toString();
-      const formatQuantity = (value) => parseFloat(value).toFixed(decimal_quantity).toString();
+      const formatQuantity = (value) => {
+        if (value <= 0) {
+          throw new Error(`Quantidade deve ser positiva: ${value}`);
+        }
+        let formatted = parseFloat(value).toFixed(decimal_quantity);
+        if (parseFloat(formatted) === 0 && stepSize_quantity > 0) {
+          return stepSize_quantity.toString();
+        }
+        return formatted.toString();
+      };
       
       console.log(`\n🎯 [PRO_MAX] ${position.symbol}: Criando ${actualTargets} take profits. Quantidades: [${quantities.join(', ')}] (total: ${totalQuantity})`);
       
@@ -893,7 +911,16 @@ class OrderController {
       console.log(`📊 [TP_LIMIT] ${position.symbol}: Preço: $${takeProfitPrice.toFixed(decimal_price)}, Quantidade: ${quantityToClose.toFixed(decimal_quantity)} (${percentageToClose}%)`);
 
       const formatPrice = (value) => parseFloat(value).toFixed(decimal_price).toString();
-      const formatQuantity = (value) => parseFloat(value).toFixed(decimal_quantity).toString();
+      const formatQuantity = (value) => {
+        if (value <= 0) {
+          throw new Error(`Quantidade deve ser positiva: ${value}`);
+        }
+        let formatted = parseFloat(value).toFixed(decimal_quantity);
+        if (parseFloat(formatted) === 0 && market.stepSize_quantity > 0) {
+          return market.stepSize_quantity.toString();
+        }
+        return formatted.toString();
+      };
 
       const orderBody = {
         symbol: position.symbol,
@@ -1055,7 +1082,7 @@ class OrderController {
 
       // Calcula indicadores atualizados
       const { calculateIndicators } = await import('../Decision/Indicators.js');
-      const indicators = calculateIndicators(candles, timeframe);
+      const indicators = await calculateIndicators(candles, timeframe, market);
       
       // Obtém informações do mercado
       const Account = await AccountController.get();
@@ -1107,7 +1134,16 @@ class OrderController {
       const isLong = action === "long";
       const side = isLong ? "Bid" : "Ask";
       const formatPrice = (value) => parseFloat(value).toFixed(decimal_price).toString();
-      const formatQuantity = (value) => parseFloat(value).toFixed(decimal_quantity).toString();
+      const formatQuantity = (value) => {
+        if (value <= 0) {
+          throw new Error(`Quantidade deve ser positiva: ${value}`);
+        }
+        let formatted = parseFloat(value).toFixed(decimal_quantity);
+        if (parseFloat(formatted) === 0 && stepSize_quantity > 0) {
+          return stepSize_quantity.toString();
+        }
+        return formatted.toString();
+      };
       const entryPrice = parseFloat(entry);
       const orderValue = volume;
       let finalPrice = formatPrice(entryPrice);
@@ -1551,7 +1587,16 @@ class OrderController {
   
   const triggerPrice = isLong ? price - tickSize : price + tickSize  
   const formatPrice = (value) => parseFloat(value).toFixed(decimal_price).toString();
-  const formatQuantity = (value) => parseFloat(value).toFixed(decimal_quantity).toString();
+  const formatQuantity = (value) => {
+    if (value <= 0) {
+      throw new Error(`Quantidade deve ser positiva: ${value}`);
+    }
+    let formatted = parseFloat(value).toFixed(decimal_quantity);
+    if (parseFloat(formatted) === 0 && find.stepSize_quantity > 0) {
+      return find.stepSize_quantity.toString();
+    }
+    return formatted.toString();
+  };
   const body = {
     symbol,
     orderType: 'Limit',
@@ -1679,7 +1724,16 @@ class OrderController {
 
       try {
         const formatPrice = (value) => parseFloat(value).toFixed(decimal_price).toString();
-        const formatQuantity = (value) => parseFloat(value).toFixed(decimal_quantity).toString();
+        const formatQuantity = (value) => {
+          if (value <= 0) {
+            throw new Error(`Quantidade deve ser positiva: ${value}`);
+          }
+          let formatted = parseFloat(value).toFixed(decimal_quantity);
+          if (parseFloat(formatted) === 0 && marketInfo.stepSize_quantity > 0) {
+            return marketInfo.stepSize_quantity.toString();
+          }
+          return formatted.toString();
+        };
         
         const stopBody = {
           symbol: position.symbol,
@@ -1931,7 +1985,16 @@ class OrderController {
 
       // Funções de formatação
       const formatPrice = (value) => parseFloat(value).toFixed(decimal_price).toString();
-      const formatQuantity = (value) => parseFloat(value).toFixed(decimal_quantity).toString();
+      const formatQuantity = (value) => {
+        if (value <= 0) {
+          throw new Error(`Quantidade deve ser positiva: ${value}`);
+        }
+        let formatted = parseFloat(value).toFixed(decimal_quantity);
+        if (parseFloat(formatted) === 0 && marketInfo.stepSize_quantity > 0) {
+          return marketInfo.stepSize_quantity.toString();
+        }
+        return formatted.toString();
+      };
 
       // Verifica se o Trailing Stop está habilitado para determinar se deve criar Take Profit fixo
       const enableTrailingStop = process.env.ENABLE_TRAILING_STOP === 'true';
@@ -2654,6 +2717,11 @@ class OrderController {
 
       const formatPrice = (value) => parseFloat(value).toFixed(decimal_price).toString();
       const formatQuantity = (value) => {
+        // Garante que a quantidade seja sempre positiva
+        if (value <= 0) {
+          throw new Error(`Quantidade deve ser positiva: ${value}`);
+        }
+        
         // Se decimal_quantity é 0, usa pelo menos 1 casa decimal para evitar 0.0
         const decimals = Math.max(decimal_quantity, 1);
         let formatted = parseFloat(value).toFixed(decimals);
@@ -2663,9 +2731,21 @@ class OrderController {
           formatted = parseFloat(value).toFixed(Math.max(decimals, 4));
         }
         
+        // Se ainda for zero, usa o stepSize_quantity como mínimo
+        if (parseFloat(formatted) === 0 && stepSize_quantity > 0) {
+          formatted = stepSize_quantity.toString();
+        }
+        
         // Limita o número de casas decimais para evitar "decimal too long"
         const maxDecimals = Math.min(decimals, 4);
-        return parseFloat(formatted).toFixed(maxDecimals).toString();
+        const finalFormatted = parseFloat(formatted).toFixed(maxDecimals).toString();
+        
+        // Validação final: se ainda for zero, usa o mínimo possível
+        if (parseFloat(finalFormatted) === 0) {
+          return stepSize_quantity > 0 ? stepSize_quantity.toString() : '0.0001';
+        }
+        
+        return finalFormatted;
       };
 
       // Debug: Verifica a quantidade antes da formatação
@@ -2694,15 +2774,18 @@ class OrderController {
       const currentPrice = await this.getCurrentPrice(market);
       if (currentPrice) {
         const priceDiff = Math.abs(entry - currentPrice) / currentPrice;
-        if (priceDiff < 0.001) { // Menos de 0.1% de diferença
+        const minSpreadPercent = 0.001; // 0.1% de spread mínimo (reduzido para compatibilidade)
+        
+        if (priceDiff < minSpreadPercent) {
           console.log(`   ⚠️  ${market}: Preço muito próximo do atual (${priceDiff.toFixed(4)}), ajustando...`);
           // Ajusta o preço para ter pelo menos 0.1% de spread
-          const minSpread = currentPrice * 0.001;
+          const minSpread = currentPrice * minSpreadPercent;
           if (action === 'long') {
             entry = currentPrice - minSpread;
           } else {
             entry = currentPrice + minSpread;
           }
+          console.log(`   ✅ ${market}: Preço ajustado para ${formatPrice(entry)} (spread: ${(minSpreadPercent * 100).toFixed(1)}%)`);
         }
       }
 
@@ -2749,21 +2832,22 @@ class OrderController {
       try {
         const response = await Order.executeOrder(orderBody);
         
-        if (response && response.orderId) {
-          console.log(`✅ [${accountId}] Ordem criada com sucesso: ${market} (ID: ${response.orderId})`);
+        if (response && (response.orderId || response.id)) {
+          const orderId = response.orderId || response.id;
+          console.log(`✅ [${accountId}] Ordem criada com sucesso: ${market} (ID: ${orderId})`);
           
           // Registra a ordem para monitoramento (apenas para estratégia PRO_MAX)
           if (accountId === 'CONTA2') {
             OrderController.addPendingEntryOrder(market, {
               stop: stop,
               isLong: action === 'long',
-              orderId: response.orderId
+              orderId: orderId
             }, accountId);
           }
           
           return {
             success: true,
-            orderId: response.orderId,
+            orderId: orderId,
             market: market,
             action: action,
             entry: entry,

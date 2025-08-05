@@ -572,7 +572,7 @@ class TrailingStop {
       }
 
       const { calculateIndicators } = await import('../Decision/Indicators.js');
-      const indicators = calculateIndicators(candles, timeframe);
+              const indicators = await calculateIndicators(candles, timeframe, symbol);
       
       return indicators.atr?.atr || null;
     } catch (error) {
@@ -1514,7 +1514,7 @@ class TrailingStop {
       }
 
       const { calculateIndicators } = await import('../Decision/Indicators.js');
-      const indicators = calculateIndicators(candles, adxTimeframe);
+              const indicators = await calculateIndicators(candles, adxTimeframe, position.symbol);
       
       if (!indicators.adx || !indicators.adx.diPlus || !indicators.adx.diMinus) {
         return null;
