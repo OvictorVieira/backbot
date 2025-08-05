@@ -234,11 +234,11 @@ class OrderController {
       const strategy = new ProMaxStrategy();
       // Para o cálculo, precisamos de dados de mercado (ATR, etc). Usamos o último candle disponível.
       // Usa o timeframe da ordem ou fallback para variável de ambiente
-      const timeframe = orderData?.time || process.env.TIME || '5m';
+      const timeframe = orderData?.time || process.env.ACCOUNT1_TIME || '5m';
       const markets = new Markets();
       const candles = await markets.getKLines(market, timeframe, 30);
       const { calculateIndicators } = await import('../Decision/Indicators.js');
-      const indicators = calculateIndicators(candles);
+      const indicators = calculateIndicators(candles, timeframe);
       const data = { ...indicators, market: marketInfo, marketPrice: entryPrice };
       const action = isLong ? 'long' : 'short';
       const stopAndTargets = strategy.calculateStopAndMultipleTargets(data, entryPrice, action);
@@ -411,11 +411,11 @@ class OrderController {
       const strategy = new ProMaxStrategy();
       
       // Usa timeframe padrão
-      const timeframe = process.env.TIME || '5m';
+      const timeframe = process.env.ACCOUNT1_TIME || '5m';
       const markets = new Markets();
       const candles = await markets.getKLines(position.symbol, timeframe, 30);
       const { calculateIndicators } = await import('../Decision/Indicators.js');
-      const indicators = calculateIndicators(candles);
+      const indicators = calculateIndicators(candles, timeframe);
       const data = { ...indicators, market: marketInfo, marketPrice: entryPrice };
       const action = isLong ? 'long' : 'short';
       
@@ -1044,7 +1044,7 @@ class OrderController {
       }
 
       // Obtém dados de mercado atualizados
-      const timeframe = process.env.TIME || '5m';
+      const timeframe = originalSignalData.config?.time || process.env.ACCOUNT1_TIME || '5m';
       const markets = new Markets();
       const candles = await markets.getKLines(market, timeframe, 30);
       
@@ -1055,7 +1055,7 @@ class OrderController {
 
       // Calcula indicadores atualizados
       const { calculateIndicators } = await import('../Decision/Indicators.js');
-      const indicators = calculateIndicators(candles);
+      const indicators = calculateIndicators(candles, timeframe);
       
       // Obtém informações do mercado
       const Account = await AccountController.get();
@@ -2689,11 +2689,6 @@ class OrderController {
       // Calcula o valor da ordem para verificar margem
       const orderValue = quantity * entry;
       console.log(`   💰 [DEBUG] Valor da ordem: $${orderValue.toFixed(2)}`);
-      
-      // Verifica se o valor da ordem é muito pequeno
-      if (orderValue < 0.5) {
-        throw new Error(`Valor da ordem muito pequeno: $${orderValue.toFixed(2)}. Mínimo: $0.50`);
-      }
       
       // Verifica se o preço está muito próximo do preço atual (pode causar "Order would immediately match")
       const currentPrice = await this.getCurrentPrice(market);

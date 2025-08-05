@@ -12,7 +12,7 @@ export class AlphaFlowStrategy extends BaseStrategy {
    * @returns {object|null} - Objeto com decisão de trading ou null se não houver sinal
    */
   analyzeTrade(_fee, data, investmentUSD, _media_rsi, config = null, btcTrend = 'NEUTRAL') {
-    const symbol = data.symbol;
+    const symbol = data.symbol || 'UNKNOWN_SYMBOL';
     
     // Validação básica dos dados
     if (!this.validateData(data)) {
@@ -45,6 +45,12 @@ export class AlphaFlowStrategy extends BaseStrategy {
       console.log(`      • ATR: ${atr?.toFixed(4) || 'N/A'}`);
       console.log(`      • Ordens calculadas: ${orders.length}`);
       
+      // Retorna null se não há ordens válidas
+      if (!orders || orders.length === 0) {
+        console.log(`      ❌ ${symbol}: Nenhuma ordem válida calculada para LONG`);
+        return null;
+      }
+      
       return {
         ...longSignal,
         orders: orders
@@ -68,6 +74,12 @@ export class AlphaFlowStrategy extends BaseStrategy {
       console.log(`      • Preço atual: $${currentPrice?.toFixed(4) || 'N/A'}`);
       console.log(`      • ATR: ${atr?.toFixed(4) || 'N/A'}`);
       console.log(`      • Ordens calculadas: ${orders.length}`);
+      
+      // Retorna null se não há ordens válidas
+      if (!orders || orders.length === 0) {
+        console.log(`      ❌ ${symbol}: Nenhuma ordem válida calculada para SHORT`);
+        return null;
+      }
       
       return {
         ...shortSignal,
@@ -315,21 +327,32 @@ export class AlphaFlowStrategy extends BaseStrategy {
     // Valida se os dados de mercado estão disponíveis
     if (!market || !market.decimal_quantity || !market.decimal_price || !market.stepSize_quantity) {
       console.error(`❌ [calculateOrders] Dados de mercado ausentes para ${symbol}`);
+      console.error(`   • Market: ${market ? 'present' : 'null/undefined'}`);
+      console.error(`   • decimal_quantity: ${market?.decimal_quantity}`);
+      console.error(`   • decimal_price: ${market?.decimal_price}`);
+      console.error(`   • stepSize_quantity: ${market?.stepSize_quantity}`);
       return [];
     }
 
     // Função para formatar quantidade baseada nos dados de mercado
     const formatQuantity = (value) => {
       const decimals = Math.max(market.decimal_quantity, 1);
+      
+      // Para valores muito pequenos, usa mais casas decimais
+      if (value > 0 && value < 0.001) {
+        const extendedDecimals = Math.max(decimals, 6);
+        return parseFloat(value).toFixed(extendedDecimals);
+      }
+      
       let formatted = parseFloat(value).toFixed(decimals);
       
       // Se ainda resultar em 0.0, tenta com mais casas decimais
       if (parseFloat(formatted) === 0 && value > 0) {
-        formatted = parseFloat(value).toFixed(Math.max(decimals, 4));
+        formatted = parseFloat(value).toFixed(Math.max(decimals, 6));
       }
       
       // Limita o número de casas decimais para evitar "decimal too long"
-      const maxDecimals = Math.min(decimals, 4);
+      const maxDecimals = Math.min(decimals, 6);
       return parseFloat(formatted).toFixed(maxDecimals);
     };
 
@@ -339,22 +362,26 @@ export class AlphaFlowStrategy extends BaseStrategy {
     };
     
     // Calcula o capital baseado na convicção
-    const capitalMultiplier = this.getCapitalMultiplier(conviction);
-    const adjustedCapital = (investmentUSD * capitalMultiplier) / 100;
+    // CORREÇÃO: Usa o investmentUSD diretamente, pois ele já representa o capital disponível para este token
+    const adjustedCapital = investmentUSD; // Usa o investmentUSD total, sem aplicar porcentagem novamente
     
-    console.log(`   💰 [DEBUG] Cálculo de capital para ${symbol}:`);
+
     console.log(`      • Investment USD: ${investmentUSD}`);
-    console.log(`      • Capital Multiplier (${conviction}): ${capitalMultiplier}%`);
     console.log(`      • Adjusted Capital: ${adjustedCapital}`);
+    console.log(`      • Conviction Level: ${conviction}`);
     console.log(`      • Market decimals: quantity=${market.decimal_quantity}, price=${market.decimal_price}`);
     
-    const weights = [process.env.ORDER_1_WEIGHT_PCT, process.env.ORDER_2_WEIGHT_PCT, process.env.ORDER_3_WEIGHT_PCT];
+    const weights = [
+      Number(process.env.ORDER_1_WEIGHT_PCT) || 50,
+      Number(process.env.ORDER_2_WEIGHT_PCT) || 30,
+      Number(process.env.ORDER_3_WEIGHT_PCT) || 20
+    ];
     const spreads = [0.5, 1.0, 1.5]; // Multiplicadores do ATR para spread
     
-    console.log(`   📊 [DEBUG] Pesos das ordens:`, weights);
-    console.log(`   📊 [DEBUG] Spreads (ATR multipliers):`, spreads);
+
     
     for (let i = 0; i < 3; i++) {
+
       const weight = weights[i];
       const spreadMultiplier = spreads[i];
       
@@ -364,6 +391,13 @@ export class AlphaFlowStrategy extends BaseStrategy {
         ? currentPrice - (spread * (i + 1))
         : currentPrice + (spread * (i + 1));
       
+
+      console.log(`            • Current Price: ${currentPrice}`);
+      console.log(`            • ATR: ${atr}`);
+      console.log(`            • Spread Multiplier: ${spreadMultiplier}`);
+      console.log(`            • Spread: ${spread}`);
+      console.log(`            • Entry Price (antes do min): ${entryPrice}`);
+      
       // Garante um spread mínimo de 0.1% para evitar "Order would immediately match"
       const minSpreadPercent = 0.001; // 0.1%
       const minSpread = currentPrice * minSpreadPercent;
@@ -371,17 +405,26 @@ export class AlphaFlowStrategy extends BaseStrategy {
       if (action === 'long') {
         const currentSpread = currentPrice - entryPrice;
         if (currentSpread < minSpread) {
+          console.log(`            • Spread mínimo aplicado: ${currentSpread} < ${minSpread}`);
           entryPrice = currentPrice - minSpread;
         }
       } else {
         const currentSpread = entryPrice - currentPrice;
         if (currentSpread < minSpread) {
+          console.log(`            • Spread mínimo aplicado: ${currentSpread} < ${minSpread}`);
           entryPrice = currentPrice + minSpread;
         }
       }
       
-      // Calcula quantidade baseada no peso
-      const rawQuantity = (adjustedCapital * weight) / entryPrice;
+      console.log(`            • Entry Price (final): ${entryPrice}`);
+      console.log(`            • Current Spread: ${action === 'long' ? currentPrice - entryPrice : entryPrice - currentPrice}`);
+      console.log(`            • Min Spread: ${minSpread}`);
+      
+      // Calcula quantidade baseada no peso (dos 2% do capital)
+      const orderCapital = (adjustedCapital * weight) / 100; // weight já é em porcentagem
+      const rawQuantity = orderCapital / entryPrice;
+      
+
       
       // Formata a quantidade usando os dados de mercado
       const formattedQuantity = formatQuantity(rawQuantity);
@@ -390,10 +433,13 @@ export class AlphaFlowStrategy extends BaseStrategy {
       console.log(`      📋 [DEBUG] Ordem ${i + 1}:`);
       console.log(`         • Weight: ${weight}%`);
       console.log(`         • Entry Price: $${formatPrice(entryPrice)}`);
-      console.log(`         • Capital for this order: ${adjustedCapital * weight}`);
+      console.log(`         • Capital for this order: $${orderCapital.toFixed(2)}`);
       console.log(`         • Raw Quantity: ${rawQuantity}`);
       console.log(`         • Formatted Quantity: ${formattedQuantity}`);
       console.log(`         • Final Quantity: ${finalQuantity}`);
+      console.log(`         • Min Quantity: ${market.min_quantity}`);
+      console.log(`         • Is Valid Quantity: ${finalQuantity > 0 ? '✅' : '❌'}`);
+      console.log(`         • Above Min: ${market.min_quantity ? (finalQuantity >= market.min_quantity ? '✅' : '❌') : 'N/A'}`);
       
       // Valida se a quantidade é válida
       if (finalQuantity <= 0) {
@@ -401,28 +447,46 @@ export class AlphaFlowStrategy extends BaseStrategy {
         continue;
       }
       
-      // Valida se a quantidade é menor que o mínimo permitido
-      if (market.min_quantity && finalQuantity < market.min_quantity) {
-        console.log(`         ⚠️  Quantidade abaixo do mínimo (${finalQuantity} < ${market.min_quantity}), pulando ordem ${i + 1}`);
-        continue;
-      }
-      
-      // Valida se a quantidade é muito pequena para o preço (menos que $0.50 de valor)
+      // Calcula o valor da ordem para log
       const orderValue = finalQuantity * entryPrice;
-      if (orderValue < 0.5) {
-        console.log(`         ⚠️  Valor da ordem muito pequeno ($${orderValue.toFixed(2)}), pulando ordem ${i + 1}`);
-        continue;
+      console.log(`            • Order Value: $${orderValue.toFixed(4)}`);
+      
+      // Calcula stop loss e take profit baseados em multiplicadores de ATR
+      const initialStopAtrMultiplier = Number(process.env.INITIAL_STOP_ATR_MULTIPLIER || 2.0);
+      const takeProfitAtrMultiplier = Number(process.env.TAKE_PROFIT_PARTIAL_ATR_MULTIPLIER || 3.0);
+              const maxStopLossPct = Number(process.env.MAX_NEGATIVE_PNL_STOP_PCT || -10);
+      
+      // Cálculo do stop loss baseado em ATR
+      const atrStopDistance = atr * initialStopAtrMultiplier;
+      let stopLoss = action === 'long'
+        ? entryPrice - atrStopDistance
+        : entryPrice + atrStopDistance;
+      
+      // Cálculo do take profit baseado em ATR
+      const atrTakeProfitDistance = atr * takeProfitAtrMultiplier;
+      let takeProfit = action === 'long'
+        ? entryPrice + atrTakeProfitDistance
+        : entryPrice - atrTakeProfitDistance;
+      
+      // Rede de segurança: verifica se o stop loss baseado em ATR não é excessivamente largo
+      const maxStopLossPrice = action === 'long'
+        ? entryPrice * (1 + maxStopLossPct / 100)
+        : entryPrice * (1 - maxStopLossPct / 100);
+      
+      // Usa o stop loss mais apertado (mais seguro) entre ATR e percentual máximo
+      if (action === 'long') {
+        stopLoss = Math.min(stopLoss, maxStopLossPrice);
+      } else {
+        stopLoss = Math.max(stopLoss, maxStopLossPrice);
       }
       
-      // Calcula stop loss (-10% do preço de entrada)
-      const stopLoss = action === 'long'
-        ? entryPrice * 0.9
-        : entryPrice * 1.1;
-      
-      // Calcula take profit (+50% do preço de entrada)
-      const takeProfit = action === 'long'
-        ? entryPrice * 1.5
-        : entryPrice * 0.5;
+
+      console.log(`            • ATR: ${atr ? atr.toFixed(4) : 'undefined'}`);
+      console.log(`            • Stop ATR Distance: ${atrStopDistance ? atrStopDistance.toFixed(4) : 'undefined'}`);
+      console.log(`            • Take Profit ATR Distance: ${atrTakeProfitDistance ? atrTakeProfitDistance.toFixed(4) : 'undefined'}`);
+      console.log(`            • Stop Loss Final: ${stopLoss ? stopLoss.toFixed(4) : 'undefined'}`);
+      console.log(`            • Take Profit Final: ${takeProfit ? takeProfit.toFixed(4) : 'undefined'}`);
+      console.log(`            • Max Stop Loss Price: ${maxStopLossPrice ? maxStopLossPrice.toFixed(4) : 'undefined'}`);
       
       const order = {
         market: symbol, // Adiciona o market à ordem (compatibilidade com o sistema)
@@ -442,11 +506,18 @@ export class AlphaFlowStrategy extends BaseStrategy {
         min_quantity: market.min_quantity
       };
       
+      // Validação adicional para garantir que o market está presente
+      if (!order.market) {
+        console.log(`         ❌ Ordem ${i + 1}: Market não definido, pulando...`);
+        continue;
+      }
+      
       console.log(`         📋 Ordem ${i + 1} para ${symbol}: ${action.toUpperCase()} @ $${formatPrice(entryPrice)}`);
+      console.log(`         ✅ Adicionando ordem ${i + 1} ao array (total: ${orders.length + 1})`);
       orders.push(order);
     }
     
-    console.log(`   ✅ [DEBUG] Total de ordens criadas para ${symbol}: ${orders.length}`);
+
     return orders;
   }
 
@@ -497,4 +568,4 @@ export class AlphaFlowStrategy extends BaseStrategy {
            data.macroMoneyFlow !== null &&
            data.cvdDivergence !== null;
   }
-} 
+}

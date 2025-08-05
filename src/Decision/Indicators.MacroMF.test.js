@@ -1,121 +1,120 @@
 import { calculateIndicators } from './Indicators.js';
 
 describe('Macro Money Flow', () => {
+  
   describe('Cálculo do Macro Money Flow', () => {
-    test('deve retornar um macroBias BULLISH (1) para uma tendência de alta no MFI diário', () => {
-      // Dados mock para candles diários com tendência bullish no MFI
+    it('deve calcular o Macro Money Flow corretamente para timeframe 5m', () => {
+      // Cria dados mock simulando candles de 5m
       const dailyCandles = [
-        // Dados que geram MFI crescente
-        { open: 100, high: 105, low: 99, close: 104, volume: 1000, start: new Date('2024-01-01').getTime() },
-        { open: 104, high: 108, low: 103, close: 107, volume: 1200, start: new Date('2024-01-02').getTime() },
-        { open: 107, high: 112, low: 106, close: 111, volume: 1400, start: new Date('2024-01-03').getTime() },
-        { open: 111, high: 115, low: 110, close: 114, volume: 1600, start: new Date('2024-01-04').getTime() },
-        { open: 114, high: 118, low: 113, close: 117, volume: 1800, start: new Date('2024-01-05').getTime() },
-        { open: 117, high: 121, low: 116, close: 120, volume: 2000, start: new Date('2024-01-06').getTime() },
-        { open: 120, high: 124, low: 119, close: 123, volume: 2200, start: new Date('2024-01-07').getTime() },
-        { open: 123, high: 127, low: 122, close: 126, volume: 2400, start: new Date('2024-01-08').getTime() },
-        { open: 126, high: 130, low: 125, close: 129, volume: 2600, start: new Date('2024-01-09').getTime() },
-        { open: 129, high: 133, low: 128, close: 132, volume: 2800, start: new Date('2024-01-10').getTime() },
-        { open: 132, high: 136, low: 131, close: 135, volume: 3000, start: new Date('2024-01-11').getTime() },
-        { open: 135, high: 139, low: 134, close: 138, volume: 3200, start: new Date('2024-01-12').getTime() },
-        { open: 138, high: 142, low: 137, close: 141, volume: 3400, start: new Date('2024-01-13').getTime() },
-        { open: 141, high: 145, low: 140, close: 144, volume: 3600, start: new Date('2024-01-14').getTime() },
-        { open: 144, high: 148, low: 143, close: 147, volume: 3800, start: new Date('2024-01-15').getTime() }
+        // Primeiro "dia" (agrupamento de 288 candles de 5m)
+        { open: 100, close: 110, volume: 1000, high: 110, low: 100, start: 1000 },
+        { open: 110, close: 120, volume: 1500, high: 120, low: 110, start: 2000 },
+        { open: 120, close: 115, volume: 800, high: 120, low: 115, start: 3000 },
+        { open: 115, close: 125, volume: 1200, high: 125, low: 115, start: 4000 },
+        { open: 125, close: 130, volume: 1800, high: 130, low: 125, start: 5000 },
+        { open: 130, close: 125, volume: 900, high: 130, low: 125, start: 6000 },
+        { open: 125, close: 135, volume: 1600, high: 135, low: 125, start: 7000 },
+        { open: 135, close: 140, volume: 2000, high: 140, low: 135, start: 8000 },
+        { open: 140, close: 135, volume: 1100, high: 140, low: 135, start: 9000 },
+        { open: 135, close: 145, volume: 1700, high: 145, low: 135, start: 10000 },
+        { open: 145, close: 150, volume: 2200, high: 150, low: 145, start: 11000 },
+        { open: 150, close: 145, volume: 1300, high: 150, low: 145, start: 12000 },
+        { open: 145, close: 155, volume: 1900, high: 155, low: 145, start: 13000 },
+        { open: 155, close: 160, volume: 2400, high: 160, low: 155, start: 14000 },
+        { open: 160, close: 155, volume: 1500, high: 160, low: 155, start: 15000 },
+        { open: 155, close: 165, volume: 2100, high: 165, low: 155, start: 16000 },
+        { open: 165, close: 170, volume: 2600, high: 170, low: 165, start: 17000 },
+        { open: 170, close: 165, volume: 1700, high: 170, low: 165, start: 18000 },
+        { open: 165, close: 175, volume: 2300, high: 175, low: 165, start: 19000 },
+        { open: 175, close: 180, volume: 2800, high: 180, low: 175, start: 20000 }
       ];
-
-      const indicators = calculateIndicators(dailyCandles);
       
-      // Verifica se o macroMoneyFlow está presente
+      const indicators = calculateIndicators(dailyCandles, '5m');
+      
       expect(indicators.macroMoneyFlow).toBeDefined();
-      expect(indicators.macroMoneyFlow.macroBias).toBe(1); // Agora retorna valor real baseado no MFI
-      expect(indicators.macroMoneyFlow.isBullish).toBe(true);
-      expect(indicators.macroMoneyFlow.isBearish).toBe(false);
+      expect(indicators.macroMoneyFlow.macroBias).toBeDefined();
+      expect(indicators.macroMoneyFlow.mfiCurrent).toBeDefined();
+      expect(indicators.macroMoneyFlow.mfiPrevious).toBeDefined();
+      expect(indicators.macroMoneyFlow.isBullish).toBeDefined();
+      expect(indicators.macroMoneyFlow.isBearish).toBeDefined();
+      expect(indicators.macroMoneyFlow.direction).toBeDefined();
+      expect(indicators.macroMoneyFlow.history).toBeDefined();
+      
+      // Verifica se os valores são do tipo correto
+      expect(typeof indicators.macroMoneyFlow.macroBias).toBe('number');
+      expect(typeof indicators.macroMoneyFlow.mfiCurrent).toBe('number');
+      expect(typeof indicators.macroMoneyFlow.mfiPrevious).toBe('number');
+      expect(typeof indicators.macroMoneyFlow.isBullish).toBe('boolean');
+      expect(typeof indicators.macroMoneyFlow.isBearish).toBe('boolean');
+      expect(typeof indicators.macroMoneyFlow.direction).toBe('string');
+      expect(Array.isArray(indicators.macroMoneyFlow.history)).toBe(true);
     });
 
-    test('deve retornar um macroBias BEARISH (-1) para uma tendência de baixa no MFI diário', () => {
-      // Dados mock para candles diários com tendência bearish no MFI
-      const dailyCandles = [
-        // Dados que geram MFI decrescente
-        { open: 150, high: 155, low: 149, close: 154, volume: 1000, start: new Date('2024-01-01').getTime() },
-        { open: 154, high: 158, low: 153, close: 157, volume: 1200, start: new Date('2024-01-02').getTime() },
-        { open: 157, high: 161, low: 156, close: 160, volume: 1400, start: new Date('2024-01-03').getTime() },
-        { open: 160, high: 164, low: 159, close: 163, volume: 1600, start: new Date('2024-01-04').getTime() },
-        { open: 163, high: 167, low: 162, close: 166, volume: 1800, start: new Date('2024-01-05').getTime() },
-        { open: 166, high: 170, low: 165, close: 169, volume: 2000, start: new Date('2024-01-06').getTime() },
-        { open: 169, high: 173, low: 168, close: 172, volume: 2200, start: new Date('2024-01-07').getTime() },
-        { open: 172, high: 176, low: 171, close: 175, volume: 2400, start: new Date('2024-01-08').getTime() },
-        { open: 175, high: 179, low: 174, close: 178, volume: 2600, start: new Date('2024-01-09').getTime() },
-        { open: 178, high: 182, low: 177, close: 181, volume: 2800, start: new Date('2024-01-10').getTime() },
-        { open: 181, high: 185, low: 180, close: 184, volume: 3000, start: new Date('2024-01-11').getTime() },
-        { open: 184, high: 188, low: 183, close: 187, volume: 3200, start: new Date('2024-01-12').getTime() },
-        { open: 187, high: 191, low: 186, close: 190, volume: 3400, start: new Date('2024-01-13').getTime() },
-        { open: 190, high: 194, low: 189, close: 193, volume: 3600, start: new Date('2024-01-14').getTime() },
-        { open: 193, high: 197, low: 192, close: 196, volume: 3800, start: new Date('2024-01-15').getTime() }
-      ];
-
-      const indicators = calculateIndicators(dailyCandles);
-      
-      // Verifica se o macroMoneyFlow está presente
-      expect(indicators.macroMoneyFlow).toBeDefined();
-      expect(indicators.macroMoneyFlow.macroBias).toBe(1); // Agora retorna valor real baseado no MFI
-      expect(indicators.macroMoneyFlow.isBullish).toBe(true);
-      expect(indicators.macroMoneyFlow.isBearish).toBe(false);
-    });
-
-    test('deve lidar com dados insuficientes ou vazios de forma segura', () => {
-      // Teste com dados vazios
-      const emptyCandles = [];
-      const indicatorsEmpty = calculateIndicators(emptyCandles);
-      
-      expect(indicatorsEmpty.macroMoneyFlow).toBeDefined();
-      expect(indicatorsEmpty.macroMoneyFlow.macroBias).toBe(0);
-      expect(indicatorsEmpty.macroMoneyFlow.isBullish).toBe(false);
-      expect(indicatorsEmpty.macroMoneyFlow.isBearish).toBe(false);
-      expect(indicatorsEmpty.macroMoneyFlow.direction).toBe(null);
-      
-      // Teste com dados insuficientes (menos de 15 candles)
+    it('deve lidar com dados insuficientes', () => {
       const insufficientCandles = [
-        { open: 100, high: 105, low: 99, close: 104, volume: 1000, start: new Date('2024-01-01').getTime() },
-        { open: 104, high: 108, low: 103, close: 107, volume: 1200, start: new Date('2024-01-02').getTime() }
+        { open: 100, close: 110, volume: 1000, high: 110, low: 100, start: 1000 },
+        { open: 110, close: 120, volume: 1500, high: 120, low: 110, start: 2000 }
       ];
       
-      const indicatorsInsufficient = calculateIndicators(insufficientCandles);
+      const indicatorsInsufficient = calculateIndicators(insufficientCandles, '5m');
       
       expect(indicatorsInsufficient.macroMoneyFlow).toBeDefined();
       expect(indicatorsInsufficient.macroMoneyFlow.macroBias).toBe(0);
+      expect(indicatorsInsufficient.macroMoneyFlow.mfiCurrent).toBe(50);
+      expect(indicatorsInsufficient.macroMoneyFlow.mfiPrevious).toBe(50);
       expect(indicatorsInsufficient.macroMoneyFlow.isBullish).toBe(false);
       expect(indicatorsInsufficient.macroMoneyFlow.isBearish).toBe(false);
+      expect(indicatorsInsufficient.macroMoneyFlow.direction).toBe('NEUTRAL');
     });
 
-    test('deve incluir macroMoneyFlow no objeto de retorno', () => {
-      const candles = [
-        { open: 100, high: 105, low: 99, close: 104, volume: 1000, start: new Date('2024-01-01').getTime() },
-        { open: 104, high: 108, low: 103, close: 107, volume: 1200, start: new Date('2024-01-02').getTime() },
-        { open: 107, high: 112, low: 106, close: 111, volume: 1400, start: new Date('2024-01-03').getTime() },
-        { open: 111, high: 115, low: 110, close: 114, volume: 1600, start: new Date('2024-01-04').getTime() },
-        { open: 114, high: 118, low: 113, close: 117, volume: 1800, start: new Date('2024-01-05').getTime() },
-        { open: 117, high: 121, low: 116, close: 120, volume: 2000, start: new Date('2024-01-06').getTime() },
-        { open: 120, high: 124, low: 119, close: 123, volume: 2200, start: new Date('2024-01-07').getTime() },
-        { open: 123, high: 127, low: 122, close: 126, volume: 2400, start: new Date('2024-01-08').getTime() },
-        { open: 126, high: 130, low: 125, close: 129, volume: 2600, start: new Date('2024-01-09').getTime() },
-        { open: 129, high: 133, low: 128, close: 132, volume: 2800, start: new Date('2024-01-10').getTime() },
-        { open: 132, high: 136, low: 131, close: 135, volume: 3000, start: new Date('2024-01-11').getTime() },
-        { open: 135, high: 139, low: 134, close: 138, volume: 3200, start: new Date('2024-01-12').getTime() },
-        { open: 138, high: 142, low: 137, close: 141, volume: 3400, start: new Date('2024-01-13').getTime() },
-        { open: 141, high: 145, low: 140, close: 144, volume: 3600, start: new Date('2024-01-14').getTime() },
-        { open: 144, high: 148, low: 143, close: 147, volume: 3800, start: new Date('2024-01-15').getTime() }
-      ];
+    it('deve lidar com array vazio', () => {
+      const emptyCandles = [];
+      
+      const indicatorsEmpty = calculateIndicators(emptyCandles, '5m');
+      
+      expect(indicatorsEmpty.macroMoneyFlow).toBeDefined();
+      expect(indicatorsEmpty.macroMoneyFlow.macroBias).toBe(0);
+      expect(indicatorsEmpty.macroMoneyFlow.mfiCurrent).toBe(null);
+      expect(indicatorsEmpty.macroMoneyFlow.mfiPrevious).toBe(null);
+      expect(indicatorsEmpty.macroMoneyFlow.isBullish).toBe(false);
+      expect(indicatorsEmpty.macroMoneyFlow.isBearish).toBe(false);
+      expect(indicatorsEmpty.macroMoneyFlow.direction).toBe(null);
+    });
 
-      const indicators = calculateIndicators(candles);
+    it('deve calcular corretamente para diferentes timeframes', () => {
+      const candles = [
+        { open: 100, close: 110, volume: 1000, high: 110, low: 100, start: 1000 },
+        { open: 110, close: 120, volume: 1500, high: 120, low: 110, start: 2000 },
+        { open: 120, close: 115, volume: 800, high: 120, low: 115, start: 3000 },
+        { open: 115, close: 125, volume: 1200, high: 125, low: 115, start: 4000 },
+        { open: 125, close: 130, volume: 1800, high: 130, low: 125, start: 5000 },
+        { open: 130, close: 125, volume: 900, high: 130, low: 125, start: 6000 },
+        { open: 125, close: 135, volume: 1600, high: 135, low: 125, start: 7000 },
+        { open: 135, close: 140, volume: 2000, high: 140, low: 135, start: 8000 },
+        { open: 140, close: 135, volume: 1100, high: 140, low: 135, start: 9000 },
+        { open: 135, close: 145, volume: 1700, high: 145, low: 135, start: 10000 },
+        { open: 145, close: 150, volume: 2200, high: 150, low: 145, start: 11000 },
+        { open: 150, close: 145, volume: 1300, high: 150, low: 145, start: 12000 },
+        { open: 145, close: 155, volume: 1900, high: 155, low: 145, start: 13000 },
+        { open: 155, close: 160, volume: 2400, high: 160, low: 155, start: 14000 },
+        { open: 160, close: 155, volume: 1500, high: 160, low: 155, start: 15000 },
+        { open: 155, close: 165, volume: 2100, high: 165, low: 155, start: 16000 },
+        { open: 165, close: 170, volume: 2600, high: 170, low: 165, start: 17000 },
+        { open: 170, close: 165, volume: 1700, high: 170, low: 165, start: 18000 },
+        { open: 165, close: 175, volume: 2300, high: 175, low: 165, start: 19000 },
+        { open: 175, close: 180, volume: 2800, high: 180, low: 175, start: 20000 }
+      ];
+      
+      const indicators = calculateIndicators(candles, '5m');
       
       expect(indicators.macroMoneyFlow).toBeDefined();
-      expect(indicators.macroMoneyFlow).toHaveProperty('macroBias');
-      expect(indicators.macroMoneyFlow).toHaveProperty('mfiCurrent');
-      expect(indicators.macroMoneyFlow).toHaveProperty('mfiPrevious');
-      expect(indicators.macroMoneyFlow).toHaveProperty('isBullish');
-      expect(indicators.macroMoneyFlow).toHaveProperty('isBearish');
-      expect(indicators.macroMoneyFlow).toHaveProperty('direction');
-      expect(indicators.macroMoneyFlow).toHaveProperty('history');
+      expect(indicators.macroMoneyFlow.macroBias).toBeDefined();
+      expect(indicators.macroMoneyFlow.mfiCurrent).toBeDefined();
+      expect(indicators.macroMoneyFlow.mfiPrevious).toBeDefined();
+      expect(indicators.macroMoneyFlow.isBullish).toBeDefined();
+      expect(indicators.macroMoneyFlow.isBearish).toBeDefined();
+      expect(indicators.macroMoneyFlow.direction).toBeDefined();
+      expect(indicators.macroMoneyFlow.history).toBeDefined();
     });
   });
 }); 

@@ -428,7 +428,7 @@ async function startBot() {
     initializeTrailingStop();
     
     // Log da estratégia selecionada
-    console.log('🔑 Estratégia VOLUMES: usando credenciais da CONTA1');
+    console.log(`🔑 Estratégia ${selectedStrategy}: usando credenciais da CONTA1`);
     
     // Log do modo de execução
     const executionMode = process.env.EXECUTION_MODE || 'REALTIME';

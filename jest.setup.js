@@ -26,13 +26,13 @@ const originalConsoleError = console.error;
 const originalConsoleWarn = console.warn;
 
 console.log = (...args) => {
-  if (args[0] && typeof args[0] === 'string' && args[0].includes('TEST')) {
+  if (args[0] && typeof args[0] === 'string' && (args[0].includes('TEST') || args[0].includes('DEBUG') || args[0].includes('🔍'))) {
     originalConsoleLog(...args);
   }
 };
 
 console.warn = (...args) => {
-  if (args[0] && typeof args[0] === 'string' && args[0].includes('TEST')) {
+  if (args[0] && typeof args[0] === 'string' && (args[0].includes('TEST') || args[0].includes('DEBUG') || args[0].includes('🔍'))) {
     originalConsoleWarn(...args);
   }
 };

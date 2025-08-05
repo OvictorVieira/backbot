@@ -35,7 +35,8 @@ class AccountController {
       return null;
     }
 
-    let markets = await Markets.getMarkets();
+    const marketsInstance = new Markets();
+    let markets = await marketsInstance.getMarkets();
     if (!markets) {
       console.error('❌ AccountController.get - Markets.getMarkets() retornou null. API pode estar offline.');
       return null;
@@ -102,7 +103,8 @@ class AccountController {
   }
 
   async getallMarkets(ignore) {
-    let markets = await Markets.getMarkets(ignore = [])
+    const marketsInstance = new Markets();
+    let markets = await marketsInstance.getMarkets(ignore = [])
 
       markets = markets.filter((el) => 
           el.marketType === "PERP" && 

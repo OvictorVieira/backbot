@@ -572,7 +572,7 @@ class TrailingStop {
       }
 
       const { calculateIndicators } = await import('../Decision/Indicators.js');
-      const indicators = calculateIndicators(candles);
+      const indicators = calculateIndicators(candles, timeframe);
       
       return indicators.atr?.atr || null;
     } catch (error) {
@@ -1505,16 +1505,16 @@ class TrailingStop {
         return null;
       }
 
-      const timeframe = process.env.TIME || '5m';
+      const adxTimeframe = process.env.ACCOUNT1_TIME || '5m';
       const markets = new Markets();
-      const candles = await markets.getKLines(position.symbol, timeframe, 30);
+      const candles = await markets.getKLines(position.symbol, adxTimeframe, 30);
       
       if (!candles || candles.length < 20) {
         return null;
       }
 
       const { calculateIndicators } = await import('../Decision/Indicators.js');
-      const indicators = calculateIndicators(candles);
+      const indicators = calculateIndicators(candles, adxTimeframe);
       
       if (!indicators.adx || !indicators.adx.diPlus || !indicators.adx.diMinus) {
         return null;

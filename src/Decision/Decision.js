@@ -217,7 +217,7 @@ class Decision {
             });
           }
           
-          const analyze = calculateIndicators(candles);
+          const analyze = calculateIndicators(candles, currentTimeframe);
           const marketPrice = getAllMarkPrices[0].markPrice;
 
           // const analyzeMsg = `🔍 Analyzing ${String(market.symbol).replace("_USDC_PERP", "")}`;
@@ -274,6 +274,8 @@ class Decision {
       try {
         // Obtém os dados de mercado para o símbolo atual
         const marketInfo = await this.getMarketInfo(data.symbol, config);
+        
+
         
         if (!marketInfo) {
           console.error(`❌ [${config?.accountId || 'DEFAULT'}] Market não encontrado para ${data.symbol}`);
@@ -531,7 +533,7 @@ class Decision {
         const markets = new Markets();
       const btcCandles = await markets.getKLines('BTC_USDC_PERP', currentTimeframe, 100);
         if (btcCandles && btcCandles.length > 0) {
-          const btcIndicators = calculateIndicators(btcCandles);
+          const btcIndicators = calculateIndicators(btcCandles, currentTimeframe);
           
           // Validação adicional dos indicadores do BTC
           if (!btcIndicators || !btcIndicators.rsi || !btcIndicators.stoch || !btcIndicators.macd || !btcIndicators.adx) {
@@ -629,7 +631,7 @@ class Decision {
 
     // Usa configuração passada como parâmetro (prioridade) ou fallback para variáveis de ambiente
     const VOLUME_ORDER = config?.volumeOrder || Number(process.env.VOLUME_ORDER) || 100
-    const CAPITAL_PERCENTAGE = config?.capitalPercentage || Number(process.env.CAPITAL_PERCENTAGE || 0)
+    const CAPITAL_PERCENTAGE = config?.capitalPercentage || Number(process.env.ACCOUNT1_CAPITAL_PERCENTAGE || 0)
     
     let investmentUSD;
     
@@ -640,7 +642,7 @@ class Decision {
     } else if (CAPITAL_PERCENTAGE > 0) {
       // Usa porcentagem do capital disponível
       investmentUSD = (Account.capitalAvailable * CAPITAL_PERCENTAGE) / 100;
-      const capitalMsg = `💰 CONFIGURAÇÃO: ${CAPITAL_PERCENTAGE}% do capital disponível`;
+      const capitalMsg = `💰 CONFIGURAÇÃO: ${CAPITAL_PERCENTAGE}% do capital disponível (ACCOUNT1_CAPITAL_PERCENTAGE)`;
       if (logger) {
         logger.capital(capitalMsg);
       } else {
@@ -719,15 +721,20 @@ class Decision {
         }
 
         // Validação de símbolo antes de processar
-        if (!row || !marketSymbol) {
-          console.error(`❌ [${config?.accountId || 'DEFAULT'}] Decisão sem símbolo válido:`, row);
-          return { index, market: 'UNKNOWN', result: { error: 'Decisão sem símbolo válido' } };
+        if (!row) {
+          console.error(`❌ [${config?.accountId || 'DEFAULT'}] Decisão inválida (null/undefined):`, row);
+          return { index, market: 'UNKNOWN', result: { error: 'Decisão inválida' } };
         }
-
-        // Validação adicional do símbolo
+        
         if (!marketSymbol) {
-          console.error(`❌ [${config?.accountId || 'DEFAULT'}] Símbolo de mercado não encontrado na decisão:`, row);
-          return { index, market: 'UNKNOWN', result: { error: 'Símbolo de mercado não encontrado' } };
+          console.error(`❌ [${config?.accountId || 'DEFAULT'}] Decisão sem símbolo válido:`, {
+            hasOrders: !!row.orders,
+            ordersLength: row.orders?.length,
+            firstOrderMarket: row.orders?.[0]?.market,
+            rowMarket: row.market,
+            rowSymbol: row.symbol
+          });
+          return { index, market: 'UNKNOWN', result: { error: 'Decisão sem símbolo válido' } };
         }
         
         const marketInfo = Account.markets.find((el) => el.symbol === marketSymbol);
@@ -802,16 +809,9 @@ class Decision {
             // Verifica se já existe uma ordem pendente
             const orders = await OrderController.getRecentOpenOrders(marketSymbol);
 
-            // Calcula o valor da ordem para verificar se vale a pena criar
+            // Calcula o valor da ordem para log
             const orderValue = orderData.quantity * orderData.entry;
             console.log(`   💰 [DEBUG] ${marketSymbol} (Ordem ${order.orderNumber}): Valor = $${orderValue.toFixed(2)}`);
-
-            // Verifica se o valor da ordem é muito pequeno
-            if (orderValue < 0.5) {
-              console.log(`   ⚠️  ${marketSymbol} (Ordem ${order.orderNumber}): Valor muito pequeno ($${orderValue.toFixed(2)}), pulando...`);
-              orderResults.push({ orderNumber: order.orderNumber, result: { error: `Valor muito pequeno: $${orderValue.toFixed(2)}` } });
-              continue;
-            }
 
             // Cancela ordens antigas (mais de 5 minutos) antes de criar novas
             if (orders.length > 0) {

@@ -481,7 +481,7 @@ export class BacktestEngine {
         }
         
         // Calcula indicadores
-        const indicators = calculateIndicators(history);
+        const indicators = calculateIndicators(history, '5m');
         
         currentData[symbol] = {
           market: {

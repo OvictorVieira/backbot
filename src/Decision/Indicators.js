@@ -279,11 +279,12 @@ function calculateMoneyFlow(candles, mfiPeriod = 14, signalPeriod = 9) {
 
 /**
  * Calcula o Macro Money Flow (MFI diário) para análise de tendência de longo prazo
- * @param {Array<Object>} dailyCandles - Array de candles diários
+ * @param {Array<Object>} candles - Array de candles
+ * @param {string} timeframe - Timeframe dos candles (ex: '5m', '1h', '1d')
  * @returns {Object} - Objeto com macroBias e dados do MFI diário
  */
-function calculateMacroMoneyFlow(dailyCandles) {
-  if (!dailyCandles || dailyCandles.length < 15) {
+function calculateMacroMoneyFlow(candles, timeframe = '5m') {
+  if (!candles || candles.length < 15) {
     return {
       macroBias: 0,
       mfiCurrent: 50,
@@ -294,8 +295,53 @@ function calculateMacroMoneyFlow(dailyCandles) {
     };
   }
 
-  // Calcula o MFI para os dados diários
-  const mfiResult = calculateMoneyFlow(dailyCandles, 14, 9);
+  // Determina o período baseado no timeframe para obter dados "diários"
+  let macroPeriod = 1; // Padrão para 5m
+  
+  if (timeframe === '1m') {
+    macroPeriod = 1440; // 1 dia = 1440 minutos
+  } else if (timeframe === '5m') {
+    macroPeriod = 288; // 1 dia = 288 períodos de 5m
+  } else if (timeframe === '15m') {
+    macroPeriod = 96; // 1 dia = 96 períodos de 15m
+  } else if (timeframe === '30m') {
+    macroPeriod = 48; // 1 dia = 48 períodos de 30m
+  } else if (timeframe === '1h') {
+    macroPeriod = 24; // 1 dia = 24 períodos de 1h
+  } else if (timeframe === '4h') {
+    macroPeriod = 6; // 1 dia = 6 períodos de 4h
+  } else if (timeframe === '1d') {
+    macroPeriod = 1; // 1 dia = 1 período de 1d
+  }
+
+  // Agrupa os candles por período "diário" baseado no timeframe
+  const groupedCandles = [];
+  const groupSize = Math.max(1, Math.floor(candles.length / macroPeriod));
+  
+  for (let i = 0; i < candles.length; i += groupSize) {
+    const group = candles.slice(i, i + groupSize);
+    if (group.length > 0) {
+      // Calcula o candle "diário" agregado
+      const high = Math.max(...group.map(c => parseFloat(c.high)));
+      const low = Math.min(...group.map(c => parseFloat(c.low)));
+      const open = parseFloat(group[0].open);
+      const close = parseFloat(group[group.length - 1].close);
+      const volume = group.reduce((sum, c) => sum + parseFloat(c.volume), 0);
+      const start = group[0].start;
+      
+      groupedCandles.push({
+        high,
+        low,
+        open,
+        close,
+        volume,
+        start
+      });
+    }
+  }
+
+  // Calcula o MFI para os dados agrupados
+  const mfiResult = calculateMoneyFlow(groupedCandles, 14, 9);
   
   // Obtém os valores atuais e anteriores do MFI
   const mfiCurrent = mfiResult.mfi || 50;
@@ -636,7 +682,7 @@ function findCvdDivergences(candles, cvdValues) {
   };
 }
 
-export function calculateIndicators(candles) {
+export function calculateIndicators(candles, timeframe = '5m') {
   // Validação de entrada
   if (!candles || !Array.isArray(candles) || candles.length === 0) {
     // Retorna estrutura vazia para casos inválidos
@@ -950,7 +996,7 @@ export function calculateIndicators(candles) {
       bearish: cvdDivergence.bearish
     },
     // NOVO: Macro Money Flow (MFI diário)
-    macroMoneyFlow: calculateMacroMoneyFlow(candles) // Usa os candles atuais como aproximação
+    macroMoneyFlow: calculateMacroMoneyFlow(candles, timeframe) // Usa o timeframe configurado
   };
 }
 
