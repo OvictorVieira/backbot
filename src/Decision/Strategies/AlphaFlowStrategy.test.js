@@ -33,10 +33,9 @@ describe('AlphaFlowStrategy - Teste de Cálculo de Ordens', () => {
       // Validações
       expect(orders).toHaveLength(3);
       
-      // Ordem 1: Deve estar muito próxima do preço atual (0.8% de spread)
+      // Ordem 1: SEMPRE A MERCADO (preço atual)
       const order1 = orders[0];
-      const expectedOrder1Price = currentPrice - (currentPrice * 0.008); // 49,600 (0.8% de 50,000)
-      expect(order1.entryPrice).toBeCloseTo(expectedOrder1Price, -1);
+      expect(order1.entryPrice).toBeCloseTo(currentPrice, -1); // Preço atual (ordem a mercado)
       expect(order1.spreadMultiplier).toBe(0); // Não usa ATR para primeira ordem
       expect(order1.orderNumber).toBe(1);
       
@@ -84,10 +83,9 @@ describe('AlphaFlowStrategy - Teste de Cálculo de Ordens', () => {
       // Validações
       expect(orders).toHaveLength(3);
       
-      // Ordem 1: Deve estar muito próxima do preço atual (0.8% de spread)
+      // Ordem 1: SEMPRE A MERCADO (preço atual)
       const order1 = orders[0];
-      const expectedOrder1Price = currentPrice + (currentPrice * 0.008); // 50,400 (0.8% de 50,000)
-      expect(order1.entryPrice).toBeCloseTo(expectedOrder1Price, -1);
+      expect(order1.entryPrice).toBeCloseTo(currentPrice, -1); // Preço atual (ordem a mercado)
       expect(order1.spreadMultiplier).toBe(0); // Não usa ATR para primeira ordem
       expect(order1.orderNumber).toBe(1);
       
@@ -128,9 +126,9 @@ describe('AlphaFlowStrategy - Teste de Cálculo de Ordens', () => {
 
       expect(orders).toHaveLength(3);
       
-      // Ordem 1: 0.8% do preço atual = 8 pontos
+      // Ordem 1: SEMPRE A MERCADO (preço atual)
       const order1 = orders[0];
-      expect(order1.entryPrice).toBeCloseTo(992, -1); // 1000 - 8 (0.8% de 1000)
+      expect(order1.entryPrice).toBeCloseTo(1000, -1); // Preço atual (ordem a mercado)
       
       // Ordem 2: ATR × 1.0 × 2 = 100 pontos
       const order2 = orders[1];

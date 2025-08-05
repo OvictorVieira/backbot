@@ -354,11 +354,8 @@ export class AlphaFlowStrategy extends BaseStrategy {
       let spreadMultiplier;
       
       if (i === 0) {
-        // PRIMEIRA ORDEM: Muito próxima do preço atual (0.8% máximo de spread)
-        const percentageSpread = 0.008; // 0.8% - muito mais próxima
-        entryPrice = action === 'long' 
-          ? currentPrice - (currentPrice * percentageSpread)
-          : currentPrice + (currentPrice * percentageSpread);
+        // PRIMEIRA ORDEM: SEMPRE A MERCADO (preço atual)
+        entryPrice = currentPrice; // Ordem a mercado = preço atual
         spreadMultiplier = 0; // Não usa ATR para primeira ordem
       } else {
         // SEGUNDA E TERCEIRA ORDEM: Usam ATR com escalonamento

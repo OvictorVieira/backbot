@@ -706,10 +706,10 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
       expect(result.orders).toHaveLength(3);
       
       // Valida spreads com nova lógica: primeira ordem usa porcentagem fixa
-      // Ordem 1: 0.8% de 50000 = 49600
+      // Ordem 1: 0.01% de 50000 = 49995
       // Ordem 2: ATR * 1.0 * 2 = 48000  
       // Ordem 3: ATR * 1.5 * 3 = 45500
-      const expectedEntryPrices = [49600, 48000, 45500]; // Nova lógica
+      const expectedEntryPrices = [49995, 48000, 45500]; // Nova lógica
       result.orders.forEach((order, index) => {
         expect(order.entryPrice).toBeCloseTo(expectedEntryPrices[index], -2); // Tolerância de 100
         if (index === 0) {
@@ -743,10 +743,10 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
       expect(result.orders).toHaveLength(3);
       
       // Valida spreads com nova lógica para SHORT: primeira ordem usa porcentagem fixa
-      // Ordem 1: 0.8% de 50000 = 50400
+      // Ordem 1: 0.01% de 50000 = 50005
       // Ordem 2: ATR * 1.0 * 2 = 52000  
       // Ordem 3: ATR * 1.5 * 3 = 54500
-      const expectedEntryPrices = [50400, 52000, 54500]; // Nova lógica
+      const expectedEntryPrices = [50005, 52000, 54500]; // Nova lógica
       result.orders.forEach((order, index) => {
         expect(order.entryPrice).toBeCloseTo(expectedEntryPrices[index], -2); // Tolerância de 100
         if (index === 0) {
@@ -1418,23 +1418,25 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
       expect(result.orders[0].entryPrice).toBeGreaterThan(result.orders[1].entryPrice);
       expect(result.orders[1].entryPrice).toBeGreaterThan(result.orders[2].entryPrice);
       
-      // Verifica se os spreads são baseados no ATR
+      // Verifica se os spreads seguem a nova lógica
       const currentPrice = 50000; // VWAP do mock data
       
-      // Calcula os spreads esperados baseados no ATR
+      // Calcula os spreads esperados
       const spread1 = currentPrice - result.orders[0].entryPrice;
       const spread2 = currentPrice - result.orders[1].entryPrice;
       const spread3 = currentPrice - result.orders[2].entryPrice;
       
-      expect(spread1).toBeGreaterThan(0);
+      // Ordem 1: SEMPRE A MERCADO (spread = 0)
+      expect(spread1).toBeCloseTo(0, -2);
+      // Ordem 2 e 3: Devem ter spreads crescentes baseados no ATR
       expect(spread2).toBeGreaterThan(spread1);
       expect(spread3).toBeGreaterThan(spread2);
       
       // Verifica se os spreads seguem a nova lógica
-      // Ordem 1: 0.8% do preço atual = 400 pontos
+      // Ordem 1: SEMPRE A MERCADO (spread = 0)
       // Ordem 2: ATR * 1.0 * 2 = 2000 pontos  
       // Ordem 3: ATR * 1.5 * 3 = 4500 pontos
-      expect(spread1).toBeCloseTo(400, -2); // 0.8% de 50000 = 400
+      expect(spread1).toBeCloseTo(0, -2); // Ordem a mercado = spread 0
       expect(spread2).toBeCloseTo(2000, -2); // ATR * 1.0 * 2
       expect(spread3).toBeCloseTo(4500, -2); // ATR * 1.5 * 3
     });
