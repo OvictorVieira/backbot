@@ -1,5 +1,6 @@
 import { DefaultStrategy } from './DefaultStrategy.js';
 import { ProMaxStrategy } from './ProMaxStrategy.js';
+import { AlphaFlowStrategy } from './AlphaFlowStrategy.js';
 
 export class StrategyFactory {
   /**
@@ -20,6 +21,9 @@ export class StrategyFactory {
       case 'PRO_MAX':
         console.log(`✅ StrategyFactory: Criando estratégia PRO_MAX`);
         return new ProMaxStrategy();
+      case 'ALPHA_FLOW':
+        console.log(`✅ StrategyFactory: Criando estratégia ALPHA_FLOW`);
+        return new AlphaFlowStrategy();
       default:
         console.log(`⚠️ Estratégia "${strategy}" não encontrada, usando DEFAULT`);
         return new DefaultStrategy();
@@ -31,7 +35,7 @@ export class StrategyFactory {
    * @returns {string[]} - Array com nomes das estratégias
    */
   static getAvailableStrategies() {
-    return ['DEFAULT', 'PRO_MAX'];
+    return ['DEFAULT', 'PRO_MAX', 'ALPHA_FLOW'];
   }
 
   /**

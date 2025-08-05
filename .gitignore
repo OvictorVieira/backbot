@@ -34,3 +34,6 @@ backtest_results/
 docs/
 
 persistence/trailing_state.json
+
+tasks.md
+context.md

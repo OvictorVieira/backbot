@@ -14,14 +14,22 @@ class TrailingStop {
   constructor(strategyType = null) {
     const finalStrategyType = strategyType || 'DEFAULT';
     console.log(`🔧 [TRAILING_INIT] Inicializando TrailingStop com estratégia: ${finalStrategyType}`);
-    this.stopLossStrategy = StopLossFactory.createStopLoss(finalStrategyType);
-    console.log(`🔧 [TRAILING_INIT] Stop loss strategy criada: ${this.stopLossStrategy.constructor.name}`);
+    this.strategyType = finalStrategyType;
+    this.stopLossStrategy = null; // Será inicializado de forma assíncrona
     this.lastVolumeCheck = 0;
     this.cachedVolume = null;
     this.volumeCacheTimeout = 24 * 60 * 60 * 1000; // 24 horas em ms
     
     // Loga a configuração do trailing stop
     TrailingStop.logTrailingStopConfig();
+  }
+
+  async initializeStopLoss() {
+    if (!this.stopLossStrategy) {
+      this.stopLossStrategy = await StopLossFactory.createStopLoss(this.strategyType);
+      console.log(`🔧 [TRAILING_INIT] Stop loss strategy criada: ${this.stopLossStrategy.constructor.name}`);
+    }
+    return this.stopLossStrategy;
   }
 
   // Gerenciador de estado do trailing stop para cada posição
@@ -247,7 +255,9 @@ class TrailingStop {
             strategyType: 'TRADITIONAL',
             activated: shouldActivate,
             initialized: shouldActivate,
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            // Adiciona campo para alvo de Take Profit (será usado pela Alpha Flow)
+            takeProfitPrice: null // Será preenchido quando a estratégia for identificada
           };
         }
 
@@ -421,12 +431,13 @@ class TrailingStop {
    * Re-inicializa o stop loss com uma nova estratégia
    * @param {string} strategyType - Novo tipo de estratégia
    */
-  reinitializeStopLoss(strategyType) {
+  async reinitializeStopLoss(strategyType) {
     if (!strategyType) {
       return;
     }
     
-    this.stopLossStrategy = StopLossFactory.createStopLoss(strategyType);
+    this.strategyType = strategyType;
+    this.stopLossStrategy = await StopLossFactory.createStopLoss(strategyType);
   }
 
   /**
@@ -553,14 +564,15 @@ class TrailingStop {
   static async getAtrValue(symbol) {
     try {
       const timeframe = process.env.ACCOUNT1_TIME || '30m';
-      const candles = await Markets.getKLines(symbol, timeframe, 30);
+      const markets = new Markets();
+      const candles = await markets.getKLines(symbol, timeframe, 30);
       
       if (!candles || candles.length < 14) {
         return null;
       }
 
       const { calculateIndicators } = await import('../Decision/Indicators.js');
-      const indicators = calculateIndicators(candles);
+              const indicators = await calculateIndicators(candles, timeframe, symbol);
       
       return indicators.atr?.atr || null;
     } catch (error) {
@@ -1333,7 +1345,8 @@ class TrailingStop {
       const Account = await AccountController.get();
 
       for (const position of positions) {
-        const stopLossDecision = this.stopLossStrategy.shouldClosePosition(position, Account);
+        const stopLossStrategy = await this.initializeStopLoss();
+        const stopLossDecision = stopLossStrategy.shouldClosePosition(position, Account);
 
         if (stopLossDecision && stopLossDecision.shouldClose) {
           TrailingStop.colorLogger.positionClosed(`🛑 [STOP_LOSS] ${position.symbol}: Fechando por stop loss principal - ${stopLossDecision.reason}`);
@@ -1348,87 +1361,117 @@ class TrailingStop {
           continue;
         }
 
-        if (enableTrailingStop) {
-          if (!TrailingStop.trailingModeLogged.has(position.symbol)) {
-            console.log(`🎯 [TRAILING_MODE] ${position.symbol}: Modo Trailing Stop ativo`);
-            TrailingStop.trailingModeLogged.add(position.symbol);
+        // --- CORREÇÃO CRÍTICA: LÓGICA DE TAKE PROFIT CONDICIONAL ---
+        const positionState = TrailingStop.trailingState.get(position.symbol);
+        const currentPrice = parseFloat(position.markPrice || position.lastPrice || 0);
+
+        if (positionState && positionState.strategyName === 'AlphaFlowStrategy') {
+          // Modo ALPHA FLOW: Verifica apenas o alvo de TP fixo calculado pela estratégia
+          console.log(`📋 [PROFIT_MODE] ${position.symbol}: Modo Alpha Flow ativo. Verificando alvo de TP fixo...`);
+          
+          // Obtenha o 'targetPrice' que foi salvo quando a ordem foi criada
+          const targetPrice = positionState.takeProfitPrice; // Assumindo que salvamos o alvo no estado
+          
+          if (targetPrice) {
+            const isLong = parseFloat(position.netQuantity) > 0;
+            const isShort = parseFloat(position.netQuantity) < 0;
+            
+            if ((isLong && currentPrice >= targetPrice) || (isShort && currentPrice <= targetPrice)) {
+              console.log(`🎯 [PROFIT_TARGET] ${position.symbol}: Alvo de preço da Alpha Flow atingido! Fechando posição.`);
+              await OrderController.forceClose(position, Account);
+              await TrailingStop.onPositionClosed(position, 'alpha_flow_target');
+              continue;
+            }
+          } else {
+            console.log(`⚠️ [PROFIT_MODE] ${position.symbol}: Alvo de TP não encontrado no estado da posição`);
           }
           
-          await this.updateTrailingStopForPosition(position);
+          // Para Alpha Flow, pula as verificações de profit mínimo e configurado
+          console.log(`📋 [PROFIT_MODE] ${position.symbol}: Alpha Flow - aguardando alvo específico...`);
           
-          const trailingState = TrailingStop.trailingState.get(position.symbol);
-          
-          if (trailingState && trailingState.activated) {
-            TrailingStop.colorLogger.trailingActiveCheck(`${position.symbol}: Trailing Stop ativo - verificando gatilho`);
+        } else {
+          // Modo DEFAULT ou outros: Usa a lógica antiga de PROFIT_CHECK e Trailing Stop
+          console.log(`📋 [PROFIT_MODE] ${position.symbol}: Modo ${positionState?.strategyName || 'DEFAULT'} ativo.`);
+
+          if (enableTrailingStop) {
+            if (!TrailingStop.trailingModeLogged.has(position.symbol)) {
+              console.log(`🎯 [TRAILING_MODE] ${position.symbol}: Modo Trailing Stop ativo`);
+              TrailingStop.trailingModeLogged.add(position.symbol);
+            }
             
-            const trailingDecision = this.checkTrailingStopTrigger(position, trailingState);
+            await this.updateTrailingStopForPosition(position);
             
-            if (trailingDecision && trailingDecision.shouldClose) {
-              TrailingStop.colorLogger.positionClosed(`🚨 [TRAILING_EXECUTION] ${position.symbol}: Executando fechamento por Trailing Stop. Motivo: ${trailingDecision.reason}`);
+            const trailingState = TrailingStop.trailingState.get(position.symbol);
+            
+            if (trailingState && trailingState.activated) {
+              TrailingStop.colorLogger.trailingActiveCheck(`${position.symbol}: Trailing Stop ativo - verificando gatilho`);
+              
+              const trailingDecision = this.checkTrailingStopTrigger(position, trailingState);
+              
+              if (trailingDecision && trailingDecision.shouldClose) {
+                TrailingStop.colorLogger.positionClosed(`🚨 [TRAILING_EXECUTION] ${position.symbol}: Executando fechamento por Trailing Stop. Motivo: ${trailingDecision.reason}`);
+                await OrderController.forceClose(position, Account);
+                await TrailingStop.onPositionClosed(position, 'trailing_stop');
+                continue;
+              }
+              
+              const priceType = position.markPrice ? 'Current Price' : 'Last Price';
+              const distance = trailingState.isLong 
+                ? ((currentPrice - (trailingState.trailingStopPrice || 0)) / currentPrice * 100).toFixed(2)
+                : (((trailingState.trailingStopPrice || 0) - currentPrice) / currentPrice * 100).toFixed(2);
+              
+              const direction = trailingState.isLong ? 'LONG' : 'SHORT';
+              const priceRecordLabel = trailingState.isLong ? 'Preço Máximo' : 'Preço Mínimo';
+              const priceRecordValue = trailingState.isLong ? trailingState.highestPrice : trailingState.lowestPrice;
+              
+              TrailingStop.colorLogger.trailingActive(
+                  `${position.symbol} (${direction}): Trailing ativo - ` +
+                  `${priceType}: $${currentPrice.toFixed(4)}, ` +
+                  `TrailingStop: $${trailingState.trailingStopPrice?.toFixed(4) || 'N/A'}, ` +
+                  `${priceRecordLabel}: $${priceRecordValue?.toFixed(4) || 'N/A'}, ` +
+                  `Distância até Stop: ${distance}%\n`
+              );
+            } else {
+              const priceType = position.markPrice ? 'Current Price' : 'Last Price';
+              const pnl = TrailingStop.calculatePnL(position, Account);
+              const entryPrice = parseFloat(position.entryPrice || 0);
+              
+              if (pnl.pnlPct < 0) {
+                TrailingStop.colorLogger.trailingWaitingProfitable(`${position.symbol}: Trailing Stop aguardando posição ficar lucrativa - ${priceType}: $${currentPrice.toFixed(4)}, Preço de Entrada: $${entryPrice.toFixed(4)}, PnL: ${pnl.pnlPct.toFixed(2)}% (prejuízo)\n`);
+              } else {
+                TrailingStop.colorLogger.trailingWaitingActivation(`${position.symbol}: Trailing Stop aguardando ativação - ${priceType}: $${currentPrice.toFixed(4)}, Preço de Entrada: $${entryPrice.toFixed(4)}, PnL: ${pnl.pnlPct.toFixed(2)}%\n`);
+              }
+            }
+          } else {
+            TrailingStop.colorLogger.profitFixed(`${position.symbol}: Modo Take Profit fixo ativo`);
+            
+            if (await this.shouldCloseForConfiguredProfit(position)) {
+              TrailingStop.colorLogger.positionClosed(`💰 [PROFIT_CONFIGURED] ${position.symbol}: Fechando por profit mínimo configurado`);
               await OrderController.forceClose(position, Account);
-              await TrailingStop.onPositionClosed(position, 'trailing_stop');
+              await TrailingStop.onPositionClosed(position, 'profit_configured');
+              continue;
+            }
+
+            if (await this.shouldCloseForMinimumProfit(position)) {
+              TrailingStop.colorLogger.positionClosed(`💰 [PROFIT_MINIMUM] ${position.symbol}: Fechando por profit mínimo baseado em taxas`);
+              await OrderController.forceClose(position, Account);
+              await TrailingStop.onPositionClosed(position, 'profit_minimum');
+              continue;
+            }
+
+            const adxCrossoverDecision = await this.checkADXCrossover(position);
+            if (adxCrossoverDecision && adxCrossoverDecision.shouldClose) {
+              TrailingStop.colorLogger.positionClosed(`📈 [ADX_CROSSOVER] ${position.symbol}: ${adxCrossoverDecision.reason}`);
+              await OrderController.forceClose(position, Account);
+              await TrailingStop.onPositionClosed(position, 'adx_crossover');
               continue;
             }
             
-            const currentPrice = parseFloat(position.markPrice || position.lastPrice || 0);
-            const priceType = position.markPrice ? 'Current Price' : 'Last Price';
-            const distance = trailingState.isLong 
-              ? ((currentPrice - (trailingState.trailingStopPrice || 0)) / currentPrice * 100).toFixed(2)
-              : (((trailingState.trailingStopPrice || 0) - currentPrice) / currentPrice * 100).toFixed(2);
-            
-            const direction = trailingState.isLong ? 'LONG' : 'SHORT';
-            const priceRecordLabel = trailingState.isLong ? 'Preço Máximo' : 'Preço Mínimo';
-            const priceRecordValue = trailingState.isLong ? trailingState.highestPrice : trailingState.lowestPrice;
-            
-            TrailingStop.colorLogger.trailingActive(
-                `${position.symbol} (${direction}): Trailing ativo - ` +
-                `${priceType}: $${currentPrice.toFixed(4)}, ` +
-                `TrailingStop: $${trailingState.trailingStopPrice?.toFixed(4) || 'N/A'}, ` +
-                `${priceRecordLabel}: $${priceRecordValue?.toFixed(4) || 'N/A'}, ` +
-                `Distância até Stop: ${distance}%\n`
-            );
-          } else {
-            const currentPrice = parseFloat(position.markPrice || position.lastPrice || 0);
             const priceType = position.markPrice ? 'Current Price' : 'Last Price';
             const pnl = TrailingStop.calculatePnL(position, Account);
             const entryPrice = parseFloat(position.entryPrice || 0);
-            
-            if (pnl.pnlPct < 0) {
-              TrailingStop.colorLogger.trailingWaitingProfitable(`${position.symbol}: Trailing Stop aguardando posição ficar lucrativa - ${priceType}: $${currentPrice.toFixed(4)}, Preço de Entrada: $${entryPrice.toFixed(4)}, PnL: ${pnl.pnlPct.toFixed(2)}% (prejuízo)\n`);
-            } else {
-              TrailingStop.colorLogger.trailingWaitingActivation(`${position.symbol}: Trailing Stop aguardando ativação - ${priceType}: $${currentPrice.toFixed(4)}, Preço de Entrada: $${entryPrice.toFixed(4)}, PnL: ${pnl.pnlPct.toFixed(2)}%\n`);
-            }
+            TrailingStop.colorLogger.profitMonitor(`${position.symbol}: Take Profit fixo - ${priceType}: $${currentPrice.toFixed(4)}, Preço de Entrada: $${entryPrice.toFixed(4)}, PnL: ${pnl.pnlPct.toFixed(2)}%\n`);
           }
-        } else {
-          TrailingStop.colorLogger.profitFixed(`${position.symbol}: Modo Take Profit fixo ativo`);
-          
-          if (await this.shouldCloseForConfiguredProfit(position)) {
-            TrailingStop.colorLogger.positionClosed(`💰 [PROFIT_CONFIGURED] ${position.symbol}: Fechando por profit mínimo configurado`);
-            await OrderController.forceClose(position, Account);
-            await TrailingStop.onPositionClosed(position, 'profit_configured');
-            continue;
-          }
-
-          if (await this.shouldCloseForMinimumProfit(position)) {
-            TrailingStop.colorLogger.positionClosed(`💰 [PROFIT_MINIMUM] ${position.symbol}: Fechando por profit mínimo baseado em taxas`);
-            await OrderController.forceClose(position, Account);
-            await TrailingStop.onPositionClosed(position, 'profit_minimum');
-            continue;
-          }
-
-          const adxCrossoverDecision = await this.checkADXCrossover(position);
-          if (adxCrossoverDecision && adxCrossoverDecision.shouldClose) {
-            TrailingStop.colorLogger.positionClosed(`📈 [ADX_CROSSOVER] ${position.symbol}: ${adxCrossoverDecision.reason}`);
-            await OrderController.forceClose(position, Account);
-            await TrailingStop.onPositionClosed(position, 'adx_crossover');
-            continue;
-          }
-          
-          const currentPrice = parseFloat(position.markPrice || position.lastPrice || 0);
-          const priceType = position.markPrice ? 'Current Price' : 'Last Price';
-          const pnl = TrailingStop.calculatePnL(position, Account);
-          const entryPrice = parseFloat(position.entryPrice || 0);
-          TrailingStop.colorLogger.profitMonitor(`${position.symbol}: Take Profit fixo - ${priceType}: $${currentPrice.toFixed(4)}, Preço de Entrada: $${entryPrice.toFixed(4)}, PnL: ${pnl.pnlPct.toFixed(2)}%\n`);
         }
 
         try {
@@ -1462,15 +1505,16 @@ class TrailingStop {
         return null;
       }
 
-      const timeframe = process.env.TIME || '5m';
-      const candles = await Markets.getKLines(position.symbol, timeframe, 30);
+      const adxTimeframe = process.env.ACCOUNT1_TIME || '5m';
+      const markets = new Markets();
+      const candles = await markets.getKLines(position.symbol, adxTimeframe, 30);
       
       if (!candles || candles.length < 20) {
         return null;
       }
 
       const { calculateIndicators } = await import('../Decision/Indicators.js');
-      const indicators = calculateIndicators(candles);
+              const indicators = await calculateIndicators(candles, adxTimeframe, position.symbol);
       
       if (!indicators.adx || !indicators.adx.diPlus || !indicators.adx.diMinus) {
         return null;

@@ -9,12 +9,15 @@ import OrderController from './src/Controllers/OrderController.js';
 import { StrategySelector } from './src/Utils/StrategySelector.js';
 import MultiBotManager from './src/MultiBot/MultiBotManager.js';
 import AccountConfig from './src/Config/AccountConfig.js';
+import TimeframeConfig from './src/Config/TimeframeConfig.js';
 import readline from 'readline';
 
 // BOT_MODE removido - sempre usa modo DEFAULT
 
 // Instância global do Decision (será inicializada com a estratégia selecionada)
 let decisionInstance = null;
+
+// Funções de timeframe movidas para TimeframeConfig.js
 
 // Variáveis para controle do timer geral
 let globalTimerInterval = null;
@@ -35,12 +38,12 @@ function initializeTrailingStop() {
 }
 
 // Função para exibir timer geral unificado
-function showGlobalTimer() {
+function showGlobalTimer(waitTimeMs = null) {
   if (globalTimerInterval) {
     clearInterval(globalTimerInterval);
   }
 
-  const durationMs = 60000; // 60 segundos
+  const durationMs = waitTimeMs || 60000; // Usa o tempo fornecido ou 60 segundos padrão
   const startTime = Date.now();
   const nextAnalysis = new Date(startTime + durationMs);
   const timeString = nextAnalysis.toLocaleTimeString('pt-BR', { 
@@ -49,6 +52,22 @@ function showGlobalTimer() {
     second: '2-digit',
     hour12: false 
   });
+
+  // Função para calcular o progresso baseado no tempo real decorrido
+  const calculateProgress = () => {
+    // Calcula o tempo decorrido desde o início do período atual
+    const timeframeMs = TimeframeConfig.parseTimeframeToMs(process.env.ACCOUNT1_TIME || process.env.TIME || '5m');
+    const now = Date.now();
+    const currentPeriodStart = Math.floor(now / timeframeMs) * timeframeMs;
+    const elapsedInPeriod = now - currentPeriodStart;
+    const progress = Math.min((elapsedInPeriod / timeframeMs) * 100, 100);
+    
+
+    
+    return Math.floor(progress);
+  };
+
+
 
   // Intercepta console.log para manter o progresso no rodapé
   const originalLog = console.log;
@@ -89,54 +108,46 @@ function showGlobalTimer() {
     // Mostra o log
     originalLog.apply(console, args);
     // Restaura o progresso no rodapé
-    const elapsed = Date.now() - startTime;
-    const progress = Math.min((elapsed / durationMs) * 100, 100);
-    const bars = Math.floor(progress / 5);
+    const percentage = calculateProgress();
+    const bars = Math.floor(percentage / 5);
     const emptyBars = 20 - bars;
     const progressBar = '█'.repeat(bars) + '░'.repeat(emptyBars);
-    const percentage = Math.floor(progress);
-    showProgress(progress, progressBar, percentage);
+    showProgress(percentage, progressBar, percentage);
   };
 
   // Intercepta console.error
   console.error = (...args) => {
     clearProgressLine();
     originalError.apply(console, args);
-    const elapsed = Date.now() - startTime;
-    const progress = Math.min((elapsed / durationMs) * 100, 100);
-    const bars = Math.floor(progress / 5);
+    const percentage = calculateProgress();
+    const bars = Math.floor(percentage / 5);
     const emptyBars = 20 - bars;
     const progressBar = '█'.repeat(bars) + '░'.repeat(emptyBars);
-    const percentage = Math.floor(progress);
-    showProgress(progress, progressBar, percentage);
+    showProgress(percentage, progressBar, percentage);
   };
 
   // Intercepta console.warn
   console.warn = (...args) => {
     clearProgressLine();
     originalWarn.apply(console, args);
-    const elapsed = Date.now() - startTime;
-    const progress = Math.min((elapsed / durationMs) * 100, 100);
-    const bars = Math.floor(progress / 5);
+    const percentage = calculateProgress();
+    const bars = Math.floor(percentage / 5);
     const emptyBars = 20 - bars;
     const progressBar = '█'.repeat(bars) + '░'.repeat(emptyBars);
-    const percentage = Math.floor(progress);
-    showProgress(progress, progressBar, percentage);
+    showProgress(percentage, progressBar, percentage);
   };
 
   globalTimerInterval = setInterval(() => {
-    const elapsed = Date.now() - startTime;
-    const progress = Math.min((elapsed / durationMs) * 100, 100);
-    const bars = Math.floor(progress / 5);
+    const percentage = calculateProgress();
+    const bars = Math.floor(percentage / 5);
     const emptyBars = 20 - bars;
     
     const progressBar = '█'.repeat(bars) + '░'.repeat(emptyBars);
-    const percentage = Math.floor(progress);
     
     // Mostra o progresso no rodapé
-    showProgress(progress, progressBar, percentage);
+    showProgress(percentage, progressBar, percentage);
     
-    if (progress >= 100) {
+    if (percentage >= 100) {
       clearInterval(globalTimerInterval);
       // Restaura console.log original
       console.log = originalLog;
@@ -177,43 +188,42 @@ async function startDecision() {
       time: process.env.ACCOUNT1_TIME || process.env.TIME || '5m',
       accountId: 'CONTA1'
     };
-  } else if (strategy === 'PRO_MAX') {
-    // Usa configurações da CONTA2
+  } else if (strategy === 'ALPHA_FLOW') {
+    // Configurações específicas para Alpha Flow
     config = {
-      volumeOrder: Number(process.env.ACCOUNT2_VOLUME_ORDER) || Number(process.env.VOLUME_ORDER) || 100,
-      capitalPercentage: Number(process.env.ACCOUNT2_CAPITAL_PERCENTAGE) || Number(process.env.CAPITAL_PERCENTAGE) || 0,
-      limitOrder: Number(process.env.ACCOUNT2_LIMIT_ORDER) || Number(process.env.LIMIT_ORDER) || 100,
-      time: process.env.ACCOUNT2_TIME || process.env.TIME || '5m',
-      accountId: 'CONTA2',
-      // Configurações específicas da estratégia PRO_MAX
-      ignoreBronzeSignals: process.env.ACCOUNT2_IGNORE_BRONZE_SIGNALS || process.env.IGNORE_BRONZE_SIGNALS || 'true',
-      adxLength: Number(process.env.ACCOUNT2_ADX_LENGTH) || Number(process.env.ADX_LENGTH) || 14,
-      adxThreshold: Number(process.env.ACCOUNT2_ADX_THRESHOLD) || Number(process.env.ADX_THRESHOLD) || 20,
-      adxAverageLength: Number(process.env.ACCOUNT2_ADX_AVERAGE_LENGTH) || Number(process.env.ADX_AVERAGE_LENGTH) || 21,
-      useRsiValidation: process.env.ACCOUNT2_USE_RSI_VALIDATION || process.env.USE_RSI_VALIDATION || 'true',
-      useStochValidation: process.env.ACCOUNT2_USE_STOCH_VALIDATION || process.env.USE_STOCH_VALIDATION || 'true',
-      useMacdValidation: process.env.ACCOUNT2_USE_MACD_VALIDATION || process.env.USE_MACD_VALIDATION || 'true',
-      rsiLength: Number(process.env.ACCOUNT2_RSI_LENGTH) || Number(process.env.RSI_LENGTH) || 14,
-      rsiAverageLength: Number(process.env.ACCOUNT2_RSI_AVERAGE_LENGTH) || Number(process.env.RSI_AVERAGE_LENGTH) || 14,
-      rsiBullThreshold: Number(process.env.ACCOUNT2_RSI_BULL_THRESHOLD) || Number(process.env.RSI_BULL_THRESHOLD) || 45,
-      rsiBearThreshold: Number(process.env.ACCOUNT2_RSI_BEAR_THRESHOLD) || Number(process.env.RSI_BEAR_THRESHOLD) || 55,
-      stochKLength: Number(process.env.ACCOUNT2_STOCH_K_LENGTH) || Number(process.env.STOCH_K_LENGTH) || 14,
-      stochDLength: Number(process.env.ACCOUNT2_STOCH_D_LENGTH) || Number(process.env.STOCH_D_LENGTH) || 3,
-      stochSmooth: Number(process.env.ACCOUNT2_STOCH_SMOOTH) || Number(process.env.STOCH_SMOOTH) || 3,
-      stochBullThreshold: Number(process.env.ACCOUNT2_STOCH_BULL_THRESHOLD) || Number(process.env.STOCH_BULL_THRESHOLD) || 45,
-      stochBearThreshold: Number(process.env.ACCOUNT2_STOCH_BEAR_THRESHOLD) || Number(process.env.STOCH_BEAR_THRESHOLD) || 55,
-      macdFastLength: Number(process.env.ACCOUNT2_MACD_FAST_LENGTH) || Number(process.env.MACD_FAST_LENGTH) || 12,
-      macdSlowLength: Number(process.env.ACCOUNT2_MACD_SLOW_LENGTH) || Number(process.env.MACD_SLOW_LENGTH) || 26,
-      macdSignalLength: Number(process.env.ACCOUNT2_MACD_SIGNAL_LENGTH) || Number(process.env.MACD_SIGNAL_LENGTH) || 9
+      volumeOrder: Number(process.env.ACCOUNT1_VOLUME_ORDER) || Number(process.env.VOLUME_ORDER) || 100,
+      capitalPercentage: Number(process.env.ACCOUNT1_CAPITAL_PERCENTAGE) || Number(process.env.CAPITAL_PERCENTAGE) || 0,
+      limitOrder: Number(process.env.ACCOUNT1_LIMIT_ORDER) || Number(process.env.LIMIT_ORDER) || 100,
+      time: process.env.ACCOUNT1_TIME || process.env.TIME || '5m',
+      accountId: 'CONTA1',
+      // Configurações específicas da estratégia Alpha Flow
+      capitalPercentageBronze: Number(process.env.CAPITAL_PERCENTAGE_BRONZE) || 50,
+      capitalPercentageSilver: Number(process.env.CAPITAL_PERCENTAGE_SILVER) || 75,
+      capitalPercentageGold: Number(process.env.CAPITAL_PERCENTAGE_GOLD) || 100,
+      order1WeightPct: Number(process.env.ORDER_1_WEIGHT_PCT) || 50,
+      order2WeightPct: Number(process.env.ORDER_2_WEIGHT_PCT) || 30,
+      order3WeightPct: Number(process.env.ORDER_3_WEIGHT_PCT) || 20
     };
   }
   
   await decisionInstance.analyze(null, null, config);
   
+  // SISTEMA GLOBAL DE INTERVALO BASEADO NO EXECUTION_MODE
+  let nextInterval;
+  const timeframeConfig = new TimeframeConfig();
+  
+  if (process.env.EXECUTION_MODE === 'ON_CANDLE_CLOSE') {
+    // Modo ON_CANDLE_CLOSE: Aguarda o próximo fechamento de vela
+    nextInterval = timeframeConfig.getTimeUntilNextCandleClose();
+  } else {
+    // Modo REALTIME: Análise a cada 60 segundos
+    nextInterval = 60000;
+  }
+  
   // Inicia o timer geral após cada análise
   showGlobalTimer();
   
-  setTimeout(startDecision, 60000); //1m
+  setTimeout(startDecision, nextInterval);
 }
 
 async function startStops() {
@@ -295,13 +305,14 @@ async function showModeSelectionMenu(hasMultiAccountConfig) {
     console.log('      • Take profit único');
     console.log('      • Ideal para corretoras que pagam por volume\n');
     
-    console.log('2️⃣  Estratégia LUCRO (PRO MAX) [BETA]');
-    console.log('   📈 Foco: Lucro por operação');
-    console.log('   🎯 Ideal para: Lucro por operação, com stop loss dinâmico e take profit com alvos.');
+    console.log('2️⃣  Estratégia ALPHA FLOW [NOVA]');
+    console.log('   🧠 Foco: Análise avançada de momentum e money flow');
+    console.log('   🎯 Ideal para: Trading baseado em análise técnica avançada');
     console.log('   💡 Características:');
-    console.log('      • Sinais filtrados por qualidade (BRONZE/SILVER/GOLD/DIAMOND)');
-    console.log('      • Múltiplos take profits');
-    console.log('      • Stop loss baseado em ATR\n');
+    console.log('      • Análise de momentum e money flow');
+    console.log('      • Detecção de divergência CVD');
+    console.log('      • Sinais BRONZE, PRATA e OURO');
+    console.log('      • Ordens escalonadas com pirâmide invertida\n');
     
     console.log('3️⃣  Sair\n');
     
@@ -319,7 +330,7 @@ async function showModeSelectionMenu(hasMultiAccountConfig) {
       if (choice === 1) {
         resolve('DEFAULT');
       } else if (choice === 2) {
-        resolve('PRO_MAX');
+        resolve('ALPHA_FLOW');
       } else if (choice === 3) {
         resolve('exit');
       } else {
@@ -410,24 +421,55 @@ async function startBot() {
       console.log('🚀 Iniciando BackBot em modo Conta Única...\n');
       isMultiBotMode = false;
       
-      // Inicializa a estratégia selecionada
-      initializeDecisionStrategy(selectedStrategy);
-      
-      // Inicializa o TrailingStop com a estratégia correta
-      initializeTrailingStop();
-      
-      // Log da estratégia selecionada
-      console.log('🔑 Estratégia VOLUMES: usando credenciais da CONTA1');
+          // Inicializa a estratégia selecionada
+    initializeDecisionStrategy(selectedStrategy);
+    
+    // Inicializa o TrailingStop com a estratégia correta
+    initializeTrailingStop();
+    
+    // Log da estratégia selecionada
+    console.log(`🔑 Estratégia ${selectedStrategy}: usando credenciais da CONTA1`);
+    
+    // Log do modo de execução
+    const executionMode = process.env.EXECUTION_MODE || 'REALTIME';
+    if (selectedStrategy === 'ALPHA_FLOW') {
+      console.log('🧠 [ALPHA_FLOW] Modo ON_CANDLE_CLOSE forçado automaticamente');
+    } else {
+      console.log(`⚙️ [EXECUTION_MODE] Modo configurado: ${executionMode}`);
+    }
 
-      // Inicia o PnL Controller
-      PnlController.run(24);
+    // Inicia o PnL Controller
+    PnlController.run(24);
 
-      // Inicia os serviços
-      console.log('🚀 Iniciando serviços...');
+    // Inicia os serviços
+    console.log('🚀 Iniciando serviços...');
+    startStops();
+    startPendingOrdersMonitor();
+    startOrphanOrderMonitor();
+
+    // Força EXECUTION_MODE para ON_CANDLE_CLOSE se for Alpha Flow
+    if (selectedStrategy === 'ALPHA_FLOW') {
+      process.env.EXECUTION_MODE = 'ON_CANDLE_CLOSE';
+    }
+
+    // Verifica se deve fazer análise imediatamente ou aguardar
+    const timeframeConfig = new TimeframeConfig();
+    const waitCheck = timeframeConfig.shouldWaitBeforeAnalysis();
+    
+    if (waitCheck.shouldWait) {
+      console.log(`⏰ [ON_CANDLE_CLOSE] Próxima análise em ${Math.floor(waitCheck.waitTime / 1000)}s (fechamento de vela)`);
+      
+      // Inicia o timer geral para mostrar progresso
+      showGlobalTimer(waitCheck.waitTime);
+      
+      // Agenda a primeira análise
+      setTimeout(() => {
+        startDecision();
+      }, waitCheck.waitTime);
+    } else {
+      console.log(`⏰ [TIMEFRAME] ${waitCheck.reason} - iniciando análise imediatamente`);
       startDecision();
-      startStops();
-      startPendingOrdersMonitor();
-      startOrphanOrderMonitor();
+    }
 
       setInterval(() => {
         OrderController.checkForUnmonitoredPositions('DEFAULT');

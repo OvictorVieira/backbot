@@ -173,4 +173,4 @@ class Markets {
 
 }
 
-export default new Markets();
+export default Markets;

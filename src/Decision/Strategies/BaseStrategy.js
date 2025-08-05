@@ -20,7 +20,7 @@ export class BaseStrategy {
    * @returns {boolean} - True se dados são válidos
    */
   validateData(data) {
-    return !!(data.vwap?.lowerBands?.length && 
+    return !!(data && data.vwap?.lowerBands?.length && 
               data.vwap?.upperBands?.length && 
               data.vwap.vwap != null);
   }
@@ -57,7 +57,7 @@ export class BaseStrategy {
       riskRewardRatio: Number(riskRewardRatio.toFixed(2)),
       takeProfitPct: Number(takeProfitPct.toFixed(2)),
       reasons: {
-        pct: isValidPct ? null : `TP ${takeProfitPct.toFixed(2)}% < mínimo ${MIN_TAKE_PROFIT_PCT}%`
+        pct: isValidPct ? null : `TP ${takeProfitPct.toFixed(2)}% < mínimo ${MIN_TAKE_PROFIT_PCT.toFixed(1)}%`
       }
     };
   }
