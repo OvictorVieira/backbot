@@ -426,7 +426,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
     setApiKeysTestResult(null);
 
     try {
-      const response = await axios.post('http://localhost:3001/api/test-api-keys', {
+              const response = await axios.post('http://localhost:3001/api/validate-credentials', {
         apiKey: formData.apiKey,
         apiSecret: formData.apiSecret
       });
