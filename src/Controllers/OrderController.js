@@ -975,8 +975,8 @@ class OrderController {
 
   static async forceClose(position, account = null, config = null) {
     // Se account não foi fornecido, obtém da API
-    const accountController = new AccountController();
-    const Account = account || await accountController.get(config);
+    const AccountController = await import('../Controllers/AccountController.js');
+    const Account = account || await AccountController.default.get(config);
     
     // Log detalhado para debug
     console.log(`🔍 [FORCE_CLOSE] Procurando market para ${position.symbol}`);
@@ -2320,8 +2320,8 @@ class OrderController {
       }
 
       // Busca informações do mercado
-      const accountController = new AccountController();
-      const Account = await accountController.get({ apiKey, apiSecret });
+      const AccountController = await import('../Controllers/AccountController.js');
+      const Account = await AccountController.default.get({ apiKey, apiSecret });
       const marketInfo = Account.markets.find(m => m.symbol === position.symbol);
       if (!marketInfo) {
         console.error(`❌ [FAILSAFE] Market info não encontrada para ${position.symbol}`);

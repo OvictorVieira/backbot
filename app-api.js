@@ -796,13 +796,19 @@ app.get('/api/bot/status', (req, res) => {
   try {
     const configs = ConfigManager.loadConfigs();
     const status = configs.map(config => {
+      // Verifica se o bot está realmente rodando (status no DB + instância ativa)
       const isRunning = config.status === 'running' && activeBotInstances.has(config.id);
+      
+      // Se o status no DB é 'running' mas não há instância ativa, considera como 'stopped'
+      const effectiveStatus = config.status === 'running' && !activeBotInstances.has(config.id) 
+        ? 'stopped' 
+        : config.status || 'stopped';
       
       return {
         id: config.id,
         botName: config.botName,
         strategyName: config.strategyName,
-        status: config.status || 'stopped',
+        status: effectiveStatus,
         startTime: config.startTime,
         isRunning: isRunning,
         config: config

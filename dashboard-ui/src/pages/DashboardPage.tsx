@@ -322,9 +322,9 @@ export function DashboardPage() {
     }
   }
 
-  const getBotStatus = (strategyName: string) => {
-    const status = botStatuses.find(status => status.strategyName === strategyName)
-    console.log(`🔍 [getBotStatus] ${strategyName}:`, status)
+  const getBotStatus = (botId: number) => {
+    const status = botStatuses.find(status => status.id === botId)
+    console.log(`🔍 [getBotStatus] Bot ID ${botId}:`, status)
     return status
   }
 
@@ -505,20 +505,20 @@ export function DashboardPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {configs.map((config) => {
-            const status = getBotStatus(config.strategyName)
+            const status = getBotStatus(config.id || 0)
             
             return (
               <BotCard
-                key={config.strategyName}
+                key={config.id || config.strategyName}
                 config={config}
                 isRunning={status?.isRunning || false}
-                isLoading={loadingBots[config.strategyName] || false}
-                isRestarting={restartingBots[config.strategyName] || false}
+                isLoading={loadingBots[config.id?.toString() || config.strategyName] || false}
+                isRestarting={restartingBots[config.id?.toString() || config.strategyName] || false}
                 botStatus={status}
-                onStart={() => handleStartBot(config.strategyName)}
-                onStop={() => handleStopBot(config.strategyName)}
-                onConfigure={() => handleEditBot(config.strategyName)}
-                onEdit={() => handleEditBot(config.strategyName)}
+                onStart={() => handleStartBot(config.id?.toString() || config.strategyName)}
+                onStop={() => handleStopBot(config.id?.toString() || config.strategyName)}
+                onConfigure={() => handleEditBot(config.id?.toString() || config.strategyName)}
+                onEdit={() => handleEditBot(config.id?.toString() || config.strategyName)}
               />
             )
           })}

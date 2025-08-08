@@ -215,7 +215,8 @@ class ConfigManager {
       botClientOrderId: config.botClientOrderId || Math.floor(Math.random() * 10000),
       orderCounter: config.orderCounter || 0,
       createdAt: new Date().toISOString(),
-      status: 'stopped' // Status inicial
+      status: 'stopped', // Status inicial
+      nextValidationAt: new Date(Date.now() + 60000).toISOString() // Próxima validação em 60s
     };
     
     configs.push(newBotConfig);
