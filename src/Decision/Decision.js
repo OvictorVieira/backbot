@@ -177,9 +177,15 @@ class Decision {
     // Usa 100 candles para garantir que todos os indicadores tenham dados suficientes
     const candleCount = 100;
 
-    const markets = Account.markets.filter((el) => {
+    // Filtra mercados baseado em tokens autorizados do config
+    let markets = Account.markets.filter((el) => {
       return !closed_markets.includes(el.symbol) 
-    })
+    });
+
+    // Se config tem authorizedTokens, filtra apenas esses tokens
+    if (config?.authorizedTokens && config.authorizedTokens.length > 0) {
+      markets = markets.filter((el) => config.authorizedTokens.includes(el.symbol));
+    }
 
     try {
       // Paraleliza a coleta de dados de todos os mercados com cache

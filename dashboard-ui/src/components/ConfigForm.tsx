@@ -135,8 +135,8 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
       ...prev,
       capitalPercentage: 20,
       time: '15m',
-      maxNegativePnlStopPct: -5,
-      minProfitPercentage: 0.5,
+      maxNegativePnlStopPct: -10,
+      minProfitPercentage: 10,
       maxSlippagePct: 0.5,
       executionMode: 'REALTIME',
       enableHybridStopStrategy: false,
@@ -264,8 +264,12 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
     }
 
     const maxNegativePnlStopPct = parseFloat(String(formData.maxNegativePnlStopPct));
-    if (isNaN(maxNegativePnlStopPct) || maxNegativePnlStopPct >= 0) {
-      newErrors.maxNegativePnlStopPct = 'Stop Loss deve ser um valor negativo';
+    if (isNaN(maxNegativePnlStopPct)) {
+      newErrors.maxNegativePnlStopPct = 'Stop Loss deve ser um número válido';
+    } else if (maxNegativePnlStopPct >= 0) {
+      newErrors.maxNegativePnlStopPct = 'Stop Loss deve ser um valor negativo (ex: -10)';
+    } else if (maxNegativePnlStopPct > -1) {
+      newErrors.maxNegativePnlStopPct = 'Stop Loss deve ser menor que -1%';
     }
 
     const minProfitPercentage = parseFloat(String(formData.minProfitPercentage));
@@ -280,6 +284,11 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
 
     if (formData.maxOpenOrders <= 0 || formData.maxOpenOrders > 50) {
       newErrors.maxOpenOrders = 'Máximo de ordens deve estar entre 1 e 50';
+    }
+
+    // Validação obrigatória para tokens autorizados
+    if (!formData.authorizedTokens || formData.authorizedTokens.length === 0) {
+      newErrors.authorizedTokens = 'Selecione pelo menos 1 token para operar';
     }
 
     const validTimeframes = ['5m', '15m', '30m', '1h', '2h', '3h', '4h', '1d'];
@@ -565,8 +574,9 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                 size="sm"
                 onClick={clearAuthorizedTokens}
                 className="text-xs px-3 py-1 h-8"
+                disabled={formData.authorizedTokens.length === 0}
               >
-                Permitir Todos
+                Limpar Seleção
               </Button>
             </div>
           </div>
@@ -595,6 +605,9 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                 onChange={(e) => setTokenSearchTerm(e.target.value)}
                 className="w-full"
               />
+              <p className="text-xs text-muted-foreground">
+                💡 Dica: Clique nos tokens para selecionar. Você deve escolher pelo menos 1 token.
+              </p>
             </div>
 
             {/* Status de carregamento */}
@@ -612,8 +625,13 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                   <span className="text-muted-foreground">
                     {filteredTokens.length} tokens encontrados
                   </span>
-                  <span className="text-muted-foreground">
+                  <span className={`font-medium ${
+                    formData.authorizedTokens.length === 0 
+                      ? 'text-red-600 dark:text-red-400' 
+                      : 'text-green-600 dark:text-green-400'
+                  }`}>
                     {formData.authorizedTokens.length} selecionados
+                    {formData.authorizedTokens.length === 0 && ' (mínimo 1)'}
                   </span>
                 </div>
                 
@@ -690,9 +708,18 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
 
             {/* Mensagem informativa */}
             {formData.authorizedTokens.length === 0 && (
-              <div className="p-3 bg-green-50 border border-green-200 rounded-lg dark:bg-green-950/20 dark:border-green-800">
-                <p className="text-sm text-green-700 dark:text-green-300">
-                  <strong>✅ Todos os tokens permitidos:</strong> O bot operará em todos os tokens disponíveis na Backpack Exchange.
+              <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg dark:bg-yellow-950/20 dark:border-yellow-800">
+                <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                  <strong>⚠️ Selecione tokens:</strong> Você deve selecionar pelo menos 1 token para que o bot possa operar.
+                </p>
+              </div>
+            )}
+
+            {/* Exibição de erro */}
+            {errors.authorizedTokens && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg dark:bg-red-950/20 dark:border-red-800">
+                <p className="text-sm text-red-700 dark:text-red-300">
+                  <strong>❌ Erro:</strong> {errors.authorizedTokens}
                 </p>
               </div>
             )}
@@ -868,7 +895,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                       <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
                     </TooltipTrigger>
                     <TooltipContent>
-                      <p className="max-w-xs">O limite máximo de perda por operação. Se o trade perder mais que isso, o bot fecha automaticamente para proteger seu dinheiro. Recomendado: 5-15% para começar.</p>
+                      <p className="max-w-xs">O limite máximo de perda por operação. Se o trade perder mais que isso, o bot fecha automaticamente para proteger seu dinheiro. Use valores negativos (ex: -10, -15, -20). Recomendado: -5% a -15% para começar.</p>
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
@@ -877,11 +904,14 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                 id="maxNegativePnlStopPct"
                 type="number"
                 step="0.1"
-                placeholder="Ex: 2.5"
+                placeholder="Ex: -10"
                 value={formData.maxNegativePnlStopPct}
                 onChange={(e) => handleInputChange('maxNegativePnlStopPct', e.target.value)}
                 className={errors.maxNegativePnlStopPct ? "border-red-500" : ""}
               />
+              <p className="text-xs text-muted-foreground">
+                💡 Dica: Use valores negativos (ex: -10, -15, -20). Quanto mais negativo, maior o risco.
+              </p>
               {errors.maxNegativePnlStopPct && <p className="text-sm text-red-500">{errors.maxNegativePnlStopPct}</p>}
             </div>
 

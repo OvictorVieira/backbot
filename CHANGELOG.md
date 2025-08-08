@@ -78,6 +78,25 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   - **OrderController.js**: Todas as funções de validação de ordens
   - **Testes**: Confirmada funcionalidade com testes reais
 
+## [1.5.43] - 2024-12-19
+
+### 🎯 Migração de AUTHORIZED_MARKET para Configuração por Bot
+- **Mudança:** Migrada variável de ambiente `AUTHORIZED_MARKET` para configuração individual por bot
+- **Implementação:** Cada bot agora tem sua própria lista de tokens autorizados via `config.authorizedTokens`
+
+- **Arquivos Modificados:**
+  - **AccountController.js**: Usa `config.authorizedTokens` com fallback para `AUTHORIZED_MARKET`
+  - **Decision.js**: Filtra mercados baseado em `config.authorizedTokens`
+  - **Dashboard UI**: Interface completa para seleção de tokens autorizados
+  - **ConfigManagerSQLite.js**: Suporte a `authorizedTokens` no banco de dados
+
+- **Benefícios:**
+  - ✅ **Flexibilidade**: Cada bot pode ter sua própria lista de tokens
+  - ✅ **Interface Intuitiva**: Seleção visual de tokens com busca e ordenação
+  - ✅ **Validação Obrigatória**: Usuário deve selecionar pelo menos 1 token
+  - ✅ **Ordenação por Volume**: Tokens mais ativos aparecem primeiro
+  - ✅ **Compatibilidade**: Mantém fallback para `AUTHORIZED_MARKET` existente
+
 ## [1.5.42] - 2024-12-19
 
 ### 🎯 Uso da Variável de Ambiente AUTHORIZED_MARKET
