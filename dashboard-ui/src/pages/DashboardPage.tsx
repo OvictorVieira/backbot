@@ -123,13 +123,13 @@ export function DashboardPage() {
     return () => clearInterval(interval)
   }, [])
 
-  const handleStartBot = async (strategyName: string) => {
+  const handleStartBot = async (botId: string) => {
     try {
-      console.log(`🔄 Iniciando bot: ${strategyName}`)
-      setLoadingBots(prev => ({ ...prev, [strategyName]: true }))
+      console.log(`🔄 Iniciando bot: ${botId}`)
+      setLoadingBots(prev => ({ ...prev, [botId]: true }))
       
-      await axios.post(`${API_BASE_URL}/api/bot/start`, { strategyName })
-      console.log(`✅ Bot ${strategyName} iniciado com sucesso`)
+      await axios.post(`${API_BASE_URL}/api/bot/start`, { botId: parseInt(botId) })
+      console.log(`✅ Bot ${botId} iniciado com sucesso`)
       
       // Recarregar status após iniciar
       const response = await axios.get(`${API_BASE_URL}/api/bot/status`)
@@ -137,7 +137,7 @@ export function DashboardPage() {
       console.log(`📊 Status atualizado:`, response.data.data)
       
     } catch (error: any) {
-      console.error(`❌ Erro ao iniciar bot ${strategyName}:`, error)
+      console.error(`❌ Erro ao iniciar bot ${botId}:`, error)
       let errorMessage = 'Erro ao iniciar o bot. Tente novamente.';
       if (error.response?.data?.error) {
         errorMessage = error.response.data.error;
@@ -151,18 +151,18 @@ export function DashboardPage() {
         message: errorMessage
       });
     } finally {
-      console.log(`🔚 Limpando loading para ${strategyName}`)
-      setLoadingBots(prev => ({ ...prev, [strategyName]: false }))
+      console.log(`🔚 Limpando loading para ${botId}`)
+      setLoadingBots(prev => ({ ...prev, [botId]: false }))
     }
   }
 
-  const handleStopBot = async (strategyName: string) => {
+  const handleStopBot = async (botId: string) => {
     try {
-      console.log(`🛑 Parando bot: ${strategyName}`)
-      setLoadingBots(prev => ({ ...prev, [strategyName]: true }))
+      console.log(`🛑 Parando bot: ${botId}`)
+      setLoadingBots(prev => ({ ...prev, [botId]: true }))
       
-      await axios.post(`${API_BASE_URL}/api/bot/stop`, { strategyName })
-      console.log(`✅ Bot ${strategyName} parado com sucesso`)
+      await axios.post(`${API_BASE_URL}/api/bot/stop`, { botId: parseInt(botId) })
+      console.log(`✅ Bot ${botId} parado com sucesso`)
       
       // Recarregar status após parar
       const response = await axios.get(`${API_BASE_URL}/api/bot/status`)
@@ -170,7 +170,7 @@ export function DashboardPage() {
       console.log(`📊 Status atualizado:`, response.data.data)
       
     } catch (error: any) {
-      console.error(`❌ Erro ao parar bot ${strategyName}:`, error)
+      console.error(`❌ Erro ao parar bot ${botId}:`, error)
       let errorMessage = 'Erro ao parar o bot. Tente novamente.';
       if (error.response?.data?.error) {
         errorMessage = error.response.data.error;
@@ -184,8 +184,8 @@ export function DashboardPage() {
         message: errorMessage
       });
     } finally {
-      console.log(`🔚 Limpando loading para ${strategyName}`)
-      setLoadingBots(prev => ({ ...prev, [strategyName]: false }))
+      console.log(`🔚 Limpando loading para ${botId}`)
+      setLoadingBots(prev => ({ ...prev, [botId]: false }))
     }
   }
 
