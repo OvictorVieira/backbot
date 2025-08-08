@@ -277,16 +277,14 @@ export const BotCard: React.FC<BotCardProps> = ({
 
   const getStatusBadge = () => {
     if (!config.enabled) {
-      return <Badge variant="secondary">Desabilitado</Badge>;
+      return <div className="w-3 h-3 bg-gray-400 rounded-full"></div>;
     }
     if (isRunning) {
       return (
-        <Badge variant="success" className="animate-pulse">
-          Executando
-        </Badge>
+        <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
       );
     }
-    return <Badge variant="default">Parado</Badge>;
+    return <div className="w-3 h-3 bg-gray-400 rounded-full"></div>;
   };
 
   // Função para formatar o Profit Ratio
