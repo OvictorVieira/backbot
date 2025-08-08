@@ -54,8 +54,7 @@ class BotInstance {
       
       this.logger.success('Conexão estabelecida com sucesso');
       
-      // Configura variáveis de ambiente para esta instância
-      this.setEnvironmentVariables();
+
       
       // Inicia análise
       this.startAnalysis();
@@ -132,23 +131,12 @@ class BotInstance {
    */
   async testConnection() {
     try {
-      // Temporariamente define as variáveis de ambiente
-      const originalApiKey = process.env.API_KEY;
-      const originalApiSecret = process.env.API_SECRET;
-      
-      process.env.API_KEY = this.config.apiKey;
-      process.env.API_SECRET = this.config.apiSecret;
-      
-      // Testa conexão
+      // Testa conexão usando config do bot
       const accountData = await AccountController.get({ 
         apiKey: this.config.apiKey, 
         apiSecret: this.config.apiSecret,
         strategy: this.strategy 
       });
-      
-      // Restaura variáveis originais
-      process.env.API_KEY = originalApiKey;
-      process.env.API_SECRET = originalApiSecret;
       
       if (!accountData) {
         return {
@@ -170,43 +158,7 @@ class BotInstance {
     }
   }
 
-  /**
-   * Define variáveis de ambiente para esta instância
-   */
-  setEnvironmentVariables() {
-    // Salva variáveis originais
-    this.originalEnv = {
-      API_KEY: process.env.API_KEY,
-      API_SECRET: process.env.API_SECRET,
-      TRADING_STRATEGY: process.env.TRADING_STRATEGY,
-      CAPITAL_PERCENTAGE: process.env.CAPITAL_PERCENTAGE,
-      LIMIT_ORDER: process.env.LIMIT_ORDER,
-      TIME: process.env.TIME,
-      IGNORE_BRONZE_SIGNALS: process.env.IGNORE_BRONZE_SIGNALS,
-      ADX_LENGTH: process.env.ADX_LENGTH,
-      ADX_THRESHOLD: process.env.ADX_THRESHOLD,
-    };
-    
-    // Define variáveis para esta instância
-    process.env.API_KEY = this.config.apiKey;
-    process.env.API_SECRET = this.config.apiSecret;
-    process.env.TRADING_STRATEGY = this.strategy;
-    process.env.CAPITAL_PERCENTAGE = this.capitalPercentage.toString();
-    process.env.LIMIT_ORDER = this.limitOrder.toString();
-    process.env.TIME = this.time;
-    process.env.IGNORE_BRONZE_SIGNALS = this.ignoreBronzeSignals;
-    process.env.ADX_LENGTH = this.adxLength.toString();
-    process.env.ADX_THRESHOLD = this.adxThreshold.toString();
-  }
 
-  /**
-   * Restaura variáveis de ambiente originais
-   */
-  restoreEnvironmentVariables() {
-    if (this.originalEnv) {
-      Object.assign(process.env, this.originalEnv);
-    }
-  }
 
   /**
    * Inicia o ciclo de análise
@@ -228,11 +180,11 @@ class BotInstance {
    */
   async runAnalysis() {
     try {
-      // Define variáveis de ambiente para esta instância
-      this.setEnvironmentVariables();
-      
       // Cria objeto de configuração para esta instância
       const instanceConfig = {
+        // Configurações básicas
+        apiKey: this.config.apiKey,
+        apiSecret: this.config.apiSecret,
         capitalPercentage: this.capitalPercentage,
         limitOrder: this.limitOrder,
         time: this.time,
@@ -240,6 +192,8 @@ class BotInstance {
         ignoreBronzeSignals: this.ignoreBronzeSignals,
         adxLength: this.adxLength,
         adxThreshold: this.adxThreshold,
+        botName: this.botName,
+        
         // Configurações avançadas da estratégia PRO_MAX
         adxAverageLength: this.config.adxAverageLength,
         useRsiValidation: this.config.useRsiValidation,
@@ -257,7 +211,23 @@ class BotInstance {
         macdFastLength: this.config.macdFastLength,
         macdSlowLength: this.config.macdSlowLength,
         macdSignalLength: this.config.macdSignalLength,
-        botName: this.botName
+        
+        // Configurações de stop loss e take profit
+        maxNegativePnlStopPct: this.config.maxNegativePnlStopPct,
+        minProfitPercentage: this.config.minProfitPercentage,
+        enableTpValidation: this.config.enableTpValidation,
+        enableTrailingStop: this.config.enableTrailingStop,
+        
+        // Configurações de ordem (Alpha Flow)
+        order1WeightPct: this.config.order1WeightPct,
+        order2WeightPct: this.config.order2WeightPct,
+        order3WeightPct: this.config.order3WeightPct,
+        
+        // Configurações de trailing stop
+        initialStopAtrMultiplier: this.config.initialStopAtrMultiplier,
+        partialTakeProfitAtrMultiplier: this.config.partialTakeProfitAtrMultiplier,
+        partialProfitPercentage: this.config.partialProfitPercentage,
+        enableHybridStopStrategy: this.config.enableHybridStopStrategy
       };
       
       // Cria uma instância do Decision com a estratégia específica desta conta
@@ -265,9 +235,6 @@ class BotInstance {
       
       // Executa análise passando o timeframe específico da conta, o logger e a configuração
       await decisionInstance.analyze(this.time, this.logger, instanceConfig);
-      
-      // Restaura variáveis originais
-      this.restoreEnvironmentVariables();
       
     } catch (error) {
       this.logger.error(`Erro na análise: ${error.message}`);
@@ -282,14 +249,8 @@ class BotInstance {
     
     this.monitoringInterval = setInterval(async () => {
       try {
-        // Define variáveis de ambiente para esta instância
-        this.setEnvironmentVariables();
-        
-        // Executa monitoramento APENAS para esta conta
-        await OrderController.monitorPendingEntryOrders(this.botName);
-        
-        // Restaura variáveis originais
-        this.restoreEnvironmentVariables();
+        // Executa monitoramento APENAS para esta conta usando config do bot
+        await OrderController.monitorPendingEntryOrders(this.botName, this.config);
         
       } catch (error) {
         this.logger.error(`Erro no monitoramento: ${error.message}`);
