@@ -1295,6 +1295,87 @@ app.delete('/api/configs/bot/:botName', (req, res) => {
   }
 });
 
+// DELETE /api/configs/:botId - Remove uma configuração por ID
+app.delete('/api/configs/:botId', async (req, res) => {
+  try {
+    const { botId } = req.params;
+    const botIdNum = parseInt(botId);
+    
+    if (isNaN(botIdNum)) {
+      return res.status(400).json({
+        success: false,
+        error: 'ID do bot deve ser um número válido'
+      });
+    }
+    
+    // Verifica se o bot existe antes de deletar
+    const existingConfig = ConfigManager.getBotConfigById(botIdNum);
+    if (!existingConfig) {
+      return res.status(404).json({
+        success: false,
+        error: `Bot com ID ${botIdNum} não encontrado`
+      });
+    }
+    
+    // Para o bot se estiver rodando
+    if (activeBotInstances.has(botIdNum)) {
+      console.log(`🛑 [DELETE] Parando bot ${existingConfig.botName} antes de deletar...`);
+      await stopBot(botIdNum);
+    }
+    
+    // === LIMPEZA COMPLETA DO BOT ===
+    
+    // 1. Remove a configuração do bot
+    ConfigManager.removeBotConfigById(botIdNum);
+    console.log(`✅ [DELETE] Configuração do bot ${botIdNum} removida`);
+    
+    // 2. Limpa o estado do trailing stop do bot
+    const botKey = `bot_${botIdNum}`;
+    const TrailingStateAdapter = await import('./src/Persistence/adapters/TrailingStateAdapter.js');
+    const trailingRemoved = TrailingStateAdapter.default.removeBotState(botKey);
+    
+    if (trailingRemoved) {
+      console.log(`🧹 [DELETE] Estado do trailing stop do bot ${botIdNum} removido`);
+    }
+    
+    // 3. Limpa ordens do bot (se existir OrdersAdapter)
+    try {
+      const OrdersAdapter = await import('./src/Persistence/adapters/OrdersAdapter.js');
+      const ordersRemoved = OrdersAdapter.default.clearOrdersByBotId(botIdNum);
+      if (ordersRemoved > 0) {
+        console.log(`🧹 [DELETE] ${ordersRemoved} ordens do bot ${botIdNum} removidas`);
+      }
+    } catch (error) {
+      console.log(`ℹ️ [DELETE] OrdersAdapter não disponível ou erro: ${error.message}`);
+    }
+    
+    // 4. Remove de instâncias ativas (se ainda estiver lá)
+    if (activeBotInstances.has(botIdNum)) {
+      activeBotInstances.delete(botIdNum);
+      console.log(`🧹 [DELETE] Instância ativa do bot ${botIdNum} removida`);
+    }
+    
+    // 5. Remove configurações de rate limit
+    if (monitorRateLimits.has(botIdNum)) {
+      monitorRateLimits.delete(botIdNum);
+      console.log(`🧹 [DELETE] Rate limits do bot ${botIdNum} removidos`);
+    }
+    
+    console.log(`🎯 [DELETE] Bot ${botIdNum} completamente removido - Config, Trailing, Ordens, Instâncias e Rate Limits`);
+    
+    res.json({
+      success: true,
+      message: `Bot ID ${botIdNum} removido com sucesso - Todos os dados foram limpos`
+    });
+  } catch (error) {
+    console.error('❌ [DELETE] Erro ao deletar bot:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // GET /api/strategies - Retorna todas as estratégias disponíveis
 app.get('/api/strategies', (req, res) => {
   try {
@@ -1337,6 +1418,8 @@ app.post('/api/account/clear-cache', (req, res) => {
     });
   }
 });
+
+
 
 // GET /api/klines - Retorna dados de klines para um símbolo
 app.get('/api/klines', async (req, res) => {

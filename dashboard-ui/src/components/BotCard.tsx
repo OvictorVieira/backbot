@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Play, Pause, Settings, Eye, EyeOff, TrendingUp, TrendingDown, DollarSign, Activity, Edit, Square, HelpCircle } from 'lucide-react';
+import { Play, Pause, Settings, Eye, EyeOff, TrendingUp, TrendingDown, DollarSign, Activity, Edit, Square, HelpCircle, Trash2 } from 'lucide-react';
 import axios from 'axios';
+import { DeleteBotModal } from './DeleteBotModal';
 
 interface BotConfig {
   id?: number;
@@ -67,6 +68,7 @@ interface BotCardProps {
   onStop: (strategyName: string) => void;
   onConfigure: (strategyName: string) => void;
   onEdit: (strategyName: string) => void;
+  onDelete: (botId: number) => void;
 }
 
 // Componente de Skeleton para Estatísticas
@@ -135,7 +137,8 @@ export const BotCard: React.FC<BotCardProps> = ({
   onStart,
   onStop,
   onConfigure,
-  onEdit
+  onEdit,
+  onDelete
 }) => {
   const [showApiKey, setShowApiKey] = useState(false);
   const [showApiSecret, setShowApiSecret] = useState(false);
@@ -144,6 +147,8 @@ export const BotCard: React.FC<BotCardProps> = ({
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [nextExecution, setNextExecution] = useState<NextExecution | null>(null);
   const [countdown, setCountdown] = useState<string>('');
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Buscar estatísticas de trading do novo endpoint
   useEffect(() => {
@@ -340,6 +345,18 @@ export const BotCard: React.FC<BotCardProps> = ({
     return 'text-red-600'; // Fallback
   };
 
+  const handleDeleteBot = async (botId: number) => {
+    setIsDeleting(true);
+    try {
+      await onDelete(botId);
+      setShowDeleteModal(false);
+    } catch (error) {
+      console.error('Erro ao deletar bot:', error);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const getActionButton = () => {
     // Se está reiniciando, mostrar botão "Reiniciando..."
     if (isRestarting) {
@@ -408,17 +425,19 @@ export const BotCard: React.FC<BotCardProps> = ({
     <Card className="w-full">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-base">{config.botName}</CardTitle>
-            <p className="text-xs text-muted-foreground">{config.strategyName}</p>
+          <div className="flex-1 min-w-0">
+            <CardTitle className="text-sm sm:text-base truncate">{config.botName}</CardTitle>
+            <p className="text-xs text-muted-foreground truncate">{config.strategyName}</p>
           </div>
-          {getStatusBadge()}
+          <div className="flex-shrink-0 ml-2">
+            {getStatusBadge()}
+          </div>
         </div>
       </CardHeader>
       
       <CardContent className="space-y-3">
         {/* Configurações Básicas */}
-        <div className="grid grid-cols-2 gap-3 text-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs sm:text-sm">
           <div>
             <span className="font-medium">Capital:</span>
             <p className="text-muted-foreground">{config.capitalPercentage}%</p>
@@ -435,9 +454,9 @@ export const BotCard: React.FC<BotCardProps> = ({
             <span className="font-medium">Lucro Mínimo:</span>
             <p className="text-muted-foreground">{config.minProfitPercentage}%</p>
           </div>
-          <div>
+          <div className="sm:col-span-2">
             <span className="font-medium">Modo Execução:</span>
-            <p className="text-muted-foreground">
+            <p className="text-muted-foreground text-xs">
               {config.executionMode === 'REALTIME' ? 'REALTIME (60s)' : 'ON_CANDLE_CLOSE'}
             </p>
           </div>
@@ -459,7 +478,7 @@ export const BotCard: React.FC<BotCardProps> = ({
               <span className="font-medium text-sm">Estatísticas de Trading</span>
             </div>
             
-            <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="grid grid-cols-2 gap-1 sm:gap-2 text-xs">
               <div className="bg-blue-50 dark:bg-blue-950/20 p-2 rounded">
                 <div className="flex items-center gap-1 mb-1">
                   <TrendingUp className="h-3 w-3 text-green-600" />
@@ -586,19 +605,19 @@ export const BotCard: React.FC<BotCardProps> = ({
         <div className="grid grid-cols-2 gap-1 text-xs">
           <div className="flex items-center gap-1">
             <div className={`w-2 h-2 rounded-full ${config.enableTrailingStop ? 'bg-green-500' : 'bg-gray-300'}`} />
-            <span>Trailing Stop</span>
+            <span className="truncate">Trailing Stop</span>
           </div>
           <div className="flex items-center gap-1">
             <div className={`w-2 h-2 rounded-full ${config.enablePostOnly ? 'bg-green-500' : 'bg-gray-300'}`} />
-            <span>Post Only</span>
+            <span className="truncate">Post Only</span>
           </div>
           <div className="flex items-center gap-1">
             <div className={`w-2 h-2 rounded-full ${config.enableMarketFallback ? 'bg-green-500' : 'bg-gray-300'}`} />
-            <span>Market Fallback</span>
+            <span className="truncate">Market Fallback</span>
           </div>
           <div className="flex items-center gap-1">
             <div className={`w-2 h-2 rounded-full ${config.enableOrphanOrderMonitor ? 'bg-green-500' : 'bg-gray-300'}`} />
-            <span>Orphan Monitor</span>
+            <span className="truncate">Orphan Monitor</span>
           </div>
         </div>
       </CardContent>
@@ -610,13 +629,30 @@ export const BotCard: React.FC<BotCardProps> = ({
             variant="outline" 
             size="sm" 
             onClick={() => onEdit(config.strategyName)}
-            className="flex items-center gap-2"
+            className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm"
           >
-            <Edit className="h-4 w-4" />
-            Editar
+            <Edit className="h-3 w-3 sm:h-4 sm:w-4" />
+            <span className="hidden sm:inline">Editar</span>
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => setShowDeleteModal(true)}
+            className="flex items-center gap-1 sm:gap-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 text-xs sm:text-sm"
+          >
+            <Trash2 className="h-3 w-3 sm:h-4 sm:w-4" />
           </Button>
         </div>
       </CardFooter>
+
+      <DeleteBotModal
+        isOpen={showDeleteModal}
+        botName={config.botName}
+        botId={config.id || 0}
+        onConfirm={handleDeleteBot}
+        onCancel={() => setShowDeleteModal(false)}
+        isLoading={isDeleting}
+      />
     </Card>
   );
 }; 

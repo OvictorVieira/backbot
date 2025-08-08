@@ -328,6 +328,30 @@ export function DashboardPage() {
     return status
   }
 
+  const handleDeleteBot = async (botId: number) => {
+    try {
+      const response = await axios.delete(`${API_BASE_URL}/api/configs/${botId}`)
+      if (response.data.success) {
+        // Remove o bot da lista
+        setConfigs(prev => prev.filter(config => config.id !== botId))
+        // Remove o status do bot
+        setBotStatuses(prev => prev.filter(status => status.id !== botId))
+      } else {
+        setErrorModal({
+          isOpen: true,
+          title: 'Erro ao deletar bot',
+          message: response.data.message || 'Erro desconhecido'
+        })
+      }
+    } catch (error: any) {
+      setErrorModal({
+        isOpen: true,
+        title: 'Erro ao deletar bot',
+        message: error.response?.data?.message || error.message || 'Erro desconhecido'
+      })
+    }
+  }
+
   const formatStrategyName = (strategyName: string) => {
     // Converte DEFAULT para Default, ALPHA_FLOW para AlphaFlow, etc.
     return strategyName
@@ -527,7 +551,7 @@ export function DashboardPage() {
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {configs.map((config) => {
             const status = getBotStatus(config.id || 0)
             
@@ -543,6 +567,7 @@ export function DashboardPage() {
                 onStop={() => handleStopBot(config.id?.toString() || config.strategyName)}
                 onConfigure={() => handleEditBot(config.id?.toString() || config.strategyName)}
                 onEdit={() => handleEditBot(config.id?.toString() || config.strategyName)}
+                onDelete={handleDeleteBot}
               />
             )
           })}

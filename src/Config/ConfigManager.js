@@ -247,6 +247,17 @@ class ConfigManager {
   }
 
   /**
+   * Remove configuração de um bot por ID
+   * @param {number} botId - ID único do bot
+   */
+  static removeBotConfigById(botId) {
+    const configs = this.loadConfigs();
+    const filteredConfigs = configs.filter(config => config.id !== botId);
+    this.saveConfigs(filteredConfigs);
+    console.log(`🗑️ [CONFIG] Bot ID ${botId} removido com sucesso`);
+  }
+
+  /**
    * Atualiza o status de um bot (ativo/inativo)
    * @param {string} strategyName - Nome da estratégia
    * @param {string} status - Status do bot ('running', 'stopped', 'starting', 'error')
