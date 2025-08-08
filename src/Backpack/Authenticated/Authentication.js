@@ -8,7 +8,17 @@ export function auth({ instruction, params = {}, timestamp, window = 30000, apiK
     }
 
     // Decodifica a chave privada
-    const privateKeySeed = Buffer.from(apiSecret, 'base64'); 
+    let privateKeySeed;
+    try {
+      privateKeySeed = Buffer.from(apiSecret, 'base64');
+    } catch (error) {
+      throw new Error(`API_SECRET inválido: deve ser um base64 válido. Erro: ${error.message}`);
+    }
+    
+    if (privateKeySeed.length !== 32) {
+      throw new Error(`API_SECRET deve ter 32 bytes quando decodificado. Tamanho atual: ${privateKeySeed.length} bytes`);
+    }
+    
     const keyPair = nacl.sign.keyPair.fromSeed(privateKeySeed);
 
     // Ordena e constrói os parâmetros
@@ -23,8 +33,11 @@ export function auth({ instruction, params = {}, timestamp, window = 30000, apiK
     // Gera a assinatura
     const signature = nacl.sign.detached(Buffer.from(payload), keyPair.secretKey);
 
+    // A API Key deve ser a chave pública (verifying key) em base64
+    const publicKeyBase64 = Buffer.from(keyPair.publicKey).toString('base64');
+
     return {
-      'X-API-Key': apiKey,
+      'X-API-Key': publicKeyBase64,
       'X-Signature': Buffer.from(signature).toString('base64'),
       'X-Timestamp': timestamp.toString(),
       'X-Window': window.toString(),

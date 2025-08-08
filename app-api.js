@@ -31,14 +31,7 @@ import BotOrdersManager from './src/Config/BotOrdersManager.js';
 import ImportOrdersFromBackpack from './src/Config/ImportOrdersFromBackpack.js';
 import ImportPositionsFromBackpack from './src/Config/ImportPositionsFromBackpack.js';
 import DatabaseService from './src/Services/DatabaseService.js';
-import readline from 'readline';
-import { promises as fs } from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import Markets from './src/Backpack/Public/Markets.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 // Configuração do servidor Express
 const app = express();
@@ -2690,6 +2683,91 @@ async function initializeServer() {
 initializeServer();
 
 export { startBot, stopBot, activeBotInstances, broadcast };
+
+// TODO: Endpoint para atualizar alavancagem da conta - Removido temporariamente
+/*
+app.post('/api/account/update-leverage', async (req, res) => {
+  try {
+    const { apiKey, apiSecret, leverageLimit } = req.body;
+    
+    if (!apiKey || !apiSecret) {
+      return res.status(400).json({
+        error: 'API Key e API Secret são obrigatórios'
+      });
+    }
+
+    if (!leverageLimit || leverageLimit < 1 || leverageLimit > 100) {
+      return res.status(400).json({
+        error: 'Alavancagem deve estar entre 1x e 100x'
+      });
+    }
+
+    console.log(`🔧 [API] Testando acesso à conta...`);
+    
+    // Importa Account dinamicamente para evitar problemas de importação
+    const Account = (await import('./src/Backpack/Authenticated/Account.js')).default;
+    
+    // Primeiro testa se conseguimos acessar a conta
+    const accountInfo = await Account.getAccount(null, apiKey, apiSecret);
+    console.log(`🔧 [API] Informações da conta:`, accountInfo);
+    
+    if (!accountInfo) {
+      return res.status(401).json({
+        error: 'Erro ao acessar conta',
+        message: 'Não foi possível acessar a conta com as credenciais fornecidas'
+      });
+    }
+    
+    console.log(`🔧 [API] Atualizando alavancagem para ${leverageLimit}x...`);
+    
+    const result = await Account.updateAccount(
+      leverageLimit,
+      true, // autoBorrowSettlements
+      true, // autoLend
+      true, // autoRepayBorrows
+      apiKey,
+      apiSecret
+    );
+
+    console.log(`🔧 [API] Resultado do updateAccount:`, result);
+    
+    if (result && (result.success || result.message)) {
+      console.log(`✅ [API] Alavancagem atualizada para ${leverageLimit}x`);
+      res.json({
+        success: true,
+        message: `Alavancagem atualizada para ${leverageLimit}x`,
+        leverageLimit
+      });
+    } else {
+      console.error('❌ [API] Erro ao atualizar alavancagem - resultado inválido');
+      res.status(500).json({
+        error: 'Erro ao atualizar alavancagem na Backpack',
+        message: 'A API da Backpack retornou um erro. Isso pode acontecer se as credenciais estiverem incorretas ou se a conta não tiver permissão para alterar a alavancagem.'
+      });
+    }
+    
+  } catch (error) {
+    console.error('❌ [API] Erro ao atualizar alavancagem:', error.message);
+    
+    // Mensagens de erro mais específicas
+    let errorMessage = error.message;
+    if (error.message.includes('API_SECRET inválido')) {
+      errorMessage = 'API Secret inválido. Verifique se está correto.';
+    } else if (error.message.includes('API_SECRET e API_KEY são obrigatórios')) {
+      errorMessage = 'API Key e API Secret são obrigatórios.';
+    } else if (error.message.includes('bad seed size') || error.message.includes('API_SECRET deve ter 32 bytes')) {
+      errorMessage = 'API Secret inválido. Deve ser um base64 válido de 32 bytes. Verifique suas credenciais da Backpack.';
+    }
+    
+    res.status(500).json({ 
+      error: 'Erro ao atualizar alavancagem',
+      message: errorMessage 
+    });
+  }
+});
+*/
+
+
 
 // Endpoint para buscar tokens disponíveis
 app.get('/api/tokens/available', async (req, res) => {

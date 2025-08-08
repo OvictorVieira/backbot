@@ -32,6 +32,7 @@ interface BotConfig {
   enableOrphanOrderMonitor: boolean;
   enablePendingOrdersMonitor: boolean;
   authorizedTokens: string[];
+  // leverageLimit: number; // TODO: Removido temporariamente
   botClientOrderId?: number;
   maxOpenOrders: number;
 }
@@ -55,6 +56,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
   const [formData, setFormData] = useState<BotConfig>({
     ...config,
     authorizedTokens: config.authorizedTokens || [],
+    // leverageLimit: config.leverageLimit || 10, // TODO: Removido temporariamente
     maxOpenOrders: config.maxOpenOrders || 5,
     enableHybridStopStrategy: config.enableHybridStopStrategy || false,
     initialStopAtrMultiplier: config.initialStopAtrMultiplier || 2.0,
@@ -256,6 +258,16 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
       } else if (numValue <= 0) {
         newErrors[field] = 'Distância deve ser maior que 0';
       }
+    // TODO: Validação de alavancagem - Removido temporariamente
+    // } else if (field === 'leverageLimit') {
+    //   const numValue = parseFloat(String(value));
+    //   if (isNaN(numValue)) {
+    //     newErrors[field] = 'Alavancagem deve ser um número válido';
+    //   } else if (numValue < 1) {
+    //     newErrors[field] = 'Alavancagem deve ser maior ou igual a 1x';
+    //   } else if (numValue > 100) {
+    //     newErrors[field] = 'Alavancagem deve ser menor ou igual a 100x';
+    //   }
     }
 
     setErrors(newErrors);
@@ -430,18 +442,19 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
 
   const handleSave = async () => {
     if (!validateForm()) {
-      return;
+        return;
     }
 
-    setSaving(true);
-    try {
+      setSaving(true);
+      try {
       // Formata os valores antes de enviar para o backend
       const formattedData = {
-        ...formData,
+          ...formData,
         // Converte strings para números onde necessário
         capitalPercentage: parseFloat(String(formData.capitalPercentage)),
+        // leverageLimit: parseInt(String(formData.leverageLimit)), // TODO: Removido temporariamente
         maxNegativePnlStopPct: parseFloat(String(formData.maxNegativePnlStopPct)),
-        minProfitPercentage: parseFloat(String(formData.minProfitPercentage)),
+          minProfitPercentage: parseFloat(String(formData.minProfitPercentage)),
         maxSlippagePct: parseFloat(String(formData.maxSlippagePct)),
         maxOpenOrders: parseInt(String(formData.maxOpenOrders)),
         initialStopAtrMultiplier: parseFloat(String(formData.initialStopAtrMultiplier)),
@@ -451,11 +464,36 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
         trailingStopDistance: parseFloat(String(formData.trailingStopDistance))
       };
 
+      // TODO: Implementar atualização de alavancagem - Removido temporariamente
+      // Atualiza a alavancagem na Backpack se as credenciais estiverem disponíveis
+      /*
+      if (formData.apiKey && formData.apiSecret) {
+        try {
+          console.log(`🔧 [ConfigForm] Atualizando alavancagem para ${formattedData.leverageLimit}x...`);
+          
+          const leverageResponse = await axios.post('http://localhost:3001/api/account/update-leverage', {
+            apiKey: formData.apiKey,
+            apiSecret: formData.apiSecret,
+            leverageLimit: formattedData.leverageLimit
+          });
+
+          if (leverageResponse.data.success) {
+            console.log(`✅ [ConfigForm] Alavancagem atualizada para ${formattedData.leverageLimit}x`);
+          } else {
+            console.warn(`⚠️ [ConfigForm] Erro ao atualizar alavancagem: ${leverageResponse.data.error}`);
+          }
+        } catch (leverageError) {
+          console.warn(`⚠️ [ConfigForm] Erro ao atualizar alavancagem: ${leverageError.message}`);
+          // Não impede o salvamento se a atualização de alavancagem falhar
+        }
+      }
+      */
+
       await onSave(formattedData);
-    } catch (error) {
+      } catch (error) {
       console.error('Erro ao salvar configuração:', error);
-    } finally {
-      setSaving(false);
+      } finally {
+        setSaving(false);
     }
   };
 
@@ -467,7 +505,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
   };
 
   console.log('🔍 [ConfigForm] Renderizando componente...');
-  
+
   return (
     <Card className="w-full">
       <CardHeader>
@@ -519,9 +557,9 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                   <TooltipTrigger asChild>
                     <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
                   </TooltipTrigger>
-                  <TooltipContent>
-                    <p className="max-w-xs">Sua chave de API da Backpack Exchange. É como uma senha que permite ao bot fazer trades em sua conta. Você pode encontrá-la nas configurações da sua conta Backpack.</p>
-                  </TooltipContent>
+                                      <TooltipContent>
+                      <p className="max-w-xs">Sua chave de API da Backpack Exchange. É como uma senha que permite ao bot fazer trades em sua conta. Você pode encontrá-la nas configurações da sua conta Backpack.</p>
+                    </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             </div>
@@ -555,9 +593,9 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                   <TooltipTrigger asChild>
                     <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
                   </TooltipTrigger>
-                  <TooltipContent>
-                    <p className="max-w-xs">Sua chave secreta da Backpack Exchange. É como uma segunda senha de segurança. Nunca compartilhe com ninguém e mantenha-a segura.</p>
-                  </TooltipContent>
+                                      <TooltipContent>
+                      <p className="max-w-xs">Sua chave secreta da Backpack Exchange. É como uma segunda senha de segurança. Nunca compartilhe com ninguém e mantenha-a segura.</p>
+                    </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             </div>
@@ -760,7 +798,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                             <div>
                               <div className="font-medium text-sm">
                                 {token.symbol.replace('_USDC_PERP', '')}-PERP
-                              </div>
+            </div>
                               <div className="text-xs text-muted-foreground">
                                 {token.baseAsset} • Volume 24h: ${formatVolume(token.volume24h || '0')}
                               </div>
@@ -896,6 +934,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
           
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
+              <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Label htmlFor="capitalPercentage">Percentual do Capital (%)</Label>
                 <TooltipProvider>
@@ -909,16 +948,144 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                   </Tooltip>
                 </TooltipProvider>
               </div>
+                <span className="text-sm text-muted-foreground">Max: 100%</span>
+              </div>
+              
+              {/* Input numérico com botões +/- */}
+              <div className="relative">
+                <div className="flex items-center border border-input rounded-md bg-background">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const currentValue = parseFloat(String(formData.capitalPercentage)) || 20;
+                      const newValue = Math.max(1, currentValue - 1);
+                      handleInputChange('capitalPercentage', newValue.toString());
+                    }}
+                    className="px-3 py-2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    -
+                  </button>
               <Input
                 id="capitalPercentage"
-                type="text"
-                placeholder="Ex: 10"
+                    type="text"
                 value={formData.capitalPercentage}
-                onChange={(e) => handleInputChange('capitalPercentage', e.target.value)}
-                className={errors.capitalPercentage ? "border-red-500" : ""}
-              />
+                    onChange={(e) => handleInputChange('capitalPercentage', e.target.value)}
+                    className={`border-0 text-center focus-visible:ring-0 ${errors.capitalPercentage ? "text-red-500" : ""}`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const currentValue = parseFloat(String(formData.capitalPercentage)) || 20;
+                      const newValue = Math.min(100, currentValue + 1);
+                      handleInputChange('capitalPercentage', newValue.toString());
+                    }}
+                    className="px-3 py-2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              {/* Slider */}
+              <div className="space-y-2">
+                <div className="relative">
+                  <input
+                    type="range"
+                    min="1"
+                    max="100"
+                    value={parseFloat(String(formData.capitalPercentage)) || 20}
+                    onChange={(e) => handleInputChange('capitalPercentage', e.target.value)}
+                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+                    style={{
+                      background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((parseFloat(String(formData.capitalPercentage)) || 20) - 1) / 99 * 100}%, #e5e7eb ${((parseFloat(String(formData.capitalPercentage)) || 20) - 1) / 99 * 100}%, #e5e7eb 100%)`
+                    }}
+                  />
+                </div>
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>1%</span>
+                  <span>100%</span>
+                </div>
+              </div>
+              
               {errors.capitalPercentage && <p className="text-sm text-red-500">{errors.capitalPercentage}</p>}
             </div>
+
+            {/* TODO: Implementar alavancagem da conta - Removido temporariamente
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="leverageLimit">Alavancagem da Conta</Label>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="max-w-xs">A alavancagem da sua conta na Backpack. Determina quanto capital você pode usar para trades. Ex: 10x = $1000 pode fazer trades de $10.000. Recomendado: 5-20x para começar.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <span className="text-sm text-muted-foreground">Max: 50</span>
+              </div>
+              
+              <div className="relative">
+                <div className="flex items-center border border-input rounded-md bg-background">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const currentValue = parseFloat(String(formData.leverageLimit)) || 10;
+                      const newValue = Math.max(1, currentValue - 1);
+                      handleInputChange('leverageLimit', newValue.toString());
+                    }}
+                    className="px-3 py-2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    -
+                  </button>
+                  <Input
+                    id="leverageLimit"
+                    type="text"
+                    value={formData.leverageLimit}
+                    onChange={(e) => handleInputChange('leverageLimit', e.target.value)}
+                    className={`border-0 text-center focus-visible:ring-0 ${errors.leverageLimit ? "text-red-500" : ""}`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const currentValue = parseFloat(String(formData.leverageLimit)) || 10;
+                      const newValue = Math.min(50, currentValue + 1);
+                      handleInputChange('leverageLimit', newValue.toString());
+                    }}
+                    className="px-3 py-2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="relative">
+                  <input
+                    type="range"
+                    min="1"
+                    max="50"
+                    value={parseFloat(String(formData.leverageLimit)) || 10}
+                    onChange={(e) => handleInputChange('leverageLimit', e.target.value)}
+                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+                    style={{
+                      background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((parseFloat(String(formData.leverageLimit)) || 10) - 1) / 49 * 100}%, #e5e7eb ${((parseFloat(String(formData.leverageLimit)) || 10) - 1) / 49 * 100}%, #e5e7eb 100%)`
+                    }}
+                  />
+                </div>
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>1x</span>
+                  <span>50x</span>
+                </div>
+              </div>
+              
+              {errors.leverageLimit && <p className="text-sm text-red-500">{errors.leverageLimit}</p>}
+            </div>
+            */}
 
             <div className="space-y-2">
               <div className="flex items-center gap-2">
@@ -934,11 +1101,12 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                   </Tooltip>
                 </TooltipProvider>
               </div>
+              <div className="relative">
               <select
                 id="time"
                 value={formData.time}
                 onChange={(e) => handleInputChange('time', e.target.value)}
-                className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${errors.time ? "border-red-500" : ""}`}
+                  className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pr-10 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none cursor-pointer ${errors.time ? "border-red-500" : ""}`}
               >
                 <option value="5m">5 minutos</option>
                 <option value="15m">15 minutos</option>
@@ -949,6 +1117,12 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                 <option value="4h">4 horas</option>
                 <option value="1d">1 dia</option>
               </select>
+                <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                  <svg className="w-4 h-4 text-muted-foreground select-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </div>
               {errors.time && <p className="text-sm text-red-500">{errors.time}</p>}
             </div>
 
@@ -969,15 +1143,22 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                   </Tooltip>
                 </TooltipProvider>
               </div>
+              <div className="relative">
               <select
                 id="executionMode"
                 value={formData.executionMode}
                 onChange={(e) => handleInputChange('executionMode', e.target.value)}
-                className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${errors.executionMode ? "border-red-500" : ""}`}
+                  className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pr-10 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none cursor-pointer ${errors.executionMode ? "border-red-500" : ""}`}
               >
                 <option value="REALTIME">REALTIME (60 segundos)</option>
                 <option value="ON_CANDLE_CLOSE">ON_CANDLE_CLOSE (fechamento de vela)</option>
               </select>
+                <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                  <svg className="w-4 h-4 text-muted-foreground select-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </div>
               {errors.executionMode && <p className="text-sm text-red-500">{errors.executionMode}</p>}
             </div>
 
@@ -1079,6 +1260,216 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                 className={errors.maxOpenOrders ? "border-red-500" : ""}
               />
               {errors.maxOpenOrders && <p className="text-sm text-red-500">{errors.maxOpenOrders}</p>}
+            </div>
+          </div>
+        </div>
+
+        {/* Configurações Avançadas */}
+        <div className="space-y-4">
+          <h3 className="text-lg font-medium">Configurações Avançadas</h3>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Estratégia Híbrida de Stop Loss */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                <Label htmlFor="enableHybridStopStrategy">Estratégia Híbrida de Stop Loss</Label>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                      <p className="max-w-xs">Usa ATR (Average True Range) para calcular stop loss dinamicamente baseado na volatilidade do mercado. Mais preciso que stop loss fixo.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="enableHybridStopStrategy"
+                  checked={formData.enableHybridStopStrategy}
+                  onChange={(e) => handleInputChange('enableHybridStopStrategy', e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2 focus:ring-offset-2 transition-colors"
+                />
+                <Label htmlFor="enableHybridStopStrategy" className="text-sm font-medium cursor-pointer">
+                  Habilitar Estratégia Híbrida
+                </Label>
+              </div>
+              </div>
+
+            {/* Trailing Stop */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                <Label htmlFor="enableTrailingStop">Trailing Stop</Label>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                      <p className="max-w-xs">Stop loss que se move automaticamente para proteger lucros. Acompanha o preço quando está em lucro.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="enableTrailingStop"
+                  checked={formData.enableTrailingStop}
+                  onChange={(e) => handleInputChange('enableTrailingStop', e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2 focus:ring-offset-2 transition-colors"
+                />
+                <Label htmlFor="enableTrailingStop" className="text-sm font-medium cursor-pointer">
+                  Habilitar Trailing Stop
+                </Label>
+              </div>
+              </div>
+
+            {/* Fechamento Parcial da Posição */}
+            <div className={`space-y-2 ${!formData.enableHybridStopStrategy ? 'opacity-50' : ''}`}>
+                  <div className="flex items-center gap-2">
+                <Label htmlFor="partialTakeProfitAtrMultiplier" className={!formData.enableHybridStopStrategy ? 'text-muted-foreground' : ''}>
+                  Fechamento Parcial da Posição (ATR)
+                </Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                      <HelpCircle className={`h-4 w-4 ${!formData.enableHybridStopStrategy ? 'text-muted-foreground/50' : 'text-muted-foreground'} cursor-help`} />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                      <p className="max-w-xs">Multiplicador do ATR para calcular quando fechar parte da posição automaticamente. Fecha uma parte quando atinge este valor de lucro.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <Input
+                    id="partialTakeProfitAtrMultiplier"
+                type="text"
+                placeholder="Ex: 3.0"
+                    value={formData.partialTakeProfitAtrMultiplier}
+                onChange={(e) => handleInputChange('partialTakeProfitAtrMultiplier', e.target.value)}
+                disabled={!formData.enableHybridStopStrategy}
+                className={`${errors.partialTakeProfitAtrMultiplier ? "border-red-500" : ""} ${!formData.enableHybridStopStrategy ? 'bg-muted cursor-not-allowed' : ''}`}
+                  />
+              {errors.partialTakeProfitAtrMultiplier && <p className="text-sm text-red-500">{errors.partialTakeProfitAtrMultiplier}</p>}
+                </div>
+
+            {/* Quantidade a Fechar */}
+            <div className={`space-y-2 ${!formData.enableHybridStopStrategy ? 'opacity-50' : ''}`}>
+                  <div className="flex items-center gap-2">
+                <Label htmlFor="partialTakeProfitPercentage" className={!formData.enableHybridStopStrategy ? 'text-muted-foreground' : ''}>
+                  Quantidade a Fechar (%)
+                </Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                      <HelpCircle className={`h-4 w-4 ${!formData.enableHybridStopStrategy ? 'text-muted-foreground/50' : 'text-muted-foreground'} cursor-help`} />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                      <p className="max-w-xs">Percentual da posição que será fechada automaticamente. Ex: 50% = fecha metade da posição quando atingir o lucro definido.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <Input
+                    id="partialTakeProfitPercentage"
+                type="text"
+                placeholder="Ex: 50"
+                    value={formData.partialTakeProfitPercentage}
+                onChange={(e) => handleInputChange('partialTakeProfitPercentage', e.target.value)}
+                disabled={!formData.enableHybridStopStrategy}
+                className={`${errors.partialTakeProfitPercentage ? "border-red-500" : ""} ${!formData.enableHybridStopStrategy ? 'bg-muted cursor-not-allowed' : ''}`}
+              />
+              {errors.partialTakeProfitPercentage && <p className="text-sm text-red-500">{errors.partialTakeProfitPercentage}</p>}
+        </div>
+
+            {/* Stop Loss Inicial */}
+            <div className={`space-y-2 ${!formData.enableHybridStopStrategy ? 'opacity-50' : ''}`}>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="initialStopAtrMultiplier" className={!formData.enableHybridStopStrategy ? 'text-muted-foreground' : ''}>
+                  Stop Loss Inicial (ATR)
+                </Label>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <HelpCircle className={`h-4 w-4 ${!formData.enableHybridStopStrategy ? 'text-muted-foreground/50' : 'text-muted-foreground'} cursor-help`} />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="max-w-xs">Multiplicador do ATR para calcular o stop loss inicial. Valores maiores = stop loss mais distante do preço de entrada.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+            </div>
+              <Input
+                id="initialStopAtrMultiplier"
+                type="text"
+                placeholder="Ex: 2.0"
+                value={formData.initialStopAtrMultiplier}
+                onChange={(e) => handleInputChange('initialStopAtrMultiplier', e.target.value)}
+                disabled={!formData.enableHybridStopStrategy}
+                className={`${errors.initialStopAtrMultiplier ? "border-red-500" : ""} ${!formData.enableHybridStopStrategy ? 'bg-muted cursor-not-allowed' : ''}`}
+              />
+              {errors.initialStopAtrMultiplier && <p className="text-sm text-red-500">{errors.initialStopAtrMultiplier}</p>}
+          </div>
+          
+            {/* Distância do Trailing Stop */}
+            <div className={`space-y-2 ${!formData.enableTrailingStop ? 'opacity-50' : ''}`}>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="trailingStopDistance" className={!formData.enableTrailingStop ? 'text-muted-foreground' : ''}>
+                  Distância do Trailing (ATR)
+                </Label>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <HelpCircle className={`h-4 w-4 ${!formData.enableTrailingStop ? 'text-muted-foreground/50' : 'text-muted-foreground'} cursor-help`} />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="max-w-xs">Distância em ATR que o trailing stop mantém do preço atual. Valores menores = trailing mais próximo do preço.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+              <Input
+                id="trailingStopDistance"
+                type="text"
+                placeholder="Ex: 1.5"
+                value={formData.trailingStopDistance}
+                onChange={(e) => handleInputChange('trailingStopDistance', e.target.value)}
+                disabled={!formData.enableTrailingStop}
+                className={`${errors.trailingStopDistance ? "border-red-500" : ""} ${!formData.enableTrailingStop ? 'bg-muted cursor-not-allowed' : ''}`}
+              />
+              {errors.trailingStopDistance && <p className="text-sm text-red-500">{errors.trailingStopDistance}</p>}
+                </div>
+
+            {/* Multiplicador ATR do Trailing Stop */}
+            <div className={`space-y-2 ${!formData.enableTrailingStop ? 'opacity-50' : ''}`}>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="trailingStopAtrMultiplier" className={!formData.enableTrailingStop ? 'text-muted-foreground' : ''}>
+                  Multiplicador do Trailing (ATR)
+                </Label>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <HelpCircle className={`h-4 w-4 ${!formData.enableTrailingStop ? 'text-muted-foreground/50' : 'text-muted-foreground'} cursor-help`} />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="max-w-xs">Multiplicador do ATR para calcular o trailing stop. Valores menores = trailing mais próximo do preço atual.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+              <Input
+                id="trailingStopAtrMultiplier"
+                type="text"
+                placeholder="Ex: 1.5"
+                value={formData.trailingStopAtrMultiplier}
+                onChange={(e) => handleInputChange('trailingStopAtrMultiplier', e.target.value)}
+                disabled={!formData.enableTrailingStop}
+                className={`${errors.trailingStopAtrMultiplier ? "border-red-500" : ""} ${!formData.enableTrailingStop ? 'bg-muted cursor-not-allowed' : ''}`}
+              />
+              {errors.trailingStopAtrMultiplier && <p className="text-sm text-red-500">{errors.trailingStopAtrMultiplier}</p>}
             </div>
           </div>
         </div>

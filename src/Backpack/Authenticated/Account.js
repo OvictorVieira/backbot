@@ -119,6 +119,8 @@ class Account {
     }
   }
 
+  // TODO: Método updateAccount - Removido temporariamente
+  /*
   async updateAccount(leverageLimit,
     autoBorrowSettlements = true,
     autoLend = true,
@@ -129,7 +131,7 @@ class Account {
     const timestamp = Date.now();
 
     if (!leverageLimit) {
-      console.error('symbol required');
+      console.error('leverageLimit required');
       return null;
     }
 
@@ -137,7 +139,7 @@ class Account {
       autoBorrowSettlements,
       autoLend,
       autoRepayBorrows,
-      leverageLimit
+      leverageLimit: leverageLimit.toFixed(0) // Garante que seja uma string decimal válida
     };
 
     const headers = auth({
@@ -152,12 +154,20 @@ class Account {
       const response = await axios.patch(`${process.env.API_URL}/api/v1/account`, params, {
         headers,
       });
-      return response.data;
+      
+      // Se a resposta está vazia mas o status é 200, consideramos sucesso
+      if (response.status === 200) {
+        return { success: true, message: 'Alavancagem atualizada com sucesso' };
+      }
+
+      // Se chegou até aqui, retorna os dados da resposta
+      return response.data || { success: false, message: 'Resposta inesperada da API' };
     } catch (error) {
-      console.error('updateAccount - ERROR!', error.response?.data || error.message);
+      console.error('❌ [Account] updateAccount - ERROR!', error.response?.data || error.message);
       return null;
     }
   }
+  */
 
 }
 

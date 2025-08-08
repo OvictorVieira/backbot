@@ -43,6 +43,8 @@ interface BotConfig {
   maxOpenOrders: number
   // Tokens autorizados
   authorizedTokens: string[]
+  // TODO: Alavancagem da conta - Removido temporariamente
+  // leverageLimit: number
   // Próxima validação
   nextValidationAt?: string
 }
@@ -467,6 +469,7 @@ export function DashboardPage() {
                   enableOrphanOrderMonitor: true, // Sempre habilitado
                   enablePendingOrdersMonitor: true, // Sempre habilitado
                   maxOpenOrders: 5, // Valor padrão
+                  // leverageLimit: 10, // Valor padrão - TODO: Removido temporariamente
                   authorizedTokens: [] // Lista vazia = todos os tokens permitidos
                 };
               })()}
@@ -510,6 +513,7 @@ export function DashboardPage() {
                 enableOrphanOrderMonitor: true,
                 enablePendingOrdersMonitor: true,
                 maxOpenOrders: 5,
+                // leverageLimit: 10, // TODO: Removido temporariamente
                 authorizedTokens: [] // Lista vazia = todos os tokens permitidos
               }}
               onSave={handleCreateBotSaved}
