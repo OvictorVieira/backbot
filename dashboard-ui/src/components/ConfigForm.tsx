@@ -1101,27 +1101,24 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                   </Tooltip>
                 </TooltipProvider>
               </div>
-              <div className="relative">
-              <select
-                id="time"
-                value={formData.time}
-                onChange={(e) => handleInputChange('time', e.target.value)}
-                  className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pr-10 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none cursor-pointer ${errors.time ? "border-red-500" : ""}`}
-              >
-                <option value="5m">5 minutos</option>
-                <option value="15m">15 minutos</option>
-                <option value="30m">30 minutos</option>
-                <option value="1h">1 hora</option>
-                <option value="2h">2 horas</option>
-                <option value="3h">3 horas</option>
-                <option value="4h">4 horas</option>
-                <option value="1d">1 dia</option>
-              </select>
-                <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                  <svg className="w-4 h-4 text-muted-foreground select-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </div>
+              <div className={`custom-select ${errors.time ? 'error' : ''}`}>
+                <select
+                  id="time"
+                  value={formData.time}
+                  onChange={(e) => handleInputChange('time', e.target.value)}
+                >
+                  <option value="5m">5 minutos</option>
+                  <option value="15m">15 minutos</option>
+                  <option value="30m">30 minutos</option>
+                  <option value="1h">1 hora</option>
+                  <option value="2h">2 horas</option>
+                  <option value="3h">3 horas</option>
+                  <option value="4h">4 horas</option>
+                  <option value="1d">1 dia</option>
+                </select>
+                <svg className="select-icon w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
               </div>
               {errors.time && <p className="text-sm text-red-500">{errors.time}</p>}
             </div>
@@ -1143,21 +1140,18 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                   </Tooltip>
                 </TooltipProvider>
               </div>
-              <div className="relative">
-              <select
-                id="executionMode"
-                value={formData.executionMode}
-                onChange={(e) => handleInputChange('executionMode', e.target.value)}
-                  className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pr-10 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none cursor-pointer ${errors.executionMode ? "border-red-500" : ""}`}
-              >
-                <option value="REALTIME">REALTIME (60 segundos)</option>
-                <option value="ON_CANDLE_CLOSE">ON_CANDLE_CLOSE (fechamento de vela)</option>
-              </select>
-                <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                  <svg className="w-4 h-4 text-muted-foreground select-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </div>
+              <div className={`custom-select ${errors.executionMode ? 'error' : ''}`}>
+                <select
+                  id="executionMode"
+                  value={formData.executionMode}
+                  onChange={(e) => handleInputChange('executionMode', e.target.value)}
+                >
+                  <option value="REALTIME">REALTIME (60 segundos)</option>
+                  <option value="ON_CANDLE_CLOSE">ON_CANDLE_CLOSE (fechamento de vela)</option>
+                </select>
+                <svg className="select-icon w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
               </div>
               {errors.executionMode && <p className="text-sm text-red-500">{errors.executionMode}</p>}
             </div>

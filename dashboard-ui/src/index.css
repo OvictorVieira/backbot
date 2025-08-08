@@ -203,3 +203,85 @@ select:focus {
 select:focus + .select-arrow {
   transform: rotate(180deg);
 }
+
+/* Estilos modernos para select boxes customizados */
+.custom-select {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+}
+
+.custom-select select {
+  width: 100%;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--background));
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  transition: all 0.2s ease-in-out;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+}
+
+.custom-select select:hover {
+  border-color: hsl(var(--ring));
+  box-shadow: 0 2px 4px 0 rgba(0, 0, 0, 0.1);
+}
+
+.custom-select select:focus {
+  outline: none;
+  border-color: hsl(var(--primary));
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.1);
+}
+
+.custom-select select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.custom-select .select-icon {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  transition: transform 0.2s ease-in-out;
+  color: hsl(var(--muted-foreground));
+}
+
+.custom-select select:focus + .select-icon {
+  transform: translateY(-50%) rotate(180deg);
+  color: hsl(var(--primary));
+}
+
+/* Estilos para modo escuro */
+.dark .custom-select select {
+  background-color: hsl(var(--card));
+  border-color: hsl(var(--border));
+  color: hsl(var(--card-foreground));
+}
+
+.dark .custom-select select:hover {
+  border-color: hsl(var(--ring));
+}
+
+.dark .custom-select select:focus {
+  border-color: hsl(var(--primary));
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.2);
+}
+
+/* Estilos para estados de erro */
+.custom-select.error select {
+  border-color: hsl(var(--destructive));
+}
+
+.custom-select.error select:focus {
+  border-color: hsl(var(--destructive));
+  box-shadow: 0 0 0 3px hsl(var(--destructive) / 0.1);
+}
