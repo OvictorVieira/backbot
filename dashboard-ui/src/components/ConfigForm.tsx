@@ -117,7 +117,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
     setFormData({
       ...formData,
       capitalPercentage: 20,
-      time: '30m',
+      time: '15m',
       executionMode: 'REALTIME',
       maxNegativePnlStopPct: "-10",
       minProfitPercentage: "10",
