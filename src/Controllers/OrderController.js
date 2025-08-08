@@ -27,6 +27,34 @@ class OrderController {
   static stopLossCheckCacheTimeout = 30000; // 30 segundos de cache
 
   /**
+   * Formata preço de forma segura, limitando a 6 casas decimais para evitar erro "Price decimal too long"
+   * @param {number} value - Valor a ser formatado
+   * @param {number} decimal_price - Número de casas decimais desejado
+   * @param {number} tickSize - Tamanho do tick para validação
+   * @returns {string} - Preço formatado como string
+   */
+  static formatPriceSafely(value, decimal_price, tickSize = null) {
+    // Limita decimal_price a 6 casas decimais para evitar erro da API
+    const safeDecimalPrice = Math.min(decimal_price, 6);
+    let formattedPrice = parseFloat(value).toFixed(safeDecimalPrice);
+    
+    // Se temos tickSize, valida se o preço é múltiplo do tickSize
+    if (tickSize && tickSize > 0) {
+      const price = parseFloat(formattedPrice);
+      const remainder = price % tickSize;
+      
+      // Se não é múltiplo exato, ajusta para o múltiplo mais próximo
+      if (remainder !== 0) {
+        const adjustedPrice = Math.round(price / tickSize) * tickSize;
+        formattedPrice = adjustedPrice.toFixed(safeDecimalPrice);
+        console.warn(`⚠️ [PRICE_ADJUST] Preço ${price} não é múltiplo de ${tickSize}, ajustado para ${adjustedPrice}`);
+      }
+    }
+    
+    return formattedPrice.toString();
+  }
+
+  /**
    * Gera um ID único de ordem para um bot
    * @param {object} config - Configuração do bot
    * @returns {number} ID único da ordem como Int (ex: 1548001)
@@ -473,6 +501,7 @@ class OrderController {
       const decimal_quantity = marketInfo.decimal_quantity;
       const decimal_price = marketInfo.decimal_price;
       const stepSize_quantity = marketInfo.stepSize_quantity;
+      const tickSize = marketInfo.tickSize;
 
       // Preço real de entrada
       const entryPrice = parseFloat(position.avgEntryPrice || position.entryPrice || position.markPrice);

@@ -1353,6 +1353,32 @@ app.get('/api/strategies', (req, res) => {
   }
 });
 
+// POST /api/account/clear-cache - Limpa o cache do AccountController
+app.post('/api/account/clear-cache', (req, res) => {
+  try {
+    // Importa o AccountController dinamicamente
+    import('./src/Controllers/AccountController.js').then(module => {
+      const AccountController = module.default;
+      AccountController.clearCache();
+      
+      res.json({
+        success: true,
+        message: 'Cache do AccountController limpo com sucesso'
+      });
+    }).catch(error => {
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // GET /api/klines - Retorna dados de klines para um símbolo
 app.get('/api/klines', async (req, res) => {
   try {
