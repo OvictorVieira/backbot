@@ -623,6 +623,9 @@ async function startBot(botId) {
     // Função de execução do bot
     const executeBot = async () => {
       try {
+        // Recarrega a configuração do bot para garantir que está atualizada
+        const currentBotConfig = ConfigManager.getBotConfigById(botId);
+        
         // Atualiza status no ConfigManager
         ConfigManager.updateBotStatusById(botId, 'running');
         
@@ -633,25 +636,25 @@ async function startBot(botId) {
         await startStops(botId);
         
         // Monitora ordens pendentes se habilitado
-        if (botConfig.enablePendingOrdersMonitor) {
+        if (currentBotConfig.enablePendingOrdersMonitor) {
           await startPendingOrdersMonitor(botId);
         }
         
         // Limpa ordens órfãs se habilitado
-        if (botConfig.enableOrphanOrderMonitor) {
+        if (currentBotConfig.enableOrphanOrderMonitor) {
           await startOrphanOrderMonitor(botId);
         }
         
         // Executa PnL Controller para este bot específico
         try {
-          await PnlController.run(24, botConfig);
+          await PnlController.run(24, currentBotConfig);
         } catch (pnlError) {
           console.warn(`⚠️ [BOT] Erro no PnL Controller para bot ${botId}:`, pnlError.message);
         }
         
         // Executa migração do Trailing Stop para este bot específico
         try {
-          await TrailingStop.backfillStateForOpenPositions(botConfig);
+          await TrailingStop.backfillStateForOpenPositions(currentBotConfig);
         } catch (trailingError) {
           console.warn(`⚠️ [BOT] Erro na migração do Trailing Stop para bot ${botId}:`, trailingError.message);
         }
@@ -666,7 +669,7 @@ async function startBot(botId) {
         broadcastViaWs({
           type: 'BOT_EXECUTION_SUCCESS',
           botId,
-          botName: botConfig.botName,
+          botName: currentBotConfig.botName,
           timestamp: new Date().toISOString()
         });
         
@@ -680,7 +683,7 @@ async function startBot(botId) {
         broadcastViaWs({
           type: 'BOT_EXECUTION_ERROR',
           botId,
-          botName: botConfig?.botName || 'Unknown',
+          botName: currentBotConfig?.botName || 'Unknown',
           timestamp: new Date().toISOString(),
           error: error.message
         });
