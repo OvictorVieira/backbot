@@ -61,6 +61,11 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
     message: string;
     hasLink?: boolean;
   } | null>(null);
+
+  // Atualizar formData quando config mudar
+  useEffect(() => {
+    setFormData(config);
+  }, [config]);
   
   // Verificar se as API keys foram alteradas no modo de edição
   const apiKeysChanged = isEditMode && (
