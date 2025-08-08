@@ -1153,11 +1153,28 @@ app.post('/api/configs', async (req, res) => {
       
       // Se tem ID, atualiza; senão, cria novo
       if (botConfig.id) {
+        // Verifica se o bot estava rodando antes da atualização
+        const currentConfig = ConfigManager.getBotConfigById(botConfig.id);
+        const wasRunning = currentConfig && currentConfig.status === 'running';
+        
         ConfigManager.updateBotConfigById(botConfig.id, botConfig);
+        
+        // Se o bot estava rodando, reinicia automaticamente
+        if (wasRunning) {
+          console.log(`🔄 [CONFIG] Bot ${botConfig.id} estava rodando, reiniciando...`);
+          try {
+            await startBot(botConfig.id);
+            console.log(`✅ [CONFIG] Bot ${botConfig.id} reiniciado com sucesso`);
+          } catch (error) {
+            console.error(`❌ [CONFIG] Erro ao reiniciar bot ${botConfig.id}:`, error.message);
+          }
+        }
+        
         res.json({
           success: true,
-          message: `Bot ${botConfig.id} atualizado com sucesso`,
-          botId: botConfig.id
+          message: `Bot ${botConfig.id} atualizado com sucesso${wasRunning ? ' e reiniciado' : ''}`,
+          botId: botConfig.id,
+          wasRunning: wasRunning
         });
       } else {
         const botId = ConfigManager.addBotConfig(botConfig);
@@ -1188,11 +1205,28 @@ app.post('/api/configs', async (req, res) => {
       
       // Se tem ID, atualiza; senão, cria novo
       if (botConfig.id) {
+        // Verifica se o bot estava rodando antes da atualização
+        const currentConfig = ConfigManager.getBotConfigById(botConfig.id);
+        const wasRunning = currentConfig && currentConfig.status === 'running';
+        
         ConfigManager.updateBotConfigById(botConfig.id, botConfig);
+        
+        // Se o bot estava rodando, reinicia automaticamente
+        if (wasRunning) {
+          console.log(`🔄 [CONFIG] Bot ${botConfig.id} estava rodando, reiniciando...`);
+          try {
+            await startBot(botConfig.id);
+            console.log(`✅ [CONFIG] Bot ${botConfig.id} reiniciado com sucesso`);
+          } catch (error) {
+            console.error(`❌ [CONFIG] Erro ao reiniciar bot ${botConfig.id}:`, error.message);
+          }
+        }
+        
         res.json({
           success: true,
-          message: `Bot ${botConfig.id} atualizado com sucesso`,
-          botId: botConfig.id
+          message: `Bot ${botConfig.id} atualizado com sucesso${wasRunning ? ' e reiniciado' : ''}`,
+          botId: botConfig.id,
+          wasRunning: wasRunning
         });
       } else {
         const botId = ConfigManager.addBotConfig(botConfig);
@@ -1222,11 +1256,28 @@ app.post('/api/configs', async (req, res) => {
       
       // Se tem ID, atualiza; senão, cria novo
       if (config.id) {
+        // Verifica se o bot estava rodando antes da atualização
+        const currentConfig = ConfigManager.getBotConfigById(config.id);
+        const wasRunning = currentConfig && currentConfig.status === 'running';
+        
         ConfigManager.updateBotConfigById(config.id, config);
+        
+        // Se o bot estava rodando, reinicia automaticamente
+        if (wasRunning) {
+          console.log(`🔄 [CONFIG] Bot ${config.id} estava rodando, reiniciando...`);
+          try {
+            await startBot(config.id);
+            console.log(`✅ [CONFIG] Bot ${config.id} reiniciado com sucesso`);
+          } catch (error) {
+            console.error(`❌ [CONFIG] Erro ao reiniciar bot ${config.id}:`, error.message);
+          }
+        }
+        
         res.json({
           success: true,
-          message: `Bot ${config.id} atualizado com sucesso`,
-          botId: config.id
+          message: `Bot ${config.id} atualizado com sucesso${wasRunning ? ' e reiniciado' : ''}`,
+          botId: config.id,
+          wasRunning: wasRunning
         });
       } else {
         const botId = ConfigManager.addBotConfig(config);
