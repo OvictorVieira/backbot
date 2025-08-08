@@ -1029,49 +1029,20 @@ app.get('/api/bot/orders', async (req, res) => {
 // POST /api/bot/start - Inicia uma instância de bot
 app.post('/api/bot/start', async (req, res) => {
   try {
-    const { botId, botName, strategyName } = req.body;
+    const { botId } = req.body;
     
-    // Se recebeu botName, busca o botId correspondente
-    let targetBotId = botId;
-    if (!botId && botName) {
-      const configs = ConfigManager.loadConfigs();
-      const botConfig = configs.find(config => config.botName === botName);
-      if (botConfig) {
-        targetBotId = botConfig.id;
-      } else {
-        return res.status(400).json({
-          success: false,
-          error: `Nenhum bot encontrado com botName: ${botName}`
-        });
-      }
-    }
-    
-    // Se recebeu strategyName, busca o botId correspondente (compatibilidade)
-    if (!targetBotId && strategyName) {
-      const configs = ConfigManager.loadConfigs();
-      const botConfig = configs.find(config => config.strategyName === strategyName);
-      if (botConfig) {
-        targetBotId = botConfig.id;
-      } else {
-        return res.status(400).json({
-          success: false,
-          error: `Nenhum bot encontrado com strategyName: ${strategyName}`
-        });
-      }
-    }
-    
-    if (!targetBotId) {
+    if (!botId) {
       return res.status(400).json({
         success: false,
-        error: 'botId, botName ou strategyName é obrigatório'
+        error: 'botId é obrigatório'
       });
     }
     
-    await startBot(targetBotId);
+    await startBot(botId);
     
     res.json({
       success: true,
-      message: `Bot ${targetBotId} iniciado com sucesso`
+      message: `Bot ${botId} iniciado com sucesso`
     });
   } catch (error) {
     res.status(500).json({
@@ -1084,49 +1055,20 @@ app.post('/api/bot/start', async (req, res) => {
 // POST /api/bot/stop - Para uma instância de bot
 app.post('/api/bot/stop', async (req, res) => {
   try {
-    const { botId, botName, strategyName } = req.body;
+    const { botId } = req.body;
     
-    // Se recebeu botName, busca o botId correspondente
-    let targetBotId = botId;
-    if (!botId && botName) {
-      const configs = ConfigManager.loadConfigs();
-      const botConfig = configs.find(config => config.botName === botName);
-      if (botConfig) {
-        targetBotId = botConfig.id;
-      } else {
-        return res.status(400).json({
-          success: false,
-          error: `Nenhum bot encontrado com botName: ${botName}`
-        });
-      }
-    }
-    
-    // Se recebeu strategyName, busca o botId correspondente (compatibilidade)
-    if (!targetBotId && strategyName) {
-      const configs = ConfigManager.loadConfigs();
-      const botConfig = configs.find(config => config.strategyName === strategyName);
-      if (botConfig) {
-        targetBotId = botConfig.id;
-      } else {
-        return res.status(400).json({
-          success: false,
-          error: `Nenhum bot encontrado com strategyName: ${strategyName}`
-        });
-      }
-    }
-    
-    if (!targetBotId) {
+    if (!botId) {
       return res.status(400).json({
         success: false,
-        error: 'botId, botName ou strategyName é obrigatório'
+        error: 'botId é obrigatório'
       });
     }
     
-    await stopBot(targetBotId);
+    await stopBot(botId);
     
     res.json({
       success: true,
-      message: `Bot ${targetBotId} parado com sucesso`
+      message: `Bot ${botId} parado com sucesso`
     });
   } catch (error) {
     res.status(500).json({
