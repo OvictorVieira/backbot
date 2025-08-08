@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Eye, EyeOff, Save, X, HelpCircle, TestTube, BarChart3, DollarSign, RotateCcw } from 'lucide-react';
+import { Eye, EyeOff, Save, X, HelpCircle, TestTube, BarChart3, DollarSign, RotateCcw, ChevronDown } from 'lucide-react';
 import axios from 'axios';
 
 interface BotConfig {
@@ -91,6 +91,8 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
   }>>([]);
   const [loadingTokens, setLoadingTokens] = useState(false);
   const [tokenSearchTerm, setTokenSearchTerm] = useState('');
+  const [timeDropdownOpen, setTimeDropdownOpen] = useState(false);
+  const [executionModeDropdownOpen, setExecutionModeDropdownOpen] = useState(false);
 
   // Atualizar formData quando config mudar
   useEffect(() => {
@@ -129,6 +131,22 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
   // Carregar tokens disponíveis quando o componente montar
   useEffect(() => {
     fetchAvailableTokens();
+  }, []);
+
+  // Fechar dropdowns quando clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element;
+      if (!target.closest('.custom-select')) {
+        setTimeDropdownOpen(false);
+        setExecutionModeDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, []);
 
   const applyVolumeMode = () => {
@@ -502,6 +520,66 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
       .split('_')
       .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
       .join(' ')
+  };
+
+  // Componente customizado para select box
+  const CustomSelect = ({ 
+    id, 
+    value, 
+    onChange, 
+    options, 
+    placeholder, 
+    isOpen, 
+    onToggle, 
+    error 
+  }: {
+    id: string;
+    value: string;
+    onChange: (value: string) => void;
+    options: { value: string; label: string }[];
+    placeholder: string;
+    isOpen: boolean;
+    onToggle: () => void;
+    error?: string;
+  }) => {
+    const selectedOption = options.find(option => option.value === value);
+    
+    return (
+      <div className="relative custom-select">
+        <div
+          className={`w-full h-11 px-4 py-2.5 text-sm font-medium bg-background border border-input rounded-md shadow-sm focus:ring-2 focus:ring-ring focus:border-ring transition-all duration-200 cursor-pointer hover:border-ring ${error ? "border-red-500 focus:ring-red-500 focus:border-red-500" : ""}`}
+          onClick={onToggle}
+        >
+          <div className="flex items-center justify-between">
+            <span className={selectedOption ? "text-foreground" : "text-muted-foreground"}>
+              {selectedOption ? selectedOption.label : placeholder}
+            </span>
+            <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+          </div>
+        </div>
+        
+        {isOpen && (
+          <div className="absolute z-50 w-full mt-1 bg-background border border-input rounded-md shadow-lg max-h-60 overflow-auto">
+            {options.map((option) => (
+              <div
+                key={option.value}
+                className={`px-4 py-3 text-sm cursor-pointer transition-colors duration-150 ${
+                  option.value === value
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-foreground hover:bg-accent hover:text-accent-foreground'
+                }`}
+                onClick={() => {
+                  onChange(option.value);
+                  onToggle();
+                }}
+              >
+                {option.label}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
   };
 
   console.log('🔍 [ConfigForm] Renderizando componente...');
@@ -1101,25 +1179,25 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                   </Tooltip>
                 </TooltipProvider>
               </div>
-              <div className={`custom-select ${errors.time ? 'error' : ''}`}>
-                <select
-                  id="time"
-                  value={formData.time}
-                  onChange={(e) => handleInputChange('time', e.target.value)}
-                >
-                  <option value="5m">5 minutos</option>
-                  <option value="15m">15 minutos</option>
-                  <option value="30m">30 minutos</option>
-                  <option value="1h">1 hora</option>
-                  <option value="2h">2 horas</option>
-                  <option value="3h">3 horas</option>
-                  <option value="4h">4 horas</option>
-                  <option value="1d">1 dia</option>
-                </select>
-                <svg className="select-icon w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </div>
+              <CustomSelect
+                id="time"
+                value={formData.time}
+                onChange={(value) => handleInputChange('time', value)}
+                options={[
+                  { value: '5m', label: '5 minutos' },
+                  { value: '15m', label: '15 minutos' },
+                  { value: '30m', label: '30 minutos' },
+                  { value: '1h', label: '1 hora' },
+                  { value: '2h', label: '2 horas' },
+                  { value: '3h', label: '3 horas' },
+                  { value: '4h', label: '4 horas' },
+                  { value: '1d', label: '1 dia' }
+                ]}
+                placeholder="Selecione o timeframe"
+                isOpen={timeDropdownOpen}
+                onToggle={() => setTimeDropdownOpen(!timeDropdownOpen)}
+                error={errors.time}
+              />
               {errors.time && <p className="text-sm text-red-500">{errors.time}</p>}
             </div>
 
@@ -1140,19 +1218,19 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                   </Tooltip>
                 </TooltipProvider>
               </div>
-              <div className={`custom-select ${errors.executionMode ? 'error' : ''}`}>
-                <select
-                  id="executionMode"
-                  value={formData.executionMode}
-                  onChange={(e) => handleInputChange('executionMode', e.target.value)}
-                >
-                  <option value="REALTIME">REALTIME (60 segundos)</option>
-                  <option value="ON_CANDLE_CLOSE">ON_CANDLE_CLOSE (fechamento de vela)</option>
-                </select>
-                <svg className="select-icon w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </div>
+              <CustomSelect
+                id="executionMode"
+                value={formData.executionMode}
+                onChange={(value) => handleInputChange('executionMode', value)}
+                options={[
+                  { value: 'REALTIME', label: 'REALTIME (60 segundos)' },
+                  { value: 'ON_CANDLE_CLOSE', label: 'ON_CANDLE_CLOSE (fechamento de vela)' }
+                ]}
+                placeholder="Selecione o modo de execução"
+                isOpen={executionModeDropdownOpen}
+                onToggle={() => setExecutionModeDropdownOpen(!executionModeDropdownOpen)}
+                error={errors.executionMode}
+              />
               {errors.executionMode && <p className="text-sm text-red-500">{errors.executionMode}</p>}
             </div>
 
