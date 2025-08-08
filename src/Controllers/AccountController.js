@@ -69,7 +69,15 @@ class AccountController {
         (AUTHORIZED_MARKET.length === 0 || AUTHORIZED_MARKET.includes(el.symbol))).map((el) => {
         
         const decimal_quantity = String(el.filters.quantity.stepSize).includes(".") ? String(el.filters.quantity.stepSize.split(".")[1]).length : 0
-        const decimal_price = String(el.filters.price.tickSize).includes(".") ? String(el.filters.price.tickSize.split(".")[1]).length : 0
+        
+        // Calcula decimal_price baseado no tickSize, mas limita a um máximo de 6 casas decimais
+        let decimal_price = String(el.filters.price.tickSize).includes(".") ? String(el.filters.price.tickSize.split(".")[1]).length : 0;
+        
+        // Limita o decimal_price para evitar erro "Price decimal too long"
+        if (decimal_price > 6) {
+          console.warn(`⚠️ [ACCOUNT] ${el.symbol}: decimal_price muito alto (${decimal_price}), limitando a 6 casas decimais`);
+          decimal_price = 6;
+        }
         
         return {
             symbol: el.symbol,
@@ -131,7 +139,15 @@ class AccountController {
           (ignore.length === 0 || !ignore.includes(el.symbol))).map((el) => {
           
           const decimal_quantity = String(el.filters.quantity.stepSize).includes(".") ? String(el.filters.quantity.stepSize.split(".")[1]).length : 0
-          const decimal_price = String(el.filters.price.tickSize).includes(".") ? String(el.filters.price.tickSize.split(".")[1]).length : 0
+          
+          // Calcula decimal_price baseado no tickSize, mas limita a um máximo de 6 casas decimais
+          let decimal_price = String(el.filters.price.tickSize).includes(".") ? String(el.filters.price.tickSize.split(".")[1]).length : 0;
+          
+          // Limita o decimal_price para evitar erro "Price decimal too long"
+          if (decimal_price > 6) {
+            console.warn(`⚠️ [ACCOUNT] ${el.symbol}: decimal_price muito alto (${decimal_price}), limitando a 6 casas decimais`);
+            decimal_price = 6;
+          }
           
           return {
               symbol: el.symbol,
