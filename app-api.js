@@ -25,6 +25,7 @@ import MultiBotManager from './src/MultiBot/MultiBotManager.js';
 import AccountConfig from './src/Config/AccountConfig.js';
 import TimeframeConfig from './src/Config/TimeframeConfig.js';
 import ConfigManager from './src/Config/ConfigManager.js';
+import ConfigManagerSQLite from './src/Config/ConfigManagerSQLite.js';
 import History from './src/Backpack/Authenticated/History.js';
 import BotOrdersManager from './src/Config/BotOrdersManager.js';
 import ImportOrdersFromBackpack from './src/Config/ImportOrdersFromBackpack.js';
@@ -1114,10 +1115,10 @@ app.post('/api/configs', async (req, res) => {
       // Se tem ID, atualiza; senão, cria novo
       if (botConfig.id) {
         // Verifica se o bot estava rodando antes da atualização
-        const currentConfig = ConfigManager.getBotConfigById(botConfig.id);
+        const currentConfig = await ConfigManagerSQLite.getBotConfigById(botConfig.id);
         const wasRunning = currentConfig && currentConfig.status === 'running';
         
-        ConfigManager.updateBotConfigById(botConfig.id, botConfig);
+        await ConfigManagerSQLite.updateBotConfigById(botConfig.id, botConfig);
         
         // Se o bot estava rodando, reinicia automaticamente
         if (wasRunning) {
@@ -1137,7 +1138,7 @@ app.post('/api/configs', async (req, res) => {
           wasRunning: wasRunning
         });
       } else {
-        const botId = ConfigManager.addBotConfig(botConfig);
+        const botId = await ConfigManagerSQLite.addBotConfig(botConfig);
         res.json({
           success: true,
           message: `Bot criado com sucesso`,
@@ -1166,10 +1167,10 @@ app.post('/api/configs', async (req, res) => {
       // Se tem ID, atualiza; senão, cria novo
       if (botConfig.id) {
         // Verifica se o bot estava rodando antes da atualização
-        const currentConfig = ConfigManager.getBotConfigById(botConfig.id);
+        const currentConfig = await ConfigManagerSQLite.getBotConfigById(botConfig.id);
         const wasRunning = currentConfig && currentConfig.status === 'running';
         
-        ConfigManager.updateBotConfigById(botConfig.id, botConfig);
+        await ConfigManagerSQLite.updateBotConfigById(botConfig.id, botConfig);
         
         // Se o bot estava rodando, reinicia automaticamente
         if (wasRunning) {
@@ -1189,7 +1190,7 @@ app.post('/api/configs', async (req, res) => {
           wasRunning: wasRunning
         });
       } else {
-        const botId = ConfigManager.addBotConfig(botConfig);
+        const botId = await ConfigManagerSQLite.addBotConfig(botConfig);
         res.json({
           success: true,
           message: `Bot criado com sucesso`,
@@ -1257,9 +1258,9 @@ app.post('/api/configs', async (req, res) => {
 });
 
 // GET /api/configs - Retorna todas as configurações
-app.get('/api/configs', (req, res) => {
+app.get('/api/configs', async (req, res) => {
   try {
-    const configs = ConfigManager.loadConfigs();
+    const configs = await ConfigManagerSQLite.loadConfigs();
     
     res.json({
       success: true,
@@ -1310,7 +1311,7 @@ app.delete('/api/configs/:botId', async (req, res) => {
     }
     
     // Verifica se o bot existe antes de deletar
-    const existingConfig = ConfigManager.getBotConfigById(botIdNum);
+    const existingConfig = await ConfigManagerSQLite.getBotConfigById(botIdNum);
     if (!existingConfig) {
       return res.status(404).json({
         success: false,
@@ -1327,7 +1328,7 @@ app.delete('/api/configs/:botId', async (req, res) => {
     // === LIMPEZA COMPLETA DO BOT ===
     
     // 1. Remove a configuração do bot
-    ConfigManager.removeBotConfigById(botIdNum);
+    await ConfigManagerSQLite.removeBotConfigById(botIdNum);
     console.log(`✅ [DELETE] Configuração do bot ${botIdNum} removida`);
     
     // 2. Limpa o estado do trailing stop do bot
@@ -2649,6 +2650,9 @@ async function initializeServer() {
     // Inicializa o database service
     const dbService = new DatabaseService();
     await dbService.init();
+    
+    // Inicializa o ConfigManager SQLite
+    ConfigManagerSQLite.initialize(dbService);
     
     // Carrega o estado persistido do Trailing Stop do banco de dados
     if (dbService && dbService.isInitialized()) {
