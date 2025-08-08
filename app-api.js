@@ -26,7 +26,6 @@ import AccountConfig from './src/Config/AccountConfig.js';
 import TimeframeConfig from './src/Config/TimeframeConfig.js';
 import ConfigManager from './src/Config/ConfigManager.js';
 import ConfigManagerSQLite from './src/Config/ConfigManagerSQLite.js';
-import ConfigManagerSQLite from './src/Config/ConfigManagerSQLite.js';
 import History from './src/Backpack/Authenticated/History.js';
 import BotOrdersManager from './src/Config/BotOrdersManager.js';
 import ImportOrdersFromBackpack from './src/Config/ImportOrdersFromBackpack.js';
@@ -803,7 +802,7 @@ async function stopBot(botId) {
 // API Routes
 
 // GET /api/bot/status - Retorna status de todos os bots
-app.get('/api/bot/status', (req, res) => {
+app.get('/api/bot/status', async (req, res) => {
   try {
     const configs = await ConfigManagerSQLite.loadConfigs();
     const status = configs.map(config => {
@@ -839,7 +838,7 @@ app.get('/api/bot/status', (req, res) => {
 });
 
 // GET /api/bot/:botId/next-execution - Retorna próximo tempo de execução
-app.get('/api/bot/:botId/next-execution', (req, res) => {
+app.get('/api/bot/:botId/next-execution', async (req, res) => {
   try {
     const { botId } = req.params;
     const botIdNum = parseInt(botId);
@@ -1280,7 +1279,7 @@ app.get('/api/configs', async (req, res) => {
 
 
 // DELETE /api/configs/bot/:botName - Remove uma configuração por botName
-app.delete('/api/configs/bot/:botName', (req, res) => {
+app.delete('/api/configs/bot/:botName', async (req, res) => {
   try {
     const { botName } = req.params;
     
