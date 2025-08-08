@@ -14,7 +14,9 @@ function App() {
         <div className="min-h-screen bg-background">
           <Routes>
             <Route path="/" element={<DashboardPage />} />
+            {/* Rota de Operações temporariamente removida para primeira versão
             <Route path="/operations" element={<OperationsPage />} />
+            */}
           </Routes>
           <NotificationToast 
             notifications={notifications} 

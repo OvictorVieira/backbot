@@ -518,6 +518,7 @@ export function DashboardPage() {
 
       {/* Botões de Ação */}
       <div className="mb-6 flex justify-end gap-4">
+        {/* Botão Operações temporariamente removido para primeira versão
         <Button 
           onClick={() => navigate('/operations')} 
           variant="outline" 
@@ -527,6 +528,7 @@ export function DashboardPage() {
           <Settings className="w-4 h-4 mr-2" />
           Operações
         </Button>
+        */}
         <Button 
           onClick={handleCreateBot}
           className="flex items-center gap-2"
