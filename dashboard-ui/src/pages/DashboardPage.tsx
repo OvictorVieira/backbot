@@ -450,7 +450,7 @@ export function DashboardPage() {
                   time: '30m',
                   enabled: true, // Sempre habilitado, controle via botão Iniciar/Pausar
                   maxNegativePnlStopPct: "-10",
-                  minProfitPercentage: "0.5",
+                  minProfitPercentage: "10",
                   maxSlippagePct: "0.5",
                   executionMode: 'REALTIME',
                   enableHybridStopStrategy: false,
@@ -492,7 +492,7 @@ export function DashboardPage() {
                 time: '30m',
                 enabled: true,
                 maxNegativePnlStopPct: "-10",
-                minProfitPercentage: "0.5",
+                minProfitPercentage: "10",
                 maxSlippagePct: "0.5",
                 executionMode: 'REALTIME',
                 enableHybridStopStrategy: false,

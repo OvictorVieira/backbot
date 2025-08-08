@@ -62,13 +62,21 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
     hasLink?: boolean;
   } | null>(null);
 
-  // Atualizar formData quando config mudar
+  // Atualizar formData quando config mudar (apenas na primeira renderização ou quando realmente necessário)
   useEffect(() => {
     console.log('🔄 [ConfigForm] Config recebido:', config);
     console.log('🔄 [ConfigForm] API Key:', config.apiKey);
     console.log('🔄 [ConfigForm] API Secret:', config.apiSecret);
-    setFormData(config);
-  }, [config]);
+    
+    // Só resetar o formData se for uma configuração completamente nova
+    // ou se estivermos no modo de edição e as chaves mudaram
+    const shouldReset = !isEditMode || 
+                       (isEditMode && (config.apiKey !== formData.apiKey || config.apiSecret !== formData.apiSecret));
+    
+    if (shouldReset) {
+      setFormData(config);
+    }
+  }, [config.strategyName, config.botName, config.apiKey, config.apiSecret]);
   
   // Verificar se as API keys foram alteradas no modo de edição
   const apiKeysChanged = isEditMode && (
@@ -791,7 +799,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                 id="minProfitPercentage"
                 type="number"
                 step="0.1"
-                placeholder="Ex: 0.5"
+                placeholder="Ex: 10"
                 value={formData.minProfitPercentage}
                 onChange={(e) => handleInputChange('minProfitPercentage', e.target.value)}
                 className={errors.minProfitPercentage ? "border-red-500" : ""}
