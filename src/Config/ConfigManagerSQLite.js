@@ -317,6 +317,180 @@ class ConfigManagerSQLite {
       throw error;
     }
   }
+
+  /**
+   * Remove configuração de um bot por botName
+   * @param {string} botName - Nome único do bot
+   */
+  static async removeBotConfigByBotName(botName) {
+    try {
+      const configs = await this.loadConfigs();
+      const configToRemove = configs.find(config => config.botName === botName);
+      
+      if (configToRemove) {
+        await this.removeBotConfigById(configToRemove.id);
+        console.log(`✅ [CONFIG_SQLITE] Bot ${botName} removido com sucesso`);
+      } else {
+        console.log(`ℹ️ [CONFIG_SQLITE] Bot ${botName} não encontrado para remoção`);
+      }
+    } catch (error) {
+      console.error(`❌ [CONFIG_SQLITE] Erro ao remover bot ${botName}:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Verifica se um bot pode ser iniciado
+   * @param {number} botId - ID único do bot
+   * @returns {Promise<boolean>} True se pode ser iniciado
+   */
+  static async canStartBotById(botId) {
+    try {
+      const config = await this.getBotConfigById(botId);
+      if (!config) return false;
+      
+      // Verifica se o bot não está rodando e não está em erro
+      return config.status !== 'running' && config.status !== 'error';
+    } catch (error) {
+      console.error(`❌ [CONFIG_SQLITE] Erro ao verificar se bot ${botId} pode ser iniciado:`, error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Obtém status de um bot por ID
+   * @param {number} botId - ID único do bot
+   * @returns {Promise<Object|null>} Status do bot ou null
+   */
+  static async getBotStatusById(botId) {
+    try {
+      const config = await this.getBotConfigById(botId);
+      if (!config) return null;
+      
+      return {
+        id: config.id,
+        botName: config.botName,
+        strategyName: config.strategyName,
+        status: config.status || 'stopped',
+        startTime: config.startTime,
+        isRunning: config.status === 'running',
+        config: config
+      };
+    } catch (error) {
+      console.error(`❌ [CONFIG_SQLITE] Erro ao obter status do bot ${botId}:`, error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Limpa status de erro de um bot
+   * @param {number} botId - ID único do bot
+   */
+  static async clearErrorStatus(botId) {
+    try {
+      const currentConfig = await this.getBotConfigById(botId);
+      if (!currentConfig) return;
+      
+      if (currentConfig.status === 'error') {
+        await this.updateBotStatusById(botId, 'stopped');
+        console.log(`✅ [CONFIG_SQLITE] Status de erro do bot ${botId} limpo`);
+      }
+    } catch (error) {
+      console.error(`❌ [CONFIG_SQLITE] Erro ao limpar status de erro do bot ${botId}:`, error.message);
+    }
+  }
+
+  /**
+   * Obtém todos os nomes de estratégias
+   * @returns {Promise<Array>} Array de nomes de estratégias
+   */
+  static async getAllStrategyNames() {
+    try {
+      const configs = await this.loadConfigs();
+      const strategyNames = [...new Set(configs.map(config => config.strategyName))];
+      return strategyNames;
+    } catch (error) {
+      console.error(`❌ [CONFIG_SQLITE] Erro ao obter nomes de estratégias:`, error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Obtém todos os nomes de bots
+   * @returns {Promise<Array>} Array de nomes de bots
+   */
+  static async getAllBotNames() {
+    try {
+      const configs = await this.loadConfigs();
+      return configs.map(config => config.botName);
+    } catch (error) {
+      console.error(`❌ [CONFIG_SQLITE] Erro ao obter nomes de bots:`, error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Valida configuração de um bot
+   * @param {Object} config - Configuração do bot
+   * @returns {Promise<boolean>} True se válida
+   */
+  static async validateConfig(config) {
+    try {
+      // Validações básicas
+      if (!config.botName || config.botName.trim() === '') {
+        return false;
+      }
+      
+      if (!config.apiKey || !config.apiSecret) {
+        return false;
+      }
+      
+      if (!config.strategyName) {
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      console.error(`❌ [CONFIG_SQLITE] Erro ao validar configuração:`, error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Cria configuração padrão para uma estratégia
+   * @param {string} strategyName - Nome da estratégia
+   * @returns {Promise<Object>} Configuração padrão
+   */
+  static async createDefaultConfig(strategyName) {
+    return {
+      strategyName: strategyName,
+      botName: `${strategyName} Bot`,
+      apiKey: '',
+      apiSecret: '',
+      capitalPercentage: 20,
+      time: '30m',
+      enabled: true,
+      maxNegativePnlStopPct: -10,
+      minProfitPercentage: 10,
+      maxSlippagePct: 0.5,
+      executionMode: 'REALTIME',
+      enableHybridStopStrategy: false,
+      initialStopAtrMultiplier: 2.0,
+      trailingStopAtrMultiplier: 1.5,
+      partialTakeProfitAtrMultiplier: 3.0,
+      partialTakeProfitPercentage: 50,
+      enableTrailingStop: false,
+      trailingStopDistance: 1.5,
+      enablePostOnly: true,
+      enableMarketFallback: true,
+      enableOrphanOrderMonitor: true,
+      enablePendingOrdersMonitor: true,
+      maxOpenOrders: 5,
+      botClientOrderId: Math.floor(Math.random() * 10000),
+      orderCounter: 0,
+      status: 'stopped'
+    };
+  }
 }
 
 export default ConfigManagerSQLite;

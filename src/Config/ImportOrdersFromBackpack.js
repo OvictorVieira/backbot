@@ -102,7 +102,7 @@ class ImportOrdersFromBackpack {
     try {
       console.log(`🔄 [IMPORT_ORDERS_ALL] Iniciando importação para todos os bots...`);
       
-      const configs = ConfigManager.loadConfigs();
+      const configs = await ConfigManagerSQLite.loadConfigs();
       const enabledBots = configs.filter(config => config.enabled);
       
       if (enabledBots.length === 0) {

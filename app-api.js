@@ -26,6 +26,7 @@ import AccountConfig from './src/Config/AccountConfig.js';
 import TimeframeConfig from './src/Config/TimeframeConfig.js';
 import ConfigManager from './src/Config/ConfigManager.js';
 import ConfigManagerSQLite from './src/Config/ConfigManagerSQLite.js';
+import ConfigManagerSQLite from './src/Config/ConfigManagerSQLite.js';
 import History from './src/Backpack/Authenticated/History.js';
 import BotOrdersManager from './src/Config/BotOrdersManager.js';
 import ImportOrdersFromBackpack from './src/Config/ImportOrdersFromBackpack.js';
@@ -117,7 +118,7 @@ function getMonitorRateLimit(botId) {
 async function loadAndRecoverBots() {
   try {
     // Carrega todos os bots habilitados que estavam rodando ou em erro
-    const configs = ConfigManager.loadConfigs();
+    const configs = await ConfigManagerSQLite.loadConfigs();
     const botsToRecover = configs.filter(config => 
       config.enabled && 
       (config.status === 'running' || config.status === 'error' || config.status === 'starting')
@@ -166,10 +167,10 @@ async function recoverBot(botId, config, startTime) {
     }
     
     // Limpa status de erro se existir
-    ConfigManager.clearErrorStatus(botId);
+    await ConfigManagerSQLite.clearErrorStatus(botId);
     
     // Atualiza status no ConfigManager
-    ConfigManager.updateBotStatusById(botId, 'starting', startTime);
+    await ConfigManagerSQLite.updateBotStatusById(botId, 'starting', startTime);
     
     // Configura o intervalo de execução baseado no executionMode
     let executionInterval;
@@ -192,7 +193,7 @@ async function recoverBot(botId, config, startTime) {
     const executeBot = async () => {
       try {
         // Atualiza status no ConfigManager
-        ConfigManager.updateBotStatusById(botId, 'running');
+        await ConfigManagerSQLite.updateBotStatusById(botId, 'running');
         
         // Executa análise
         await startDecision(botId);
@@ -202,7 +203,7 @@ async function recoverBot(botId, config, startTime) {
         
         // Calcula e salva o próximo horário de validação
         const nextValidationAt = new Date(Date.now() + executionInterval);
-        ConfigManager.updateBotConfigById(botId, {
+        await ConfigManagerSQLite.updateBotConfigById(botId, {
           nextValidationAt: nextValidationAt.toISOString()
         });
         
@@ -218,7 +219,7 @@ async function recoverBot(botId, config, startTime) {
         console.error(`❌ [BOT] Erro na execução do bot ${botId}:`, error.message);
         
         // Atualiza status de erro no ConfigManager
-        ConfigManager.updateBotStatusById(botId, 'error');
+        await ConfigManagerSQLite.updateBotStatusById(botId, 'error');
         
         // Emite evento de erro
         broadcastViaWs({
@@ -271,7 +272,7 @@ async function recoverBot(botId, config, startTime) {
     // Calcula e salva o próximo horário de validação se não existir
     if (!config.nextValidationAt) {
       const nextValidationAt = new Date(Date.now() + executionInterval);
-      ConfigManager.updateBotConfigById(botId, {
+      await ConfigManagerSQLite.updateBotConfigById(botId, {
         nextValidationAt: nextValidationAt.toISOString()
       });
     }
@@ -290,7 +291,7 @@ async function recoverBot(botId, config, startTime) {
     
   } catch (error) {
     console.error(`❌ [PERSISTENCE] Erro ao recuperar bot ${botId}:`, error.message);
-    ConfigManager.updateBotStatusById(botId, 'error');
+    await ConfigManagerSQLite.updateBotStatusById(botId, 'error');
   }
 }
 
@@ -298,7 +299,7 @@ async function recoverBot(botId, config, startTime) {
 async function startDecision(botId) {
   try {
     // Carrega configuração do bot
-    const botConfig = ConfigManager.getBotConfigById(botId);
+    const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
     if (!botConfig) {
       throw new Error(`Configuração não encontrada para bot ID: ${botId}`);
     }
@@ -351,7 +352,7 @@ async function startDecision(botId) {
 async function startStops(botId) {
   try {
     // Carrega configuração do bot
-    const botConfig = ConfigManager.getBotConfigById(botId);
+    const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
     if (!botConfig) {
       throw new Error(`Configuração não encontrada para bot ID: ${botId}`);
     }
@@ -408,7 +409,7 @@ async function startTakeProfitMonitor(botId) {
   
   try {
     // Carrega configuração do bot
-    const botConfig = ConfigManager.getBotConfigById(botId);
+    const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
     if (!botConfig) {
       throw new Error(`Configuração não encontrada para bot ID: ${botId}`);
     }
@@ -461,7 +462,7 @@ async function startPendingOrdersMonitor(botId) {
   
   try {
     // Carrega configuração do bot
-    const botConfig = ConfigManager.getBotConfigById(botId);
+    const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
     if (!botConfig) {
       throw new Error(`Configuração não encontrada para bot ID: ${botId}`);
     }
@@ -514,7 +515,7 @@ async function startOrphanOrderMonitor(botId) {
   
   try {
     // Carrega configuração do bot
-    const botConfig = ConfigManager.getBotConfigById(botId);
+    const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
     if (!botConfig) {
       throw new Error(`Configuração não encontrada para bot ID: ${botId}`);
     }
@@ -567,8 +568,8 @@ async function startBot(botId) {
     console.log(`🚀 [BOT] Iniciando bot com ID: ${botId}`);
     
     // Verifica se o bot pode ser iniciado
-    if (!ConfigManager.canStartBotById(botId)) {
-      const currentStatus = ConfigManager.getBotStatusById(botId);
+    if (!await ConfigManagerSQLite.canStartBotById(botId)) {
+      const currentStatus = await ConfigManagerSQLite.getBotStatusById(botId);
       if (currentStatus === 'running') {
         throw new Error(`Bot ${botId} já está rodando`);
       } else {
@@ -577,13 +578,13 @@ async function startBot(botId) {
     }
     
     // Se o bot estava em erro, limpa o status
-    const currentStatus = ConfigManager.getBotStatusById(botId);
+    const currentStatus = await ConfigManagerSQLite.getBotStatusById(botId);
     if (currentStatus === 'error') {
-      ConfigManager.clearErrorStatus(botId);
+      await ConfigManagerSQLite.clearErrorStatus(botId);
     }
     
     // Verifica se a configuração existe
-    const botConfig = ConfigManager.getBotConfigById(botId);
+    const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
     if (!botConfig) {
       throw new Error(`Configuração não encontrada para bot ID: ${botId}`);
     }
@@ -603,7 +604,7 @@ async function startBot(botId) {
     }
     
     // Atualiza status no ConfigManager
-    ConfigManager.updateBotStatusById(botId, 'starting', new Date().toISOString());
+    await ConfigManagerSQLite.updateBotStatusById(botId, 'starting', new Date().toISOString());
     
     // Emite evento de início via WebSocket
     broadcastViaWs({
@@ -634,10 +635,10 @@ async function startBot(botId) {
     const executeBot = async () => {
       try {
         // Recarrega a configuração do bot para garantir que está atualizada
-        const currentBotConfig = ConfigManager.getBotConfigById(botId);
+        const currentBotConfig = await ConfigManagerSQLite.getBotConfigById(botId);
         
         // Atualiza status no ConfigManager
-        ConfigManager.updateBotStatusById(botId, 'running');
+        await ConfigManagerSQLite.updateBotStatusById(botId, 'running');
         
         // Executa análise
         await startDecision(botId);
@@ -671,7 +672,7 @@ async function startBot(botId) {
         
         // Calcula e salva o próximo horário de validação
         const nextValidationAt = new Date(Date.now() + executionInterval);
-        ConfigManager.updateBotConfigById(botId, {
+        await ConfigManagerSQLite.updateBotConfigById(botId, {
           nextValidationAt: nextValidationAt.toISOString()
         });
         
@@ -687,7 +688,7 @@ async function startBot(botId) {
         console.error(`❌ [BOT] Erro na execução do bot ${botId}:`, error.message);
         
         // Atualiza status de erro no ConfigManager
-        ConfigManager.updateBotStatusById(botId, 'error');
+        await ConfigManagerSQLite.updateBotStatusById(botId, 'error');
         
         // Emite evento de erro
         broadcastViaWs({
@@ -702,7 +703,7 @@ async function startBot(botId) {
     
     // Calcula e salva o próximo horário de validação
     const nextValidationAt = new Date(Date.now() + executionInterval);
-    ConfigManager.updateBotConfigById(botId, {
+    await ConfigManagerSQLite.updateBotConfigById(botId, {
       nextValidationAt: nextValidationAt.toISOString()
     });
     
@@ -732,7 +733,7 @@ async function startBot(botId) {
     console.error(`❌ [BOT] Erro ao iniciar bot ${botId}:`, error.message);
     
     // Atualiza status de erro no ConfigManager
-    ConfigManager.updateBotStatusById(botId, 'error');
+    await ConfigManagerSQLite.updateBotStatusById(botId, 'error');
     
     // Emite evento de erro
     broadcastViaWs({
@@ -753,7 +754,7 @@ async function stopBot(botId) {
     console.log(`🛑 [BOT] Parando bot: ${botId}`);
     
     // Verifica se o bot existe
-    const botConfig = ConfigManager.getBotConfigById(botId);
+    const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
     if (!botConfig) {
       throw new Error(`Bot ${botId} não encontrado`);
     }
@@ -782,7 +783,7 @@ async function stopBot(botId) {
     monitorRateLimits.delete(botId);
     
     // Atualiza status no ConfigManager
-    ConfigManager.updateBotStatusById(botId, 'stopped');
+    await ConfigManagerSQLite.updateBotStatusById(botId, 'stopped');
     
     console.log(`✅ [BOT] Bot ${botId} parado com sucesso`);
     
@@ -804,7 +805,7 @@ async function stopBot(botId) {
 // GET /api/bot/status - Retorna status de todos os bots
 app.get('/api/bot/status', (req, res) => {
   try {
-    const configs = ConfigManager.loadConfigs();
+    const configs = await ConfigManagerSQLite.loadConfigs();
     const status = configs.map(config => {
       // Verifica se o bot está realmente rodando (status no DB + instância ativa)
       const isRunning = config.status === 'running' && activeBotInstances.has(config.id);
@@ -851,7 +852,7 @@ app.get('/api/bot/:botId/next-execution', (req, res) => {
     }
     
     // Busca configuração do bot por ID
-    const botConfig = ConfigManager.getBotConfigById(botIdNum);
+    const botConfig = await ConfigManagerSQLite.getBotConfigById(botIdNum);
     if (!botConfig) {
       return res.status(404).json({
         success: false,
@@ -897,7 +898,7 @@ app.get('/api/bot/:botId/next-execution', (req, res) => {
         nextExecutionDate = new Date(Date.now() + nextExecutionMs);
         
         // Atualiza o nextValidationAt no bot
-        ConfigManager.updateBotConfigById(botIdNum, {
+        await ConfigManagerSQLite.updateBotConfigById(botIdNum, {
           nextValidationAt: nextExecutionDate.toISOString()
         });
       }
@@ -929,7 +930,7 @@ app.get('/api/bot/:botId/next-execution', (req, res) => {
       nextExecutionDate = new Date(Date.now() + nextExecutionMs);
       
       // Salva o nextValidationAt no bot
-      ConfigManager.updateBotConfigById(botIdNum, {
+      await ConfigManagerSQLite.updateBotConfigById(botIdNum, {
         nextValidationAt: nextExecutionDate.toISOString()
       });
     }
@@ -980,7 +981,7 @@ app.get('/api/bot/:botId/orders', async (req, res) => {
     }
     
     // Busca configuração do bot por ID
-    const botConfig = ConfigManager.getBotConfigById(botIdNum);
+    const botConfig = await ConfigManagerSQLite.getBotConfigById(botIdNum);
     if (!botConfig) {
       return res.status(404).json({
         success: false,
@@ -1013,7 +1014,7 @@ app.get('/api/bot/:botId/orders', async (req, res) => {
 app.get('/api/bot/orders', async (req, res) => {
   try {
     // Usa a configuração do primeiro bot para credenciais
-    const configs = ConfigManager.loadConfigs();
+    const configs = await ConfigManagerSQLite.loadConfigs();
     if (configs.length === 0) {
       return res.json({
         success: true,
@@ -1218,10 +1219,10 @@ app.post('/api/configs', async (req, res) => {
       // Se tem ID, atualiza; senão, cria novo
       if (config.id) {
         // Verifica se o bot estava rodando antes da atualização
-        const currentConfig = ConfigManager.getBotConfigById(config.id);
+        const currentConfig = await ConfigManagerSQLite.getBotConfigById(config.id);
         const wasRunning = currentConfig && currentConfig.status === 'running';
         
-        ConfigManager.updateBotConfigById(config.id, config);
+        await ConfigManagerSQLite.updateBotConfigById(config.id, config);
         
         // Se o bot estava rodando, reinicia automaticamente
         if (wasRunning) {
@@ -1241,7 +1242,7 @@ app.post('/api/configs', async (req, res) => {
           wasRunning: wasRunning
         });
       } else {
-        const botId = ConfigManager.addBotConfig(config);
+        const botId = await ConfigManagerSQLite.addBotConfig(config);
         res.json({
           success: true,
           message: `Bot criado com sucesso`,
@@ -1283,7 +1284,7 @@ app.delete('/api/configs/bot/:botName', (req, res) => {
   try {
     const { botName } = req.params;
     
-    ConfigManager.removeBotConfigByBotName(botName);
+    await ConfigManagerSQLite.removeBotConfigByBotName(botName);
     
     res.json({
       success: true,
@@ -1530,7 +1531,7 @@ app.get('/api/trading-stats/:botId', async (req, res) => {
       });
     }
     
-    const botConfig = ConfigManager.getBotConfigById(botId);
+    const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
     
     if (!botConfig || !botConfig.apiKey || !botConfig.apiSecret) {
       return res.status(400).json({
@@ -1582,7 +1583,7 @@ app.get('/api/trading-stats/:botId', async (req, res) => {
 app.get('/api/trading-stats/bot/:botName', async (req, res) => {
   try {
     const { botName } = req.params;
-    const botConfig = ConfigManager.getBotConfigByBotName(botName);
+    const botConfig = await ConfigManagerSQLite.getBotConfigByBotName(botName);
     
     if (!botConfig || !botConfig.apiKey || !botConfig.apiSecret) {
       return res.status(400).json({
@@ -1638,7 +1639,7 @@ app.get('/api/trading-stats/bot/:botName', async (req, res) => {
 app.get('/api/backpack-positions/bot/:botName', async (req, res) => {
   try {
     const { botName } = req.params;
-    const botConfig = ConfigManager.getBotConfigByBotName(botName);
+    const botConfig = await ConfigManagerSQLite.getBotConfigByBotName(botName);
     
     if (!botConfig || !botConfig.apiKey || !botConfig.apiSecret) {
       return res.status(400).json({
@@ -1733,7 +1734,7 @@ app.post('/api/validate-duplicate-credentials', async (req, res) => {
     }
     
     // Buscar todas as configurações salvas
-    const configs = ConfigManager.loadConfigs();
+    const configs = await ConfigManagerSQLite.loadConfigs();
     
     // Verificar se já existe um bot com as mesmas credenciais
     const existingBot = configs.find(config => 
@@ -1887,7 +1888,7 @@ app.get('/api/bot/:botId/positions/history', async (req, res) => {
     }
     
     // Busca configuração do bot por ID
-    const botConfig = ConfigManager.getBotConfigById(botIdNum);
+    const botConfig = await ConfigManagerSQLite.getBotConfigById(botIdNum);
     if (!botConfig) {
       return res.status(404).json({
         success: false,
@@ -1931,7 +1932,7 @@ app.get('/api/bot/:botId/positions/history/summary', async (req, res) => {
     }
     
     // Busca configuração do bot por ID
-    const botConfig = ConfigManager.getBotConfigById(botIdNum);
+    const botConfig = await ConfigManagerSQLite.getBotConfigById(botIdNum);
     if (!botConfig) {
       return res.status(404).json({
         success: false,
@@ -1986,7 +1987,7 @@ app.get('/api/bot/performance', async (req, res) => {
         });
       }
       
-      botConfig = ConfigManager.getBotConfigById(botIdNum);
+      botConfig = await ConfigManagerSQLite.getBotConfigById(botIdNum);
       if (!botConfig) {
         return res.status(404).json({
           success: false,
@@ -2008,7 +2009,7 @@ app.get('/api/bot/performance', async (req, res) => {
       }
     } else {
       // Se foi fornecido apenas botClientOrderId, busca um bot que use essas credenciais
-      const configs = ConfigManager.loadConfigs();
+      const configs = await ConfigManagerSQLite.loadConfigs();
       botConfig = configs.find(config => 
         config.apiKey && config.apiSecret && 
         (config.botClientOrderId === botClientOrderId || config.botName === botClientOrderId)
@@ -2079,7 +2080,7 @@ app.get('/api/bot/performance/details', async (req, res) => {
           });
         }
         
-        botConfig = ConfigManager.getBotConfigById(botIdNum);
+        botConfig = await ConfigManagerSQLite.getBotConfigById(botIdNum);
         if (!botConfig) {
           return res.status(404).json({
             success: false,
@@ -2101,7 +2102,7 @@ app.get('/api/bot/performance/details', async (req, res) => {
         }
       } else {
         // Se foi fornecido apenas botClientOrderId, busca um bot que use essas credenciais
-        const configs = ConfigManager.loadConfigs();
+        const configs = await ConfigManagerSQLite.loadConfigs();
         botConfig = configs.find(config => 
           config.apiKey && config.apiSecret && 
           (config.botClientOrderId === botClientOrderId || config.botName === botClientOrderId)
@@ -2169,7 +2170,7 @@ app.get('/api/bot/performance/simple', async (req, res) => {
     }
     
     // Busca configuração do bot
-    const botConfig = ConfigManager.getBotConfigById(botIdNum);
+    const botConfig = await ConfigManagerSQLite.getBotConfigById(botIdNum);
     if (!botConfig) {
       return res.status(404).json({
         success: false,
@@ -2291,7 +2292,7 @@ app.post('/api/bot/orders/import', async (req, res) => {
       });
     }
 
-    const config = ConfigManager.getBotConfigById(botIdNum);
+    const config = await ConfigManagerSQLite.getBotConfigById(botIdNum);
     if (!config) {
       return res.status(404).json({
         success: false,

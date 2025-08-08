@@ -70,16 +70,16 @@ class OrderController {
     try {
       // Se temos o config, usamos diretamente o botClientOrderId
       if (config && config.botClientOrderId) {
-        const orderId = ConfigManager.getNextOrderId(config.id);
+        const orderId = await ConfigManagerSQLite.getNextOrderId(config.id);
         console.log(`🆔 [ORDER_ID] Gerado ID único usando config: ${orderId} (Bot ID: ${config.id}, botClientOrderId: ${config.botClientOrderId})`);
         return orderId;
       }
       
       // Fallback: tenta obter o bot por nome se config não for null
       if (config && config.id) {
-        const botConfig = ConfigManager.getBotConfigByBotName(config.id);
+        const botConfig = await ConfigManagerSQLite.getBotConfigByBotName(config.id);
         if (botConfig && botConfig.id) {
-          const orderId = ConfigManager.getNextOrderId(botConfig.id);
+          const orderId = await ConfigManagerSQLite.getNextOrderId(botConfig.id);
           console.log(`🆔 [ORDER_ID] Gerado ID único por nome: ${orderId} (Bot ID: ${botConfig.id})`);
           return orderId;
         }
@@ -173,7 +173,7 @@ class OrderController {
       console.log(`📋 [BOT_ORDERS] Total de ordens na conta: ${allOrders.length}`);
 
       // Obtém configuração do bot por ID
-      const botConfig = ConfigManager.getBotConfigById(botId);
+      const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
       if (!botConfig || !botConfig.botClientOrderId) {
         console.warn(`⚠️ [BOT_ORDERS] Bot ID ${botId} não encontrado ou sem botClientOrderId`);
         return [];
@@ -224,7 +224,7 @@ class OrderController {
   static async getBotOrders(botName, config = null) {
     try {
       // Busca configuração do bot por nome
-      const botConfig = ConfigManager.getBotConfigByBotName(botName);
+      const botConfig = await ConfigManagerSQLite.getBotConfigByBotName(botName);
       if (!botConfig) {
         console.warn(`⚠️ [BOT_ORDERS] Bot ${botName} não encontrado`);
         return [];
@@ -258,7 +258,7 @@ class OrderController {
       }
 
       // Obtém todos os bots configurados
-      const allBots = ConfigManager.loadConfigs();
+      const allBots = await ConfigManagerSQLite.loadConfigs();
       const botsOrders = {};
 
       // Para cada bot, filtra suas ordens
