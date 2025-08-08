@@ -20,6 +20,14 @@ describe('OrderController - Testes de Integração', () => {
     orderController = OrderController;
   });
 
+  // Mock de config para todos os testes
+  const mockConfig = {
+    apiKey: 'mock-key',
+    apiSecret: 'mock-secret',
+    id: 'test-bot',
+    botClientOrderId: 1000
+  };
+
   describe('Validação de Dados de Mercado', () => {
     test('deve validar dados de mercado corretamente', async () => {
       // Mock de dados de mercado válidos
@@ -35,7 +43,10 @@ describe('OrderController - Testes de Integração', () => {
       };
 
       // Simula a criação de ordem
-      const result = await orderController.createLimitOrderWithTriggers({ ...mockOrderData, apiKey: "mock-key", apiSecret: "mock-secret" });
+      const result = await orderController.createLimitOrderWithTriggers({ 
+        ...mockOrderData, 
+        config: mockConfig
+      });
       
       // Verifica se os dados foram validados corretamente
       expect(result).toBeDefined();
@@ -52,11 +63,14 @@ describe('OrderController - Testes de Integração', () => {
       };
 
       // Simula a criação de ordem com dados inválidos
-      const result = await orderController.createLimitOrderWithTriggers({ ...mockOrderData, apiKey: "mock-key", apiSecret: "mock-secret" });
+      const result = await orderController.createLimitOrderWithTriggers({ 
+        ...mockOrderData, 
+        config: mockConfig
+      });
       
       // Verifica se foi rejeitado
       expect(result.success).toBe(false);
-      expect(result.error).toContain('API_KEY e API_SECRET são obrigatórios');
+      expect(result.error).toContain('Dados de decimal ausentes');
     });
   });
 
@@ -78,7 +92,7 @@ describe('OrderController - Testes de Integração', () => {
       };
 
       // Executa createFailsafeOrders com credenciais mock
-      const result = await orderController.createFailsafeOrders(mockPosition, 'DEFAULT', { apiKey: 'mock-key', apiSecret: 'mock-secret' });
+      const result = await orderController.createFailsafeOrders(mockPosition, 'DEFAULT', mockConfig);
 
       // Verifica se foi executado
       expect(result).toBeDefined();
@@ -99,7 +113,7 @@ describe('OrderController - Testes de Integração', () => {
       };
 
       // Executa createFailsafeOrders com credenciais mock
-      const result = await orderController.createFailsafeOrders(mockPosition, 'DEFAULT', { apiKey: 'mock-key', apiSecret: 'mock-secret' });
+      const result = await orderController.createFailsafeOrders(mockPosition, 'DEFAULT', mockConfig);
 
       // Verifica se o erro foi tratado
       expect(result).toBeDefined();
@@ -128,7 +142,7 @@ describe('OrderController - Testes de Integração', () => {
       };
 
       // Executa createFailsafeOrders com credenciais mock
-      const result = await orderController.createFailsafeOrders(mockPosition, 'DEFAULT', { apiKey: 'mock-key', apiSecret: 'mock-secret' });
+      const result = await orderController.createFailsafeOrders(mockPosition, 'DEFAULT', mockConfig);
 
       // Verifica se foi executado (mesmo com erro de autenticação, o método é chamado)
       expect(result).toBeDefined();
@@ -158,7 +172,7 @@ describe('OrderController - Testes de Integração', () => {
       };
 
       // Executa createFailsafeOrders com credenciais mock
-      const result = await orderController.createFailsafeOrders(mockPosition, 'DEFAULT', { apiKey: 'mock-key', apiSecret: 'mock-secret' });
+      const result = await orderController.createFailsafeOrders(mockPosition, 'DEFAULT', mockConfig);
 
       // Verifica se foi executado (mesmo com erro de autenticação, o método é chamado)
       expect(result).toBeDefined();
@@ -188,7 +202,7 @@ describe('OrderController - Testes de Integração', () => {
       };
 
       // Executa createFailsafeOrders
-      const result = await orderController.createFailsafeOrders(mockPosition, "DEFAULT", { apiKey: "mock-key", apiSecret: "mock-secret" });
+      const result = await orderController.createFailsafeOrders(mockPosition, "DEFAULT", mockConfig);
 
       // Verifica se foi executado
       expect(result).toBeDefined();
@@ -214,7 +228,7 @@ describe('OrderController - Testes de Integração', () => {
       };
 
       // Executa detectPositionOpenedAndCreateFailsafe com credenciais mock
-      const result = await orderController.detectPositionOpenedAndCreateFailsafe(mockPosition, 'DEFAULT', { apiKey: 'mock-key', apiSecret: 'mock-secret' });
+      const result = await orderController.detectPositionOpenedAndCreateFailsafe(mockPosition, 'DEFAULT', mockConfig);
 
       // Verifica se o estado foi salvo
       expect(result).toBeDefined();
@@ -237,7 +251,7 @@ describe('OrderController - Testes de Integração', () => {
       };
 
       // Executa createFailsafeOrders
-      const result = await orderController.createFailsafeOrders(mockPosition, "DEFAULT", { apiKey: "mock-key", apiSecret: "mock-secret" });
+      const result = await orderController.createFailsafeOrders(mockPosition, "DEFAULT", mockConfig);
 
       // Verifica se foi tratado corretamente
       expect(result).toBeDefined();
@@ -258,7 +272,7 @@ describe('OrderController - Testes de Integração', () => {
       };
 
       // Executa createFailsafeOrders
-      const result = await orderController.createFailsafeOrders(mockPosition, "DEFAULT", { apiKey: "mock-key", apiSecret: "mock-secret" });
+      const result = await orderController.createFailsafeOrders(mockPosition, "DEFAULT", mockConfig);
 
       // Verifica se foi tratado corretamente
       expect(result).toBeDefined();
@@ -292,7 +306,7 @@ describe('OrderController - Testes de Integração', () => {
       // Executa createFailsafeOrders para múltiplas posições
       const results = await Promise.all(
         mockPositions.map(position => 
-          orderController.createFailsafeOrders(position, 'DEFAULT', { apiKey: 'mock-key', apiSecret: 'mock-secret' })
+          orderController.createFailsafeOrders(position, 'DEFAULT', mockConfig)
         )
       );
 
@@ -320,7 +334,7 @@ describe('OrderController - Testes de Integração', () => {
       };
 
       // Testa a validação
-      const result = await orderController.createLimitOrderWithTriggers({ ...mockOrderData, apiKey: "mock-key", apiSecret: "mock-secret" });
+      const result = await orderController.createLimitOrderWithTriggers({ ...mockOrderData, config: mockConfig });
       
       expect(result).toBeDefined();
     });
@@ -334,10 +348,10 @@ describe('OrderController - Testes de Integração', () => {
       };
 
       // Testa a validação
-      const result = await orderController.createLimitOrderWithTriggers({ ...mockOrderData, apiKey: "mock-key", apiSecret: "mock-secret" });
+      const result = await orderController.createLimitOrderWithTriggers({ ...mockOrderData, config: mockConfig });
       
       expect(result.success).toBe(false);
-      expect(result.error).toContain('API_KEY e API_SECRET são obrigatórios');
+      expect(result.error).toContain('Dados de decimal ausentes');
     });
   });
 
@@ -355,7 +369,7 @@ describe('OrderController - Testes de Integração', () => {
         fee: 0.001
       };
 
-      const result = await orderController.createFailsafeOrders(mockPosition, "DEFAULT", { apiKey: "mock-key", apiSecret: "mock-secret" });
+      const result = await orderController.createFailsafeOrders(mockPosition, "DEFAULT", mockConfig);
       
       expect(result).toBeDefined();
     });
@@ -373,7 +387,7 @@ describe('OrderController - Testes de Integração', () => {
         fee: 0.001
       };
 
-      const result = await orderController.createFailsafeOrders(mockPosition, "DEFAULT", { apiKey: "mock-key", apiSecret: "mock-secret" });
+      const result = await orderController.createFailsafeOrders(mockPosition, "DEFAULT", mockConfig);
       
       expect(result).toBeDefined();
     });
@@ -394,7 +408,7 @@ describe('OrderController - Testes de Integração', () => {
       };
 
       // Testa a integração
-      const result = await orderController.createLimitOrderWithTriggers({ ...mockOrderData, apiKey: "mock-key", apiSecret: "mock-secret" });
+      const result = await orderController.createLimitOrderWithTriggers({ ...mockOrderData, config: mockConfig });
       
       expect(result).toBeDefined();
     });
@@ -413,7 +427,7 @@ describe('OrderController - Testes de Integração', () => {
       };
 
       // Testa a integração
-      const result = await orderController.createFailsafeOrders(mockPosition, "DEFAULT", { apiKey: "mock-key", apiSecret: "mock-secret" });
+      const result = await orderController.createFailsafeOrders(mockPosition, "DEFAULT", mockConfig);
       
       expect(result).toBeDefined();
     });

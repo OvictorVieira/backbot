@@ -57,10 +57,18 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
         },
         momentum: {
           current: {
+            wt1: 0.5,
+            wt2: 0.3,
+            cross: 'BULLISH',
+            direction: 'UP',
             isBullish: true,
             isBearish: false
           },
           previous: {
+            wt1: 0.2,
+            wt2: 0.4,
+            cross: null,
+            direction: 'DOWN',
             isBullish: false,
             isBearish: true
           }
@@ -125,10 +133,18 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
         },
         momentum: {
           current: {
+            wt1: 0.5,
+            wt2: 0.3,
+            cross: 'BULLISH',
+            direction: 'UP',
             isBullish: true,
             isBearish: false
           },
           previous: {
+            wt1: 0.2,
+            wt2: 0.4,
+            cross: null,
+            direction: 'DOWN',
             isBullish: false,
             isBearish: true
           }
@@ -216,10 +232,18 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
         },
         momentum: {
           current: {
+            wt1: 0.5,
+            wt2: 0.3,
+            cross: 'BULLISH',
+            direction: 'UP',
             isBullish: true,
             isBearish: false
           },
           previous: {
+            wt1: 0.2,
+            wt2: 0.4,
+            cross: null,
+            direction: 'DOWN',
             isBullish: false,
             isBearish: true
           }
@@ -605,7 +629,7 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
           previous: { isBullish: false, isBearish: true }
         },
         macroMoneyFlow: { macroBias: 1 },
-        cvdDivergence: { bullish: true, bearish: false }
+        cvdDivergence: { bullish: false, bearish: false }
       };
 
       const invalidData = {
@@ -819,7 +843,7 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
         momentum: { isBullish: true, isBearish: false },
         moneyFlow: { isBullish: true, isBearish: false },
         macroMoneyFlow: { macroBias: 1 },
-        cvdDivergence: { bullish: true, bearish: false },
+        cvdDivergence: { bullish: false, bearish: false },
         atr: { atr: 1000 }
       };
 
@@ -893,7 +917,7 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
         momentum: { isBullish: true, isBearish: false },
         moneyFlow: { isBullish: true, isBearish: false },
         macroMoneyFlow: { macroBias: 1 },
-        cvdDivergence: { bullish: true, bearish: false },
+        cvdDivergence: { bullish: false, bearish: false },
         atr: { atr: 1000 }
       };
 
@@ -916,7 +940,7 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
         momentum: { isBullish: true, isBearish: false },
         moneyFlow: { isBullish: true, isBearish: false },
         macroMoneyFlow: { macroBias: 1 },
-        cvdDivergence: { bullish: true, bearish: false },
+        cvdDivergence: { bullish: false, bearish: false },
         atr: { atr: 1000 }
       };
 
@@ -1503,20 +1527,21 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
         ],
         momentum: {
           current: {
-            wt1: 10,
-            wt2: 5,
+            wt1: 0.5,
+            wt2: 0.3,
+            cross: 'BULLISH',
             direction: 'UP',
             isBullish: true,
             isBearish: false
           },
           previous: {
-            wt1: 6,
-            wt2: 8,
+            wt1: 0.2,
+            wt2: 0.4,
+            cross: null,
             direction: 'DOWN',
             isBullish: false,
             isBearish: true
-          },
-          history: { wt1: [], wt2: [] }
+          }
         },
         vwap: {
           current: {
@@ -1548,7 +1573,7 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
           history: []
         },
         macroMoneyFlow: { macroBias: 1 },
-        cvdDivergence: { bullish: true, bearish: false },
+        cvdDivergence: { bullish: false, bearish: false },
         atr: { atr: 1000 } // ATR baseado em preços reais
       };
     });
@@ -1695,20 +1720,21 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
         // Momentum: bullish tanto atual quanto anterior
         momentum: {
           current: {
-            wt1: 10,
-            wt2: 5,
+            wt1: 0.5,
+            wt2: 0.3,
+            cross: 'BULLISH',
+            direction: 'UP',
             isBullish: true,
-            isBearish: false,
-            direction: 'UP'
+            isBearish: false
           },
           previous: {
-            wt1: 8,
-            wt2: 6,
-            isBullish: true,
-            isBearish: false,
-            direction: 'UP'
-          },
-          history: { wt1: [], wt2: [] }
+            wt1: 0.2,
+            wt2: 0.4,
+            cross: null,
+            direction: 'DOWN',
+            isBullish: false,
+            isBearish: true
+          }
         },
         // VWAP: bullish tanto atual quanto anterior
         vwap: {
