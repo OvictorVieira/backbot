@@ -22,9 +22,16 @@ class OrderController {
   // Lock para criação de stop loss (evita múltiplas criações simultâneas)
   static stopLossCreationInProgress = new Set(); // Armazena os símbolos que estão com uma criação de SL em andamento
 
+  // Lock para criação de take profit (evita múltiplas criações simultâneas)
+  static takeProfitCreationInProgress = new Set(); // Armazena os símbolos que estão com uma criação de TP em andamento
+
   // Cache de verificação de stop loss para evitar múltiplas chamadas desnecessárias
   static stopLossCheckCache = new Map(); // { symbol: { lastCheck: timestamp, hasStopLoss: boolean } }
   static stopLossCheckCacheTimeout = 30000; // 30 segundos de cache
+
+  // Cache de verificação de take profit para evitar múltiplas chamadas desnecessárias
+  static takeProfitCheckCache = new Map(); // { symbol: { lastCheck: timestamp, hasTakeProfit: boolean } }
+  static takeProfitCheckCacheTimeout = 30000; // 30 segundos de cache
 
   /**
    * Formata preço de forma segura, limitando a 6 casas decimais para evitar erro "Price decimal too long"
@@ -362,7 +369,7 @@ class OrderController {
           if (unmonitoredPositions.length > 0) {
             // Força criação de alvos para posições não monitoradas
             for (const position of unmonitoredPositions) {
-              await OrderController.forceCreateTargetsForExistingPosition(position, botName);
+              await OrderController.validateAndCreateTakeProfit(position, botName, config);
             }
           }
         }
@@ -463,7 +470,7 @@ class OrderController {
           
           if (!hasTakeProfitOrders) {
             // Cria take profit orders apenas se não existirem
-            await OrderController.forceCreateTargetsForExistingPosition(position, botName);
+            await OrderController.validateAndCreateTakeProfit(position, botName, config);
             OrderController.debug(`💰 [MONITOR] ${position.symbol}: Take profit orders criados`);
           } else {
             OrderController.debug(`💰 [MONITOR] ${position.symbol}: Take profit orders já existem`);
@@ -493,7 +500,7 @@ class OrderController {
       const Account = await AccountController.get({ 
         apiKey, 
         apiSecret,
-        strategy: 'DEFAULT' 
+        strategy: config?.strategyName || 'DEFAULT' 
       });
       const marketInfo = Account.markets.find(m => m.symbol === market);
       if (!marketInfo) {
@@ -683,7 +690,7 @@ class OrderController {
       const Account = await AccountController.get({ 
         apiKey, 
         apiSecret,
-        strategy: 'DEFAULT' 
+        strategy: config?.strategyName || 'DEFAULT' 
       });
       const marketInfo = Account.markets.find(m => m.symbol === position.symbol);
       if (!marketInfo) {
@@ -1503,9 +1510,44 @@ class OrderController {
       console.log(`\n🚀 [${strategyNameToUse}] ${market}: Iniciando execução híbrida`);
       console.log(`📊 [${strategyNameToUse}] ${market}: Preço de entrada: $${entryPrice.toFixed(6)} | Quantidade: ${quantity} | Valor: $${orderValue.toFixed(2)}`);
       
-      // Calcula preços de stop loss e take profit
+      // Calcula preços de stop loss e take profit (com ajuste por alavancagem)
       const stopPrice = parseFloat(stop);
       const targetPrice = parseFloat(target);
+
+      // Ajusta Stop Loss pelo leverage do bot/símbolo
+      let leverageAdjustedStopPrice = stopPrice;
+      try {
+        const Account = await AccountController.get({ 
+          apiKey: config?.apiKey, 
+          apiSecret: config?.apiSecret,
+          strategy: config?.strategyName || 'DEFAULT'
+        });
+        if (Account && Account.leverage) {
+          const rawLeverage = Number(Account.leverage);
+          const leverage = validateLeverageForSymbol(market, rawLeverage);
+          const baseStopLossPct = Math.abs(Number(config?.maxNegativePnlStopPct ?? 10));
+          const actualStopLossPct = baseStopLossPct / leverage;
+          const isLong = action === 'long';
+          const computedLeverageStop = isLong
+            ? entryPrice * (1 - actualStopLossPct / 100)
+            : entryPrice * (1 + actualStopLossPct / 100);
+
+          // Usa o stop mais conservador (mais próximo do entry, portanto mais protetor)
+          if (isFinite(computedLeverageStop)) {
+            if (isLong) {
+              leverageAdjustedStopPrice = Math.max(computedLeverageStop, stopPrice || 0) || computedLeverageStop;
+            } else {
+              leverageAdjustedStopPrice = Math.min(computedLeverageStop, stopPrice || Infinity) || computedLeverageStop;
+            }
+          }
+
+          console.log(`🛡️ [STOP_LEVERAGE] ${market}: base=${baseStopLossPct}% leverage=${leverage}x → efetivo=${actualStopLossPct.toFixed(2)}% | stop(orig)=${isFinite(stopPrice)?stopPrice.toFixed(6):'NaN'} → stop(lev)=${leverageAdjustedStopPrice.toFixed(6)}`);
+        } else {
+          console.warn(`⚠️ [STOP_LEVERAGE] ${market}: Não foi possível obter leverage para ajuste do stop. Usando stop informado.`);
+        }
+      } catch (levErr) {
+        console.warn(`⚠️ [STOP_LEVERAGE] ${market}: Erro ao ajustar stop por leverage: ${levErr.message}. Usando stop informado.`);
+      }
       
       // Verifica se o Trailing Stop está habilitado para determinar se deve criar Take Profit fixo
       const enableTrailingStop = config?.enableTrailingStop === true;
@@ -1528,8 +1570,8 @@ class OrderController {
         price: finalPrice,
         // Parâmetros de stop loss integrados (sempre criados)
         stopLossTriggerBy: "LastPrice",
-        stopLossTriggerPrice: formatPrice(stopPrice),
-        stopLossLimitPrice: formatPrice(stopPrice),
+        stopLossTriggerPrice: formatPrice(leverageAdjustedStopPrice),
+        stopLossLimitPrice: formatPrice(leverageAdjustedStopPrice),
         timeInForce: "GTC",
         selfTradePrevention: "RejectTaker",
         clientId: OrderController.generateUniqueOrderId(config)
@@ -2217,6 +2259,87 @@ class OrderController {
   }
 
   /**
+   * Valida se existe take profit para uma posição e cria se não existir
+   * @param {object} position - Dados da posição
+   * @param {string} botName - Nome único do bot
+   * @returns {boolean} - True se take profit foi criado ou já existia
+   */
+  static async validateAndCreateTakeProfit(position, botName, config = null) {
+    const symbol = position.symbol;
+
+    // 1. VERIFICA O LOCK
+    if (OrderController.takeProfitCreationInProgress.has(symbol)) {
+      console.log(`🔒 [${botName}] ${symbol}: Lock ativo, pulando criação de take profit`);
+      return false;
+    }
+
+    try {
+      // 2. ADQUIRE O LOCK
+      OrderController.takeProfitCreationInProgress.add(symbol);
+      console.log(`🔒 [${botName}] ${symbol}: Lock adquirido para criação de take profit`);
+
+      // SEMPRE usa credenciais do config - lança exceção se não disponível
+      if (!config?.apiKey || !config?.apiSecret) {
+        throw new Error('API_KEY e API_SECRET são obrigatórios - deve ser passado da config do bot');
+      }
+      const apiKey = config.apiKey;
+      const apiSecret = config.apiSecret;
+
+      // Verifica se o par está autorizado antes de tentar criar take profit
+      const Account = await AccountController.get({ 
+        apiKey, 
+        apiSecret,
+        strategy: config?.strategyName || 'DEFAULT' 
+      });
+      const marketInfo = Account.markets.find(m => m.symbol === position.symbol);
+      if (!marketInfo) {
+        // Par não autorizado - retorna silenciosamente sem tentar criar take profit
+        OrderController.debug(`ℹ️ [${botName}] ${position.symbol}: Par não autorizado - pulando criação de take profit`);
+        return false;
+      }
+
+      // Verifica se já existe uma ordem de take profit para esta posição
+      console.log(`🔍 [${botName}] ${position.symbol}: Verificando se já existe take profit...`);
+      const hasTakeProfitOrders = await OrderController.hasTakeProfitOrder(position.symbol, position, config);
+
+      if (hasTakeProfitOrders) {
+        console.log(`✅ [${botName}] ${position.symbol}: Take profit já existe, não criando novo`);
+        return true;
+      }
+      
+      console.log(`❌ [${botName}] ${position.symbol}: Take profit não encontrado, criando novo...`);
+
+      // Verifica se a posição tem quantidade suficiente
+      const totalQuantity = Math.abs(parseFloat(position.netQuantity));
+      if (totalQuantity <= 0) {
+        console.log(`⚠️ [${botName}] ${position.symbol}: Quantidade inválida para take profit: ${totalQuantity}`);
+        return false;
+      }
+
+      // Cria take profit usando o método existente
+      const takeProfitResult = await OrderController.createTakeProfitForPosition(position, config);
+      
+      if (takeProfitResult && !takeProfitResult.error) {
+        console.log(`✅ [${botName}] ${position.symbol}: Take profit criado com sucesso!`);
+        OrderController.clearTakeProfitCheckCache(position.symbol);
+        console.log(`🧹 [${botName}] ${position.symbol}: Cache de take profit limpo após criação`);
+        return true;
+      } else {
+        const errorMsg = takeProfitResult && takeProfitResult.error ? takeProfitResult.error : 'desconhecido';
+        console.log(`❌ [${botName}] ${position.symbol}: Falha ao criar take profit - Erro: ${errorMsg}`);
+        return false;
+      }
+
+    } catch (error) {
+      console.error(`❌ [${botName}] Erro ao validar/criar take profit para ${position.symbol}:`, error.message);
+      return false;
+    } finally {
+      OrderController.takeProfitCreationInProgress.delete(symbol);
+      console.log(`🔓 [${botName}] ${symbol}: Lock liberado após criação de take profit`);
+    }
+  }
+
+  /**
    * Calcula o ATR (Average True Range) manualmente
    * @param {Array} candles - Array de candles
    * @param {number} period - Período para o cálculo (padrão 14)
@@ -2324,7 +2447,11 @@ class OrderController {
 
       // Busca informações do mercado
       const AccountController = await import('../Controllers/AccountController.js');
-      const Account = await AccountController.default.get({ apiKey, apiSecret });
+      const Account = await AccountController.default.get({ 
+        apiKey, 
+        apiSecret,
+        strategy: config?.strategyName || 'DEFAULT'
+      });
       const marketInfo = Account.markets.find(m => m.symbol === position.symbol);
       if (!marketInfo) {
         console.error(`❌ [FAILSAFE] Market info não encontrada para ${position.symbol}`);
@@ -2914,7 +3041,7 @@ class OrderController {
           
           if (!hasTakeProfitOrders) {
             // Cria take profit orders apenas se não existirem
-            await OrderController.forceCreateTargetsForExistingPosition(position, botName);
+            await OrderController.validateAndCreateTakeProfit(position, botName, config);
             OrderController.debug(`💰 [MONITOR] ${position.symbol}: Take profit orders criados`);
           } else {
             OrderController.debug(`💰 [MONITOR] ${position.symbol}: Take profit orders já existem`);
@@ -3048,6 +3175,27 @@ class OrderController {
     
     if (keysToDelete.length > 0) {
       console.log(`🧹 [CACHE] Cache de stop loss limpo para ${symbol} (${keysToDelete.length} entradas)`);
+    }
+  }
+
+  /**
+   * Limpa o cache de verificação de take profit para um símbolo específico
+   * @param {string} symbol - Símbolo do mercado
+   */
+  static clearTakeProfitCheckCache(symbol) {
+    const keysToDelete = [];
+    for (const [key, value] of OrderController.takeProfitCheckCache.entries()) {
+      if (key.startsWith(symbol + '_')) {
+        keysToDelete.push(key);
+      }
+    }
+    
+    keysToDelete.forEach(key => {
+      OrderController.takeProfitCheckCache.delete(key);
+    });
+    
+    if (keysToDelete.length > 0) {
+      console.log(`🧹 [CACHE] Cache de take profit limpo para ${symbol} (${keysToDelete.length} entradas)`);
     }
   }
 
@@ -3541,31 +3689,98 @@ class OrderController {
       // Verifica se já existe ordem de Take Profit
       const hasTakeProfit = await OrderController.hasTakeProfitOrder(symbol, position, config);
       if (hasTakeProfit) {
+        console.log(`ℹ️ [TP_CREATE] ${symbol}: Take Profit já existe, pulando criação`);
         return; // Já existe TP
       }
 
       console.log(`🎯 [TP_CREATE] ${symbol}: Criando Take Profit...`);
 
-      const enableHybridStopStrategy = config?.enableHybridStopStrategy || false;
-      const entryPrice = parseFloat(position.entryPrice || 0);
-      const isLong = netQuantity > 0;
+      // Obtém informações do mercado para formatação correta
+      let Account;
+      try {
+        Account = await AccountController.get({ 
+          apiKey: config.apiKey, 
+          apiSecret: config.apiSecret,
+          strategy: config?.strategyName || 'DEFAULT' 
+        });
+      } catch (error) {
+        console.error(`❌ [TP_CREATE] ${symbol}: Erro ao obter Account:`, error.message);
+        return;
+      }
 
+      if (!Account || !Account.markets) {
+        console.error(`❌ [TP_CREATE] ${symbol}: Account inválido ou sem markets:`, Account);
+        return;
+      }
+
+      const marketInfo = Account.markets.find(m => m.symbol === symbol);
+      if (!marketInfo) {
+        console.error(`❌ [TP_CREATE] ${symbol}: Market info não encontrada`);
+        return;
+      }
+
+      const decimal_quantity = marketInfo.decimal_quantity || 6;
+      const stepSize_quantity = marketInfo.stepSize_quantity || 0.000001;
+      const decimal_price = marketInfo.decimal_price || 2;
+      const tickSize = marketInfo.tickSize || null;
+
+      // Obtém posições atuais da Backpack PRIMEIRO
+      let currentPositions;
+      try {
+        const Futures = await import('../Backpack/Authenticated/Futures.js');
+        currentPositions = await Futures.default.getOpenPositions(config.apiKey, config.apiSecret);
+      } catch (error) {
+        console.error(`❌ [TP_CREATE] ${symbol}: Erro ao obter posições:`, error.message);
+        return;
+      }
+
+      if (!currentPositions || !Array.isArray(currentPositions)) {
+        console.error(`❌ [TP_CREATE] ${symbol}: Posições inválidas:`, currentPositions);
+        return;
+      }
+
+      const currentPosition = currentPositions.find(p => p.symbol === symbol);
+      if (!currentPosition || Math.abs(parseFloat(currentPosition.netQuantity || 0)) === 0) {
+        console.warn(`⚠️ [TP_CREATE] ${symbol}: Posição não encontrada ou já fechada`);
+        return;
+      }
+
+      console.log(`📊 [TP_CREATE] ${symbol}: Dados da posição:`, {
+        symbol: currentPosition.symbol,
+        netQuantity: currentPosition.netQuantity,
+        entryPrice: currentPosition.entryPrice,
+        markPrice: currentPosition.markPrice,
+        unrealizedPnl: currentPosition.unrealizedPnl
+      });
+
+      // Verifica se a posição é grande o suficiente para criar TP
+      const minPositionSize = 0.001; // Posição mínima para criar TP
+      if (Math.abs(parseFloat(currentPosition.netQuantity || 0)) < minPositionSize) {
+        console.warn(`⚠️ [TP_CREATE] ${symbol}: Posição muito pequena (${currentPosition.netQuantity}) para criar TP`);
+        return;
+      }
+
+      const currentNetQuantity = parseFloat(currentPosition.netQuantity || 0);
+      const currentIsLong = currentNetQuantity > 0;
+      const entryPrice = parseFloat(currentPosition.entryPrice || 0);
+
+      let enableHybridStopStrategy = config?.enableHybridStopStrategy || false;
       let takeProfitPrice = null;
-      let takeProfitQuantity = Math.abs(netQuantity);
+      let takeProfitQuantity = Math.abs(currentNetQuantity);
 
       if (enableHybridStopStrategy) {
         // Modo Híbrido: Usa ATR para calcular TP parcial
         const partialTakeProfitPercentage = Number(config?.partialTakeProfitPercentage || 50);
         const atrValue = await OrderController.getAtrValue(symbol);
         
-        if (atrValue) {
+        if (atrValue && atrValue > 0) {
           const atrMultiplier = Number(config?.takeProfitPartialAtrMultiplier || 1.5);
-          takeProfitPrice = OrderController.calculateAtrTakeProfitPrice(position, atrValue, atrMultiplier);
-          takeProfitQuantity = (Math.abs(netQuantity) * partialTakeProfitPercentage) / 100;
+          takeProfitPrice = OrderController.calculateAtrTakeProfitPrice(currentPosition, atrValue, atrMultiplier);
+          takeProfitQuantity = (Math.abs(currentNetQuantity) * partialTakeProfitPercentage) / 100;
           
           console.log(`📊 [TP_HYBRID] ${symbol}: TP Parcial ${partialTakeProfitPercentage}% - Preço: $${takeProfitPrice?.toFixed(4)}, Qty: ${takeProfitQuantity.toFixed(6)}`);
         } else {
-          console.log(`⚠️ [TP_HYBRID] ${symbol}: ATR não disponível, usando TP total`);
+          console.log(`⚠️ [TP_HYBRID] ${symbol}: ATR não disponível ou inválido (${atrValue}), usando TP total`);
           enableHybridStopStrategy = false; // Fallback para TP total
         }
       }
@@ -3575,30 +3790,131 @@ class OrderController {
         const minProfitPercentage = Number(config?.minProfitPercentage || 10);
         const profitMultiplier = (100 + minProfitPercentage) / 100;
         
-        takeProfitPrice = isLong 
+        takeProfitPrice = currentIsLong 
           ? entryPrice * profitMultiplier
           : entryPrice / profitMultiplier;
         
         console.log(`📊 [TP_TRADITIONAL] ${symbol}: TP Total ${minProfitPercentage}% - Preço: $${takeProfitPrice?.toFixed(4)}, Qty: ${takeProfitQuantity.toFixed(6)}`);
       }
 
+      if (!takeProfitPrice || takeProfitPrice <= 0 || isNaN(takeProfitPrice)) {
+        console.error(`❌ [TP_CREATE] ${symbol}: Preço de TP inválido: ${takeProfitPrice} (entryPrice=${entryPrice}, isLong=${isLong})`);
+        return;
+      }
+
+      // Função para formatar quantidade corretamente
+      const formatQuantity = (value) => {
+        if (value <= 0) {
+          throw new Error(`Quantidade deve ser positiva: ${value}`);
+        }
+        let formatted = parseFloat(value).toFixed(decimal_quantity);
+        if (parseFloat(formatted) === 0 && stepSize_quantity > 0) {
+          return stepSize_quantity.toString();
+        }
+        return formatted.toString();
+      };
+
+      // Verificar ordens abertas para evitar duplicidade de TPs (parciais ou totais)
+      try {
+        const Order = await import('../Backpack/Authenticated/Order.js');
+        const openOrders = await Order.default.getOpenOrders(symbol, 'PERP', config.apiKey, config.apiSecret);
+        if (Array.isArray(openOrders)) {
+          const closeSide = currentIsLong ? 'Ask' : 'Bid';
+          const existingReduceOnly = openOrders.filter(o => 
+            o.symbol === symbol &&
+            o.orderType === 'Limit' &&
+            o.reduceOnly === true &&
+            o.side === closeSide
+          );
+
+          console.log(`🔍 [TP_CREATE] ${symbol}: Ordens reduceOnly encontradas: ${existingReduceOnly.length}`);
+          existingReduceOnly.forEach((order, index) => {
+            console.log(`🔍 [TP_CREATE] ${symbol}: Ordem ${index + 1} - ID: ${order.id}, Side: ${order.side}, Qty: ${order.quantity}, Price: ${order.price}`);
+          });
+
+          const existingQty = existingReduceOnly.reduce((sum, o) => sum + Math.abs(parseFloat(o.quantity || 0)), 0);
+
+          // Se já existe qualquer TP parcial aberto, não criar outro (evita duplicados)
+          if (existingQty > 0) {
+            console.log(`🔍 [TP_CREATE] ${symbol}: Verificando TPs existentes - Qty existente: ${existingQty}, enableHybrid: ${enableHybridStopStrategy}`);
+            
+            if (enableHybridStopStrategy) {
+              const partialPercentage = Number(config?.partialTakeProfitPercentage || 50);
+              const desiredPartial = Math.abs(currentNetQuantity) * (partialPercentage / 100);
+              const tolerance = desiredPartial * 0.95;
+              
+              console.log(`🔍 [TP_CREATE] ${symbol}: TP Parcial - Posição: ${currentNetQuantity}, %: ${partialPercentage}%, Desejado: ${desiredPartial}, Tolerância: ${tolerance}`);
+              
+              // Verifica se as ordens existentes são realmente TPs parciais (não totais)
+              const isPartialTP = existingReduceOnly.some(order => {
+                const orderQty = Math.abs(parseFloat(order.quantity || 0));
+                const positionQty = Math.abs(currentNetQuantity);
+                const isPartial = orderQty < positionQty * 0.99; // 99% da posição = parcial
+                
+                console.log(`🔍 [TP_CREATE] ${symbol}: Ordem ${order.id} - Qty: ${orderQty}, Posição: ${positionQty}, É parcial: ${isPartial}`);
+                return isPartial;
+              });
+              
+              if (existingQty >= tolerance && isPartialTP) {
+                console.log(`ℹ️ [TP_CREATE] ${symbol}: TP parcial já existe cobrindo ${existingQty} >= desejado ${desiredPartial}. Ignorando.`);
+                console.log(`✅ [TP_CREATE] ${symbol}: Saindo da função - TP parcial já existe.`);
+                return;
+              } else if (existingQty >= tolerance && !isPartialTP) {
+                console.log(`⚠️ [TP_CREATE] ${symbol}: TP total existe (${existingQty}) mas queremos parcial. Continuando criação.`);
+              } else {
+                console.log(`ℹ️ [TP_CREATE] ${symbol}: TP existente insuficiente (${existingQty} < ${tolerance}). Continuando criação.`);
+              }
+            } else {
+              console.log(`ℹ️ [TP_CREATE] ${symbol}: Já existe TP reduceOnly aberto (${existingQty}). Ignorando para evitar duplicidade.`);
+              console.log(`✅ [TP_CREATE] ${symbol}: Saindo da função - TP total já existe.`);
+              return;
+            }
+          }
+        }
+      } catch (dupErr) {
+        console.warn(`⚠️ [TP_CREATE] ${symbol}: Falha ao verificar TPs existentes: ${dupErr.message}`);
+      }
+
+      console.log(`📊 [TP_CREATE] ${symbol}: Posição atual: ${currentNetQuantity}, TP Qty: ${takeProfitQuantity}`);
+
+      // Verifica se a quantidade é válida
+      if (takeProfitQuantity <= 0) {
+        console.error(`❌ [TP_CREATE] ${symbol}: Quantidade de TP inválida: ${takeProfitQuantity}`);
+        return;
+      }
+
+      // Verifica se a quantidade não excede a posição atual
+      const maxQuantity = Math.abs(currentNetQuantity);
+      if (takeProfitQuantity > maxQuantity) {
+        console.error(`❌ [TP_CREATE] ${symbol}: Quantidade de TP (${takeProfitQuantity}) excede posição atual (${maxQuantity})`);
+        return;
+      }
+
+      // Verifica se o preço é válido
       if (!takeProfitPrice || takeProfitPrice <= 0) {
         console.error(`❌ [TP_CREATE] ${symbol}: Preço de TP inválido: ${takeProfitPrice}`);
         return;
       }
 
-      // Cria a ordem de Take Profit
+      // Cria a ordem de Take Profit como ordem de Take Profit com gatilho (compatível com PRO_MAX)
+      const formattedLimitPrice = OrderController.formatPriceSafely(takeProfitPrice, decimal_price, tickSize);
       const takeProfitOrder = {
         symbol: symbol,
-        side: isLong ? 'Ask' : 'Bid',
+        side: currentIsLong ? 'Ask' : 'Bid',
         orderType: 'Limit',
-        quantity: takeProfitQuantity.toString(),
-        price: takeProfitPrice.toFixed(2), // 🔧 CORRIGIDO: Reduzido para 2 casas decimais
-        reduceOnly: true, // 🔧 CORRIGIDO: Adicionado reduceOnly para TP
+        postOnly: true,
+        reduceOnly: true,
+        quantity: formatQuantity(takeProfitQuantity),
+        price: formattedLimitPrice,
+        takeProfitTriggerBy: 'LastPrice',
+        takeProfitTriggerPrice: formattedLimitPrice,
+        takeProfitLimitPrice: formattedLimitPrice,
         timeInForce: 'GTC',
         selfTradePrevention: 'RejectTaker',
         clientId: OrderController.generateUniqueOrderId(config)
       };
+
+      console.log(`📊 [TP_CREATE] ${symbol}: Enviando ordem TP - Side: ${takeProfitOrder.side}, Qty: ${takeProfitOrder.quantity}, Price: ${takeProfitOrder.price}, Current Position: ${currentNetQuantity}`);
 
       const Order = await import('../Backpack/Authenticated/Order.js');
       const result = await Order.default.executeOrder(
@@ -3615,13 +3931,13 @@ class OrderController {
           config.id,
           result.id,
           symbol,
-          isLong ? 'SELL' : 'BUY',
+          currentIsLong ? 'SELL' : 'BUY',
           takeProfitQuantity,
           takeProfitPrice,
           'TAKE_PROFIT'
         );
       } else {
-        console.error(`❌ [TP_CREATE] ${symbol}: Falha ao criar Take Profit`);
+        console.error(`❌ [TP_CREATE] ${symbol}: Falha ao criar Take Profit - Result:`, result);
       }
 
     } catch (error) {
@@ -3643,12 +3959,35 @@ class OrderController {
       const netQuantity = parseFloat(position.netQuantity || 0);
       const isLong = netQuantity > 0;
 
-      return orders?.some(order => 
-        order.symbol === symbol && 
-        order.side === (isLong ? 'Ask' : 'Bid') &&
-        order.orderType === 'Limit' &&
-        parseFloat(order.quantity) === Math.abs(netQuantity)
-      ) || false;
+      console.log(`🔍 [TP_CHECK] ${symbol}: Verificando TP existente - Posição: ${netQuantity} (${isLong ? 'LONG' : 'SHORT'})`);
+      console.log(`🔍 [TP_CHECK] ${symbol}: Ordens encontradas: ${orders?.length || 0}`);
+
+      if (orders && orders.length > 0) {
+        const relevantOrders = orders.filter(order => 
+          order.symbol === symbol && 
+          order.orderType === 'Limit' &&
+          order.reduceOnly === true
+        );
+
+        console.log(`🔍 [TP_CHECK] ${symbol}: Ordens relevantes (Limit + reduceOnly): ${relevantOrders.length}`);
+
+        for (const order of relevantOrders) {
+          const orderSide = order.side;
+          const expectedSide = isLong ? 'Ask' : 'Bid';
+          const orderQty = parseFloat(order.quantity || 0);
+          const positionQty = Math.abs(netQuantity);
+          
+          console.log(`🔍 [TP_CHECK] ${symbol}: Ordem ${order.id} - Side: ${orderSide} (esperado: ${expectedSide}), Qty: ${orderQty} (posição: ${positionQty})`);
+          
+          if (orderSide === expectedSide && orderQty === positionQty) {
+            console.log(`✅ [TP_CHECK] ${symbol}: TP encontrado - Ordem ${order.id}`);
+            return true;
+          }
+        }
+      }
+
+      console.log(`❌ [TP_CHECK] ${symbol}: Nenhum TP encontrado`);
+      return false;
     } catch (error) {
       console.error(`❌ [TP_CHECK] Erro ao verificar TP para ${symbol}:`, error.message);
       return false;
@@ -3668,15 +4007,28 @@ class OrderController {
       const netQuantity = parseFloat(position.netQuantity || 0);
       const isLong = netQuantity > 0;
 
-      if (!entryPrice || !atrValue || atrValue <= 0) {
+      if (!entryPrice || entryPrice <= 0 || !atrValue || atrValue <= 0 || isNaN(atrValue)) {
+        console.warn(`⚠️ [TP_ATR] Valores inválidos para cálculo: entryPrice=${entryPrice}, atrValue=${atrValue}`);
         return null;
       }
 
       const atrDistance = atrValue * multiplier;
       
-      return isLong 
+      if (isNaN(atrDistance)) {
+        console.warn(`⚠️ [TP_ATR] ATR distance é NaN: atrValue=${atrValue}, multiplier=${multiplier}`);
+        return null;
+      }
+      
+      const takeProfitPrice = isLong 
         ? entryPrice + atrDistance
         : entryPrice - atrDistance;
+      
+      if (isNaN(takeProfitPrice) || takeProfitPrice <= 0) {
+        console.warn(`⚠️ [TP_ATR] Preço de TP calculado é inválido: ${takeProfitPrice} (entryPrice=${entryPrice}, atrDistance=${atrDistance})`);
+        return null;
+      }
+      
+      return takeProfitPrice;
     } catch (error) {
       console.error(`❌ [TP_ATR] Erro ao calcular TP ATR:`, error.message);
       return null;
@@ -3747,13 +4099,22 @@ class OrderController {
       const candles = await markets.getKLines(symbol, timeframe, 30);
       
       if (!candles || candles.length < 14) {
+        console.warn(`⚠️ [TP_ATR] ${symbol}: Candles insuficientes (${candles?.length || 0} < 14)`);
         return null;
       }
 
       const { calculateIndicators } = await import('../Decision/Indicators.js');
       const indicators = await calculateIndicators(candles, timeframe, symbol);
       
-      return indicators.atr || null;
+      const atrValue = indicators.atr?.atr || indicators.atr?.value || null;
+      
+      if (!atrValue || atrValue <= 0 || isNaN(atrValue)) {
+        console.warn(`⚠️ [TP_ATR] ${symbol}: ATR inválido: ${atrValue}`);
+        return null;
+      }
+      
+      console.log(`📊 [TP_ATR] ${symbol}: ATR válido: ${atrValue}`);
+      return atrValue;
     } catch (error) {
       console.error(`❌ [TP_ATR] Erro ao obter ATR para ${symbol}:`, error.message);
       return null;

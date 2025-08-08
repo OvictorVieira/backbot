@@ -340,9 +340,7 @@ async function calculateMacroMoneyFlow(candles, timeframe = '5m', symbol = null)
     }
 
     // Busca diretamente da Binance apenas os últimos 22 candles
-    console.log(`🔍 [MACRO] ${symbol}: Iniciando busca de candles da Binance...`);
     const binanceCandles = await getBinanceCandles(symbol, timeframe, 22);
-    console.log(`🔍 [MACRO] ${symbol}: Candles obtidos: ${binanceCandles?.length || 0}`);
     
     if (!binanceCandles || binanceCandles.length < 14) {
       console.warn(`⚠️ [MACRO] ${symbol}: Par não disponível na Binance ou dados ${timeframe} insuficientes (${binanceCandles?.length || 0} candles)`);
@@ -361,13 +359,13 @@ async function calculateMacroMoneyFlow(candles, timeframe = '5m', symbol = null)
       };
     }
 
-    console.log(`📊 [MACRO] ${symbol}: ${binanceCandles.length} candles ${timeframe} obtidos da Binance, calculando MFI...`);
+
 
     // Calcula MFI com período 14 nos dados do timeframe
     const mfiResult = calculateMoneyFlow(binanceCandles, 14, 9);
     
-    if (!mfiResult.history || mfiResult.history.length < 22) {
-      console.error(`❌ [MACRO] ${symbol}: Histórico MFI insuficiente (${mfiResult.history?.length || 0} valores)`);
+    if (!mfiResult.history || mfiResult.history.length < 8) {
+      console.error(`❌ [MACRO] ${symbol}: Histórico MFI insuficiente (${mfiResult.history?.length || 0} valores) - mínimo 8 valores necessários`);
       return {
         macroBias: 0,
         mfiCurrent: 50,
@@ -384,13 +382,30 @@ async function calculateMacroMoneyFlow(candles, timeframe = '5m', symbol = null)
     }
 
     // Calcula EMA de 22 períodos sobre o MFI
-    console.log(`🔍 [MACRO] ${symbol}: Histórico MFI original: ${mfiResult.history.length} valores`);
-    console.log(`🔍 [MACRO] ${symbol}: Valores MFI:`, mfiResult.history);
     
     const mfiValues = mfiResult.history.filter(val => val !== null && !isNaN(val));
-    console.log(`🔍 [MACRO] ${symbol}: Histórico MFI filtrado: ${mfiValues.length} valores válidos`);
 
-    const mfiEma = EMA.calculate({ period: 22, values: mfiValues });
+    // Ajusta o período da EMA baseado na quantidade de valores disponíveis
+    const emaPeriod = Math.min(22, Math.floor(mfiValues.length / 2));
+    
+    if (mfiValues.length < emaPeriod) {
+      console.warn(`⚠️ [MACRO] ${symbol}: Valores MFI insuficientes para EMA (${mfiValues.length} < ${emaPeriod})`);
+      return {
+        macroBias: 0,
+        mfiCurrent: 50,
+        mfiPrevious: 50,
+        mfiEmaCurrent: 50,
+        mfiEmaPrevious: 50,
+        isBullish: false,
+        isBearish: false,
+        direction: 'NEUTRAL',
+        error: 'Valores MFI insuficientes para EMA',
+        dataSource: 'INSUFFICIENT_MFI_FOR_EMA',
+        symbol
+      };
+    }
+    
+    const mfiEma = EMA.calculate({ period: emaPeriod, values: mfiValues });
     
     // Obtém valores atuais e anteriores
     const mfiCurrent = mfiResult.current.mfi;
@@ -487,9 +502,7 @@ async function getBinanceCandles(symbol, timeframe, limit = 22) {
       start: candle[0] // Para compatibilidade
     }));
     
-    console.log(`🔍 [BINANCE] ${binanceSymbol}: ${candles.length} candles convertidos`);
-    console.log(`🔍 [BINANCE] ${binanceSymbol}: Primeiro candle:`, candles[0]);
-    console.log(`🔍 [BINANCE] ${binanceSymbol}: Último candle:`, candles[candles.length - 1]);
+
     
     console.log(`✅ [BINANCE] ${symbol}: ${candles.length} candles ${timeframe} obtidos`);
     return candles;

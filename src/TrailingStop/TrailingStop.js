@@ -795,19 +795,13 @@ class TrailingStop {
         
         const partialTakeProfitPrice = TrailingStop.calculateAtrTakeProfitPrice(position, atrValue, takeProfitAtrMultiplier);
         
-        // 🎯 CRIAR ORDEM LIMIT DE TAKE PROFIT PARCIAL
+        // 🎯 MONITORAR ORDEM LIMIT DE TAKE PROFIT PARCIAL (não criar nova)
         const partialPercentage = Number(this.config?.partialProfitPercentage || 50);
-        console.log(`🎯 [TP_LIMIT_SETUP] ${position.symbol}: Configurando ordem LIMIT de take profit parcial`);
-        console.log(`📊 [TP_LIMIT_SETUP] ${position.symbol}: Preço: $${partialTakeProfitPrice?.toFixed(4) || 'N/A'}, Quantidade: ${partialPercentage}%`);
+        console.log(`🎯 [TP_LIMIT_SETUP] ${position.symbol}: Monitorando ordem LIMIT de take profit parcial existente`);
+        console.log(`📊 [TP_LIMIT_SETUP] ${position.symbol}: Preço esperado: $${partialTakeProfitPrice?.toFixed(4) || 'N/A'}, Quantidade: ${partialPercentage}%`);
         
-        // Cria a ordem LIMIT de take profit parcial na corretora
-        const tpOrderResult = await OrderController.createPartialTakeProfitOrder(position, partialTakeProfitPrice, partialPercentage, account, this.config);
-        
-        if (tpOrderResult) {
-          console.log(`✅ [TP_LIMIT_SETUP] ${position.symbol}: Ordem LIMIT de take profit parcial criada com sucesso!`);
-        } else {
-          console.warn(`⚠️ [TP_LIMIT_SETUP] ${position.symbol}: Falha ao criar ordem LIMIT de take profit parcial`);
-        }
+        // NÃO cria nova ordem - apenas monitora a existente
+        console.log(`ℹ️ [TP_LIMIT_SETUP] ${position.symbol}: Ordem de TP parcial já foi criada pelo sistema principal. Apenas monitorando.`);
         
         const newState = {
           symbol: position.symbol,
@@ -851,11 +845,11 @@ class TrailingStop {
           const hasPartialOrder = await OrderController.hasPartialTakeProfitOrder(position.symbol, position, account, this.config);
           
           if (!hasPartialOrder) {
-            // Recria a ordem LIMIT de take profit parcial
-            const partialTakeProfitPrice = TrailingStop.calculateAtrTakeProfitPrice(position, trailingState.atrValue, trailingState.takeProfitAtrMultiplier);
-            const partialPercentage = Number(this.config?.partialProfitPercentage || 50);
-            
-            await OrderController.createPartialTakeProfitOrder(position, partialTakeProfitPrice, partialPercentage, account, this.config);
+            // Apenas loga - não recria a ordem (evita duplicação)
+            console.log(`⚠️ [TP_LIMIT_MONITOR] ${position.symbol}: Ordem de TP parcial não encontrada, mas não recriando para evitar duplicação`);
+            console.log(`ℹ️ [TP_LIMIT_MONITOR] ${position.symbol}: A ordem será criada pelo sistema principal quando necessário`);
+          } else {
+            console.log(`✅ [TP_LIMIT_MONITOR] ${position.symbol}: Ordem de TP parcial encontrada e sendo monitorada`);
           }
         }
         
