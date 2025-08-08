@@ -64,6 +64,9 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
 
   // Atualizar formData quando config mudar
   useEffect(() => {
+    console.log('🔄 [ConfigForm] Config recebido:', config);
+    console.log('🔄 [ConfigForm] API Key:', config.apiKey);
+    console.log('🔄 [ConfigForm] API Secret:', config.apiSecret);
     setFormData(config);
   }, [config]);
   
@@ -450,9 +453,10 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
               <Input
                 id="apiKey"
                 type={showApiKey ? "text" : "password"}
-                value={formData.apiKey}
+                value={formData.apiKey || ''}
                 onChange={(e) => handleInputChange('apiKey', e.target.value)}
                 className={errors.apiKey ? "border-red-500" : ""}
+                placeholder="Digite sua API Key"
               />
               <Button
                 type="button"
@@ -485,9 +489,10 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
               <Input
                 id="apiSecret"
                 type={showApiSecret ? "text" : "password"}
-                value={formData.apiSecret}
+                value={formData.apiSecret || ''}
                 onChange={(e) => handleInputChange('apiSecret', e.target.value)}
                 className={errors.apiSecret ? "border-red-500" : ""}
+                placeholder="Digite sua API Secret"
               />
               <Button
                 type="button"

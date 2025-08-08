@@ -388,14 +388,18 @@ export function DashboardPage() {
           <div className="bg-background p-6 rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto border shadow-lg">
             <ConfigForm
               config={(() => {
-                const foundConfig = configs.find(c => c.strategyName === selectedStrategy);
+                // selectedStrategy agora é o botId (string)
+                const botId = parseInt(selectedStrategy);
+                const foundConfig = configs.find(c => c.id === botId);
                 if (foundConfig) {
+                  console.log('🔍 [DashboardPage] Config encontrada:', foundConfig);
                   return foundConfig;
                 }
+                console.log('❌ [DashboardPage] Config não encontrada para botId:', botId);
                 // Fallback para configuração padrão
                 return {
-                  strategyName: selectedStrategy,
-                  botName: `${selectedStrategy} Bot`,
+                  strategyName: 'DEFAULT',
+                  botName: `Bot ${botId}`,
                   apiKey: '',
                   apiSecret: '',
                   capitalPercentage: 20,
