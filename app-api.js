@@ -29,6 +29,7 @@ import History from './src/Backpack/Authenticated/History.js';
 import BotOrdersManager from './src/Config/BotOrdersManager.js';
 import ImportOrdersFromBackpack from './src/Config/ImportOrdersFromBackpack.js';
 import ImportPositionsFromBackpack from './src/Config/ImportPositionsFromBackpack.js';
+import DatabaseService from './src/Services/DatabaseService.js';
 import readline from 'readline';
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -2645,8 +2646,16 @@ async function initializeServer() {
   try {
     console.log('🚀 [SERVER] Iniciando servidor API...');
     
-    // Carrega o estado persistido do Trailing Stop
-    await TrailingStop.loadStateFromFile();
+    // Inicializa o database service
+    const dbService = new DatabaseService();
+    await dbService.init();
+    
+    // Carrega o estado persistido do Trailing Stop do banco de dados
+    if (dbService && dbService.isInitialized()) {
+      await TrailingStop.loadStateFromDB(dbService);
+    } else {
+      console.log('⚠️ [SERVER] Database service não inicializado, Trailing Stop será carregado individualmente para cada bot');
+    }
     
     // Migração automática: cria estado para posições abertas existentes
     // Será executada individualmente para cada bot quando iniciarem
