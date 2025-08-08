@@ -363,6 +363,14 @@ async function startStops(botId) {
     }
 
     // Executa o trailing stop passando as configurações
+    console.log(`🔧 [STOPS] Bot ${botId}: Config recebida:`, {
+      id: config.id,
+      botName: config.botName,
+      hasApiKey: !!config.apiKey,
+      hasApiSecret: !!config.apiSecret,
+      enableTrailingStop: config.enableTrailingStop
+    });
+    
     const trailingStopInstance = new TrailingStop(botConfig.strategyName, config);
     const result = await trailingStopInstance.stopLoss();
     

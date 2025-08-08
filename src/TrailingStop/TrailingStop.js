@@ -801,7 +801,7 @@ class TrailingStop {
         console.log(`📊 [TP_LIMIT_SETUP] ${position.symbol}: Preço: $${partialTakeProfitPrice?.toFixed(4) || 'N/A'}, Quantidade: ${partialPercentage}%`);
         
         // Cria a ordem LIMIT de take profit parcial na corretora
-        const tpOrderResult = await OrderController.createPartialTakeProfitOrder(position, partialTakeProfitPrice, partialPercentage, account);
+        const tpOrderResult = await OrderController.createPartialTakeProfitOrder(position, partialTakeProfitPrice, partialPercentage, account, this.config);
         
         if (tpOrderResult) {
           console.log(`✅ [TP_LIMIT_SETUP] ${position.symbol}: Ordem LIMIT de take profit parcial criada com sucesso!`);
@@ -848,14 +848,14 @@ class TrailingStop {
         
         if (enableHybridStrategy) {
           // Verifica se a ordem LIMIT de take profit parcial existe
-          const hasPartialOrder = await OrderController.hasPartialTakeProfitOrder(position.symbol, position, account);
+          const hasPartialOrder = await OrderController.hasPartialTakeProfitOrder(position.symbol, position, account, this.config);
           
           if (!hasPartialOrder) {
             // Recria a ordem LIMIT de take profit parcial
             const partialTakeProfitPrice = TrailingStop.calculateAtrTakeProfitPrice(position, trailingState.atrValue, trailingState.takeProfitAtrMultiplier);
             const partialPercentage = Number(this.config?.partialProfitPercentage || 50);
             
-            await OrderController.createPartialTakeProfitOrder(position, partialTakeProfitPrice, partialPercentage, account);
+            await OrderController.createPartialTakeProfitOrder(position, partialTakeProfitPrice, partialPercentage, account, this.config);
           }
         }
         
@@ -877,7 +877,7 @@ class TrailingStop {
           
           try {
             // Cancela ordens de stop loss existentes
-            await OrderController.cancelFailsafeOrders(position.symbol, account.botName);
+            await OrderController.cancelFailsafeOrders(position.symbol, account.botName, this.config);
             console.log(`✅ [BREAKEVEN] ${position.symbol}: Stop loss antigo cancelado`);
             
             // Cria nova ordem de stop loss no breakeven

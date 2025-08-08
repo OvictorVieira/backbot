@@ -407,8 +407,8 @@ export const BotCard: React.FC<BotCardProps> = ({
   };
 
   return (
-    <Card className="w-full max-w-sm p-1">
-      <CardHeader className="pb-1 px-0 pt-0">
+    <Card className="w-full">
+      <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div>
             <CardTitle className="text-base">{config.botName}</CardTitle>
@@ -418,9 +418,9 @@ export const BotCard: React.FC<BotCardProps> = ({
         </div>
       </CardHeader>
       
-      <CardContent className="space-y-1 px-0 pb-0">
+      <CardContent className="space-y-3">
         {/* Configurações Básicas */}
-        <div className="grid grid-cols-2 gap-2 text-sm">
+        <div className="grid grid-cols-2 gap-3 text-sm">
           <div>
             <span className="font-medium">Capital:</span>
             <p className="text-muted-foreground">{config.capitalPercentage}%</p>

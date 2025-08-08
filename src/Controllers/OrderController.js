@@ -68,12 +68,14 @@ class OrderController {
         return orderId;
       }
       
-      // Fallback: tenta obter o bot por nome
-      const botConfig = ConfigManager.getBotConfigByBotName(config.id);
-      if (botConfig && botConfig.id) {
-        const orderId = ConfigManager.getNextOrderId(botConfig.id);
-        console.log(`🆔 [ORDER_ID] Gerado ID único por nome: ${orderId} (Bot ID: ${botConfig.id})`);
-        return orderId;
+      // Fallback: tenta obter o bot por nome se config não for null
+      if (config && config.id) {
+        const botConfig = ConfigManager.getBotConfigByBotName(config.id);
+        if (botConfig && botConfig.id) {
+          const orderId = ConfigManager.getNextOrderId(botConfig.id);
+          console.log(`🆔 [ORDER_ID] Gerado ID único por nome: ${orderId} (Bot ID: ${botConfig.id})`);
+          return orderId;
+        }
       }
       
       // Se não conseguiu gerar ID único, ERRO - não deve gerar aleatório
@@ -1137,7 +1139,8 @@ class OrderController {
       const quantityToClose = (totalQuantity * partialPercentage) / 100;
 
       // Busca ordens abertas para o símbolo
-      const openOrders = await Order.getOpenOrders(symbol);
+      const Order = await import('../Backpack/Authenticated/Order.js');
+      const openOrders = await Order.default.getOpenOrders(symbol, "PERP", config?.apiKey, config?.apiSecret);
       
       if (!openOrders || openOrders.length === 0) {
         return false;
