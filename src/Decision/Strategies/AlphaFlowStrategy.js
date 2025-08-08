@@ -89,7 +89,7 @@ export class AlphaFlowStrategy extends BaseStrategy {
         reason: 'Confluência Máxima: VWAP + Momentum + Money Flow + Macro Bias + CVD Divergence',
         signals: {
           momentum: data.momentum?.isBullish,
-          vwap: data.vwap?.vwap > data.vwap?.lowerBands[0],
+          vwap: (data.vwap?.current?.vwap || data.vwap?.vwap) > (data.vwap?.current?.lowerBands?.[0] || data.vwap?.lowerBands?.[0]),
           moneyFlow: data.moneyFlow?.isBullish,
           macroBias: data.macroMoneyFlow?.macroBias === 1,
           cvdDivergence: data.cvdDivergence?.bullish
@@ -521,7 +521,7 @@ export class AlphaFlowStrategy extends BaseStrategy {
    */
   getCapitalMultiplier(conviction, config = null) {
     // Usa configurações do bot se disponível, senão usa variáveis de ambiente
-    const capitalPercentage = config?.capitalPercentage;
+    const capitalPercentage = config?.capitalPercentage || Number(process.env.ACCOUNT1_CAPITAL_PERCENTAGE || 10);
     
     switch (conviction) {
       case 'BRONZE':
@@ -558,10 +558,18 @@ export class AlphaFlowStrategy extends BaseStrategy {
    * @returns {boolean} - True se dados são válidos
    */
   validateData(data) {
-    return super.validateData(data) && 
-           data.momentum !== null && 
-           data.moneyFlow !== null &&
-           data.macroMoneyFlow !== null &&
-           data.cvdDivergence !== null;
+    // Validação básica da classe pai
+    if (!super.validateData(data)) {
+      return false;
+    }
+    
+    // Validação dos indicadores específicos do AlphaFlow
+    // Verifica se os indicadores existem e não são null/undefined
+    const hasMomentum = data.momentum && (data.momentum.isBullish !== undefined || data.momentum.current?.isBullish !== undefined);
+    const hasMoneyFlow = data.moneyFlow && (data.moneyFlow.isBullish !== undefined || data.moneyFlow.current?.isBullish !== undefined);
+    const hasMacroMoneyFlow = data.macroMoneyFlow && data.macroMoneyFlow.macroBias !== undefined;
+    const hasCvdDivergence = data.cvdDivergence && (data.cvdDivergence.bullish !== undefined || data.cvdDivergence.bearish !== undefined);
+    
+    return hasMomentum && hasMoneyFlow && hasMacroMoneyFlow && hasCvdDivergence;
   }
 }

@@ -89,9 +89,9 @@ describe('AlphaFlowStrategy - Testes de Integração', () => {
 
       const result = await strategy.analyzeTrade(0.001, marketData, 1000, 50);
 
-      // Validação: BRONZE deve retornar sinal com os 3 indicadores principais E mudança de estado
+      // Validação: Com todos os indicadores alinhados, deve retornar GOLD
       expect(result).not.toBeNull();
-      expect(result.conviction).toBe('BRONZE');
+      expect(result.conviction).toBe('GOLD');
       expect(result.action).toBe('long');
       expect(result.orders.length).toBeGreaterThanOrEqual(2); // Pelo menos 2 ordens válidas
     });

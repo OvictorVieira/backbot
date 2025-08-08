@@ -20,9 +20,29 @@ export class BaseStrategy {
    * @returns {boolean} - True se dados são válidos
    */
   validateData(data) {
-    return !!(data && data.vwap?.lowerBands?.length && 
-              data.vwap?.upperBands?.length && 
-              data.vwap.vwap != null);
+    // Verifica se data existe
+    if (!data) {
+      return false;
+    }
+    
+    // Verifica se vwap existe
+    if (!data.vwap) {
+      return false;
+    }
+    
+    // Verifica estrutura do VWAP (pode ser direto ou com current/previous)
+    const vwapData = data.vwap.current || data.vwap;
+    
+    if (!vwapData) {
+      return false;
+    }
+    
+    // Verifica se tem os campos necessários
+    const hasVwap = vwapData.vwap != null;
+    const hasLowerBands = vwapData.lowerBands && vwapData.lowerBands.length > 0;
+    const hasUpperBands = vwapData.upperBands && vwapData.upperBands.length > 0;
+    
+    return hasVwap && hasLowerBands && hasUpperBands;
   }
 
   /**
