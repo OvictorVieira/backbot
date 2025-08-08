@@ -169,9 +169,96 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
   const handleInputChange = (field: keyof BotConfig, value: string | number | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
+    // Validação em tempo real
+    const newErrors = { ...errors };
+    
+    // Remove erro anterior do campo
+    if (newErrors[field]) {
+      delete newErrors[field];
     }
+
+    // Validação específica por campo (todos os valores são tratados como string)
+    if (field === 'maxNegativePnlStopPct') {
+      const numValue = parseFloat(String(value));
+      if (isNaN(numValue)) {
+        newErrors[field] = 'Stop Loss deve ser um número válido';
+      } else if (numValue >= 0) {
+        newErrors[field] = 'Stop Loss deve ser um valor negativo';
+      } else if (numValue > -1) {
+        newErrors[field] = 'Stop Loss deve ser menor que -1%';
+      }
+    } else if (field === 'capitalPercentage') {
+      const numValue = parseFloat(String(value));
+      if (isNaN(numValue)) {
+        newErrors[field] = 'Capital deve ser um número válido';
+      } else if (numValue <= 0) {
+        newErrors[field] = 'Capital deve ser maior que 0%';
+      } else if (numValue > 100) {
+        newErrors[field] = 'Capital deve ser menor ou igual a 100%';
+      }
+    } else if (field === 'minProfitPercentage') {
+      const numValue = parseFloat(String(value));
+      if (isNaN(numValue)) {
+        newErrors[field] = 'Lucro mínimo deve ser um número válido';
+      } else if (numValue < 0) {
+        newErrors[field] = 'Lucro mínimo deve ser maior ou igual a 0%';
+      }
+    } else if (field === 'maxSlippagePct') {
+      const numValue = parseFloat(String(value));
+      if (isNaN(numValue)) {
+        newErrors[field] = 'Slippage deve ser um número válido';
+      } else if (numValue < 0) {
+        newErrors[field] = 'Slippage deve ser maior ou igual a 0%';
+      }
+    } else if (field === 'maxOpenOrders') {
+      const numValue = parseFloat(String(value));
+      if (isNaN(numValue)) {
+        newErrors[field] = 'Máximo de ordens deve ser um número válido';
+      } else if (numValue <= 0) {
+        newErrors[field] = 'Máximo de ordens deve ser maior que 0';
+      } else if (numValue > 50) {
+        newErrors[field] = 'Máximo de ordens deve ser menor ou igual a 50';
+      }
+    } else if (field === 'initialStopAtrMultiplier') {
+      const numValue = parseFloat(String(value));
+      if (isNaN(numValue)) {
+        newErrors[field] = 'Multiplicador deve ser um número válido';
+      } else if (numValue <= 0) {
+        newErrors[field] = 'Multiplicador deve ser maior que 0';
+      }
+    } else if (field === 'trailingStopAtrMultiplier') {
+      const numValue = parseFloat(String(value));
+      if (isNaN(numValue)) {
+        newErrors[field] = 'Multiplicador deve ser um número válido';
+      } else if (numValue <= 0) {
+        newErrors[field] = 'Multiplicador deve ser maior que 0';
+      }
+    } else if (field === 'partialTakeProfitAtrMultiplier') {
+      const numValue = parseFloat(String(value));
+      if (isNaN(numValue)) {
+        newErrors[field] = 'Multiplicador deve ser um número válido';
+      } else if (numValue <= 0) {
+        newErrors[field] = 'Multiplicador deve ser maior que 0';
+      }
+    } else if (field === 'partialTakeProfitPercentage') {
+      const numValue = parseFloat(String(value));
+      if (isNaN(numValue)) {
+        newErrors[field] = 'Percentual deve ser um número válido';
+      } else if (numValue <= 0) {
+        newErrors[field] = 'Percentual deve ser maior que 0%';
+      } else if (numValue > 100) {
+        newErrors[field] = 'Percentual deve ser menor ou igual a 100%';
+      }
+    } else if (field === 'trailingStopDistance') {
+      const numValue = parseFloat(String(value));
+      if (isNaN(numValue)) {
+        newErrors[field] = 'Distância deve ser um número válido';
+      } else if (numValue <= 0) {
+        newErrors[field] = 'Distância deve ser maior que 0';
+      }
+    }
+
+    setErrors(newErrors);
 
     if (field === 'apiKey' || field === 'apiSecret') {
       if (isEditMode) {
@@ -263,27 +350,22 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
       newErrors.capitalPercentage = 'Capital deve estar entre 0 e 100%';
     }
 
-    const maxNegativePnlStopPct = parseFloat(String(formData.maxNegativePnlStopPct));
-    if (isNaN(maxNegativePnlStopPct)) {
-      newErrors.maxNegativePnlStopPct = 'Stop Loss deve ser um número válido';
-    } else if (maxNegativePnlStopPct >= 0) {
-      newErrors.maxNegativePnlStopPct = 'Stop Loss deve ser um valor negativo (ex: -10)';
-    } else if (maxNegativePnlStopPct > -1) {
-      newErrors.maxNegativePnlStopPct = 'Stop Loss deve ser menor que -1%';
+    // Validações já são feitas em tempo real no handleInputChange
+    // Apenas verifica se há erros existentes
+    if (errors.maxNegativePnlStopPct) {
+      newErrors.maxNegativePnlStopPct = errors.maxNegativePnlStopPct;
     }
-
-    const minProfitPercentage = parseFloat(String(formData.minProfitPercentage));
-    if (isNaN(minProfitPercentage) || minProfitPercentage < 0) {
-      newErrors.minProfitPercentage = 'Lucro mínimo deve ser maior ou igual a zero';
+    if (errors.minProfitPercentage) {
+      newErrors.minProfitPercentage = errors.minProfitPercentage;
     }
-
-    const maxSlippagePct = parseFloat(String(formData.maxSlippagePct));
-    if (isNaN(maxSlippagePct) || maxSlippagePct < 0) {
-      newErrors.maxSlippagePct = 'Slippage máximo deve ser maior ou igual a zero';
+    if (errors.maxSlippagePct) {
+      newErrors.maxSlippagePct = errors.maxSlippagePct;
     }
-
-    if (formData.maxOpenOrders <= 0 || formData.maxOpenOrders > 50) {
-      newErrors.maxOpenOrders = 'Máximo de ordens deve estar entre 1 e 50';
+    if (errors.maxOpenOrders) {
+      newErrors.maxOpenOrders = errors.maxOpenOrders;
+    }
+    if (errors.capitalPercentage) {
+      newErrors.capitalPercentage = errors.capitalPercentage;
     }
 
     // Validação obrigatória para tokens autorizados
@@ -353,7 +435,23 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
 
     setSaving(true);
     try {
-      await onSave(formData);
+      // Formata os valores antes de enviar para o backend
+      const formattedData = {
+        ...formData,
+        // Converte strings para números onde necessário
+        capitalPercentage: parseFloat(String(formData.capitalPercentage)),
+        maxNegativePnlStopPct: parseFloat(String(formData.maxNegativePnlStopPct)),
+        minProfitPercentage: parseFloat(String(formData.minProfitPercentage)),
+        maxSlippagePct: parseFloat(String(formData.maxSlippagePct)),
+        maxOpenOrders: parseInt(String(formData.maxOpenOrders)),
+        initialStopAtrMultiplier: parseFloat(String(formData.initialStopAtrMultiplier)),
+        trailingStopAtrMultiplier: parseFloat(String(formData.trailingStopAtrMultiplier)),
+        partialTakeProfitAtrMultiplier: parseFloat(String(formData.partialTakeProfitAtrMultiplier)),
+        partialTakeProfitPercentage: parseFloat(String(formData.partialTakeProfitPercentage)),
+        trailingStopDistance: parseFloat(String(formData.trailingStopDistance))
+      };
+
+      await onSave(formattedData);
     } catch (error) {
       console.error('Erro ao salvar configuração:', error);
     } finally {
@@ -605,9 +703,6 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                 onChange={(e) => setTokenSearchTerm(e.target.value)}
                 className="w-full"
               />
-              <p className="text-xs text-muted-foreground">
-                💡 Dica: Clique nos tokens para selecionar. Você deve escolher pelo menos 1 token.
-              </p>
             </div>
 
             {/* Status de carregamento */}
@@ -816,10 +911,10 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
               </div>
               <Input
                 id="capitalPercentage"
-                type="number"
+                type="text"
                 placeholder="Ex: 10"
                 value={formData.capitalPercentage}
-                onChange={(e) => handleInputChange('capitalPercentage', Number(e.target.value))}
+                onChange={(e) => handleInputChange('capitalPercentage', e.target.value)}
                 className={errors.capitalPercentage ? "border-red-500" : ""}
               />
               {errors.capitalPercentage && <p className="text-sm text-red-500">{errors.capitalPercentage}</p>}
@@ -902,16 +997,12 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
               </div>
               <Input
                 id="maxNegativePnlStopPct"
-                type="number"
-                step="0.1"
+                type="text"
                 placeholder="Ex: -10"
                 value={formData.maxNegativePnlStopPct}
                 onChange={(e) => handleInputChange('maxNegativePnlStopPct', e.target.value)}
                 className={errors.maxNegativePnlStopPct ? "border-red-500" : ""}
               />
-              <p className="text-xs text-muted-foreground">
-                💡 Dica: Use valores negativos (ex: -10, -15, -20). Quanto mais negativo, maior o risco.
-              </p>
               {errors.maxNegativePnlStopPct && <p className="text-sm text-red-500">{errors.maxNegativePnlStopPct}</p>}
             </div>
 
@@ -931,8 +1022,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
               </div>
               <Input
                 id="minProfitPercentage"
-                type="number"
-                step="0.1"
+                type="text"
                 placeholder="Ex: 10"
                 value={formData.minProfitPercentage}
                 onChange={(e) => handleInputChange('minProfitPercentage', e.target.value)}
@@ -957,8 +1047,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
               </div>
               <Input
                 id="maxSlippagePct"
-                type="number"
-                step="0.1"
+                type="text"
                 placeholder="Ex: 0.5"
                 value={formData.maxSlippagePct}
                 onChange={(e) => handleInputChange('maxSlippagePct', e.target.value)}
@@ -983,12 +1072,10 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
               </div>
               <Input
                 id="maxOpenOrders"
-                type="number"
-                min="1"
-                max="50"
+                type="text"
                 placeholder="Ex: 5"
                 value={formData.maxOpenOrders}
-                onChange={(e) => handleInputChange('maxOpenOrders', Number(e.target.value))}
+                onChange={(e) => handleInputChange('maxOpenOrders', e.target.value)}
                 className={errors.maxOpenOrders ? "border-red-500" : ""}
               />
               {errors.maxOpenOrders && <p className="text-sm text-red-500">{errors.maxOpenOrders}</p>}

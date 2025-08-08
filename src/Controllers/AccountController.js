@@ -62,7 +62,7 @@ class AccountController {
     }
 
     // Usa authorizedTokens do config se disponível, senão usa variável de ambiente
-    const authorizedTokens = config?.authorizedTokens || JSON.parse(process.env.AUTHORIZED_MARKET || '[]')
+    const authorizedTokens = config?.authorizedTokens || []
 
     markets = markets.filter((el) => 
         el.marketType === "PERP" && 
