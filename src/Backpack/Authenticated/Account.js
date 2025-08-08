@@ -3,14 +3,15 @@ import { auth } from './Authentication.js';
 
 class Account {
 
-  async getAccount(strategy = null) {
+  async getAccount(strategy = null, apiKey = null, apiSecret = null) {
     const timestamp = Date.now();
 
     const headers = auth({
       instruction: 'accountQuery',
       timestamp,
       params: {},
-      strategy: strategy
+      apiKey,
+      apiSecret
     });
 
     try {
@@ -26,7 +27,7 @@ class Account {
   }
 
   // Symbol is token symbol not market, ex: BTC, SOL, etc.
-  async getMaxBorrowQuantity(symbol) {
+  async getMaxBorrowQuantity(symbol, apiKey = null, apiSecret = null) {
     const timestamp = Date.now();
 
     if (!symbol) {
@@ -38,6 +39,8 @@ class Account {
       instruction: 'maxBorrowQuantity',
       timestamp,
       params: { symbol },
+      apiKey,
+      apiSecret
     });
 
     try {
@@ -54,7 +57,7 @@ class Account {
   }
 	
   //side: "Bid" "Ask"
-  async getMaxOrderQuantity(symbol, side) {
+  async getMaxOrderQuantity(symbol, side, apiKey = null, apiSecret = null) {
     const timestamp = Date.now();
 
      if (!symbol) {
@@ -71,6 +74,8 @@ class Account {
       instruction: 'maxOrderQuantity',
       timestamp,
       params: {symbol, side},
+      apiKey,
+      apiSecret
     });
 
     try {
@@ -86,7 +91,7 @@ class Account {
     }
   }
 
-  async getMaxWithdrawalQuantity(symbol, autoBorrow = true, autoLendRedeem = true) {
+  async getMaxWithdrawalQuantity(symbol, autoBorrow = true, autoLendRedeem = true, apiKey = null, apiSecret = null) {
     const timestamp = Date.now();
 
     if (!symbol) {
@@ -98,6 +103,8 @@ class Account {
       instruction: 'maxWithdrawalQuantity',
       timestamp,
       params: {symbol, autoBorrow, autoLendRedeem},
+      apiKey,
+      apiSecret
     });
 
     try {
@@ -116,6 +123,8 @@ class Account {
     autoBorrowSettlements = true,
     autoLend = true,
     autoRepayBorrows = true,
+    apiKey = null,
+    apiSecret = null
   ) {
     const timestamp = Date.now();
 
@@ -135,6 +144,8 @@ class Account {
       instruction: 'accountUpdate',
       timestamp,
       params,
+      apiKey,
+      apiSecret
     });
 
     try {

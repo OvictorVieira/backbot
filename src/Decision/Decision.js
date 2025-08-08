@@ -155,8 +155,8 @@ class Decision {
     setTimeout(progressBar, 500);
   }
 
-  async getDataset(Account, closed_markets, timeframe = null, logger = null) {
-    const dataset = []
+  async getDataset(Account, closed_markets, timeframe = null, logger = null, config = null) {
+    const dataset = [];
     
     // Usa o timeframe passado como parâmetro ou fallback para configuração da conta
     let currentTimeframe = timeframe;
@@ -166,11 +166,11 @@ class Decision {
       const strategyName = this.strategy.constructor.name;
       
       if (strategyName === 'ProMaxStrategy') {
-        // Estratégia PRO_MAX usa CONTA2
-        currentTimeframe = process.env.ACCOUNT2_TIME || process.env.TIME || '5m';
+        // Estratégia PRO_MAX usa configuração específica
+        currentTimeframe = config?.time || '5m';
       } else {
-        // Estratégia DEFAULT usa CONTA1
-        currentTimeframe = process.env.ACCOUNT1_TIME || process.env.TIME || '5m';
+        // Estratégia DEFAULT usa configuração padrão
+        currentTimeframe = config?.time || '5m';
       }
     }
     
@@ -203,9 +203,10 @@ class Decision {
             }
           } else {
             // Busca dados novos
+            const markets = new Markets();
             [getAllMarkPrices, candles] = await Promise.all([
-              Markets.getAllMarkPrices(market.symbol),
-              Markets.getKLines(market.symbol, currentTimeframe, candleCount)
+              markets.getAllMarkPrices(market.symbol),
+              markets.getKLines(market.symbol, currentTimeframe, candleCount)
             ]);
             
             // Salva no cache
@@ -216,7 +217,7 @@ class Decision {
             });
           }
           
-          const analyze = calculateIndicators(candles);
+          const analyze = await calculateIndicators(candles, currentTimeframe, market.symbol);
           const marketPrice = getAllMarkPrices[0].markPrice;
 
           // const analyzeMsg = `🔍 Analyzing ${String(market.symbol).replace("_USDC_PERP", "")}`;
@@ -230,6 +231,7 @@ class Decision {
             candles,
             market,
             marketPrice,
+            symbol: market.symbol, // Adiciona o símbolo diretamente
             ...analyze
           };
         } catch (error) {
@@ -270,14 +272,38 @@ class Decision {
     // Paraleliza a análise de todos os datasets
     const analysisPromises = datasets.map(async (data) => {
       try {
-        return await this.strategy.analyzeTrade(fee, data, investmentUSD, media_rsi, config, btcTrend);
-      } catch (error) {
-        const errorMsg = `❌ Erro na análise de ${data.market?.symbol}: ${error.message}`;
-        if (logger) {
-          logger.error(errorMsg);
-        } else {
-          console.error(errorMsg);
+        // Obtém os dados de mercado para o símbolo atual
+        const marketInfo = await this.getMarketInfo(data.symbol, config);
+        
+
+        
+        if (!marketInfo) {
+          console.error(`❌ [${config?.strategyName || 'DEFAULT'}] Market não encontrado para ${data.symbol}`);
+          return null;
         }
+
+        // Valida se os dados de decimal estão disponíveis
+        if (marketInfo.decimal_quantity === undefined || marketInfo.decimal_quantity === null || 
+            marketInfo.decimal_price === undefined || marketInfo.decimal_price === null || 
+            marketInfo.stepSize_quantity === undefined || marketInfo.stepSize_quantity === null) {
+          console.error(`❌ [${config?.strategyName || 'DEFAULT'}] Dados de decimal ausentes para ${data.symbol}. Dados disponíveis:`, {
+            decimal_quantity: marketInfo.decimal_quantity,
+            decimal_price: marketInfo.decimal_price,
+            stepSize_quantity: marketInfo.stepSize_quantity
+          });
+          return null;
+        }
+
+        // Adiciona os dados de mercado ao objeto data
+        const dataWithMarket = {
+          ...data,
+          market: marketInfo
+        };
+
+        return await this.strategy.analyzeTrade(fee, dataWithMarket, investmentUSD, media_rsi, config, btcTrend);
+      } catch (error) {
+        const errorMsg = `❌ Erro na análise de ${data.symbol}: ${error.message}`;
+        console.error(errorMsg);
         return null;
       }
     });
@@ -289,6 +315,37 @@ class Decision {
     return analysisResults
       .filter(result => result !== null)
       .sort((a, b) => b.pnl - a.pnl);
+  }
+
+  /**
+   * Obtém informações de mercado para um símbolo específico
+   * @param {string} symbol - Símbolo do mercado
+   * @param {object} config - Configuração da conta
+   * @returns {object|null} - Dados de mercado ou null se não encontrado
+   */
+  async getMarketInfo(symbol, config = null) {
+    try {
+      // Obtém os dados da conta
+      const Account = await AccountController.get(config);
+      
+      if (!Account || !Account.markets) {
+        console.error(`❌ [${config?.strategyName || 'DEFAULT'}] Dados da conta não disponíveis`);
+        return null;
+      }
+
+      // Encontra o market correspondente ao símbolo
+      const marketInfo = Account.markets.find((el) => el.symbol === symbol);
+      
+      if (!marketInfo) {
+        console.error(`❌ [${config?.strategyName || 'DEFAULT'}] Market não encontrado para ${symbol}. Markets disponíveis: ${Account.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`);
+        return null;
+      }
+
+      return marketInfo;
+    } catch (error) {
+      console.error(`❌ Erro ao obter dados de mercado para ${symbol}: ${error.message}`);
+      return null;
+    }
   }
 
   analyzeMarket(candles, marketPrice, market) {
@@ -318,7 +375,7 @@ class Decision {
     entry: entry,
     marketPrice: marketPrice,
     volume: volume,
-    market: market
+    market: market.symbol
   };
   }
 
@@ -393,11 +450,11 @@ class Decision {
       const strategyName = this.strategy.constructor.name;
       
       if (strategyName === 'ProMaxStrategy') {
-        // Estratégia PRO_MAX usa CONTA2
-        currentTimeframe = process.env.ACCOUNT2_TIME || process.env.TIME || '5m';
+        // Estratégia PRO_MAX usa configuração específica
+        currentTimeframe = config?.time || '5m';
       } else {
-        // Estratégia DEFAULT usa CONTA1
-        currentTimeframe = process.env.ACCOUNT1_TIME || process.env.TIME || '5m';
+        // Estratégia DEFAULT usa configuração padrão
+        currentTimeframe = config?.time || '5m';
       }
     }
 
@@ -423,11 +480,15 @@ class Decision {
       }
     }
    
-    const positions = await Futures.getOpenPositions()
+    // Usa credenciais do config se disponível
+    const apiKey = config?.apiKey;
+    const apiSecret = config?.apiSecret;
+    
+    const positions = await Futures.getOpenPositions(apiKey, apiSecret)
     const closed_markets = positions.map((el) => el.symbol)
 
-    // VALIDAÇÃO: MAX_OPEN_TRADES - Controla quantidade máxima de posições abertas
-    const maxTradesValidation = await OrderController.validateMaxOpenTrades();
+    // VALIDAÇÃO: Máximo de ordens - Controla quantidade máxima de posições abertas
+    const maxTradesValidation = await OrderController.validateMaxOpenTrades(config?.botName || 'DEFAULT', apiKey, apiSecret, config);
     if (!maxTradesValidation.isValid) {
       const maxTradesMsg = maxTradesValidation.message;
       if (logger) {
@@ -457,7 +518,7 @@ class Decision {
     }
 
     // Verificação adicional: também verifica ordens abertas para evitar duplicatas
-    const openOrders = await Order.getOpenOrders()
+    const openOrders = await Order.getOpenOrders(null, "PERP", apiKey, apiSecret)
     const marketsWithOpenOrders = openOrders ? openOrders.map(order => order.symbol) : []
     const allClosedMarkets = [...new Set([...closed_markets, ...marketsWithOpenOrders])]
     
@@ -467,54 +528,72 @@ class Decision {
     }
 
     // ANÁLISE DO BTC PRIMEIRO (antes das altcoins)
-    console.log(`\n📊 ANÁLISE DO BTC (${currentTimeframe}):`);
+    // Pula análise do BTC para AlphaFlow (cada moeda tem suas particularidades)
     let btcTrend = 'NEUTRAL';
-    try {
-      // Usa 100 candles para garantir que todos os indicadores tenham dados suficientes
-      const btcCandles = await Markets.getKLines('BTC_USDC_PERP', currentTimeframe, 100);
-      if (btcCandles && btcCandles.length > 0) {
-        const btcIndicators = calculateIndicators(btcCandles);
-        
-        // Validação adicional dos indicadores do BTC
-        if (!btcIndicators || !btcIndicators.rsi || !btcIndicators.stoch || !btcIndicators.macd || !btcIndicators.adx) {
-          console.log(`   ⚠️ BTC: Dados de indicadores insuficientes`);
-        } else {
-          const btcAnalysis = this.strategy.analyzeSignals(btcIndicators, true, config);
+    if (this.strategy.constructor.name !== 'AlphaFlowStrategy') {
+      console.log(`\n📊 ANÁLISE DO BTC (${currentTimeframe}):`);
+      try {
+        // Usa 100 candles para garantir que todos os indicadores tenham dados suficientes
+        const markets = new Markets();
+      const btcCandles = await markets.getKLines('BTC_USDC_PERP', currentTimeframe, 100);
+        if (btcCandles && btcCandles.length > 0) {
+          const btcIndicators = await calculateIndicators(btcCandles, currentTimeframe, 'BTC_USDC_PERP');
           
-          if (btcAnalysis && btcAnalysis.hasSignal) {
-            console.log(`   🟢 BTC: ${btcAnalysis.signalType}`);
-            if (btcAnalysis.analysisDetails && btcAnalysis.analysisDetails.length > 0) {
-              btcAnalysis.analysisDetails.forEach(detail => {
-                console.log(`      • ${detail}`);
-              });
-            }
-            // Define tendência do BTC baseada no sinal
-            btcTrend = btcAnalysis.isLong ? 'BULLISH' : 'BEARISH';
+          // Validação adicional dos indicadores do BTC
+          if (!btcIndicators || !btcIndicators.rsi || !btcIndicators.stoch || !btcIndicators.macd || !btcIndicators.adx) {
+            console.log(`   ⚠️ BTC: Dados de indicadores insuficientes`);
           } else {
-            console.log(`\n⚪ BTC: Sem sinais (NEUTRO - não permite operações em altcoins)`);
-            if (btcAnalysis && btcAnalysis.analysisDetails && btcAnalysis.analysisDetails.length > 0) {
-              btcAnalysis.analysisDetails.forEach(detail => {
-                console.log(`      • ${detail}`);
-              });
+            const btcAnalysis = this.strategy.analyzeSignals(btcIndicators, true, config);
+            
+            if (btcAnalysis && btcAnalysis.hasSignal) {
+              console.log(`   🟢 BTC: ${btcAnalysis.signalType}`);
+              if (btcAnalysis.analysisDetails && btcAnalysis.analysisDetails.length > 0) {
+                btcAnalysis.analysisDetails.forEach(detail => {
+                  console.log(`      • ${detail}`);
+                });
+              }
+              // Define tendência do BTC baseada no sinal
+              btcTrend = btcAnalysis.isLong ? 'BULLISH' : 'BEARISH';
+            } else {
+              console.log(`\n⚪ BTC: Sem sinais (NEUTRO - não permite operações em altcoins)`);
+              if (btcAnalysis && btcAnalysis.analysisDetails && btcAnalysis.analysisDetails.length > 0) {
+                btcAnalysis.analysisDetails.forEach(detail => {
+                  console.log(`      • ${detail}`);
+                });
+              }
+              btcTrend = 'NEUTRAL';
             }
-            btcTrend = 'NEUTRAL';
           }
+        } else {
+          console.log(`   ⚠️ BTC: Dados de candles insuficientes`);
         }
-      } else {
-        console.log(`   ⚠️ BTC: Dados de candles insuficientes`);
+      } catch (error) {
+        console.log(`   ❌ BTC: Erro na análise - ${error.message}`);
+        console.log(`      Detalhes: ${error.stack?.split('\n')[1] || 'Erro desconhecido'}`);
       }
-    } catch (error) {
-      console.log(`   ❌ BTC: Erro na análise - ${error.message}`);
-      console.log(`      Detalhes: ${error.stack?.split('\n')[1] || 'Erro desconhecido'}`);
+    } else {
+      console.log(`\n🧠 ALPHAFLOW: Análise BTC desabilitada (cada moeda tem suas particularidades)`);
     }
 
-    const dataset = await this.getDataset(Account, allClosedMarkets, currentTimeframe, logger)
+    const dataset = await this.getDataset(Account, allClosedMarkets, currentTimeframe, logger, config)
 
     // Otimiza o cálculo da média RSI
     const media_rsi = dataset.reduce((sum, row) => sum + row.rsi.value, 0) / dataset.length;
 
-    // Log de resumo das validações implementadas
-    const validationSummary = `\n🔍 RESUMO DAS VALIDAÇÕES IMPLEMENTADAS:
+    // Log de resumo das validações implementadas (personalizado por estratégia)
+    let validationSummary;
+    if (this.strategy.constructor.name === 'AlphaFlowStrategy') {
+      validationSummary = `\n🧠 ALPHAFLOW - RESUMO DAS VALIDAÇÕES:
+   • 📊 Momentum: Análise de momentum avançado (RSI + tendência)
+   • 💰 Money Flow: Filtro de fluxo de dinheiro (MFI)
+   • 🏛️  Macro Money Flow: Viés macro do mercado
+   • 📊 CVD Divergence: Detecção de divergência CVD
+   • 📈 VWAP: Filtro de tendência intradiária
+   • 📊 ATR: Cálculo de spread para ordens escalonadas
+   • 🎯 Sinais BRONZE/SILVER/GOLD: Níveis de convicção escalonados
+   • 📋 Ordens Escalonadas: 3 ordens com pirâmide invertida (50%/30%/20%)`;
+    } else {
+      validationSummary = `\n🔍 RESUMO DAS VALIDAÇÕES IMPLEMENTADAS:
    • 📊 Momentum (RSI Avançado): Primeira prioridade - Cruzamentos GREEN/RED + Sobrevenda/Sobrecompra
    • 🎯 Stochastic: Segunda prioridade - Cruzamentos K/D em zonas extremas
    • 📈 MACD: Terceira prioridade - Momentum e tendência (histograma + cruzamentos)
@@ -523,6 +602,7 @@ class Decision {
    • 📊 VWAP: Filtro de tendência intradiária - Preço > VWAP (LONG) / < VWAP (SHORT)
    • 🏛️ BTC Trend: Filtro macro - Correlação com tendência do Bitcoin
    • 🎯 Stop/Target: Cálculo baseado em VWAP + StdDev`;
+    }
 
     if (logger) {
       logger.info(validationSummary);
@@ -530,9 +610,21 @@ class Decision {
       console.log(validationSummary);
     }
 
-    // Só loga a média RSI se não for estratégia PRO_MAX
-    // Verifica a estratégia atual da instância ao invés da variável de ambiente
-    if (this.strategy.constructor.name !== 'ProMaxStrategy') {
+    // Log personalizado por estratégia
+    if (this.strategy.constructor.name === 'AlphaFlowStrategy') {
+      // AlphaFlow não usa média RSI, mostra configurações específicas
+      const alphaFlowMsg = `🧠 ALPHAFLOW CONFIGURAÇÕES:
+   • Capital BRONZE: ${config?.capitalPercentage || 50}%
+   • Capital SILVER: ${config?.capitalPercentage || 75}%
+   • Capital GOLD: ${config?.capitalPercentage || 100}%
+   • Ordem 1: ${config?.order1WeightPct || 50}% | Ordem 2: ${config?.order2WeightPct || 30}% | Ordem 3: ${config?.order3WeightPct || 20}%`;
+      if (logger) {
+        logger.info(alphaFlowMsg);
+      } else {
+        console.log(alphaFlowMsg);
+      }
+    } else if (this.strategy.constructor.name !== 'ProMaxStrategy') {
+      // Outras estratégias mostram média RSI
       const rsiMsg = `📊 Média do RSI: ${media_rsi.toFixed(2)}`;
       if (logger) {
         logger.info(rsiMsg);
@@ -541,18 +633,13 @@ class Decision {
       }
     }
 
-    // Usa configuração passada como parâmetro (prioridade) ou fallback para variáveis de ambiente
-    const VOLUME_ORDER = config?.volumeOrder || Number(process.env.VOLUME_ORDER) || 100
-    const CAPITAL_PERCENTAGE = config?.capitalPercentage || Number(process.env.CAPITAL_PERCENTAGE || 0)
+    // Usa configuração passada como parâmetro ou valor padrão
+    const CAPITAL_PERCENTAGE = config?.capitalPercentage || 20
     
     let investmentUSD;
     
-    // Valida se os valores são números válidos
-    if (isNaN(VOLUME_ORDER) || VOLUME_ORDER <= 0) {
-      console.error(`❌ VOLUME_ORDER inválido: ${VOLUME_ORDER}. Usando valor padrão: 100`);
-      investmentUSD = 100;
-    } else if (CAPITAL_PERCENTAGE > 0) {
-      // Usa porcentagem do capital disponível
+    // Usa porcentagem do capital disponível
+    if (CAPITAL_PERCENTAGE > 0) {
       investmentUSD = (Account.capitalAvailable * CAPITAL_PERCENTAGE) / 100;
       const capitalMsg = `💰 CONFIGURAÇÃO: ${CAPITAL_PERCENTAGE}% do capital disponível`;
       if (logger) {
@@ -561,9 +648,9 @@ class Decision {
         console.log(capitalMsg);
       }
     } else {
-      // Usa valor fixo
-      investmentUSD = VOLUME_ORDER;
-      const fixedMsg = `💰 CONFIGURAÇÃO: Valor fixo de $${investmentUSD.toFixed(2)}`;
+      // Fallback para valor padrão
+      investmentUSD = 100;
+      const fixedMsg = `💰 CONFIGURAÇÃO: Valor padrão de $${investmentUSD.toFixed(2)}`;
       if (logger) {
         logger.capital(fixedMsg);
       } else {
@@ -575,7 +662,7 @@ class Decision {
     if (!this.operationSummaryLogged) {
       const equityAvailable = Account.capitalAvailable / Account.leverage;
       const availableToTrade = Account.capitalAvailable;
-      const maxOpenTrades = Number(process.env.MAX_OPEN_TRADES || 5);
+      const maxOpenTrades = Number(config?.maxOpenOrders || 5);
       
       const capitalExplanation = `\n💰 RESUMO DA OPERAÇÃO:
    • Capital Disponível: $${equityAvailable.toFixed(2)}
@@ -583,7 +670,7 @@ class Decision {
    • Disponível para Negociação: $${availableToTrade.toFixed(2)}
    • Volume por operação: $${investmentUSD.toFixed(2)}
    • Máximo de ordens: ${Account.maxOpenOrders} (LIMIT_ORDER)
-   • Máximo de posições abertas: ${maxOpenTrades} (MAX_OPEN_TRADES)`;
+   • Máximo de posições abertas: ${maxOpenTrades} (MAX_OPEN_ORDERS)`;
       
       if (logger) {
         logger.capital(capitalExplanation);
@@ -596,56 +683,206 @@ class Decision {
 
     const fee = Account.fee
 
+    // Verificação de margem antes de iniciar análise
+    if (Account.capitalAvailable <= 0) {
+      const marginMsg = `⚠️ [CAPITAL] Margem insuficiente para iniciar nova análise. Capital disponível: $${Account.capitalAvailable.toFixed(2)}`;
+      if (logger) {
+        logger.warn(marginMsg);
+      } else {
+        console.log(marginMsg);
+      }
+      return;
+    }
+
+    console.log(`🔍 [DEBUG] Investment USD sendo usado: $${investmentUSD.toFixed(2)}`);
     const rows = await this.analyzeTrades(fee, dataset, investmentUSD, media_rsi, config, btcTrend)
 
+    // Validação de resultados antes de executar ordens
+    if (!rows || rows.length === 0) {
+      console.log(`📊 Nenhuma oportunidade de trading encontrada nesta análise`);
+      return;
+    }
+
     // Executa ordens em paralelo usando Promise.all
-    console.log(`\n🚀 Executando ${rows.length} ordens em paralelo...`);
+    console.log(`\n🚀 Executando ordens em paralelo...`);
     
     // Prepara todas as ordens
     const orderPromises = rows.map(async (row, index) => {
-      try {
-        const marketInfo = Account.markets.find((el) => el.symbol === row.market);
-
-        // Usa os dados fornecidos pela estratégia ou fallback para os padrões
-        row.volume = row.volume || investmentUSD
-        row.decimal_quantity = row.decimal_quantity || marketInfo.decimal_quantity
-        row.decimal_price = row.decimal_price || marketInfo.decimal_price
-        row.stepSize_quantity = row.stepSize_quantity || marketInfo.stepSize_quantity
-
-        // Verifica se já existe uma posição ativa para este mercado
-        const positions = await Futures.getOpenPositions();
-        const existingPosition = positions.find(p => p.symbol === row.market && Math.abs(Number(p.netQuantity)) > 0);
-        
-        if (existingPosition) {
-          // Já existe posição ativa, não criar nova ordem
-          console.log(`   ⏸️ ${row.market}: Posição ativa existe (${existingPosition.netQuantity}), pulando...`);
-          return { index, market: row.market, result: null };
+      try {        
+        // Determina o market baseado na estrutura do objeto
+        let marketSymbol;
+        if (row.orders && Array.isArray(row.orders) && row.orders.length > 0) {
+          // Alpha Flow Strategy: market está dentro de orders[0]
+          marketSymbol = row.orders[0].market;
+        } else {
+          // Estratégias tradicionais: market está no nível raiz
+          marketSymbol = row.market || row.symbol;
         }
 
-        // Verifica se já existe uma ordem pendente
-        const orders = await OrderController.getRecentOpenOrders(row.market)
+        // Validação de símbolo antes de processar
+        if (!row) {
+          console.error(`❌ [${config?.botName || 'DEFAULT'}] Decisão inválida (null/undefined):`, row);
+          return { index, market: 'UNKNOWN', result: { error: 'Decisão inválida' } };
+        }
+        
+        if (!marketSymbol) {
+          console.error(`❌ [${config?.botName || 'DEFAULT'}] Decisão sem símbolo válido:`, {
+            hasOrders: !!row.orders,
+            ordersLength: row.orders?.length,
+            firstOrderMarket: row.orders?.[0]?.market,
+            rowMarket: row.market,
+            rowSymbol: row.symbol
+          });
+          return { index, market: 'UNKNOWN', result: { error: 'Decisão sem símbolo válido' } };
+        }
+        
+        const marketInfo = Account.markets.find((el) => el.symbol === marketSymbol);
 
-        if(orders.length > 0) {
-          if(orders[0].minutes > 3) {
-            await Order.cancelOpenOrders(row.market);
-            const result = await OrderController.openOrder({ ...row, accountId: config?.accountId || 'DEFAULT' })
-            return { index, market: row.market, result };
-          } else {
-            return { index, market: row.market, result: null };
+        // Verifica se o market foi encontrado
+        if (!marketInfo) {
+          console.error(`❌ [${config?.botName || 'DEFAULT'}] Market não encontrado para ${marketSymbol}. Markets disponíveis: ${Account.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`);
+          return { index, market: marketSymbol, result: { error: `Market não encontrado para ${marketSymbol}` } };
+        }
+
+        // Valida se os dados de decimal estão disponíveis (aceita 0 como valor válido)
+        if (marketInfo.decimal_quantity === undefined || marketInfo.decimal_quantity === null || 
+            marketInfo.decimal_price === undefined || marketInfo.decimal_price === null || 
+            marketInfo.stepSize_quantity === undefined || marketInfo.stepSize_quantity === null) {
+          console.error(`❌ [${config?.botName || 'DEFAULT'}] Dados de decimal ausentes para ${marketSymbol}. Dados disponíveis:`, {
+            decimal_quantity: marketInfo.decimal_quantity,
+            decimal_price: marketInfo.decimal_price,
+            stepSize_quantity: marketInfo.stepSize_quantity
+          });
+          return { index, market: marketSymbol, result: { error: `Dados de decimal ausentes para ${marketSymbol}` } };
+        }
+
+        // Verifica se é uma estratégia Alpha Flow com múltiplas ordens
+        if (row.orders && Array.isArray(row.orders) && row.orders.length > 0) {
+          console.log(`   🔄 ${marketSymbol}: Processando ${row.orders.length} ordens escalonadas (${row.conviction})`);
+          
+          // Verifica se já há muitas ordens abertas (limite de 5 por token)
+          const existingOrders = await OrderController.getRecentOpenOrders(marketSymbol, config);
+          if (existingOrders.length >= 5) {
+            console.log(`   ⚠️  ${marketSymbol}: Muitas ordens abertas (${existingOrders.length}), pulando...`);
+            return { index, market: marketSymbol, result: { error: `Muitas ordens abertas: ${existingOrders.length}` } };
           }
+          
+          // Processa múltiplas ordens para Alpha Flow Strategy
+          const orderResults = [];
+          for (let i = 0; i < row.orders.length; i++) {
+            const order = row.orders[i];
+            
+            // Prepara dados da ordem
+            const orderData = {
+              market: marketSymbol, // Adiciona o market explicitamente
+              action: order.action, // Usa o action da ordem individual
+              quantity: order.quantity, // Quantidade diretamente da ordem
+              entry: order.entryPrice,
+              stop: order.stopLoss,
+              target: order.takeProfit,
+              decimal_quantity: marketInfo.decimal_quantity,
+              decimal_price: marketInfo.decimal_price,
+              stepSize_quantity: marketInfo.stepSize_quantity,
+              orderNumber: order.orderNumber,
+              weight: order.weight,
+              // Mantém dados da estratégia para compatibilidade
+              conviction: row.conviction,
+              reason: row.reason,
+              signals: row.signals,
+              // Adiciona o nome da estratégia para o TrailingStop
+              strategyName: this.strategy.constructor.name
+            };
+
+
+
+            // Verifica se já existe uma posição ativa para este mercado
+            const positions = await Futures.getOpenPositions(apiKey, apiSecret);
+            const existingPosition = positions.find(p => p.symbol === marketSymbol && Math.abs(Number(p.netQuantity)) > 0);
+            
+            if (existingPosition) {
+              console.log(`   ⏸️ ${marketSymbol} (Ordem ${order.orderNumber}): Posição ativa existe, pulando...`);
+              orderResults.push({ orderNumber: order.orderNumber, result: null });
+              continue;
+            }
+
+            // Verifica se já existe uma ordem pendente
+            const orders = await OrderController.getRecentOpenOrders(marketSymbol, config);
+
+            // Calcula o valor da ordem para log
+            const orderValue = orderData.quantity * orderData.entry;
+            console.log(`   💰 [DEBUG] ${marketSymbol} (Ordem ${order.orderNumber}): Valor = $${orderValue.toFixed(2)}`);
+
+            // Cancela ordens antigas (mais de 5 minutos) antes de criar novas
+            if (orders.length > 0) {
+              const oldestOrder = orders[0];
+              const orderAge = (Date.now() - new Date(oldestOrder.createdAt).getTime()) / (1000 * 60); // em minutos
+              
+              if (orderAge > 5) {
+                              console.log(`   🗑️  ${marketSymbol}: Cancelando ordens antigas (${orderAge.toFixed(1)} min)`);
+              await Order.cancelOpenOrders(marketSymbol, null, apiKey, apiSecret);
+              }
+            }
+
+            // Verifica se já há muitas ordens abertas (limite de 3 por token)
+            const existingOrdersCount = orders.length;
+            if (existingOrdersCount >= 3) {
+              console.log(`   ⚠️  ${marketSymbol} (Ordem ${order.orderNumber}): Muitas ordens abertas (${existingOrdersCount}), pulando...`);
+              orderResults.push({ orderNumber: order.orderNumber, result: { error: `Muitas ordens abertas: ${existingOrdersCount}` } });
+              continue;
+            }
+
+            if (orders.length > 0 && orders[0].minutes <= 3) {
+              orderResults.push({ orderNumber: order.orderNumber, result: null });
+            } else {
+              const result = await OrderController.openOrder({ ...orderData, strategyName: config?.strategyName || 'DEFAULT' }, config);
+              orderResults.push({ orderNumber: order.orderNumber, result });
+            }
+          }
+          
+          return { index, market: marketSymbol, result: { orders: orderResults, conviction: row.conviction } };
         } else {
-          const result = await OrderController.openOrder({ ...row, accountId: config?.accountId || 'DEFAULT' })
-          return { index, market: row.market, result };
+          // Processa ordem única (estratégias tradicionais)
+          // Usa os dados fornecidos pela estratégia ou fallback para os padrões
+          row.volume = row.volume || investmentUSD;
+          row.decimal_quantity = row.decimal_quantity || marketInfo.decimal_quantity;
+          row.decimal_price = row.decimal_price || marketInfo.decimal_price;
+          row.stepSize_quantity = row.stepSize_quantity || marketInfo.stepSize_quantity;
+
+          // Verifica se já existe uma posição ativa para este mercado
+          const positions = await Futures.getOpenPositions(apiKey, apiSecret);
+          const existingPosition = positions.find(p => p.symbol === marketSymbol && Math.abs(Number(p.netQuantity)) > 0);
+          
+          if (existingPosition) {
+            // Já existe posição ativa, não criar nova ordem
+            console.log(`   ⏸️ ${marketSymbol}: Posição ativa existe (${existingPosition.netQuantity}), pulando...`);
+            return { index, market: marketSymbol, result: null };
+          }
+
+          // Verifica se já existe uma ordem pendente
+          const orders = await OrderController.getRecentOpenOrders(marketSymbol, config);
+
+                      if (orders.length > 0) {
+              if (orders[0].minutes > 3) {
+                                await Order.cancelOpenOrders(marketSymbol, null, apiKey, apiSecret);
+                const result = await OrderController.openOrder({ ...row, strategyName: config?.strategyName || 'DEFAULT' }, config);
+              return { index, market: marketSymbol, result };
+            } else {
+              return { index, market: marketSymbol, result: null };
+            }
+                      } else {
+              const result = await OrderController.openOrder({ ...row, strategyName: config?.strategyName || 'DEFAULT' }, config);
+            return { index, market: marketSymbol, result };
+          }
         }
         
       } catch (error) {
-        const errorMsg = `❌ Erro ao executar ordem para ${row.market}: ${error.message}`;
+        const errorMsg = `❌ Erro ao executar ordem para ${marketSymbol}: ${error.message}`;
         if (logger) {
           logger.error(errorMsg);
         } else {
           console.error(errorMsg);
         }
-        return { index, market: row.market, result: { error: error.message } };
+        return { index, market: marketSymbol, result: { error: error.message } };
       }
     });
 
@@ -656,19 +893,52 @@ class Decision {
     orderResults.sort((a, b) => a.index - b.index);
     
     orderResults.forEach(({ market, result }) => {
-      if (result && result.success) {
-        console.log(`   ✅ ${market}: Executada`);
-      } else if (result && result.error) {
-        console.log(`   ❌ ${market}: Falhou - ${result.error}`);
-        console.log(`[DEBUG][ORDER_FAIL] Detalhes do result para ${market}:`, JSON.stringify(result, null, 2));
+      // Verifica se é resultado de múltiplas ordens (Alpha Flow)
+      if (result && result.orders && Array.isArray(result.orders)) {
+        console.log(`   🔄 ${market} (${result.conviction}): ${result.orders.length} ordens escalonadas`);
+        
+        result.orders.forEach((orderResult, orderIndex) => {
+          const orderNumber = orderResult.orderNumber || orderIndex + 1;
+          if (orderResult.result && orderResult.result.success) {
+            console.log(`      ✅ Ordem ${orderNumber}: Executada`);
+          } else if (orderResult.result && orderResult.result.error) {
+            console.log(`      ❌ Ordem ${orderNumber}: Falhou - ${orderResult.result.error}`);
+          } else {
+            console.log(`      ⏸️ Ordem ${orderNumber}: Pulada`);
+          }
+        });
       } else {
-        console.log(`   ⏸️ ${market}: Pulado (ordem recente)`);
+        // Resultado de ordem única (estratégias tradicionais)
+        if (result && result.success) {
+          console.log(`   ✅ ${market}: Executada`);
+        } else if (result && result.error) {
+          console.log(`   ❌ ${market}: Falhou - ${result.error}`);
+        } else {
+          console.log(`   ⏸️ ${market}: Pulado (ordem recente)`);
+        }
       }
     });
     
     // Log dos resultados
-    const successfulOrders = orderResults.filter(({ result }) => result && !result.error);
-    const failedOrders = orderResults.filter(({ result }) => !result || result.error);
+    const successfulOrders = orderResults.filter(({ result }) => {
+      if (result && result.orders && Array.isArray(result.orders)) {
+        // Para Alpha Flow, conta ordens individuais
+        return result.orders.some(orderResult => orderResult.result && orderResult.result.success);
+      } else {
+        // Para estratégias tradicionais
+        return result && result.success;
+      }
+    });
+    
+    const failedOrders = orderResults.filter(({ result }) => {
+      if (result && result.orders && Array.isArray(result.orders)) {
+        // Para Alpha Flow, conta ordens individuais
+        return result.orders.every(orderResult => !orderResult.result || orderResult.result.error);
+      } else {
+        // Para estratégias tradicionais
+        return !result || result.error;
+      }
+    });
     
     // Log detalhado das ordens
     const detailsMsg = `📊 Detalhes das ordens:`;
@@ -686,22 +956,37 @@ class Decision {
     console.log(`   • Operações falharam: ${failedOrders.length}`);
     
     orderResults.forEach(({ market, result }) => {
-      const status = result && !result.error ? '✅' : '❌';
-      const errorMsg = result?.error ? ` - ${result.error}` : '';
-      
-      // Para estratégia PRO_MAX, inclui o nível do sinal
-      let orderMsg;
-      const row = rows.find(r => r.market === market);
-      if (this.strategy.constructor.name === 'ProMaxStrategy' && row?.signalLevel) {
-        orderMsg = `${status} ${market} (${row.signalLevel}): ${result && !result.error ? 'Executada' : 'Falhou' + errorMsg}`;
+      // Para Alpha Flow Strategy com múltiplas ordens
+      if (result && result.orders && Array.isArray(result.orders)) {
+        const successfulCount = result.orders.filter(orderResult => orderResult.result && orderResult.result.success).length;
+        const totalCount = result.orders.length;
+        const status = successfulCount > 0 ? '✅' : '❌';
+        const orderMsg = `${status} ${market} (${result.conviction}): ${successfulCount}/${totalCount} ordens executadas`;
+        
+        if (logger) {
+          logger.order(orderMsg);
+        } else {
+          console.log(orderMsg);
+        }
       } else {
-        orderMsg = `${status} ${market}: ${result && !result.error ? 'Executada' : 'Falhou' + errorMsg}`;
-      }
-      
-      if (logger) {
-        logger.order(orderMsg);
-      } else {
-        console.log(orderMsg);
+        // Para estratégias tradicionais
+        const status = result && result.success ? '✅' : '❌';
+        const errorMsg = result?.error ? ` - ${result.error}` : '';
+        
+        // Para estratégia PRO_MAX, inclui o nível do sinal
+        let orderMsg;
+        const row = rows.find(r => r.market === market);
+        if (this.strategy.constructor.name === 'ProMaxStrategy' && row?.signalLevel) {
+          orderMsg = `${status} ${market} (${row.signalLevel}): ${result && result.success ? 'Executada' : 'Falhou' + errorMsg}`;
+        } else {
+          orderMsg = `${status} ${market}: ${result && result.success ? 'Executada' : 'Falhou' + errorMsg}`;
+        }
+        
+        if (logger) {
+          logger.order(orderMsg);
+        } else {
+          console.log(orderMsg);
+        }
       }
     });
     
@@ -744,7 +1029,7 @@ class Decision {
     // para resposta mais rápida na criação de take profits
 
     // Após toda a análise, logar monitoramento de todas as posições abertas
-    await OrderController.checkForUnmonitoredPositions('DEFAULT');
+    await OrderController.checkForUnmonitoredPositions(config?.botName, config);
 
     } catch (error) {
       const errorMsg = `❌ Erro na análise: ${error.message}`;

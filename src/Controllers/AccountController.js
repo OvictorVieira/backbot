@@ -4,20 +4,32 @@ import Capital from '../Backpack/Authenticated/Capital.js';
 
 class AccountController {
 
-  // Propriedades estáticas para gerenciar o cache
-  static accountCache = null;
-  static lastCacheTime = 0;
+  // Cache por bot (chave: strategyName + apiKey)
+  static accountCacheByBot = new Map();
+  static lastCacheTimeByBot = new Map();
   static cacheDuration = 10000; // 10 segundos em milissegundos
-  static capitalLogged = false; // Movido para estático para funcionar com cache
+  static capitalLoggedByBot = new Map(); // Log por bot
 
   async get(config = null) {
     
     const now = Date.now();
     
-    // 1. VERIFICA O CACHE
-    if (AccountController.accountCache && (now - AccountController.lastCacheTime < AccountController.cacheDuration)) {
-      // Retorna os dados do cache silenciosamente
-      return AccountController.accountCache;
+    // SEMPRE usa credenciais do config - lança exceção se não disponível
+    if (!config?.apiKey || !config?.apiSecret) {
+      throw new Error('API_KEY e API_SECRET são obrigatórios - deve ser passado da config do bot');
+    }
+    const apiKey = config.apiKey;
+    const apiSecret = config.apiSecret;
+    const strategy = config?.strategy || process.env.TRADING_STRATEGY || 'DEFAULT';
+    const botKey = `${strategy}_${apiKey}`;
+    
+    // 1. VERIFICA O CACHE PARA ESTE BOT ESPECÍFICO
+    const cachedData = AccountController.accountCacheByBot.get(botKey);
+    const lastCacheTime = AccountController.lastCacheTimeByBot.get(botKey) || 0;
+    
+    if (cachedData && (now - lastCacheTime < AccountController.cacheDuration)) {
+      // Retorna os dados do cache silenciosamente para este bot
+      return cachedData;
     }
     
     try {
@@ -26,8 +38,15 @@ class AccountController {
     // Determina a estratégia baseada na configuração ou variável de ambiente
     const strategy = config?.strategy || process.env.TRADING_STRATEGY || 'DEFAULT';
     
-    const Accounts = await Account.getAccount(strategy)
-    const Collateral = await Capital.getCollateral(strategy)
+    // SEMPRE usa credenciais do config - lança exceção se não disponível
+    if (!config?.apiKey || !config?.apiSecret) {
+      throw new Error('API_KEY e API_SECRET são obrigatórios - deve ser passado da config do bot');
+    }
+    const apiKey = config.apiKey;
+    const apiSecret = config.apiSecret;
+    
+    const Accounts = await Account.getAccount(strategy, apiKey, apiSecret)
+    const Collateral = await Capital.getCollateral(strategy, apiKey, apiSecret)
 
     // Verifica se os dados da conta foram obtidos com sucesso
     if (!Accounts || !Collateral) {
@@ -35,7 +54,8 @@ class AccountController {
       return null;
     }
 
-    let markets = await Markets.getMarkets();
+    const marketsInstance = new Markets();
+    let markets = await marketsInstance.getMarkets();
     if (!markets) {
       console.error('❌ AccountController.get - Markets.getMarkets() retornou null. API pode estar offline.');
       return null;
@@ -65,14 +85,14 @@ class AccountController {
     const netEquityAvailable = parseFloat(Collateral.netEquityAvailable)
     const capitalAvailable = netEquityAvailable * leverage * 0.95
     
-    // Log explicativo do cálculo do capital (apenas na primeira vez)
-    if (!AccountController.capitalLogged) {
-      console.log(`\n📊 CÁLCULO DO CAPITAL:
+    // Log explicativo do cálculo do capital (apenas na primeira vez para este bot)
+    if (!AccountController.capitalLoggedByBot.get(botKey)) {
+      console.log(`\n📊 [${strategy}] CÁLCULO DO CAPITAL:
    • Patrimônio Líquido Disponível: $${netEquityAvailable.toFixed(2)}
    • Alavancagem: ${leverage}x
    • Margem de segurança: 95%
    • Capital disponível: $${netEquityAvailable.toFixed(2)} × ${leverage} × 0.95 = $${capitalAvailable.toFixed(2)}`);
-      AccountController.capitalLogged = true;
+      AccountController.capitalLoggedByBot.set(botKey, true);
     }
     
     // Usa configuração passada como parâmetro (prioridade) ou fallback para variável de ambiente
@@ -88,9 +108,9 @@ class AccountController {
         markets
     }
 
-    // 3. SALVA NO CACHE ANTES DE RETORNAR
-    AccountController.accountCache = obj;
-    AccountController.lastCacheTime = now;
+    // 3. SALVA NO CACHE PARA ESTE BOT ESPECÍFICO
+    AccountController.accountCacheByBot.set(botKey, obj);
+    AccountController.lastCacheTimeByBot.set(botKey, now);
     
     return obj
 
@@ -102,7 +122,8 @@ class AccountController {
   }
 
   async getallMarkets(ignore) {
-    let markets = await Markets.getMarkets(ignore = [])
+    const marketsInstance = new Markets();
+    let markets = await marketsInstance.getMarkets(ignore = [])
 
       markets = markets.filter((el) => 
           el.marketType === "PERP" && 
@@ -128,16 +149,27 @@ class AccountController {
    * Reseta os logs para permitir nova exibição
    */
   resetLogs() {
-    AccountController.capitalLogged = false;
+    AccountController.capitalLoggedByBot.clear();
   }
 
   /**
    * Limpa o cache forçando uma nova busca de dados
    */
   static clearCache() {
-    AccountController.accountCache = null;
-    AccountController.lastCacheTime = 0;
-    console.log(`🔄 [ACCOUNT] Cache limpo - próxima chamada buscará dados frescos`);
+    AccountController.accountCacheByBot.clear();
+    AccountController.lastCacheTimeByBot.clear();
+    console.log(`🔄 [ACCOUNT] Cache limpo para todos os bots - próxima chamada buscará dados frescos`);
+  }
+
+  /**
+   * Limpa o cache de um bot específico
+   */
+  static clearCacheForBot(strategyName, apiKey) {
+    const botKey = `${strategyName}_${apiKey}`;
+    AccountController.accountCacheByBot.delete(botKey);
+    AccountController.lastCacheTimeByBot.delete(botKey);
+    AccountController.capitalLoggedByBot.delete(botKey);
+    console.log(`🔄 [ACCOUNT] Cache limpo para bot ${strategyName} - próxima chamada buscará dados frescos`);
   }
 
   /**
@@ -145,16 +177,27 @@ class AccountController {
    */
   static getCacheInfo() {
     const now = Date.now();
-    const timeSinceLastCache = now - AccountController.lastCacheTime;
-    const isCacheValid = AccountController.accountCache && (timeSinceLastCache < AccountController.cacheDuration);
-    
-    return {
-      hasCache: !!AccountController.accountCache,
-      isCacheValid: isCacheValid,
-      timeSinceLastCache: timeSinceLastCache,
-      cacheDuration: AccountController.cacheDuration,
-      remainingTime: Math.max(0, AccountController.cacheDuration - timeSinceLastCache)
+    const cacheInfo = {
+      totalBots: AccountController.accountCacheByBot.size,
+      bots: []
     };
+
+    for (const [botKey, cachedData] of AccountController.accountCacheByBot.entries()) {
+      const lastCacheTime = AccountController.lastCacheTimeByBot.get(botKey) || 0;
+      const timeSinceLastCache = now - lastCacheTime;
+      const isCacheValid = timeSinceLastCache < AccountController.cacheDuration;
+      
+      cacheInfo.bots.push({
+        botKey,
+        hasCache: !!cachedData,
+        isCacheValid: isCacheValid,
+        timeSinceLastCache: timeSinceLastCache,
+        cacheDuration: AccountController.cacheDuration,
+        remainingTime: Math.max(0, AccountController.cacheDuration - timeSinceLastCache)
+      });
+    }
+    
+    return cacheInfo;
   }
 
 }

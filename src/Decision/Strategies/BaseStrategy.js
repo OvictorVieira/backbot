@@ -20,7 +20,7 @@ export class BaseStrategy {
    * @returns {boolean} - True se dados são válidos
    */
   validateData(data) {
-    return !!(data.vwap?.lowerBands?.length && 
+    return !!(data && data.vwap?.lowerBands?.length && 
               data.vwap?.upperBands?.length && 
               data.vwap.vwap != null);
   }
@@ -57,7 +57,7 @@ export class BaseStrategy {
       riskRewardRatio: Number(riskRewardRatio.toFixed(2)),
       takeProfitPct: Number(takeProfitPct.toFixed(2)),
       reasons: {
-        pct: isValidPct ? null : `TP ${takeProfitPct.toFixed(2)}% < mínimo ${MIN_TAKE_PROFIT_PCT}%`
+        pct: isValidPct ? null : `TP ${takeProfitPct.toFixed(2)}% < mínimo ${MIN_TAKE_PROFIT_PCT.toFixed(1)}%`
       }
     };
   }
@@ -97,7 +97,7 @@ export class BaseStrategy {
    * @param {number} takeProfitPct - Percentual de take profit (do .env)
    * @returns {Promise<object|null>} - Objeto com stop e target ou null se inválido
    */
-  async calculateStopAndTarget(data, price, isLong, stopLossPct, takeProfitPct) {
+  async calculateStopAndTarget(data, price, isLong, stopLossPct, takeProfitPct, config = null) {
     // Validação dos parâmetros
     if (!stopLossPct || !takeProfitPct) {
       console.error('❌ [BASE_STRATEGY] Parâmetros de stop/target inválidos:', { stopLossPct, takeProfitPct });
@@ -107,7 +107,16 @@ export class BaseStrategy {
     // CORREÇÃO CRÍTICA: Obtém a alavancagem da conta para calcular o stop loss correto
     let leverage = 1; // Default
     try {
-      const Account = await AccountController.get();
+      // SEMPRE usa credenciais do config - lança exceção se não disponível
+      if (!config?.apiKey || !config?.apiSecret) {
+        throw new Error('API_KEY e API_SECRET são obrigatórios - deve ser passado da config do bot');
+      }
+      
+      const Account = await AccountController.get({ 
+        apiKey: config.apiKey, 
+        apiSecret: config.apiSecret,
+        strategy: config?.strategyName || 'DEFAULT' 
+      });
       if (Account && Account.leverage) {
         const rawLeverage = Account.leverage;
         leverage = validateLeverageForSymbol(data.market.symbol, rawLeverage);

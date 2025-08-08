@@ -1,10 +1,13 @@
 import History from '../Backpack/Authenticated/History.js';
 
 class PnlController {
-  async run(hour = 24) {
+  async run(hour = 24, config = null) {
     try {
+      // SEMPRE usa credenciais do config - lança exceção se não disponível
+      if (!config?.apiKey || !config?.apiSecret) {
+        throw new Error('API_KEY e API_SECRET são obrigatórios - deve ser passado da config do bot');
+      }
       
-   
       const now = Date.now();                                  // timestamp atual em ms
       const oneDayAgo = now - hour * 60 * 60 * 1000;            // 24h atrás em ms
 
@@ -17,7 +20,7 @@ class PnlController {
       const offset = 0;
       const fillType = null;      // ou 'Trade', 'Liquidation' etc.
       const marketType = null;    // array de tipos se precisar filtrar (SPOT, PERP)
-      const sortDirection = 'Desc';
+      const sortDirection = null;
 
       const fills = await History.getFillHistory(
         symbol,
@@ -28,7 +31,9 @@ class PnlController {
         offset,
         fillType,
         marketType,
-        sortDirection
+        sortDirection,
+        config.apiKey,
+        config.apiSecret
       );
       const result = this.summarizeTrades(fills)
       console.log(`last ${hour}h:`, result);

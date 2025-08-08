@@ -136,19 +136,19 @@ export class DefaultStrategy extends BaseStrategy {
     const action = signals.isLong ? 'long' : 'short';
     const price = parseFloat(data.marketPrice);
     
-    // Carrega configurações do .env
-    const stopLossPct = Number(process.env.MAX_NEGATIVE_PNL_STOP_PCT);
-    const takeProfitPct = Number(process.env.MIN_PROFIT_PERCENTAGE);
-    
-    // Valida se as variáveis de ambiente existem
-    if (!process.env.MAX_NEGATIVE_PNL_STOP_PCT) {
-      console.error('❌ [DEFAULT_STRATEGY] MAX_NEGATIVE_PNL_STOP_PCT não definida no .env');
-      return null;
-    }
-    if (!process.env.MIN_PROFIT_PERCENTAGE) {
-      console.error('❌ [DEFAULT_STRATEGY] MIN_PROFIT_PERCENTAGE não definida no .env');
-      return null;
-    }
+      // Carrega configurações do bot
+      const stopLossPct = Number(config?.maxNegativePnlStopPct || -10);
+      const takeProfitPct = Number(config?.minProfitPercentage || 0.5);
+      
+      // Valida se as configurações do bot existem
+      if (!config?.maxNegativePnlStopPct) {
+        console.error('❌ [DEFAULT_STRATEGY] maxNegativePnlStopPct não definida na config do bot');
+        return null;
+      }
+      if (!config?.minProfitPercentage) {
+        console.error('❌ [DEFAULT_STRATEGY] minProfitPercentage não definida na config do bot');
+        return null;
+      }
     
     const stopTarget = await this.calculateStopAndTarget(data, price, signals.isLong, stopLossPct, takeProfitPct);
     
@@ -267,17 +267,17 @@ export class DefaultStrategy extends BaseStrategy {
       const action = signals.isLong ? 'long' : 'short';
       const price = parseFloat(data.marketPrice);
 
-      // Carrega configurações do .env
-      const stopLossPct = Number(process.env.MAX_NEGATIVE_PNL_STOP_PCT || 4.0);
-      const takeProfitPct = Number(process.env.MIN_PROFIT_PERCENTAGE || 0.5);
+      // Carrega configurações do bot
+      const stopLossPct = Number(config?.maxNegativePnlStopPct || -10);
+      const takeProfitPct = Number(config?.minProfitPercentage || 0.5);
       
-      // Valida se as variáveis de ambiente existem
-      if (!process.env.MAX_NEGATIVE_PNL_STOP_PCT) {
-        console.error('❌ [DEFAULT_STRATEGY] MAX_NEGATIVE_PNL_STOP_PCT não definida no .env');
+      // Valida se as configurações do bot existem
+      if (!config?.maxNegativePnlStopPct) {
+        console.error('❌ [DEFAULT_STRATEGY] maxNegativePnlStopPct não definida na config do bot');
         return null;
       }
-      if (!process.env.MIN_PROFIT_PERCENTAGE) {
-        console.error('❌ [DEFAULT_STRATEGY] MIN_PROFIT_PERCENTAGE não definida no .env');
+      if (!config?.minProfitPercentage) {
+        console.error('❌ [DEFAULT_STRATEGY] minProfitPercentage não definida na config do bot');
         return null;
       }
 
@@ -326,7 +326,7 @@ export class DefaultStrategy extends BaseStrategy {
         decimal_quantity: data.market.decimal_quantity,
         decimal_price: data.market.decimal_price,
         stepSize_quantity: data.market.stepSize_quantity,
-        accountId: data.accountId || 'DEFAULT',
+        botName: data.botName || 'DEFAULT',
         originalSignalData: { signals, moneyFlowValidation, vwapValidation, btcTrend, data }
       };
 
@@ -350,7 +350,7 @@ export class DefaultStrategy extends BaseStrategy {
 
     // Validação dos indicadores essenciais (mais flexível para indicadores opcionais)
     const hasEssentialIndicators = rsi?.value !== null && rsi?.value !== undefined;
-    const hasMomentum = data.momentum?.rsi !== null && data.momentum?.rsi !== undefined;
+    const hasMomentum = data.momentum?.current?.wt1 !== null && data.momentum?.current?.wt2 !== null;
     const hasStoch = stoch?.k !== null && stoch?.k !== undefined && stoch?.d !== null && stoch?.d !== undefined;
     const hasMacd = macd?.MACD !== null && macd?.MACD !== undefined;
     const hasAdx = adx?.adx !== null && adx?.adx !== undefined && adx?.diPlus !== null && adx?.diPlus !== undefined && adx?.diMinus !== null && adx?.diMinus !== undefined;
@@ -380,54 +380,51 @@ export class DefaultStrategy extends BaseStrategy {
     let signalType = '';
     let analysisDetails = [];
 
-    // 1. ANÁLISE DE MOMENTUM (RSI Avançado) - SUBSTITUI RSI SIMPLES
+    // 1. ANÁLISE DE MOMENTUM (WaveTrend) - NOVA ESTRUTURA
     const momentum = data.momentum;
     
-    if (momentum && momentum.rsi !== null && momentum.rsi !== undefined) {
-      const momentumRsi = momentum.rsi;
-      const momentumValue = momentum.momentumValue;
-      const isBullish = momentum.isBullish;
-      const isBearish = momentum.isBearish;
-      const reversal = momentum.reversal;
+    if (momentum && momentum.current && momentum.current.wt1 !== null && momentum.current.wt2 !== null) {
+      const currentMomentum = momentum.current;
+      const previousMomentum = momentum.previous;
       
       // Log detalhado do Momentum para debug
       if (isBTCAnalysis) {
-        console.log(`      • Momentum Debug: RSI=${(momentumRsi || 0).toFixed(1)}, Value=${(momentumValue || 0).toFixed(3)}, Bullish=${isBullish}, Bearish=${isBearish}, Reversal=${reversal?.type || 'NONE'}`);
+        console.log(`      • Momentum Debug: WT1=${(currentMomentum.wt1 || 0).toFixed(3)}, WT2=${(currentMomentum.wt2 || 0).toFixed(3)}, Cross=${currentMomentum.cross || 'NONE'}, Direction=${currentMomentum.direction}, Bullish=${currentMomentum.isBullish}, Bearish=${currentMomentum.isBearish}`);
       }
       
-      // SINAL DE LONG (Compra) - NOVA LÓGICA AVANÇADA
-      // Condição A (Cruzamento - Sinal Forte): momentum.reversal.type === 'GREEN'
-      // Condição B (Sobrevenda com Confirmação): momentum.rsi <= 30 && momentum.isBullish
-      if (reversal && reversal.type === 'GREEN') {
+      // SINAL DE LONG (Compra) - NOVA LÓGICA WAVETREND
+      // Condição A (Cruzamento BULLISH): momentum.current.cross === 'BULLISH'
+      // Condição B (Direção UP): momentum.current.direction === 'UP'
+      if (currentMomentum.cross === 'BULLISH') {
         isLong = true;
-        signalType = 'Momentum Cruzamento GREEN';
-        analysisDetails.push(`Momentum: Cruzamento GREEN (RSI=${(momentumRsi || 0).toFixed(1)}, Value=${(momentumValue || 0).toFixed(3)}) - Sinal Forte`);
-      } else if (momentumRsi <= 30 && isBullish) {
+        signalType = 'Momentum Cruzamento BULLISH';
+        analysisDetails.push(`Momentum: Cruzamento BULLISH (WT1=${(currentMomentum.wt1 || 0).toFixed(3)}, WT2=${(currentMomentum.wt2 || 0).toFixed(3)}) - Sinal Forte`);
+      } else if (currentMomentum.direction === 'UP' && currentMomentum.isBullish) {
         isLong = true;
-        signalType = 'Momentum Sobrevenda + Confirmação';
-        analysisDetails.push(`Momentum: RSI=${(momentumRsi || 0).toFixed(1)} <= 30 + Bullish=${isBullish} (sobrevenda com confirmação)`);
-      } else if (momentumRsi <= 30) {
-        analysisDetails.push(`Momentum: RSI=${(momentumRsi || 0).toFixed(1)} <= 30 (sobrevenda, mas sem confirmação bullish)`);
+        signalType = 'Momentum Direção UP + Confirmação';
+        analysisDetails.push(`Momentum: Direção UP (WT1=${(currentMomentum.wt1 || 0).toFixed(3)}, WT2=${(currentMomentum.wt2 || 0).toFixed(3)}) + Bullish=${currentMomentum.isBullish} (tendência de alta com confirmação)`);
+      } else if (currentMomentum.direction === 'UP') {
+        analysisDetails.push(`Momentum: Direção UP (WT1=${(currentMomentum.wt1 || 0).toFixed(3)}, WT2=${(currentMomentum.wt2 || 0).toFixed(3)}) (tendência de alta, mas sem confirmação bullish)`);
       }
       
-      // SINAL DE SHORT (Venda) - NOVA LÓGICA AVANÇADA
-      // Condição A (Cruzamento - Sinal Forte): momentum.reversal.type === 'RED'
-      // Condição B (Sobrecompra com Confirmação): momentum.rsi >= 70 && momentum.isBearish
-      else if (reversal && reversal.type === 'RED') {
+      // SINAL DE SHORT (Venda) - NOVA LÓGICA WAVETREND
+      // Condição A (Cruzamento BEARISH): momentum.current.cross === 'BEARISH'
+      // Condição B (Direção DOWN): momentum.current.direction === 'DOWN'
+      else if (currentMomentum.cross === 'BEARISH') {
         isShort = true;
-        signalType = 'Momentum Cruzamento RED';
-        analysisDetails.push(`Momentum: Cruzamento RED (RSI=${(momentumRsi || 0).toFixed(1)}, Value=${(momentumValue || 0).toFixed(3)}) - Sinal Forte`);
-      } else if (momentumRsi >= 70 && isBearish) {
+        signalType = 'Momentum Cruzamento BEARISH';
+        analysisDetails.push(`Momentum: Cruzamento BEARISH (WT1=${(currentMomentum.wt1 || 0).toFixed(3)}, WT2=${(currentMomentum.wt2 || 0).toFixed(3)}) - Sinal Forte`);
+      } else if (currentMomentum.direction === 'DOWN' && currentMomentum.isBearish) {
         isShort = true;
-        signalType = 'Momentum Sobrecompra + Confirmação';
-        analysisDetails.push(`Momentum: RSI=${(momentumRsi || 0).toFixed(1)} >= 70 + Bearish=${isBearish} (sobrecompra com confirmação)`);
-      } else if (momentumRsi >= 70) {
-        analysisDetails.push(`Momentum: RSI=${(momentumRsi || 0).toFixed(1)} >= 70 (sobrecompra, mas sem confirmação bearish)`);
+        signalType = 'Momentum Direção DOWN + Confirmação';
+        analysisDetails.push(`Momentum: Direção DOWN (WT1=${(currentMomentum.wt1 || 0).toFixed(3)}, WT2=${(currentMomentum.wt2 || 0).toFixed(3)}) + Bearish=${currentMomentum.isBearish} (tendência de baixa com confirmação)`);
+      } else if (currentMomentum.direction === 'DOWN') {
+        analysisDetails.push(`Momentum: Direção DOWN (WT1=${(currentMomentum.wt1 || 0).toFixed(3)}, WT2=${(currentMomentum.wt2 || 0).toFixed(3)}) (tendência de baixa, mas sem confirmação bearish)`);
       }
       
       // CASO NEUTRO
       else {
-        analysisDetails.push(`Momentum: RSI=${(momentumRsi || 0).toFixed(1)}, Value=${(momentumValue || 0).toFixed(3)} (neutro)`);
+        analysisDetails.push(`Momentum: WT1=${(currentMomentum.wt1 || 0).toFixed(3)}, WT2=${(currentMomentum.wt2 || 0).toFixed(3)} (neutro)`);
       }
     } else {
       analysisDetails.push(`Momentum: Não disponível`);
@@ -783,13 +780,14 @@ export class DefaultStrategy extends BaseStrategy {
       }
 
       // Obtém dados do BTC
-      const btcCandles = await Markets.getKLines('BTC_USDC_PERP', process.env.TIME || '5m', 30);
+      const markets = new Markets();
+      const btcCandles = await markets.getKLines('BTC_USDC_PERP', process.env.ACCOUNT1_TIME || '5m', 30);
       if (!btcCandles || btcCandles.length === 0) {
         return { isValid: true, btcTrend: 'NO_DATA', reason: 'Dados do BTC não disponíveis' };
       }
 
       // Calcula indicadores do BTC
-      const btcIndicators = calculateIndicators(btcCandles);
+              const btcIndicators = await calculateIndicators(btcCandles, config?.time || '5m', 'BTC_USDC_PERP');
       
       // Análise de tendência do BTC usando a mesma lógica da estratégia
       const btcSignals = this.analyzeSignals(btcIndicators, true);

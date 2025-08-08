@@ -23,14 +23,15 @@ class Capital {
     }
   }
 
-  async getCollateral(strategy = null) {
+  async getCollateral(strategy = null, apiKey = null, apiSecret = null) {
     const timestamp = Date.now();
 
     const headers = auth({
       instruction: 'collateralQuery',
       timestamp,
       params: {}, // Sem parâmetros nesse caso
-      strategy: strategy
+      apiKey,
+      apiSecret
     });
 
     try {

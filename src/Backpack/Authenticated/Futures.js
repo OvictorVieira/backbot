@@ -3,13 +3,20 @@ import { auth } from './Authentication.js';
 
 class Futures {
 
-  async getOpenPositions() {
+  async getOpenPositions(apiKey = null, apiSecret = null) {
       const timestamp = Date.now();
+      
+      // OBRIGATÓRIO: Usa credenciais fornecidas
+      if (!apiKey || !apiSecret) {
+        throw new Error('API_KEY e API_SECRET são obrigatórios - deve ser passado da config do bot');
+      }
       
       try {
         const headers = auth({
           instruction: 'positionQuery',
           timestamp,
+          apiKey: apiKey,
+          apiSecret: apiSecret
         });
         
         const response = await axios.get(`${process.env.API_URL}/api/v1/position`, {
@@ -27,6 +34,8 @@ class Futures {
             const retryHeaders = auth({
               instruction: 'positionQuery',
               timestamp: Date.now(),
+              apiKey: apiKey,
+              apiSecret: apiSecret
             });
             
             const retryResponse = await axios.get(`${process.env.API_URL}/api/v1/position`, {

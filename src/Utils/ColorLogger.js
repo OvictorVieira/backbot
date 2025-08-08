@@ -1,15 +1,15 @@
 /**
  * Sistema de logs coloridos para múltiplos bots
- * Cada conta/estratégia tem sua própria cor para fácil identificação
+ * Cada bot/estratégia tem sua própria cor para fácil identificação
  */
 class ColorLogger {
-  constructor(accountId, strategy) {
-    this.accountId = accountId;
+  constructor(botName, strategy) {
+    this.botName = botName;
     this.strategy = strategy;
-    this.prefix = `\n🤖 [${accountId}-${strategy}]`;
+    this.prefix = `\n🤖 [${botName}-${strategy}]`;
     this.pauseLogs = false; // Controle de pausa de logs
     
-    // Cores para diferentes contas
+    // Cores para diferentes bots
     this.colors = {
       CONTA1: '\x1b[36m', // Cyan
       CONTA2: '\x1b[35m', // Magenta
@@ -19,7 +19,7 @@ class ColorLogger {
     };
     
     this.resetColor = '\x1b[0m';
-    this.color = this.colors[accountId] || this.colors.DEFAULT;
+    this.color = this.colors[botName] || this.colors.DEFAULT;
   }
 
   /**

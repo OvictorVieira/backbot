@@ -1,11 +1,11 @@
 import { DefaultStrategy } from './DefaultStrategy.js';
 import { ProMaxStrategy } from './ProMaxStrategy.js';
-import { CypherPunkStrategy } from './CypherPunkStrategy.js';
+import { AlphaFlowStrategy } from './AlphaFlowStrategy.js';
 
 export class StrategyFactory {
   /**
    * Cria uma instância da estratégia baseada no tipo especificado
-   * @param {string} strategyType - Tipo da estratégia ('DEFAULT', 'PRO_MAX', 'CYPHERPUNK')
+   * @param {string} strategyType - Tipo da estratégia ('DEFAULT', 'PRO_MAX')
    * @returns {BaseStrategy} - Instância da estratégia
    */
   static createStrategy(strategyType) {
@@ -18,12 +18,12 @@ export class StrategyFactory {
       case 'DEFAULT':
         console.log(`✅ StrategyFactory: Criando estratégia DEFAULT`);
         return new DefaultStrategy();
-          case 'PRO_MAX':
-      console.log(`✅ StrategyFactory: Criando estratégia PRO_MAX`);
-      return new ProMaxStrategy();
-      case 'CYPHERPUNK':
-        console.log(`✅ StrategyFactory: Criando estratégia CYPHERPUNK`);
-        return new CypherPunkStrategy();
+      case 'PRO_MAX':
+        console.log(`✅ StrategyFactory: Criando estratégia PRO_MAX`);
+        return new ProMaxStrategy();
+      case 'ALPHA_FLOW':
+        console.log(`✅ StrategyFactory: Criando estratégia ALPHA_FLOW`);
+        return new AlphaFlowStrategy();
       default:
         console.log(`⚠️ Estratégia "${strategy}" não encontrada, usando DEFAULT`);
         return new DefaultStrategy();
@@ -35,7 +35,7 @@ export class StrategyFactory {
    * @returns {string[]} - Array com nomes das estratégias
    */
   static getAvailableStrategies() {
-    return ['DEFAULT', 'PRO_MAX', 'CYPHERPUNK'];
+    return ['DEFAULT', 'PRO_MAX', 'ALPHA_FLOW'];
   }
 
   /**

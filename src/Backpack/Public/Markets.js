@@ -1,5 +1,5 @@
 import axios from 'axios';
-import Utils from '../../utils/Utils.js';
+import Utils from '../../Utils/Utils.js';
 
 class Markets {
 
@@ -173,4 +173,4 @@ class Markets {
 
 }
 
-export default new Markets();
+export default Markets;

@@ -41,7 +41,7 @@ class Order {
   }
 
   //marketType: "SPOT" "PERP" "IPERP" "DATED" "PREDICTION" "RFQ"
-  async getOpenOrders(symbol, marketType = "PERP") {
+  async getOpenOrders(symbol, marketType = "PERP", apiKey = null, apiSecret = null) {
     const timestamp = Date.now();
 
     const params = {}
@@ -51,7 +51,9 @@ class Order {
     const headers = auth({
       instruction: 'orderQueryAll',
       timestamp,
-      params
+      params,
+      apiKey,
+      apiSecret
     });
 
     try {
@@ -70,7 +72,9 @@ class Order {
           const retryHeaders = auth({
             instruction: 'orderQueryAll',
             timestamp: Date.now(),
-            params
+            params,
+            apiKey,
+            apiSecret
           });
           
           const retryResponse = await axios.get(`${process.env.API_URL}/api/v1/orders`, {
@@ -121,21 +125,31 @@ class Order {
     }
   */
 
-  async executeOrder(body) {
+  async executeOrder(body, apiKey = null, apiSecret = null) {
 
     const timestamp = Date.now();
     const headers = auth({
       instruction: 'orderExecute',
       timestamp,
-      params: body
+      params: body,
+      apiKey,
+      apiSecret
     });
 
     try {
       const { data } = await axios.post(`${process.env.API_URL}/api/v1/order`, body, {
         headers
       });
+      
       return data;
     } catch (err) {
+      console.error(`❌ [Order.executeOrder] Erro ao enviar ordem:`, {
+        status: err.response?.status,
+        statusText: err.response?.statusText,
+        data: err.response?.data,
+        message: err.message
+      });
+      
       // Captura o motivo do erro para retornar
       const errorMessage = err.response?.data?.message || err.response?.data?.msg || err.message || 'Erro desconhecido';
       return { error: errorMessage };
@@ -143,7 +157,7 @@ class Order {
   }
 
   
-  async cancelOpenOrder(symbol, orderId, clientId) {
+  async cancelOpenOrder(symbol, orderId, clientId, apiKey = null, apiSecret = null) {
     const timestamp = Date.now();
 
     if (!symbol) {
@@ -159,7 +173,9 @@ class Order {
     const headers = auth({
       instruction: 'orderCancel',
       timestamp,
-      params: params 
+      params: params,
+      apiKey,
+      apiSecret
     });
 
     try {
@@ -175,7 +191,7 @@ class Order {
 
   }
 
-  async cancelOpenOrders(symbol, orderType) {
+  async cancelOpenOrders(symbol, orderType, apiKey = null, apiSecret = null) {
     const timestamp = Date.now();
 
      if (!symbol) {
@@ -190,7 +206,9 @@ class Order {
     const headers = auth({
       instruction: 'orderCancelAll',
       timestamp,
-      params: params // isso é fundamental para assinatura correta
+      params: params, // isso é fundamental para assinatura correta
+      apiKey,
+      apiSecret
     });
 
     try {

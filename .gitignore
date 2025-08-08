@@ -33,4 +33,8 @@ backtest_results/
 
 docs/
 
-persistence/trailing_state.json
+# persistence folder - contains sensitive data and bot states
+persistence/
+
+tasks.md
+context.md

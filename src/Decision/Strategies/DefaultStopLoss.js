@@ -3,6 +3,11 @@ import TrailingStop from '../../TrailingStop/TrailingStop.js';
 import ColorLogger from '../../Utils/ColorLogger.js';
 
 export class DefaultStopLoss extends BaseStopLoss {
+  constructor(config = null) {
+    super();
+    this.config = config;
+  }
+
   // Instância do ColorLogger para logs coloridos
   static colorLogger = new ColorLogger('STOP', 'LOSS');
 
@@ -37,8 +42,8 @@ export class DefaultStopLoss extends BaseStopLoss {
         return null;
       }
 
-      // Configurações do stop loss - SEMPRE usar porcentagem
-      const MAX_NEGATIVE_PNL_STOP_PCT = Number(process.env.MAX_NEGATIVE_PNL_STOP_PCT);
+      // Configurações do stop loss - usar configurações do bot ou fallback para variável de ambiente
+      const MAX_NEGATIVE_PNL_STOP_PCT = Number(this.config?.maxNegativePnlStopPct || process.env.MAX_NEGATIVE_PNL_STOP_PCT || -10);
 
       const ENABLE_TP_VALIDATION = process.env.ENABLE_TP_VALIDATION === 'true';
       

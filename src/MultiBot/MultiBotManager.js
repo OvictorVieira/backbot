@@ -8,10 +8,10 @@ import BotInstance from './BotInstance.js';
  */
 class MultiBotManager {
   constructor() {
-    this.bots = new Map(); // Map<accountId, BotInstance>
+    this.bots = new Map(); // Map<botName, BotInstance>
     this.logger = new ColorLogger('MANAGER', 'MULTI');
     this.isRunning = false;
-    this.selectedAccounts = [];
+    this.selectedBots = [];
   }
 
   /**
@@ -94,7 +94,7 @@ class MultiBotManager {
       console.log(`${index + 1}️⃣  ${account.id}: ${account.name}`);
       console.log(`   • Estratégia: ${account.strategy}`);
       console.log(`   • Status: ${status}`);
-      console.log(`   • Volume: $${account.volumeOrder}`);
+
       console.log(`   • Capital: ${account.capitalPercentage}%`);
       console.log(`   • Timeframe: ${account.time}\n`);
     });
@@ -111,24 +111,24 @@ class MultiBotManager {
   /**
    * Inicia os bots selecionados
    */
-  async startBots(accountIds) {
+  async startBots(botNames) {
     try {
-      this.logger.info(`Iniciando ${accountIds.length} bot(s)...`);
+      this.logger.info(`Iniciando ${botNames.length} bot(s)...`);
       
-      for (const accountId of accountIds) {
-        const account = this.accountConfig.getAccount(accountId);
+      for (const botName of botNames) {
+        const account = this.accountConfig.getAccount(botName);
         if (!account) {
-          this.logger.error(`Conta ${accountId} não encontrada`);
+          this.logger.error(`Bot ${botName} não encontrado`);
           continue;
         }
         
         if (!account.enabled) {
-          this.logger.warn(`Conta ${accountId} está desabilitada`);
+          this.logger.warn(`Bot ${botName} está desabilitado`);
           continue;
         }
         
-        const botInstance = new BotInstance(accountId, account);
-        this.bots.set(accountId, botInstance);
+        const botInstance = new BotInstance(botName, account);
+        this.bots.set(botName, botInstance);
       }
       
       // Inicia todos os bots em paralelo
@@ -145,7 +145,7 @@ class MultiBotManager {
       }
       
       this.isRunning = successful > 0;
-      this.selectedAccounts = accountIds;
+      this.selectedBots = botNames;
       
       if (this.isRunning) {
         this.logger.success('MultiBot iniciado com sucesso!');
@@ -167,13 +167,13 @@ class MultiBotManager {
     try {
       this.logger.info('Parando todos os bots...');
       
-      for (const [accountId, bot] of this.bots) {
+      for (const [botName, bot] of this.bots) {
         bot.stop();
       }
       
       this.bots.clear();
       this.isRunning = false;
-      this.selectedAccounts = [];
+      this.selectedBots = [];
       
       this.logger.success('Todos os bots parados com sucesso');
       
@@ -194,14 +194,14 @@ class MultiBotManager {
       return;
     }
     
-    for (const [accountId, bot] of this.bots) {
+    for (const [botName, bot] of this.bots) {
       const status = bot.getStatus();
       const runningStatus = status.isRunning ? '🟢 Executando' : '🔴 Parado';
       
-      console.log(`\n${accountId}: ${status.name}`);
+      console.log(`\n${botName}: ${status.name}`);
       console.log(`   • Estratégia: ${status.strategy}`);
       console.log(`   • Status: ${runningStatus}`);
-      console.log(`   • Volume: $${status.volumeOrder}`);
+
       console.log(`   • Capital: ${status.capitalPercentage}%`);
       console.log(`   • Timeframe: ${status.time}`);
     }
@@ -215,7 +215,7 @@ class MultiBotManager {
   getAllStatus() {
     const status = [];
     
-    for (const [accountId, bot] of this.bots) {
+    for (const [botName, bot] of this.bots) {
       status.push(bot.getStatus());
     }
     
@@ -274,10 +274,10 @@ class MultiBotManager {
       return false;
     }
     
-    const accountIds = proMaxAccounts.map(account => account.id);
-    this.logger.info(`Iniciando ${accountIds.length} conta(s) PRO_MAX: ${accountIds.join(', ')}`);
+    const botNames = proMaxAccounts.map(account => account.botName);
+    this.logger.info(`Iniciando ${botNames.length} bot(s) PRO_MAX: ${botNames.join(', ')}`);
     
-    const success = await this.startBots(accountIds);
+    const success = await this.startBots(botNames);
     
     if (success) {
       // Inicia o timer geral para modo multi-bot
@@ -409,11 +409,11 @@ class MultiBotManager {
   }
 
   /**
-   * Coordena os logs das contas para evitar conflitos
+   * Coordena os logs dos bots para evitar conflitos
    */
   coordinateLogs() {
-    // Pausa temporariamente os logs das contas durante o timer
-    for (const [accountId, bot] of this.bots) {
+    // Pausa temporariamente os logs dos bots durante o timer
+    for (const [botName, bot] of this.bots) {
       if (bot.logger) {
         bot.logger.pauseLogs = true;
       }
@@ -421,10 +421,10 @@ class MultiBotManager {
   }
 
   /**
-   * Resume os logs das contas
+   * Resume os logs dos bots
    */
   resumeLogs() {
-    for (const [accountId, bot] of this.bots) {
+    for (const [botName, bot] of this.bots) {
       if (bot.logger) {
         bot.logger.pauseLogs = false;
       }

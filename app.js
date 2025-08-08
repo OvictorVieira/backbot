@@ -1,6 +1,11 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+// Define a URL da API se não estiver definida
+if (!process.env.API_URL) {
+  process.env.API_URL = 'https://api.backpack.exchange';
+}
+
 import Decision from './src/Decision/Decision.js';
 import { StrategyFactory } from './src/Decision/Strategies/StrategyFactory.js';
 import TrailingStop from './src/TrailingStop/TrailingStop.js';
@@ -9,12 +14,19 @@ import OrderController from './src/Controllers/OrderController.js';
 import { StrategySelector } from './src/Utils/StrategySelector.js';
 import MultiBotManager from './src/MultiBot/MultiBotManager.js';
 import AccountConfig from './src/Config/AccountConfig.js';
+import TimeframeConfig from './src/Config/TimeframeConfig.js';
+import ConfigManager from './src/Config/ConfigManager.js';
 import readline from 'readline';
 
 // BOT_MODE removido - sempre usa modo DEFAULT
 
 // Instância global do Decision (será inicializada com a estratégia selecionada)
 let decisionInstance = null;
+
+// Configuração do bot ativo
+let activeBotConfig = null;
+
+// Funções de timeframe movidas para TimeframeConfig.js
 
 // Variáveis para controle do timer geral
 let globalTimerInterval = null;
@@ -27,20 +39,46 @@ let trailingStopMaxInterval = 10000; // máximo 10s
 let trailingStopMinInterval = 500;   // mínimo 0.5s
 let trailingStopLastErrorTime = null;
 
+// Variáveis para controle do intervalo dos monitores
+let pendingOrdersInterval = 15000; // começa em 15s
+let pendingOrdersErrorCount = 0;
+let pendingOrdersMaxInterval = 120000; // máximo 2min
+let pendingOrdersMinInterval = 15000;  // mínimo 15s
+let pendingOrdersLastErrorTime = null;
+
+let orphanOrdersInterval = 20000; // começa em 20s
+let orphanOrdersErrorCount = 0;
+let orphanOrdersMaxInterval = 180000; // máximo 3min
+let orphanOrdersMinInterval = 20000;  // mínimo 20s
+let orphanOrdersLastErrorTime = null;
+
 // Inicializa o TrailingStop com a estratégia correta
 function initializeTrailingStop() {
-  const strategyType = process.env.TRADING_STRATEGY || 'DEFAULT';
+  if (!activeBotConfig) {
+    console.error('❌ Configuração do bot não encontrada para inicializar TrailingStop');
+    return;
+  }
+  
+  // Verifica se as credenciais estão configuradas
+  if (!activeBotConfig.apiKey || !activeBotConfig.apiSecret) {
+    console.error('❌ Credenciais de API não configuradas para inicializar TrailingStop');
+    console.error(`💡 Configure as credenciais para o bot: ${activeBotConfig.botName}`);
+    return;
+  }
+  
+  const strategyType = activeBotConfig.strategyName || 'DEFAULT';
   console.log(`🔧 [APP_INIT] Inicializando TrailingStop com estratégia: ${strategyType}`);
-  TrailingStop.reinitializeStopLoss(strategyType);
+  const trailingStopInstance = new TrailingStop(strategyType, activeBotConfig);
+  trailingStopInstance.reinitializeStopLoss(strategyType);
 }
 
 // Função para exibir timer geral unificado
-function showGlobalTimer() {
+function showGlobalTimer(waitTimeMs = null) {
   if (globalTimerInterval) {
     clearInterval(globalTimerInterval);
   }
 
-  const durationMs = 60000; // 60 segundos
+  const durationMs = waitTimeMs || 60000; // Usa o tempo fornecido ou 60 segundos padrão
   const startTime = Date.now();
   const nextAnalysis = new Date(startTime + durationMs);
   const timeString = nextAnalysis.toLocaleTimeString('pt-BR', { 
@@ -49,6 +87,22 @@ function showGlobalTimer() {
     second: '2-digit',
     hour12: false 
   });
+
+  // Função para calcular o progresso baseado no tempo real decorrido
+  const calculateProgress = () => {
+    // Calcula o tempo decorrido desde o início do período atual
+    const timeframeMs = TimeframeConfig.parseTimeframeToMs(process.env.ACCOUNT1_TIME || process.env.TIME || '5m');
+    const now = Date.now();
+    const currentPeriodStart = Math.floor(now / timeframeMs) * timeframeMs;
+    const elapsedInPeriod = now - currentPeriodStart;
+    const progress = Math.min((elapsedInPeriod / timeframeMs) * 100, 100);
+    
+
+    
+    return Math.floor(progress);
+  };
+
+
 
   // Intercepta console.log para manter o progresso no rodapé
   const originalLog = console.log;
@@ -67,7 +121,7 @@ function showGlobalTimer() {
     // Limpa a linha atual
     clearProgressLine();
     // Mostra o progresso
-    process.stdout.write('⏳ Aguardando próxima análise... ');
+    process.stdout.write(`⏳ [${activeBotConfig.botName}] Aguardando próxima análise... `);
     process.stdout.write(`[${progressBar}] ${percentage}% | Próxima: ${timeString}`);
   };
 
@@ -89,54 +143,46 @@ function showGlobalTimer() {
     // Mostra o log
     originalLog.apply(console, args);
     // Restaura o progresso no rodapé
-    const elapsed = Date.now() - startTime;
-    const progress = Math.min((elapsed / durationMs) * 100, 100);
-    const bars = Math.floor(progress / 5);
+    const percentage = calculateProgress();
+    const bars = Math.floor(percentage / 5);
     const emptyBars = 20 - bars;
     const progressBar = '█'.repeat(bars) + '░'.repeat(emptyBars);
-    const percentage = Math.floor(progress);
-    showProgress(progress, progressBar, percentage);
+    showProgress(percentage, progressBar, percentage);
   };
 
   // Intercepta console.error
   console.error = (...args) => {
     clearProgressLine();
     originalError.apply(console, args);
-    const elapsed = Date.now() - startTime;
-    const progress = Math.min((elapsed / durationMs) * 100, 100);
-    const bars = Math.floor(progress / 5);
+    const percentage = calculateProgress();
+    const bars = Math.floor(percentage / 5);
     const emptyBars = 20 - bars;
     const progressBar = '█'.repeat(bars) + '░'.repeat(emptyBars);
-    const percentage = Math.floor(progress);
-    showProgress(progress, progressBar, percentage);
+    showProgress(percentage, progressBar, percentage);
   };
 
   // Intercepta console.warn
   console.warn = (...args) => {
     clearProgressLine();
     originalWarn.apply(console, args);
-    const elapsed = Date.now() - startTime;
-    const progress = Math.min((elapsed / durationMs) * 100, 100);
-    const bars = Math.floor(progress / 5);
+    const percentage = calculateProgress();
+    const bars = Math.floor(percentage / 5);
     const emptyBars = 20 - bars;
     const progressBar = '█'.repeat(bars) + '░'.repeat(emptyBars);
-    const percentage = Math.floor(progress);
-    showProgress(progress, progressBar, percentage);
+    showProgress(percentage, progressBar, percentage);
   };
 
   globalTimerInterval = setInterval(() => {
-    const elapsed = Date.now() - startTime;
-    const progress = Math.min((elapsed / durationMs) * 100, 100);
-    const bars = Math.floor(progress / 5);
+    const percentage = calculateProgress();
+    const bars = Math.floor(percentage / 5);
     const emptyBars = 20 - bars;
     
     const progressBar = '█'.repeat(bars) + '░'.repeat(emptyBars);
-    const percentage = Math.floor(progress);
     
     // Mostra o progresso no rodapé
-    showProgress(progress, progressBar, percentage);
+    showProgress(percentage, progressBar, percentage);
     
-    if (progress >= 100) {
+    if (percentage >= 100) {
       clearInterval(globalTimerInterval);
       // Restaura console.log original
       console.log = originalLog;
@@ -144,7 +190,7 @@ function showGlobalTimer() {
       console.warn = originalWarn;
       // Limpa a linha do progresso
       clearProgressLine();
-      console.log('🔄 Iniciando nova análise...\n');
+      console.log(`🔄 [${activeBotConfig.botName}] Iniciando nova análise...\n`);
     }
   }, 1000);
 }
@@ -164,61 +210,69 @@ async function startDecision() {
     return;
   }
   
-  // Para modo single, cria configuração baseada na estratégia selecionada
-  let config = null;
-  const strategy = process.env.TRADING_STRATEGY || 'DEFAULT';
-  
-  if (strategy === 'DEFAULT') {
-    // Usa configurações da CONTA1
-    config = {
-      volumeOrder: Number(process.env.ACCOUNT1_VOLUME_ORDER) || Number(process.env.VOLUME_ORDER) || 100,
-      capitalPercentage: Number(process.env.ACCOUNT1_CAPITAL_PERCENTAGE) || Number(process.env.CAPITAL_PERCENTAGE) || 0,
-      limitOrder: Number(process.env.ACCOUNT1_LIMIT_ORDER) || Number(process.env.LIMIT_ORDER) || 100,
-      time: process.env.ACCOUNT1_TIME || process.env.TIME || '5m',
-      accountId: 'CONTA1'
-    };
-  } else if (strategy === 'PRO_MAX') {
-    // Usa configurações da CONTA2
-    config = {
-      volumeOrder: Number(process.env.ACCOUNT2_VOLUME_ORDER) || Number(process.env.VOLUME_ORDER) || 100,
-      capitalPercentage: Number(process.env.ACCOUNT2_CAPITAL_PERCENTAGE) || Number(process.env.CAPITAL_PERCENTAGE) || 0,
-      limitOrder: Number(process.env.ACCOUNT2_LIMIT_ORDER) || Number(process.env.LIMIT_ORDER) || 100,
-      time: process.env.ACCOUNT2_TIME || process.env.TIME || '5m',
-      accountId: 'CONTA2',
-      // Configurações específicas da estratégia PRO_MAX
-      ignoreBronzeSignals: process.env.ACCOUNT2_IGNORE_BRONZE_SIGNALS || process.env.IGNORE_BRONZE_SIGNALS || 'true',
-      adxLength: Number(process.env.ACCOUNT2_ADX_LENGTH) || Number(process.env.ADX_LENGTH) || 14,
-      adxThreshold: Number(process.env.ACCOUNT2_ADX_THRESHOLD) || Number(process.env.ADX_THRESHOLD) || 20,
-      adxAverageLength: Number(process.env.ACCOUNT2_ADX_AVERAGE_LENGTH) || Number(process.env.ADX_AVERAGE_LENGTH) || 21,
-      useRsiValidation: process.env.ACCOUNT2_USE_RSI_VALIDATION || process.env.USE_RSI_VALIDATION || 'true',
-      useStochValidation: process.env.ACCOUNT2_USE_STOCH_VALIDATION || process.env.USE_STOCH_VALIDATION || 'true',
-      useMacdValidation: process.env.ACCOUNT2_USE_MACD_VALIDATION || process.env.USE_MACD_VALIDATION || 'true',
-      rsiLength: Number(process.env.ACCOUNT2_RSI_LENGTH) || Number(process.env.RSI_LENGTH) || 14,
-      rsiAverageLength: Number(process.env.ACCOUNT2_RSI_AVERAGE_LENGTH) || Number(process.env.RSI_AVERAGE_LENGTH) || 14,
-      rsiBullThreshold: Number(process.env.ACCOUNT2_RSI_BULL_THRESHOLD) || Number(process.env.RSI_BULL_THRESHOLD) || 45,
-      rsiBearThreshold: Number(process.env.ACCOUNT2_RSI_BEAR_THRESHOLD) || Number(process.env.RSI_BEAR_THRESHOLD) || 55,
-      stochKLength: Number(process.env.ACCOUNT2_STOCH_K_LENGTH) || Number(process.env.STOCH_K_LENGTH) || 14,
-      stochDLength: Number(process.env.ACCOUNT2_STOCH_D_LENGTH) || Number(process.env.STOCH_D_LENGTH) || 3,
-      stochSmooth: Number(process.env.ACCOUNT2_STOCH_SMOOTH) || Number(process.env.STOCH_SMOOTH) || 3,
-      stochBullThreshold: Number(process.env.ACCOUNT2_STOCH_BULL_THRESHOLD) || Number(process.env.STOCH_BULL_THRESHOLD) || 45,
-      stochBearThreshold: Number(process.env.ACCOUNT2_STOCH_BEAR_THRESHOLD) || Number(process.env.STOCH_BEAR_THRESHOLD) || 55,
-      macdFastLength: Number(process.env.ACCOUNT2_MACD_FAST_LENGTH) || Number(process.env.MACD_FAST_LENGTH) || 12,
-      macdSlowLength: Number(process.env.ACCOUNT2_MACD_SLOW_LENGTH) || Number(process.env.MACD_SLOW_LENGTH) || 26,
-      macdSignalLength: Number(process.env.ACCOUNT2_MACD_SIGNAL_LENGTH) || Number(process.env.MACD_SIGNAL_LENGTH) || 9
-    };
+  // Verifica se há configuração do bot ativo
+  if (!activeBotConfig) {
+    console.error('❌ Configuração do bot ativo não encontrada');
+    return;
   }
   
-  await decisionInstance.analyze(null, null, config);
+  // Verifica se as credenciais estão configuradas
+  if (!activeBotConfig.apiKey || !activeBotConfig.apiSecret) {
+    console.error('❌ API_KEY e API_SECRET são obrigatórios');
+    console.log('   Configure as credenciais no dashboard para o bot:', activeBotConfig.botName);
+    return;
+  }
+  
+  // Verifica se o bot está habilitado
+  if (!activeBotConfig.enabled) {
+    console.log(`⏸️ Bot ${activeBotConfig.botName} está pausado. Ative-o no dashboard para continuar.`);
+    return;
+  }
+  
+  await decisionInstance.analyze(null, null, activeBotConfig);
+  
+  // Executa migração do Trailing Stop para este bot específico
+  try {
+    await TrailingStop.backfillStateForOpenPositions(activeBotConfig);
+  } catch (trailingError) {
+    console.warn(`⚠️ [${activeBotConfig.botName}][APP] Erro na migração do Trailing Stop para bot ${activeBotConfig.botName}:`, trailingError.message);
+  }
+  
+  // SISTEMA GLOBAL DE INTERVALO BASEADO NO EXECUTION_MODE
+  let nextInterval;
+  const timeframeConfig = new TimeframeConfig();
+  
+  // Usa configuração do bot para determinar o modo de execução
+  const executionMode = activeBotConfig.executionMode || 'REALTIME';
+  
+  if (executionMode === 'ON_CANDLE_CLOSE') {
+    // Modo ON_CANDLE_CLOSE: Aguarda o próximo fechamento de vela
+    nextInterval = timeframeConfig.getTimeUntilNextCandleClose(activeBotConfig.time);
+    console.log(`⏰ [${activeBotConfig.botName}][ON_CANDLE_CLOSE] Próxima análise em ${Math.floor(nextInterval / 1000)}s`);
+  } else {
+    // Modo REALTIME: Análise a cada 60 segundos
+    nextInterval = 60000;
+    console.log(`⏰ [${activeBotConfig.botName}][REALTIME] Próxima análise em ${Math.floor(nextInterval / 1000)}s`);
+  }
+  
+  console.log(`🔧 [${activeBotConfig.botName}][DEBUG] Execution Mode: ${executionMode}, Next Interval: ${nextInterval}ms`);
   
   // Inicia o timer geral após cada análise
   showGlobalTimer();
   
-  setTimeout(startDecision, 60000); //1m
+  setTimeout(startDecision, nextInterval);
 }
 
 async function startStops() {
   try {
-    await TrailingStop.stopLoss();
+    // Verifica se há configuração do bot ativo
+    if (!activeBotConfig || !activeBotConfig.apiKey || !activeBotConfig.apiSecret) {
+      console.warn(`⚠️ [${activeBotConfig.botName}][TRAILING] Configuração do bot não encontrada ou credenciais ausentes`);
+      return;
+    }
+    
+    const trailingStopInstance = new TrailingStop(activeBotConfig.strategyName || 'DEFAULT', activeBotConfig);
+    await trailingStopInstance.stopLoss();
     // Se sucesso, reduz gradualmente o intervalo até o mínimo
     if (trailingStopInterval > trailingStopMinInterval) {
       trailingStopInterval = Math.max(trailingStopMinInterval, trailingStopInterval - 250);
@@ -234,9 +288,9 @@ async function startStops() {
       trailingStopLastErrorTime = Date.now();
       // Aumenta o intervalo exponencialmente até o máximo
       trailingStopInterval = Math.min(trailingStopMaxInterval, trailingStopInterval * 2);
-      console.warn(`⚠️ [TRAILING] Rate limit detectado! Aumentando intervalo para ${trailingStopInterval}ms`);
+      console.warn(`⚠️ [${activeBotConfig.botName}][TRAILING] Rate limit detectado! Aumentando intervalo para ${trailingStopInterval}ms`);
     } else {
-      console.error('[TRAILING] Erro inesperado no trailing stop:', error.message || error);
+      console.error(`❌ [${activeBotConfig.botName}][TRAILING] Erro inesperado no trailing stop:`, error.message || error);
     }
   }
   setTimeout(startStops, trailingStopInterval);
@@ -245,24 +299,18 @@ async function startStops() {
 // Função para exibir status do stop loss dinâmico
 function showDynamicStopLossStatus() {
   try {
-    const status = TrailingStop.getCurrentStopLossValues();
+    // TODO: Implementar método getCurrentStopLossValues() no TrailingStop
+    // const status = TrailingStop.getCurrentStopLossValues();
     const stopLossType = process.env.STOP_LOSS_TYPE || 'USD';
     
     console.log('\n🛡️ STATUS DO STOP LOSS DINÂMICO');
     console.log('='.repeat(40));
     console.log(`📊 Tipo: ${stopLossType}`);
-    console.log(`💰 Stop Loss USD: $${status.usd.toFixed(2)}`);
-    console.log(`📈 Stop Loss %: ${status.percentage.toFixed(2)}%`);
-    console.log(`🔢 Total de fechamentos: ${status.totalCloses}`);
-    console.log(`⚠️ Fechamentos prematuros: ${status.prematureCloses}`);
-    console.log(`⏰ Fechamentos tardios: ${status.lateCloses}`);
-    
-    if (status.totalCloses > 0) {
-      const prematureRate = (status.prematureCloses / status.totalCloses * 100).toFixed(1);
-      const lateRate = (status.lateCloses / status.totalCloses * 100).toFixed(1);
-      console.log(`📊 Taxa prematuros: ${prematureRate}%`);
-      console.log(`📊 Taxa tardios: ${lateRate}%`);
-    }
+    console.log(`💰 Stop Loss USD: $0.00`); // TODO: Implementar
+    console.log(`📈 Stop Loss %: 0.00%`); // TODO: Implementar
+    console.log(`🔢 Total de fechamentos: 0`); // TODO: Implementar
+    console.log(`⚠️ Fechamentos prematuros: 0`); // TODO: Implementar
+    console.log(`⏰ Fechamentos tardios: 0`); // TODO: Implementar
     
     console.log('='.repeat(40));
   } catch (error) {
@@ -274,168 +322,217 @@ function showDynamicStopLossStatus() {
 let monitorInterval = 5000; // 5 segundos padrão
 
 async function startPendingOrdersMonitor() {
-  // No modo conta única, o monitoramento é feito pelo BotInstance no modo multi-conta
-  // Esta função é mantida apenas para compatibilidade
-  setTimeout(startPendingOrdersMonitor, monitorInterval);
-}
-
-// Função para exibir menu de seleção de modo interativo (simplificado)
-async function showModeSelectionMenu(hasMultiAccountConfig) {
-  return new Promise((resolve) => {
-    console.log('\n🤖 BACKBOT - Configuração Inicial');
-    console.log('=====================================\n');
-    console.log('📋 Escolha como deseja operar:\n');
+  try {
+    // Verifica se há configuração do bot ativo
+    if (!activeBotConfig || !activeBotConfig.apiKey || !activeBotConfig.apiSecret) {
+      console.warn(`⚠️ [${activeBotConfig.botName}][PENDING_ORDERS] Configuração do bot não encontrada ou credenciais ausentes`);
+      return;
+    }
     
-    console.log('1️⃣  Estratégia VOLUMES (PADRÃO)');
-    console.log('   📊 Foco: Volume na corretora');
-    console.log('   🎯 Ideal para: Fazer volume na corretora');
-    console.log('   💡 Características:');
-    console.log('      • Sinais mais frequentes');
-    console.log('      • Stop loss dinâmico');
-    console.log('      • Take profit único');
-    console.log('      • Ideal para corretoras que pagam por volume\n');
+    await OrderController.monitorPendingEntryOrders(activeBotConfig.botName, activeBotConfig);
     
-    console.log('2️⃣  Estratégia LUCRO (PRO MAX) [BETA]');
-    console.log('   📈 Foco: Lucro por operação');
-    console.log('   🎯 Ideal para: Lucro por operação, com stop loss dinâmico e take profit com alvos.');
-    console.log('   💡 Características:');
-    console.log('      • Sinais filtrados por qualidade (BRONZE/SILVER/GOLD/DIAMOND)');
-    console.log('      • Múltiplos take profits');
-    console.log('      • Stop loss baseado em ATR\n');
-    
-    console.log('3️⃣  Sair\n');
-    
-    console.log('💡 Digite o número da opção desejada');
-    
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout
-    });
-    
-    rl.question('\nEscolha (1-3): ', (answer) => {
-      rl.close();
-      const choice = parseInt(answer.trim());
-      
-      if (choice === 1) {
-        resolve('DEFAULT');
-      } else if (choice === 2) {
-        resolve('PRO_MAX');
-      } else if (choice === 3) {
-        resolve('exit');
-      } else {
-        console.log('❌ Opção inválida. Tente novamente.');
-        resolve(showModeSelectionMenu(hasMultiAccountConfig));
-      }
-    });
-  });
+    // Se sucesso, reduz gradualmente o intervalo até o mínimo
+    if (pendingOrdersInterval > pendingOrdersMinInterval) {
+      pendingOrdersInterval = Math.max(pendingOrdersMinInterval, pendingOrdersInterval - 1000);
+    }
+    pendingOrdersErrorCount = 0;
+  } catch (error) {
+    // Detecta erro de rate limit (HTTP 429 ou mensagem)
+    if (error?.response?.status === 429 || String(error).includes('rate limit') || String(error).includes('429')) {
+      pendingOrdersErrorCount++;
+      pendingOrdersLastErrorTime = Date.now();
+      // Aumenta o intervalo exponencialmente até o máximo
+      pendingOrdersInterval = Math.min(pendingOrdersMaxInterval, pendingOrdersInterval * 2);
+      console.warn(`⚠️ [${activeBotConfig.botName}][PENDING_ORDERS] Rate limit detectado! Aumentando intervalo para ${Math.floor(pendingOrdersInterval / 1000)}s`);
+    } else {
+      console.error(`❌ [${activeBotConfig.botName}][PENDING_ORDERS] Erro inesperado no monitoramento de ordens pendentes:`, error.message || error);
+    }
+  }
+  setTimeout(startPendingOrdersMonitor, pendingOrdersInterval);
 }
 
 // Função para inicializar ou re-inicializar a estratégia do Decision
 function initializeDecisionStrategy(strategyType) {
-  if (!strategyType) {
-    console.log('⚠️ StrategyType não fornecido para inicialização');
-    return;
+  try {
+    // Cria instância do Decision com a estratégia selecionada
+    decisionInstance = new Decision(strategyType);
+    console.log(`✅ Estratégia ${strategyType} inicializada com sucesso`);
+  } catch (error) {
+    console.error(`❌ Erro ao inicializar estratégia ${strategyType}:`, error.message);
+    process.exit(1);
   }
-  
-  // Cria nova instância do Decision com a estratégia selecionada
-  decisionInstance = new Decision(strategyType);
-  console.log(`✅ Instância do Decision inicializada com estratégia: ${strategyType}`);
 }
 
 // Função para iniciar o monitor de ordens órfãs
-function startOrphanOrderMonitor() {
-  console.log('🧹 Iniciando Monitor de Ordens Órfãs...');
-  
-  // Monitoramento de ordens órfãs a cada 60 segundos
-  setInterval(async () => {
-    try {
-      await OrderController.cleanupOrphanedConditionalOrders('DEFAULT');
-    } catch (error) {
-      console.error('❌ Erro no monitor de ordens órfãs:', error.message);
+async function startOrphanOrderMonitor() {
+  try {
+    // Verifica se há configuração do bot ativo
+    if (!activeBotConfig || !activeBotConfig.apiSecret) {
+      console.warn(`⚠️ [${activeBotConfig.botName}][ORPHAN_MONITOR] Configuração do bot não encontrada ou credenciais ausentes`);
+      return;
     }
-  }, 60000);
-  
-  console.log('✅ Monitor de Ordens Órfãs iniciado (verificação a cada 60 segundos)');
+    
+    await OrderController.monitorAndCleanupOrphanedStopLoss(activeBotConfig.botName, activeBotConfig);
+    
+    // Se sucesso, reduz gradualmente o intervalo até o mínimo
+    if (orphanOrdersInterval > orphanOrdersMinInterval) {
+      orphanOrdersInterval = Math.max(orphanOrdersMinInterval, orphanOrdersInterval - 1000);
+    }
+    orphanOrdersErrorCount = 0;
+  } catch (error) {
+    // Detecta erro de rate limit (HTTP 429 ou mensagem)
+    if (error?.response?.status === 429 || String(error).includes('rate limit') || String(error).includes('429')) {
+      orphanOrdersErrorCount++;
+      orphanOrdersLastErrorTime = Date.now();
+      // Aumenta o intervalo exponencialmente até o máximo
+      orphanOrdersInterval = Math.min(orphanOrdersMaxInterval, orphanOrdersInterval * 2);
+      console.warn(`⚠️ [${activeBotConfig.botName}][ORPHAN_MONITOR] Rate limit detectado! Aumentando intervalo para ${Math.floor(orphanOrdersInterval / 1000)}s`);
+    } else {
+      console.error(`❌ [${activeBotConfig.botName}][ORPHAN_MONITOR] Erro inesperado no monitoramento de ordens órfãs:`, error.message || error);
+    }
+  }
+  setTimeout(startOrphanOrderMonitor, orphanOrdersInterval);
 }
 
 async function startBot() {
   try {
-    // Verifica se há configurações de múltiplas contas
-    const accountConfig = new AccountConfig();
-    await accountConfig.initialize();
-    const hasMultiAccountConfig = accountConfig.hasMultiAccountConfig();
-
-    // Verifica se há pelo menos uma conta válida
-    if (!accountConfig.hasAnyAccount()) {
-      console.log('❌ Nenhuma conta com credenciais válidas encontrada!');
-      console.log('   Configure as credenciais no arquivo .env:');
-      console.log('   • ACCOUNT1_API_KEY e ACCOUNT1_API_SECRET');
-      console.log('   • ACCOUNT2_API_KEY e ACCOUNT2_API_SECRET');
+    console.log('🚀 Iniciando BackBot...');
+    
+    // Carrega todas as configurações de bots
+    const allConfigs = ConfigManager.loadConfigs();
+    console.log(`📋 Encontradas ${allConfigs.length} configurações de bots`);
+    
+    // Filtra apenas bots habilitados (inclui bots que não estão rodando mas estão habilitados)
+    let enabledBots = allConfigs.filter(config => config.enabled);
+    console.log(`✅ ${enabledBots.length} bots habilitados encontrados`);
+    
+    // Filtra bots com credenciais válidas
+    const botsWithCredentials = enabledBots.filter(config => config.apiKey && config.apiSecret);
+    console.log(`🔑 ${botsWithCredentials.length} bots com credenciais configuradas`);
+    
+    if (botsWithCredentials.length === 0) {
+      console.error('❌ Nenhum bot com credenciais válidas encontrado!');
+      console.error('💡 Configure as credenciais de API no dashboard');
       process.exit(1);
     }
-
+    
+    // Usa apenas bots com credenciais válidas
+    enabledBots = botsWithCredentials;
+    
+    if (enabledBots.length === 0) {
+      console.log('❌ Nenhum bot habilitado encontrado!');
+      console.log('💡 Configure pelo menos um bot no dashboard ou crie uma configuração padrão');
+      
+      // Verifica se há bots configurados mas não habilitados
+      const configuredBots = allConfigs.filter(config => config.apiKey && config.apiSecret);
+      if (configuredBots.length > 0) {
+        console.log('📋 Bots configurados mas não habilitados:');
+        configuredBots.forEach(bot => {
+          console.log(`   • ${bot.botName} (${bot.strategyName}) - Status: ${bot.status}`);
+        });
+        console.log('💡 Ative um bot no dashboard para iniciar');
+      } else {
+        console.log('💡 Crie uma configuração de bot no dashboard primeiro');
+      }
+      
+      process.exit(1);
+    }
+    
+    // Se há múltiplos bots habilitados, usa modo multi-bot
+    if (enabledBots.length > 1) {
+      console.log('🤖 Iniciando modo Multi-Bot...');
+      isMultiBotMode = true;
+      const multiBotManager = new MultiBotManager();
+      await multiBotManager.runMultiMode();
+      return;
+    }
+    
+    // Modo single bot - usa o primeiro bot habilitado
+    activeBotConfig = enabledBots[0];
+    
+    // Verifica se as credenciais estão configuradas
+    if (!activeBotConfig.apiKey || !activeBotConfig.apiSecret) {
+      console.error(`❌ Bot ${activeBotConfig.botName} não tem credenciais configuradas!`);
+      console.error('💡 Configure as credenciais no dashboard antes de iniciar o bot');
+      process.exit(1);
+    }
+    
+    console.log(`🤖 Iniciando bot: ${activeBotConfig.botName} (${activeBotConfig.strategyName})`);
+    
     // Carrega o estado persistido do Trailing Stop
     await TrailingStop.loadStateFromFile();
     
     // Migração automática: cria estado para posições abertas existentes
-    await TrailingStop.backfillStateForOpenPositions();
-
-    // Verifica se a estratégia foi definida via variável de ambiente
-    const envStrategy = process.env.TRADING_STRATEGY;
-    let selectedStrategy;
-
-    if (envStrategy) {
-      // Executa diretamente com a estratégia definida
-      selectedStrategy = envStrategy;
-      console.log(`🚀 Iniciando BackBot com estratégia: ${selectedStrategy}`);
+          // Migração do Trailing Stop será executada individualmente para cada bot
+      console.log('ℹ️ [APP] Migração do Trailing Stop será executada individualmente para cada bot');
+    
+    // Inicializa a estratégia selecionada
+    initializeDecisionStrategy(activeBotConfig.strategyName);
+    
+    // Inicializa o TrailingStop com a estratégia correta
+    initializeTrailingStop();
+    
+    // Log da estratégia selecionada
+    console.log(`🔑 Estratégia ${activeBotConfig.strategyName}: usando credenciais do bot ${activeBotConfig.botName}`);
+    
+    // Log do modo de execução
+    const executionMode = activeBotConfig.executionMode || 'REALTIME';
+    if (activeBotConfig.strategyName === 'ALPHA_FLOW') {
+      console.log('🧠 [ALPHA_FLOW] Modo ON_CANDLE_CLOSE forçado automaticamente');
+      activeBotConfig.executionMode = 'ON_CANDLE_CLOSE';
     } else {
-      // Exibe menu de seleção de estratégia (simplificado)
-      selectedStrategy = await showModeSelectionMenu(hasMultiAccountConfig);
-
-      if (selectedStrategy === 'exit') {
-        console.log('👋 Encerrando BackBot.');
-        process.exit(0);
-      }
+      console.log(`⚙️ [EXECUTION_MODE] Modo configurado: ${executionMode}`);
     }
 
-    // Lógica simplificada: opção 2 sempre executa PRO MAX
-    if (selectedStrategy === 'PRO_MAX') {
-      // Estratégia PRO_MAX = sempre modo multi-conta (mesmo com uma conta)
-      console.log('🚀 Iniciando BackBot em modo PRO MAX...\n');
-      isMultiBotMode = true;
-      const multiBotManager = new MultiBotManager();
-      await multiBotManager.runMultiMode();
+    // Inicia o PnL Controller para este bot específico
+    try {
+      await PnlController.run(24, activeBotConfig);
+    } catch (pnlError) {
+      console.warn(`⚠️ [APP] Erro no PnL Controller para bot ${activeBotConfig.botName}:`, pnlError.message);
+    }
+
+    // Inicia os serviços
+    console.log('🚀 Iniciando serviços...');
+    startStops();
+    startPendingOrdersMonitor();
+    startOrphanOrderMonitor();
+
+    // Verifica se deve fazer análise imediatamente ou aguardar
+    const timeframeConfig = new TimeframeConfig();
+    const waitCheck = timeframeConfig.shouldWaitBeforeAnalysis(activeBotConfig.time);
+    
+    console.log(`🔧 [DEBUG] Execution Mode: ${activeBotConfig.executionMode}`);
+    console.log(`🔧 [DEBUG] Strategy: ${activeBotConfig.strategyName}`);
+    console.log(`🔧 [DEBUG] Timeframe: ${activeBotConfig.time}`);
+    console.log(`🔧 [DEBUG] Wait Check:`, waitCheck);
+    
+    if (waitCheck.shouldWait) {
+      console.log(`⏰ [ON_CANDLE_CLOSE] Próxima análise em ${Math.floor(waitCheck.waitTime / 1000)}s (fechamento de vela)`);
+      
+      // Inicia o timer geral para mostrar progresso
+      showGlobalTimer(waitCheck.waitTime);
+      
+      // Agenda a primeira análise
+      setTimeout(() => {
+        startDecision();
+      }, waitCheck.waitTime);
     } else {
-      // Estratégia DEFAULT = sempre modo conta única
-      console.log('🚀 Iniciando BackBot em modo Conta Única...\n');
-      isMultiBotMode = false;
-      
-      // Inicializa a estratégia selecionada
-      initializeDecisionStrategy(selectedStrategy);
-      
-      // Inicializa o TrailingStop com a estratégia correta
-      initializeTrailingStop();
-      
-      // Log da estratégia selecionada
-      console.log('🔑 Estratégia VOLUMES: usando credenciais da CONTA1');
-
-      // Inicia o PnL Controller
-      PnlController.run(24);
-
-      // Inicia os serviços
-      console.log('🚀 Iniciando serviços...');
+      // Inicia análise imediatamente
+      console.log('🚀 Iniciando primeira análise...');
       startDecision();
-      startStops();
-      startPendingOrdersMonitor();
-      startOrphanOrderMonitor();
-
-      setInterval(() => {
-        OrderController.checkForUnmonitoredPositions('DEFAULT');
-      }, 30000);
     }
 
+    // Configura comandos interativos
+    setupInteractiveCommands();
+    
+    console.log('✅ BackBot iniciado com sucesso!');
+    console.log(`📊 Bot ativo: ${activeBotConfig.botName}`);
+    console.log(`🔧 Estratégia: ${activeBotConfig.strategyName}`);
+    console.log(`💰 Capital: ${activeBotConfig.capitalPercentage}%`);
+    console.log(`⏰ Timeframe: ${activeBotConfig.time}`);
+    
   } catch (error) {
-    console.error('❌ Erro ao iniciar o bot:', error.message);
+    console.error('❌ Erro ao iniciar BackBot:', error.message);
     process.exit(1);
   }
 }
@@ -457,7 +554,7 @@ function setupInteractiveCommands() {
       case 'cleanup':
         console.log('🧹 Iniciando limpeza manual de ordens órfãs...');
         import('./src/Controllers/OrderController.js').then(({ default: OrderController }) => {
-          OrderController.monitorAndCleanupOrphanedStopLoss('DEFAULT').then(result => {
+          OrderController.monitorAndCleanupOrphanedStopLoss(activeBotConfig.botName, activeBotConfig).then(result => {
             console.log(`🧹 Limpeza concluída: ${result.orphaned} ordens órfãs detectadas, ${result.cancelled} canceladas`);
             if (result.errors.length > 0) {
               console.log(`❌ Erros: ${result.errors.join(', ')}`);

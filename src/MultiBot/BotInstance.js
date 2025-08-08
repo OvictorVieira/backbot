@@ -9,16 +9,15 @@ import OrderController from '../Controllers/OrderController.js';
  * Cada instância roda independentemente com suas próprias configurações
  */
 class BotInstance {
-  constructor(accountId, accountConfig) {
-    this.accountId = accountId;
+  constructor(botName, accountConfig) {
+    this.botName = botName;
     this.config = accountConfig;
-    this.logger = new ColorLogger(accountId, accountConfig.strategy);
+    this.logger = new ColorLogger(botName, accountConfig.strategy);
     this.isRunning = false;
     this.analysisInterval = null;
     this.monitoringInterval = null;
     
     // Configurações específicas da conta
-    this.volumeOrder = accountConfig.volumeOrder;
     this.capitalPercentage = accountConfig.capitalPercentage;
     this.limitOrder = accountConfig.limitOrder;
     this.time = accountConfig.time;
@@ -116,9 +115,7 @@ class BotInstance {
       errors.push(`Estratégia inválida: ${this.strategy}`);
     }
     
-    if (this.volumeOrder <= 0) {
-      errors.push('Volume da ordem deve ser maior que 0');
-    }
+
     
     if (this.capitalPercentage < 0 || this.capitalPercentage > 100) {
       errors.push('Porcentagem do capital deve estar entre 0 e 100');
@@ -143,7 +140,11 @@ class BotInstance {
       process.env.API_SECRET = this.config.apiSecret;
       
       // Testa conexão
-      const accountData = await AccountController.get({ strategy: this.strategy });
+      const accountData = await AccountController.get({ 
+        apiKey: this.config.apiKey, 
+        apiSecret: this.config.apiSecret,
+        strategy: this.strategy 
+      });
       
       // Restaura variáveis originais
       process.env.API_KEY = originalApiKey;
@@ -178,7 +179,6 @@ class BotInstance {
       API_KEY: process.env.API_KEY,
       API_SECRET: process.env.API_SECRET,
       TRADING_STRATEGY: process.env.TRADING_STRATEGY,
-      VOLUME_ORDER: process.env.VOLUME_ORDER,
       CAPITAL_PERCENTAGE: process.env.CAPITAL_PERCENTAGE,
       LIMIT_ORDER: process.env.LIMIT_ORDER,
       TIME: process.env.TIME,
@@ -191,7 +191,6 @@ class BotInstance {
     process.env.API_KEY = this.config.apiKey;
     process.env.API_SECRET = this.config.apiSecret;
     process.env.TRADING_STRATEGY = this.strategy;
-    process.env.VOLUME_ORDER = this.volumeOrder.toString();
     process.env.CAPITAL_PERCENTAGE = this.capitalPercentage.toString();
     process.env.LIMIT_ORDER = this.limitOrder.toString();
     process.env.TIME = this.time;
@@ -234,7 +233,6 @@ class BotInstance {
       
       // Cria objeto de configuração para esta instância
       const instanceConfig = {
-        volumeOrder: this.volumeOrder,
         capitalPercentage: this.capitalPercentage,
         limitOrder: this.limitOrder,
         time: this.time,
@@ -259,7 +257,7 @@ class BotInstance {
         macdFastLength: this.config.macdFastLength,
         macdSlowLength: this.config.macdSlowLength,
         macdSignalLength: this.config.macdSignalLength,
-        accountId: this.accountId
+        botName: this.botName
       };
       
       // Cria uma instância do Decision com a estratégia específica desta conta
@@ -288,7 +286,7 @@ class BotInstance {
         this.setEnvironmentVariables();
         
         // Executa monitoramento APENAS para esta conta
-        await OrderController.monitorPendingEntryOrders(this.accountId);
+        await OrderController.monitorPendingEntryOrders(this.botName);
         
         // Restaura variáveis originais
         this.restoreEnvironmentVariables();
@@ -304,11 +302,10 @@ class BotInstance {
    */
   getStatus() {
     return {
-      accountId: this.accountId,
+      botName: this.botName,
       name: this.config.name,
       strategy: this.strategy,
       isRunning: this.isRunning,
-      volumeOrder: this.volumeOrder,
       capitalPercentage: this.capitalPercentage,
       time: this.time
     };
@@ -319,7 +316,7 @@ class BotInstance {
    */
   getLogs() {
     return {
-      accountId: this.accountId,
+      botName: this.botName,
       strategy: this.strategy,
       isRunning: this.isRunning
     };

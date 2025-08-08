@@ -1,87 +1,236 @@
-# BackBot - Bot de Trading Inteligente para Backpack Exchange
+# BackBot - Bot de Trading para Backpack
 
-Bot de trading automatizado de nível profissional para a Backpack Exchange, focado em farming de volume com gestão de risco avançada.
+Bot de trading automatizado para a exchange Backpack, focado em volume farming e preservação de capital.
 
-## 🚀 Funcionalidades Principais
+## 🚀 Início Rápido
 
-- **Estratégia `DEFAULT` Inteligente**: Sistema robusto com 8 camadas de validação para encontrar sinais de alta confluência.
-- **Execução Híbrida de Ordens**: Tenta executar ordens com taxas mínimas (LIMIT) e possui um fallback inteligente para ordens a MERCADO, garantindo que boas oportunidades não sejam perdidas.
-- **Trailing Stop Dinâmico**: Maximiza os lucros ao permitir que operações vencedoras "corram", movendo o stop loss automaticamente para proteger os ganhos.
-- **Sistema de "Failsafe" na Corretora**: Cria ordens de Stop Loss e Take Profit diretamente na exchange como uma rede de segurança contra falhas.
-- **Persistência de Estado**: Salva o estado do Trailing Stop em um arquivo `trailing_state.json`, garantindo que o bot sobreviva a reinicializações sem perder a gestão das posições.
-- **Sistema de Backtest de Alta Fidelidade**: Permite testar e otimizar a estratégia com simulações que replicam o comportamento do mercado em tempo real.
-- **Logs Claros e Informativos**: Saída de console limpa que permite acompanhar as decisões do bot.
-
----
-
-## 🛠️ Instalação e Configuração
-
-### Passo 1: Instalação
+### Opção 1: Dashboard Completo (Recomendado)
 ```bash
-# Clone o repositório
-git clone <URL_DO_SEU_REPOSITORIO>
-cd backbot
-
-# Instale as dependências
+# Instalar dependências e iniciar backend + frontend
 npm install
-```
-
-### Passo 2: Configuração do `.env`
-Abra o arquivo `.env` e preencha com suas chaves de API da Backpack e ajuste os parâmetros conforme a explicação abaixo.
-
----
-
-## ⚙️ Entendendo as Configurações (`.env`)
-
-Aqui está uma explicação detalhada das principais configurações no seu arquivo `.env`.
-
-### Configuração da Conta Principal (`DEFAULT`)
-Estas são as configurações para a sua estratégia principal de farming de volume.
-
-| Variável | Exemplo | Descrição |
-| :--- | :--- | :--- |
-| `ACCOUNT1_CAPITAL_PERCENTAGE` | `20` | **Capital por Operação.** Define a porcentagem do seu capital que será usada como margem para cada nova operação. `20` significa 20%. |
-| `ACCOUNT1_TIME` | `15m` | **Timeframe de Análise.** O tempo gráfico que o bot usará para analisar o mercado e encontrar sinais. |
-| `MAX_OPEN_TRADES` | `3` | **Máximo de Posições Abertas.** O número máximo de operações que o bot pode manter abertas simultaneamente. |
-
-### Configurações de Execução de Ordens
-Controla como o bot se comporta ao abrir uma posição.
-
-| Variável | Exemplo | Descrição |
-| :--- | :--- | :--- |
-| `ORDER_EXECUTION_TIMEOUT_SECONDS`| `30` | **Timeout da Ordem a Limite.** Tempo em segundos que o bot espera por uma ordem a limite (mais barata) ser executada. Se o tempo expirar, ele cancela e tenta uma ordem a mercado para não perder a oportunidade. |
-| `MAX_SLIPPAGE_PCT`| `0.5` | **Derrapagem Máxima.** Trava de segurança. Se, no momento da execução a mercado, o preço já se moveu mais que esta porcentagem, o bot cancela a operação para te proteger. `0.5` significa 0.5%. |
-
-### Configurações de Risco e Lucro (MUITO IMPORTANTE)
-Esta seção define a matemática da sua estratégia.
-
-| Variável | Exemplo | Descrição |
-| :--- | :--- | :--- |
-| **`ENABLE_TRAILING_STOP`** | `true` | **Ativa o Trailing Stop.** Se `true`, o bot usará o stop móvel para maximizar os lucros e ignorará o `MIN_PROFIT_PERCENTAGE`. Se `false`, usará o Take Profit fixo. |
-| **`TRAILING_STOP_DISTANCE`** | `1.5` | **Distância do Trailing Stop.** A "folga" em porcentagem que o stop móvel ficará do preço. Valores maiores dão mais espaço para o trade respirar, mas protegem menos o lucro. |
-| **`MIN_PROFIT_PERCENTAGE`** | `10` | **Alvo de Lucro Fixo (só usado se o Trailing Stop estiver DESATIVADO).** Define a meta de lucro em porcentagem sobre a margem para fechar uma operação. |
-| **`MAX_NEGATIVE_PNL_STOP_PCT`**| `-10`| **Stop Loss Máximo.** Define a perda máxima em porcentagem sobre a margem antes que a posição seja fechada para proteger seu capital. |
-
-**Recomendação de Distância do Trailing Stop por Timeframe:**
-
-| Timeframe | `TRAILING_STOP_DISTANCE` Sugerido |
-| :--- | :--- |
-| 15m | 1.0% a 1.5% |
-| 30m, 1h | 1.5% a 2.9% |
-| 2h, 4h | 3.0% a 4.0% |
-
----
-
-## 🚀 Executando o Bot
-
-Para iniciar o bot com a sua configuração, use o comando:
-
-```bash
 npm start
 ```
 
-O bot começará a analisar o mercado e a operar de acordo com suas configurações.
+Isso irá:
+- ✅ Iniciar a API backend na porta 3001
+- ✅ Iniciar o dashboard frontend na porta 5173
+- ✅ Abrir automaticamente o navegador em http://localhost:5173
 
-## ⚠️ Disclaimer
+**Acesse:** http://localhost:5173 (abre automaticamente)
 
-Este software é fornecido para fins educacionais e de pesquisa. O trading de criptomoedas envolve riscos significativos. Os autores não se responsabilizam por quaisquer perdas financeiras. **Use por sua conta e risco.**
+### Opção 2: Apenas Backend (Modo Console)
+```bash
+# Executar bot no console (modo tradicional)
+npm run start:bot
+```
+
+## 📊 Dashboard Web
+
+O BackBot agora inclui uma dashboard web completa para:
+
+- **Configurar Bots**: Interface visual para configurar API keys e parâmetros
+- **Controlar Bots**: Iniciar/parar bots por estratégia
+- **Monitorar Status**: Visualizar status em tempo real
+- **Gerenciar Configurações**: Salvar e editar configurações persistentes
+
+### Funcionalidades da Dashboard:
+
+1. **Configuração de Bots**:
+   - API Key e Secret com toggle de visibilidade
+   - Volume da ordem e percentual do capital
+   - Configurações de stop loss e trailing stop
+   - Toggles de funcionalidades (Post Only, Market Fallback, etc.)
+
+2. **Controle de Bots**:
+   - Iniciar/parar bots individualmente
+   - Status visual (Rodando/Parado/Desabilitado)
+   - Atualização automática a cada 5 segundos
+
+3. **Estratégias Suportadas**:
+   - **DEFAULT**: Estratégia original do bot
+   - **ALPHA_FLOW**: Estratégia Alpha Flow
+   - **PRO_MAX**: Estratégia Pro Max
+
+## 🛠️ Comandos Disponíveis
+
+### Dashboard e API
+```bash
+npm start                    # Inicia backend + frontend
+npm run api                  # Apenas backend API
+npm run dashboard            # Apenas frontend
+npm run dashboard:install    # Instalar dependências do dashboard
+npm run dashboard:build      # Build do dashboard para produção
+```
+
+### Bot Tradicional (Console)
+```bash
+npm run start:bot           # Bot DEFAULT no console
+npm run alphaflow           # Bot ALPHA_FLOW no console
+```
+
+### Testes e Desenvolvimento
+```bash
+npm run test:api            # Testar API
+npm run backtest            # Executar backtest
+npm test                    # Executar testes unitários
+npm run test:watch          # Testes em modo watch
+npm run test:coverage       # Testes com cobertura
+```
+
+## 🔧 Configuração
+
+### 1. Configuração via Dashboard (Recomendado)
+1. Acesse http://localhost:5173
+2. Clique em "Adicionar Bot" ou "Configurar Primeiro Bot"
+3. Preencha suas API keys da Backpack
+4. Configure parâmetros de trading
+5. Salve e inicie o bot
+
+### 2. Configuração via Arquivo (Modo Avançado)
+As configurações são salvas em `persistence/bot_configs.json`:
+
+```json
+[
+  {
+    "strategyName": "DEFAULT",
+    "apiKey": "sua-api-key",
+    "apiSecret": "seu-api-secret",
+    "volumeOrder": 10,
+    "capitalPercentage": 10,
+    "time": "5m",
+    "enabled": true,
+    "enableTrailingStop": true,
+    "trailingStopDistance": 1.5
+  }
+]
+```
+
+## 🏗️ Arquitetura
+
+### Backend (API)
+- **Express.js**: Servidor REST API
+- **WebSocket**: Comunicação em tempo real
+- **ConfigManager**: Gerenciamento de configurações persistentes
+- **StrategyFactory**: Sistema de estratégias modulares
+
+### Frontend (Dashboard)
+- **React 18**: Interface moderna
+- **TypeScript**: Tipagem estática
+- **Tailwind CSS**: Estilização responsiva
+- **shadcn/ui**: Componentes de UI
+- **Axios**: Comunicação com API
+
+## 📡 API Endpoints
+
+### Configurações
+- `GET /api/configs` - Listar configurações
+- `POST /api/configs` - Salvar configuração
+- `DELETE /api/configs/:strategyName` - Remover configuração
+
+### Controle de Bots
+- `GET /api/bot/status` - Status dos bots
+- `POST /api/bot/start` - Iniciar bot
+- `POST /api/bot/stop` - Parar bot
+
+### Informações
+- `GET /api/strategies` - Estratégias disponíveis
+- `GET /api/klines` - Dados de mercado
+
+## 🎯 Estratégias
+
+### DEFAULT
+Estratégia original do bot, focada em:
+- Volume farming
+- Preservação de capital
+- Stop loss dinâmico
+- Trailing stop adaptativo
+
+### ALPHA_FLOW
+Estratégia avançada com:
+- Análise de fluxo de capital
+- Indicadores macro
+- Timing de mercado
+- Gestão de risco aprimorada
+
+### PRO_MAX
+Estratégia profissional com:
+- Múltiplos timeframes
+- Análise técnica avançada
+- Machine learning
+- Otimização automática
+
+## 🔄 WebSocket Events
+
+O sistema emite eventos em tempo real:
+
+- `BOT_STARTING` - Bot iniciando
+- `BOT_STARTED` - Bot iniciado
+- `BOT_STOPPED` - Bot parado
+- `DECISION_ANALYSIS` - Análise de decisão
+- `TRAILING_STOP_UPDATE` - Atualização trailing stop
+- `BOT_EXECUTION_SUCCESS` - Execução bem-sucedida
+- `BOT_EXECUTION_ERROR` - Erro na execução
+
+## 🚨 Validações
+
+O sistema valida automaticamente:
+
+- **API Keys**: Comprimento mínimo de 10 caracteres
+- **Volume**: Deve ser maior que zero
+- **Capital**: Deve estar entre 0 e 100%
+- **Stop Loss**: Deve ser maior que zero
+- **Campos Obrigatórios**: API Key, API Secret, Volume, Capital
+
+## 🐛 Troubleshooting
+
+### Erro de Conexão com API
+- Verifique se o backend está rodando: `npm run api`
+- Confirme se a porta 3001 está livre
+
+### Erro de Dashboard
+- Verifique se o frontend está rodando: `npm run dashboard`
+- Confirme se a porta 5173 está livre
+
+### Problemas de Dependências
+```bash
+# Reinstalar dependências do projeto principal
+npm install
+
+# Reinstalar dependências do dashboard
+npm run dashboard:install
+```
+
+### Logs e Debug
+- Backend: Logs no console do terminal
+- Frontend: Logs no console do navegador (F12)
+- WebSocket: Eventos em tempo real
+
+## 📈 Próximos Passos
+
+1. **Gráficos em Tempo Real**: Integração com TradingView
+2. **Histórico de Operações**: Tabela de trades realizados
+3. **Relatórios**: Métricas de performance
+4. **Notificações**: Alertas por email/telegram
+5. **Backtesting**: Interface para backtesting
+6. **Multi-Exchange**: Suporte a outras exchanges
+
+## 📝 Licença
+
+Este projeto é licenciado sob a MIT License.
+
+## 🤝 Contribuição
+
+Contribuições são bem-vindas! Por favor:
+
+1. Fork o projeto
+2. Crie uma branch para sua feature
+3. Commit suas mudanças
+4. Push para a branch
+5. Abra um Pull Request
+
+## 📞 Suporte
+
+Para suporte e dúvidas:
+- Abra uma issue no GitHub
+- Consulte a documentação da API
+- Verifique os logs de erro
