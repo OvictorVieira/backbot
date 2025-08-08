@@ -2471,7 +2471,7 @@ app.get('/api/bot/summary', async (req, res) => {
     }
     
     // Busca configuração do bot
-    const botConfig = ConfigManager.getBotConfigById(botIdNum);
+    const botConfig = await ConfigManagerSQLite.getBotConfigById(botIdNum);
     if (!botConfig) {
       return res.status(404).json({
         success: false,
@@ -2603,7 +2603,7 @@ app.get('/api/bot/positions/show', async (req, res) => {
     }
     
     // Busca configuração do bot
-    const botConfig = ConfigManager.getBotConfigById(botIdNum);
+    const botConfig = await ConfigManagerSQLite.getBotConfigById(botIdNum);
     if (!botConfig) {
       return res.status(404).json({
         success: false,
