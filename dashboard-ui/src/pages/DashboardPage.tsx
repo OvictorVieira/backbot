@@ -41,6 +41,8 @@ interface BotConfig {
   orderCounter?: number
   // Configurações de Limite de Ordens
   maxOpenOrders: number
+  // Tokens autorizados
+  authorizedTokens: string[]
   // Próxima validação
   nextValidationAt?: string
 }
@@ -464,7 +466,8 @@ export function DashboardPage() {
                   enableMarketFallback: true, // Sempre habilitado
                   enableOrphanOrderMonitor: true, // Sempre habilitado
                   enablePendingOrdersMonitor: true, // Sempre habilitado
-                  maxOpenOrders: 5 // Valor padrão
+                  maxOpenOrders: 5, // Valor padrão
+                  authorizedTokens: [] // Lista vazia = todos os tokens permitidos
                 };
               })()}
               onSave={handleConfigSaved}
@@ -506,7 +509,8 @@ export function DashboardPage() {
                 enableMarketFallback: true,
                 enableOrphanOrderMonitor: true,
                 enablePendingOrdersMonitor: true,
-                maxOpenOrders: 5
+                maxOpenOrders: 5,
+                authorizedTokens: [] // Lista vazia = todos os tokens permitidos
               }}
               onSave={handleCreateBotSaved}
               onCancel={() => setShowCreateBot(false)}

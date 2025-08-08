@@ -486,6 +486,7 @@ class ConfigManagerSQLite {
       enableOrphanOrderMonitor: true,
       enablePendingOrdersMonitor: true,
       maxOpenOrders: 5,
+      authorizedTokens: [], // Lista de tokens autorizados (vazio = todos os tokens)
       botClientOrderId: Math.floor(Math.random() * 10000),
       orderCounter: 0,
       status: 'stopped'

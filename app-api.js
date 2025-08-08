@@ -35,6 +35,7 @@ import readline from 'readline';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import Markets from './src/Backpack/Public/Markets.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2688,4 +2689,72 @@ async function initializeServer() {
 // Inicializa o servidor
 initializeServer();
 
-export { startBot, stopBot, activeBotInstances, broadcast }; 
+export { startBot, stopBot, activeBotInstances, broadcast };
+
+// Endpoint para buscar tokens disponíveis
+app.get('/api/tokens/available', async (req, res) => {
+  try {
+    console.log('🔍 [API] Buscando tokens disponíveis...');
+    
+    const marketsInstance = new Markets();
+    const markets = await marketsInstance.getMarkets();
+    
+    if (!markets) {
+      console.error('❌ [API] Erro ao buscar mercados da Backpack');
+      return res.status(500).json({ 
+        error: 'Erro ao buscar mercados da Backpack Exchange',
+        message: 'Não foi possível conectar com a API da Backpack'
+      });
+    }
+
+    // Filtra apenas mercados PERP ativos
+    const perpMarkets = markets.filter(market => 
+      market.marketType === "PERP" && 
+      market.orderBookState === "Open"
+    );
+
+    // Busca dados de volume das últimas 24h para todos os tokens
+    console.log('📊 [API] Buscando dados de volume das últimas 24h...');
+    const tickers = await marketsInstance.getTickers("1d");
+    
+    // Cria um mapa de volume por símbolo
+    const volumeMap = new Map();
+    if (tickers && Array.isArray(tickers)) {
+      tickers.forEach(ticker => {
+        if (ticker.symbol && ticker.volume) {
+          volumeMap.set(ticker.symbol, ticker.volume);
+        }
+      });
+    }
+
+    // Mapeia os tokens com dados de volume
+    const availableTokens = perpMarkets.map(market => ({
+      symbol: market.symbol,
+      baseAsset: market.baseSymbol,
+      quoteAsset: market.quoteSymbol,
+      status: market.orderBookState,
+      volume24h: volumeMap.get(market.symbol) || "0"
+    }))
+    .sort((a, b) => {
+      // Ordena por volume das últimas 24h (maior para menor)
+      const volumeA = parseFloat(a.volume24h) || 0;
+      const volumeB = parseFloat(b.volume24h) || 0;
+      return volumeB - volumeA;
+    });
+
+    console.log(`✅ [API] ${availableTokens.length} tokens disponíveis encontrados`);
+    
+    res.json({
+      success: true,
+      tokens: availableTokens,
+      total: availableTokens.length
+    });
+    
+  } catch (error) {
+    console.error('❌ [API] Erro ao buscar tokens:', error.message);
+    res.status(500).json({ 
+      error: 'Erro interno do servidor',
+      message: error.message 
+    });
+  }
+});

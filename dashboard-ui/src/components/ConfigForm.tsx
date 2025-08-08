@@ -31,6 +31,7 @@ interface BotConfig {
   enableMarketFallback: boolean;
   enableOrphanOrderMonitor: boolean;
   enablePendingOrdersMonitor: boolean;
+  authorizedTokens: string[];
   botClientOrderId?: number;
   maxOpenOrders: number;
 }
@@ -39,7 +40,7 @@ interface ConfigFormProps {
   config: BotConfig;
   onSave: (config: BotConfig) => void;
   onCancel: () => void;
-  isEditMode?: boolean; // Indica se está editando um bot existente
+  isEditMode?: boolean;
 }
 
 export const ConfigForm: React.FC<ConfigFormProps> = ({
@@ -48,7 +49,25 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
   onCancel,
   isEditMode = false
 }) => {
-  const [formData, setFormData] = useState<BotConfig>(config);
+  console.log('🔍 [ConfigForm] Config recebido:', config);
+  console.log('🔍 [ConfigForm] isEditMode:', isEditMode);
+  
+  const [formData, setFormData] = useState<BotConfig>({
+    ...config,
+    authorizedTokens: config.authorizedTokens || [],
+    maxOpenOrders: config.maxOpenOrders || 5,
+    enableHybridStopStrategy: config.enableHybridStopStrategy || false,
+    initialStopAtrMultiplier: config.initialStopAtrMultiplier || 2.0,
+    trailingStopAtrMultiplier: config.trailingStopAtrMultiplier || 1.5,
+    partialTakeProfitAtrMultiplier: config.partialTakeProfitAtrMultiplier || 3.0,
+    partialTakeProfitPercentage: config.partialTakeProfitPercentage || 50,
+    enableTrailingStop: config.enableTrailingStop || false,
+    trailingStopDistance: config.trailingStopDistance || 1.5,
+    enablePostOnly: config.enablePostOnly !== undefined ? config.enablePostOnly : true,
+    enableMarketFallback: config.enableMarketFallback !== undefined ? config.enableMarketFallback : true,
+    enableOrphanOrderMonitor: config.enableOrphanOrderMonitor !== undefined ? config.enableOrphanOrderMonitor : true,
+    enablePendingOrdersMonitor: config.enablePendingOrdersMonitor !== undefined ? config.enablePendingOrdersMonitor : true
+  });
   const [showApiKey, setShowApiKey] = useState(false);
   const [showApiSecret, setShowApiSecret] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -61,15 +80,18 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
     message: string;
     hasLink?: boolean;
   } | null>(null);
+  const [availableTokens, setAvailableTokens] = useState<Array<{
+    symbol: string;
+    baseAsset: string;
+    quoteAsset: string;
+    status: string;
+    volume24h: string;
+  }>>([]);
+  const [loadingTokens, setLoadingTokens] = useState(false);
+  const [tokenSearchTerm, setTokenSearchTerm] = useState('');
 
-  // Atualizar formData quando config mudar (apenas na primeira renderização ou quando realmente necessário)
+  // Atualizar formData quando config mudar
   useEffect(() => {
-    console.log('🔄 [ConfigForm] Config recebido:', config);
-    console.log('🔄 [ConfigForm] API Key:', config.apiKey);
-    console.log('🔄 [ConfigForm] API Secret:', config.apiSecret);
-    
-    // Só resetar o formData se for uma configuração completamente nova
-    // ou se estivermos no modo de edição e as chaves mudaram
     const shouldReset = !isEditMode || 
                        (isEditMode && (config.apiKey !== formData.apiKey || config.apiSecret !== formData.apiSecret));
     
@@ -78,126 +100,135 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
     }
   }, [config.strategyName, config.botName, config.apiKey, config.apiSecret]);
   
-  // Verificar se as API keys foram alteradas no modo de edição
   const apiKeysChanged = isEditMode && (
     formData.apiKey !== config.apiKey || 
     formData.apiSecret !== config.apiSecret
   );
 
-  // Reset validation when component mounts or config changes
-  useEffect(() => {
-    // Only reset if this is a new config (different from current)
-    // Use a more specific comparison to avoid unnecessary resets
-    const isNewConfig = config.strategyName !== formData.strategyName || 
-                       config.botName !== formData.botName ||
-                       config.apiKey !== formData.apiKey ||
-                       config.apiSecret !== formData.apiSecret;
-    
-    if (isNewConfig) {
-      if (isEditMode) {
-        // No modo de edição, só resetar se as chaves mudaram
-        if (apiKeysChanged && !apiKeysValidated) {
-          setApiKeysValidated(false);
-          setApiKeysTestResult(null);
-        }
+  // Função para buscar tokens disponíveis
+  const fetchAvailableTokens = async () => {
+    try {
+      setLoadingTokens(true);
+      const response = await axios.get('http://localhost:3001/api/tokens/available');
+      
+      if (response.data.success) {
+        setAvailableTokens(response.data.tokens);
+        console.log(`✅ [ConfigForm] ${response.data.total} tokens carregados`);
       } else {
-        // No modo de criação, resetar sempre
-        if (!apiKeysValidated) {
-          setApiKeysValidated(false);
-          setApiKeysTestResult(null);
-        }
+        console.error('❌ [ConfigForm] Erro ao buscar tokens:', response.data.error);
       }
+    } catch (error) {
+      console.error('❌ [ConfigForm] Erro ao buscar tokens:', error.message);
+    } finally {
+      setLoadingTokens(false);
     }
-  }, [config.strategyName, config.botName, config.apiKey, config.apiSecret, 
-       formData.strategyName, formData.botName, formData.apiKey, formData.apiSecret,
-       isEditMode, apiKeysChanged, apiKeysValidated]);
+  };
 
-  // Função para aplicar modo VOLUME
+  // Carregar tokens disponíveis quando o componente montar
+  useEffect(() => {
+    fetchAvailableTokens();
+  }, []);
+
   const applyVolumeMode = () => {
-    setFormData({
-      ...formData,
+    setSelectedMode('volume');
+    setFormData(prev => ({
+      ...prev,
       capitalPercentage: 20,
       time: '15m',
+      maxNegativePnlStopPct: -5,
+      minProfitPercentage: 0.5,
+      maxSlippagePct: 0.5,
       executionMode: 'REALTIME',
-      maxNegativePnlStopPct: "-10",
-      minProfitPercentage: "10",
-      maxSlippagePct: "0.5",
       enableHybridStopStrategy: false,
       enableTrailingStop: false,
       maxOpenOrders: 5
-    });
-    setSelectedMode('volume');
+    }));
   };
 
-  // Função para aplicar modo LUCRO
   const applyProfitMode = () => {
-    setFormData({
-      ...formData,
-      capitalPercentage: 20,
-      time: '30m',
-      executionMode: 'REALTIME',
-      maxNegativePnlStopPct: "-10",
-      minProfitPercentage: "10",
-      maxSlippagePct: "0.5",
+    setSelectedMode('profit');
+    setFormData(prev => ({
+      ...prev,
+      capitalPercentage: 15,
+      time: '1h',
+      maxNegativePnlStopPct: -10,
+      minProfitPercentage: 5,
+      maxSlippagePct: 1.0,
+      executionMode: 'ON_CANDLE_CLOSE',
       enableHybridStopStrategy: true,
       enableTrailingStop: true,
-      maxOpenOrders: 5
-    });
-    setSelectedMode('profit');
+      maxOpenOrders: 3
+    }));
   };
 
-  // Função para resetar para configuração inicial
   const resetToInitial = () => {
-    setFormData(config);
     setSelectedMode('none');
+    setFormData(config);
   };
-
-  // Reset validation when API keys change (but keep success message)
-  useEffect(() => {
-    if (formData.apiKey || formData.apiSecret) {
-      if (isEditMode) {
-        // No modo de edição, só resetar se as chaves mudaram
-        if (apiKeysChanged && !apiKeysValidated) {
-          setApiKeysValidated(false);
-        }
-      } else {
-        // No modo de criação, resetar sempre
-        if (!apiKeysValidated) {
-          setApiKeysValidated(false);
-        }
-      }
-      // Don't clear the test result message - let user see it
-    }
-  }, [formData.apiKey, formData.apiSecret, apiKeysValidated, isEditMode, apiKeysChanged]);
-
-
-
-
 
   const handleInputChange = (field: keyof BotConfig, value: string | number | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     
-    // Clear error when user starts typing
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
     }
 
-    // Reset API keys validation when API keys change
     if (field === 'apiKey' || field === 'apiSecret') {
       if (isEditMode) {
-        // No modo de edição, só resetar se as chaves mudaram
         if (apiKeysChanged && !apiKeysValidated) {
           setApiKeysValidated(false);
         }
       } else {
-        // No modo de criação, resetar sempre
         if (!apiKeysValidated) {
           setApiKeysValidated(false);
         }
       }
-      // Keep the test result message visible
     }
   };
+
+  // Função para adicionar token à lista de autorizados
+  const addTokenToAuthorized = (symbol: string) => {
+    if (!formData.authorizedTokens.includes(symbol)) {
+      setFormData(prev => ({
+        ...prev,
+        authorizedTokens: [...prev.authorizedTokens, symbol]
+      }));
+    }
+  };
+
+  // Função para remover token da lista de autorizados
+  const removeTokenFromAuthorized = (symbol: string) => {
+    setFormData(prev => ({
+      ...prev,
+      authorizedTokens: prev.authorizedTokens.filter(token => token !== symbol)
+    }));
+  };
+
+  // Função para formatar volume de forma legível
+  const formatVolume = (volume: string): string => {
+    const num = parseFloat(volume);
+    if (num >= 1000000) {
+      return `${(num / 1000000).toFixed(1)}M`;
+    } else if (num >= 1000) {
+      return `${(num / 1000).toFixed(1)}K`;
+    } else {
+      return num.toLocaleString();
+    }
+  };
+
+  // Função para limpar todos os tokens autorizados (permitir todos)
+  const clearAuthorizedTokens = () => {
+    setFormData(prev => ({
+      ...prev,
+      authorizedTokens: []
+    }));
+  };
+
+  // Filtrar tokens baseado no termo de busca
+  const filteredTokens = availableTokens.filter(token =>
+    token.symbol.toLowerCase().includes(tokenSearchTerm.toLowerCase()) ||
+    token.baseAsset.toLowerCase().includes(tokenSearchTerm.toLowerCase())
+  );
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -208,7 +239,6 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
       newErrors.botName = 'Nome do bot deve ter pelo menos 3 caracteres';
     }
 
-    // Validar API keys se foram fornecidas
     if (formData.apiKey && formData.apiKey.length < 10) {
       newErrors.apiKey = 'API Key deve ter pelo menos 10 caracteres';
     }
@@ -217,17 +247,12 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
       newErrors.apiSecret = 'API Secret deve ter pelo menos 10 caracteres';
     }
 
-    // Validação de API keys
     if (formData.apiKey && formData.apiSecret) {
       if (isEditMode) {
-        // No modo de edição, verificar se as API keys mudaram
         if (apiKeysChanged && !apiKeysValidated) {
-          // Se mudaram, exigir validação
           newErrors.apiKey = 'Teste a API Key antes de salvar';
         }
-        // Se não mudaram, permitir salvar sem validação
       } else {
-        // No modo de criação, sempre exigir validação
         if (!apiKeysValidated) {
           newErrors.apiKey = 'Teste a API Key antes de salvar';
         }
@@ -257,7 +282,6 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
       newErrors.maxOpenOrders = 'Máximo de ordens deve estar entre 1 e 50';
     }
 
-    // Validação de timeframe
     const validTimeframes = ['5m', '15m', '30m', '1h', '2h', '3h', '4h', '1d'];
     if (!validTimeframes.includes(formData.time)) {
       newErrors.time = 'Timeframe inválido. Use apenas: 5m, 15m, 30m, 1h, 2h, 3h, 4h, 1d';
@@ -271,9 +295,9 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
     if (!formData.apiKey || !formData.apiSecret) {
       setApiKeysTestResult({
         success: false,
-        message: 'Preencha API Key e API Secret primeiro'
+        message: 'Por favor, preencha tanto a API Key quanto a API Secret.',
+        hasLink: false
       });
-      setApiKeysValidated(false);
       return;
     }
 
@@ -281,125 +305,62 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
     setApiKeysTestResult(null);
 
     try {
-      // Testar credenciais duplicadas
-      const duplicateResponse = await axios.post('http://localhost:3001/api/validate-duplicate-credentials', {
+      const response = await axios.post('http://localhost:3001/api/test-api-keys', {
         apiKey: formData.apiKey,
         apiSecret: formData.apiSecret
       });
 
-      if (!duplicateResponse.data.success) {
-        setApiKeysTestResult({
-          success: false,
-          message: duplicateResponse.data.error
-        });
-        setApiKeysValidated(false);
-        return;
-      }
-
-      // Testar validação de credenciais da Backpack
-      const validationResponse = await axios.post('http://localhost:3001/api/validate-credentials', {
-        apiKey: formData.apiKey,
-        apiSecret: formData.apiSecret
-      });
-
-      if (validationResponse.data.success) {
-        const apiKeyStatus = validationResponse.data.apiKeyStatus || 'válida';
+      if (response.data.success) {
+        setApiKeysValidated(true);
         setApiKeysTestResult({
           success: true,
-          message: `✅ API Key válida`
+          message: '✅ API Keys válidas! Suas credenciais estão funcionando corretamente.',
+          hasLink: false
         });
-        setApiKeysValidated(true);
       } else {
-        const errorMessage = validationResponse.data.error || '❌ API Key inválida';
-        const apiKeyStatus = validationResponse.data.apiKeyStatus || 'inválida';
-        const hasLink = apiKeyStatus === 'inválida' || apiKeyStatus === 'com erro';
-        
+        setApiKeysValidated(false);
         setApiKeysTestResult({
           success: false,
-          message: `${errorMessage} (Status: ${apiKeyStatus})`,
-          hasLink: hasLink
+          message: `❌ API Keys inválidas: ${response.data.message}`,
+          hasLink: true
         });
-        setApiKeysValidated(false);
       }
     } catch (error: any) {
-      let errorMessage = 'Erro ao testar API Key';
-      let hasLink = false;
-      
-      if (error.response?.status === 409) {
-        errorMessage = error.response.data.error;
-      } else if (error.response?.status === 401) {
-        errorMessage = '❌ API Key inválida';
-        hasLink = true;
-      } else if (error.response?.data?.error) {
-        errorMessage = error.response.data.error;
-        hasLink = true;
-      }
-      
+      setApiKeysValidated(false);
       setApiKeysTestResult({
         success: false,
-        message: errorMessage,
-        hasLink: hasLink
+        message: `❌ Erro ao testar API Keys: ${error.response?.data?.message || error.message}`,
+        hasLink: true
       });
-      setApiKeysValidated(false);
     } finally {
       setTestingApiKeys(false);
     }
   };
 
   const handleSave = async () => {
-    if (isEditMode) {
-      // No modo de edição, verificar se as API keys mudaram
-      if (apiKeysChanged && formData.apiKey && formData.apiSecret && !apiKeysValidated) {
-        // Se mudaram e não foram validadas, mostrar erro
-        setErrors(prev => ({
-          ...prev,
-          apiKey: 'Teste a API Key antes de salvar'
-        }));
-        return;
-      }
-    } else {
-      // No modo de criação, sempre exigir validação se há API keys
-      if (formData.apiKey && formData.apiSecret && !apiKeysValidated) {
-        setErrors(prev => ({
-          ...prev,
-          apiKey: 'Teste a API Key antes de salvar'
-        }));
-        return;
-      }
+    if (!validateForm()) {
+      return;
     }
-    
-    // Se chegou até aqui, pode salvar
-    if (validateForm()) {
-      setSaving(true);
-      console.log('💾 Iniciando salvamento...');
-      
-      try {
-        // Converte valores string para number antes de salvar
-        const configToSave = {
-          ...formData,
-          maxNegativePnlStopPct: -Math.abs(parseFloat(String(formData.maxNegativePnlStopPct))), // Converte para negativo
-          minProfitPercentage: parseFloat(String(formData.minProfitPercentage)),
-          maxSlippagePct: parseFloat(String(formData.maxSlippagePct))
-        };
-        
-        await onSave(configToSave);
-        console.log('✅ Salvamento concluído');
-      } catch (error) {
-        console.error('❌ Erro durante salvamento:', error);
-      } finally {
-        setSaving(false);
-      }
+
+    setSaving(true);
+    try {
+      await onSave(formData);
+    } catch (error) {
+      console.error('Erro ao salvar configuração:', error);
+    } finally {
+      setSaving(false);
     }
   };
 
   const formatStrategyName = (strategyName: string) => {
     return strategyName
-      .toLowerCase()
       .split('_')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join('')
-  }
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ')
+  };
 
+  console.log('🔍 [ConfigForm] Renderizando componente...');
+  
   return (
     <Card className="w-full">
       <CardHeader>
@@ -451,9 +412,9 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                   <TooltipTrigger asChild>
                     <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
                   </TooltipTrigger>
-                                      <TooltipContent>
-                      <p className="max-w-xs">Sua chave de API da Backpack Exchange. É como uma senha que permite ao bot fazer trades em sua conta. Você pode encontrá-la nas configurações da sua conta Backpack.</p>
-                    </TooltipContent>
+                  <TooltipContent>
+                    <p className="max-w-xs">Sua chave de API da Backpack Exchange. É como uma senha que permite ao bot fazer trades em sua conta. Você pode encontrá-la nas configurações da sua conta Backpack.</p>
+                  </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             </div>
@@ -487,9 +448,9 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                   <TooltipTrigger asChild>
                     <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
                   </TooltipTrigger>
-                                      <TooltipContent>
-                      <p className="max-w-xs">Sua chave secreta da Backpack Exchange. É como uma segunda senha de segurança. Nunca compartilhe com ninguém e mantenha-a segura.</p>
-                    </TooltipContent>
+                  <TooltipContent>
+                    <p className="max-w-xs">Sua chave secreta da Backpack Exchange. É como uma segunda senha de segurança. Nunca compartilhe com ninguém e mantenha-a segura.</p>
+                  </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             </div>
@@ -515,7 +476,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
             {errors.apiSecret && <p className="text-sm text-red-500">{errors.apiSecret}</p>}
           </div>
 
-          {/* Test API Keys Button - Mostrar apenas quando necessário */}
+          {/* Test API Keys Button */}
           {(!isEditMode || apiKeysChanged) ? (
             <div className="space-y-2">
               <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg dark:bg-blue-950/20 dark:border-blue-800">
@@ -585,14 +546,157 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
               )}
             </div>
           ) : (
-            /* Mensagem informativa quando as chaves não foram alteradas */
             <div className="p-3 bg-green-50 border border-green-200 rounded-lg dark:bg-green-950/20 dark:border-green-800">
               <p className="text-sm text-green-700 dark:text-green-300">
                 <strong>✅ API Key válida:</strong> Sua API Key está funcionando corretamente.
-                
               </p>
             </div>
           )}
+        </div>
+
+        {/* Seção de Tokens Autorizados */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-medium">Tokens Autorizados</h3>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={clearAuthorizedTokens}
+                className="text-xs px-3 py-1 h-8"
+              >
+                Permitir Todos
+              </Button>
+            </div>
+          </div>
+          
+          <div className="space-y-4">
+            {/* Campo de busca */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="tokenSearch">Buscar Tokens</Label>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="max-w-xs">Busque e selecione os tokens que o bot deve operar. Deixe vazio para permitir todos os tokens disponíveis.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+              <Input
+                id="tokenSearch"
+                type="text"
+                placeholder="Digite para buscar tokens (ex: BTC, ETH, SOL)..."
+                value={tokenSearchTerm}
+                onChange={(e) => setTokenSearchTerm(e.target.value)}
+                className="w-full"
+              />
+            </div>
+
+            {/* Status de carregamento */}
+            {loadingTokens && (
+              <div className="flex items-center gap-2 text-sm text-blue-600">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                Carregando tokens disponíveis...
+              </div>
+            )}
+
+            {/* Lista de tokens disponíveis */}
+            {!loadingTokens && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">
+                    {filteredTokens.length} tokens encontrados
+                  </span>
+                  <span className="text-muted-foreground">
+                    {formData.authorizedTokens.length} selecionados
+                  </span>
+                </div>
+                
+                <div className="max-h-60 overflow-y-auto border rounded-lg p-2 space-y-1">
+                  {filteredTokens.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      Nenhum token encontrado
+                    </p>
+                  ) : (
+                    filteredTokens.map((token) => {
+                      const isSelected = formData.authorizedTokens.includes(token.symbol);
+                      return (
+                        <div
+                          key={token.symbol}
+                          className={`flex items-center justify-between p-2 rounded cursor-pointer transition-colors ${
+                            isSelected 
+                              ? 'bg-blue-50 border border-blue-200 dark:bg-blue-950/20 dark:border-blue-800' 
+                              : 'hover:bg-gray-50 dark:hover:bg-gray-800'
+                          }`}
+                          onClick={() => isSelected 
+                            ? removeTokenFromAuthorized(token.symbol)
+                            : addTokenToAuthorized(token.symbol)
+                          }
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className={`w-3 h-3 rounded-full border-2 ${
+                              isSelected 
+                                ? 'bg-blue-500 border-blue-500' 
+                                : 'border-gray-300'
+                            }`} />
+                            <div>
+                              <div className="font-medium text-sm">
+                                {token.symbol.replace('_USDC_PERP', '')}-PERP
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {token.baseAsset} • Volume 24h: ${formatVolume(token.volume24h || '0')}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {isSelected ? 'Selecionado' : 'Clique para selecionar'}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Tokens selecionados */}
+            {formData.authorizedTokens.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Tokens Selecionados:</Label>
+                <div className="flex flex-wrap gap-2">
+                  {formData.authorizedTokens.map((token) => (
+                    <div
+                      key={token}
+                      className="flex items-center gap-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 px-2 py-1 rounded-full text-xs"
+                    >
+                      <span>{token.replace('_USDC_PERP', '')}-PERP</span>
+                      <button
+                        type="button"
+                        onClick={() => removeTokenFromAuthorized(token)}
+                        className="ml-1 hover:text-blue-600 dark:hover:text-blue-300"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Mensagem informativa */}
+            {formData.authorizedTokens.length === 0 && (
+              <div className="p-3 bg-green-50 border border-green-200 rounded-lg dark:bg-green-950/20 dark:border-green-800">
+                <p className="text-sm text-green-700 dark:text-green-300">
+                  <strong>✅ Todos os tokens permitidos:</strong> O bot operará em todos os tokens disponíveis na Backpack Exchange.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Trading Configuration */}
@@ -861,207 +965,6 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
             </div>
           </div>
         </div>
-
-        {/* Advanced Configuration */}
-        <div className="space-y-4">
-          <h3 className="text-lg font-medium">Configurações Avançadas</h3>
-          
-          <div className="grid grid-cols-2 gap-4">
-            {formData.enableHybridStopStrategy ? (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="initialStopAtrMultiplier">Multiplicador ATR Inicial</Label>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="max-w-xs">Controla quão longe o stop loss inicial fica do preço. ATR mede a volatilidade do mercado. Maior valor = stop mais distante = menos chance de ser atingido por pequenas oscilações.</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-                <Input
-                  id="initialStopAtrMultiplier"
-                  type="number"
-                  step="0.1"
-                  value={formData.initialStopAtrMultiplier}
-                  onChange={(e) => handleInputChange('initialStopAtrMultiplier', Number(e.target.value))}
-                />
-              </div>
-            ) : (
-              <div className="col-span-2 p-3 bg-muted/50 rounded-lg border border-dashed">
-                <p className="text-sm text-muted-foreground">
-                  💡 <strong>Multiplicador ATR Inicial:</strong> Disponível apenas quando "Estratégia Híbrida de Stop Loss (ATR)" estiver habilitada.
-                </p>
-              </div>
-            )}
-
-            {formData.enableTrailingStop ? (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="trailingStopAtrMultiplier">Multiplicador ATR Trailing</Label>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="max-w-xs">Controla a distância do trailing stop (stop móvel). Quando o preço sobe, o stop sobe junto. Menor valor = proteção mais apertada, mas pode fechar trades em pequenas correções.</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-                <Input
-                  id="trailingStopAtrMultiplier"
-                  type="number"
-                  step="0.1"
-                  value={formData.trailingStopAtrMultiplier}
-                  onChange={(e) => handleInputChange('trailingStopAtrMultiplier', Number(e.target.value))}
-                />
-              </div>
-            ) : (
-              <div className="col-span-2 p-3 bg-muted/50 rounded-lg border border-dashed">
-                <p className="text-sm text-muted-foreground">
-                  💡 <strong>Multiplicador ATR Trailing:</strong> Disponível apenas quando "Trailing Stop" estiver habilitado.
-                </p>
-              </div>
-            )}
-
-            {formData.enableHybridStopStrategy ? (
-              <>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="partialTakeProfitAtrMultiplier">Multiplicador ATR Take Profit</Label>
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p className="max-w-xs">Controla onde o bot vai fechar parte da posição para garantir lucro. Maior valor = alvo mais distante = potencial de lucro maior, mas pode demorar mais para atingir.</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </div>
-                  <Input
-                    id="partialTakeProfitAtrMultiplier"
-                    type="number"
-                    step="0.1"
-                    value={formData.partialTakeProfitAtrMultiplier}
-                    onChange={(e) => handleInputChange('partialTakeProfitAtrMultiplier', Number(e.target.value))}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="partialTakeProfitPercentage">Take Profit Parcial (%)</Label>
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p className="max-w-xs">Quanto da posição o bot vai fechar no primeiro alvo de lucro. Por exemplo: 50% = fecha metade da posição, deixa a outra metade para buscar mais lucro.</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </div>
-                  <Input
-                    id="partialTakeProfitPercentage"
-                    type="number"
-                    value={formData.partialTakeProfitPercentage}
-                    onChange={(e) => handleInputChange('partialTakeProfitPercentage', Number(e.target.value))}
-                  />
-                </div>
-              </>
-            ) : (
-              <div className="col-span-2 p-3 bg-muted/50 rounded-lg border border-dashed">
-                <p className="text-sm text-muted-foreground">
-                  💡 <strong>Take Profit Parcial:</strong> Disponível apenas quando "Estratégia Híbrida de Stop Loss (ATR)" estiver habilitada.
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Feature Toggles */}
-        <div className="space-y-4">
-          <h3 className="text-lg font-medium">Funcionalidades</h3>
-          
-          {/* Configurações Sempre Ativas */}
-          <div className="p-4 bg-green-50 border border-green-200 rounded-lg dark:bg-green-900/20 dark:border-green-800">
-            <h4 className="text-sm font-medium text-green-800 dark:text-green-200 mb-2">✅ Configurações Sempre Ativas</h4>
-            <div className="text-sm text-green-700 dark:text-green-300 space-y-1">
-              <p>• <strong>Post Only:</strong> Força o uso de ordens limit para reduzir taxas</p>
-              <p>• <strong>Market Fallback:</strong> Usa ordens de mercado se limit falhar</p>
-              <p>• <strong>Monitor de Ordens Órfãs:</strong> Cancela ordens perdidas automaticamente</p>
-              <p>• <strong>Monitor de Ordens Pendentes:</strong> Acompanha status das ordens em tempo real</p>
-            </div>
-          </div>
-          
-          {/* Controle do Bot */}
-          <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg dark:bg-blue-900/20 dark:border-blue-800">
-            <h4 className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-2">🎮 Controle do Bot</h4>
-            <div className="text-sm text-blue-700 dark:text-blue-300 space-y-1">
-              <p>• <strong>Iniciar/Pausar:</strong> Use o botão no card do bot para controlar a execução</p>
-              <p>• <strong>Status:</strong> O badge "Executando" com efeito pulsante indica que o bot está ativo</p>
-              <p>• <strong>Configuração:</strong> Clique em "Configurar" para ajustar parâmetros</p>
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <label className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-muted/50 transition-colors">
-              <input
-                type="checkbox"
-                checked={formData.enableHybridStopStrategy}
-                onChange={(e) => handleInputChange('enableHybridStopStrategy', e.target.checked)}
-                className="rounded border-gray-300"
-              />
-              <div className="flex items-center gap-2">
-                <div>
-                  <span className="text-sm font-medium">Estratégia Híbrida de Stop Loss (ATR)</span>
-                  <p className="text-xs text-muted-foreground">Stop loss baseado em ATR</p>
-                </div>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p className="max-w-xs">Ativa a estratégia de stop loss adaptativo baseado em ATR (Average True Range). Quando ativado, o bot usa ATR para calcular stops mais inteligentes e também habilita o Take Profit Parcial.</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </div>
-            </label>
-            <label className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-muted/50 transition-colors">
-              <input
-                type="checkbox"
-                checked={formData.enableTrailingStop}
-                onChange={(e) => handleInputChange('enableTrailingStop', e.target.checked)}
-                className="rounded border-gray-300"
-              />
-              <div className="flex items-center gap-2">
-                <div>
-                  <span className="text-sm font-medium">Trailing Stop</span>
-                  <p className="text-xs text-muted-foreground">Ajusta stop loss automaticamente</p>
-                </div>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p className="max-w-xs">Funcionalidade inteligente que move o stop loss para cima quando o preço sobe, protegendo seus lucros. É como uma "rede de segurança" que sobe junto com o preço.</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </div>
-            </label>
-          </div>
-        </div>
       </CardContent>
 
       <CardFooter className="flex gap-2">
@@ -1094,4 +997,4 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
       </CardFooter>
     </Card>
   );
-}; 
+};
