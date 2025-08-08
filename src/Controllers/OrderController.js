@@ -6,6 +6,7 @@ import { validateLeverageForSymbol } from '../Utils/Utils.js';
 import Markets from '../Backpack/Public/Markets.js';
 import TrailingStop from '../TrailingStop/TrailingStop.js';
 import ConfigManager from '../Config/ConfigManager.js';
+import ConfigManagerSQLite from '../Config/ConfigManagerSQLite.js';
 import BotOrdersManager from '../Config/BotOrdersManager.js';
 
 class OrderController {
@@ -66,7 +67,7 @@ class OrderController {
    * @param {object} config - Configuração do bot
    * @returns {number} ID único da ordem como Int (ex: 1548001)
    */
-    static generateUniqueOrderId(config) {
+    static async generateUniqueOrderId(config) {
     try {
       // Se temos o config, usamos diretamente o botClientOrderId
       if (config && config.botClientOrderId) {
