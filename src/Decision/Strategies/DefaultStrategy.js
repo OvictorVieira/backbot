@@ -770,9 +770,10 @@ export class DefaultStrategy extends BaseStrategy {
    * Valida se o sinal está alinhado com a tendência do BTC
    * @param {string} marketSymbol - Símbolo do mercado
    * @param {boolean} isLong - Se é sinal de compra
+   * @param {object} config - Configuração do bot
    * @returns {object} - Resultado da validação
    */
-  async validateBTCTrend(marketSymbol, isLong) {
+  async validateBTCTrend(marketSymbol, isLong, config = null) {
     try {
       // Se for BTC, não precisa validar
       if (marketSymbol === 'BTC_USDC_PERP') {
@@ -781,7 +782,8 @@ export class DefaultStrategy extends BaseStrategy {
 
       // Obtém dados do BTC
       const markets = new Markets();
-      const btcCandles = await markets.getKLines('BTC_USDC_PERP', process.env.ACCOUNT1_TIME || '5m', 30);
+      const timeframe = config?.time || '5m';
+      const btcCandles = await markets.getKLines('BTC_USDC_PERP', timeframe, 30);
       if (!btcCandles || btcCandles.length === 0) {
         return { isValid: true, btcTrend: 'NO_DATA', reason: 'Dados do BTC não disponíveis' };
       }

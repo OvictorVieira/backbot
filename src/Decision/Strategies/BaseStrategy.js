@@ -37,7 +37,7 @@ export class BaseStrategy {
    */
   validateTakeProfit(action, entry, stop, target, investmentUSD, fee) {
     // Configurações do take profit mínimo (apenas porcentagem e R/R)
-    const MIN_TAKE_PROFIT_PCT = Number(process.env.MIN_TAKE_PROFIT_PCT || 0.5);
+    const MIN_TAKE_PROFIT_PCT = Number(this.config?.minTakeProfitPct || 0.5);
 
     const { pnl, risk } = this.calculatePnLAndRisk(action, entry, stop, target, investmentUSD, fee);
     

@@ -7,16 +7,18 @@ export class ProMaxStopLoss extends BaseStopLoss {
    * @param {object} position - Dados da posição
    * @param {object} account - Dados da conta
    * @param {object} marketData - Dados de mercado atuais
+   * @param {object} config - Configuração do bot
    * @returns {object|null} - Objeto com decisão de fechamento ou null se não deve fechar
    */
-  shouldClosePosition(position, account, marketData) {
+  shouldClosePosition(position, account, marketData, config = null) {
     try {
       // Validação inicial dos dados
       if (!this.validateData(position, account)) {
         return null;
       }
 
-      const ENABLE_TP_VALIDATION = process.env.ENABLE_TP_VALIDATION === 'true';
+      // Usa config.enableTpValidation se disponível, senão assume false
+      const ENABLE_TP_VALIDATION = config?.enableTpValidation === true;
       
       // Usa a função calculatePnL do TrailingStop
       const { pnl } = TrailingStop.calculatePnL(position, account);

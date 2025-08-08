@@ -36,7 +36,7 @@ export class AlphaFlowStrategy extends BaseStrategy {
       // Calcula as 3 ordens escalonadas
       const currentPrice = data.vwap?.vwap; // Preço atual (VWAP como referência)
       const atr = data.atr?.atr; // ATR para cálculo de spread
-      const orders = this.calculateOrders(longSignal, currentPrice, atr, investmentUSD, symbol, data.market);
+      const orders = this.calculateOrders(longSignal, currentPrice, atr, investmentUSD, symbol, data.market, config);
       
       // Retorna null se não há ordens válidas
       if (!orders || orders.length === 0) {
@@ -54,7 +54,7 @@ export class AlphaFlowStrategy extends BaseStrategy {
       // Calcula as 3 ordens escalonadas
       const currentPrice = data.vwap?.vwap; // Preço atual (VWAP como referência)
       const atr = data.atr?.atr; // ATR para cálculo de spread
-      const orders = this.calculateOrders(shortSignal, currentPrice, atr, investmentUSD, symbol, data.market);
+      const orders = this.calculateOrders(shortSignal, currentPrice, atr, investmentUSD, symbol, data.market, config);
       
       // Retorna null se não há ordens válidas
       if (!orders || orders.length === 0) {
@@ -360,7 +360,7 @@ export class AlphaFlowStrategy extends BaseStrategy {
    * @param {object} market - Dados de mercado
    * @returns {Array} - Array com 3 ordens
    */
-  calculateOrders(signal, currentPrice, atr, investmentUSD, symbol, market) {
+  calculateOrders(signal, currentPrice, atr, investmentUSD, symbol, market, config = null) {
     const orders = [];
     const conviction = signal.conviction;
     const action = signal.action;
@@ -407,9 +407,9 @@ export class AlphaFlowStrategy extends BaseStrategy {
     const adjustedCapital = investmentUSD; // Usa o investmentUSD total, sem aplicar porcentagem novamente
     
     const weights = [
-      Number(process.env.ORDER_1_WEIGHT_PCT) || 50,
-      Number(process.env.ORDER_2_WEIGHT_PCT) || 30,
-      Number(process.env.ORDER_3_WEIGHT_PCT) || 20
+      Number(config?.order1WeightPct) || 50,
+      Number(config?.order2WeightPct) || 30,
+      Number(config?.order3WeightPct) || 20
     ];
     for (let i = 0; i < 3; i++) {
 
@@ -452,9 +452,9 @@ export class AlphaFlowStrategy extends BaseStrategy {
       console.log(`            • Order Value: $${orderValue.toFixed(4)}`);
       
       // Calcula stop loss e take profit baseados em multiplicadores de ATR
-      const initialStopAtrMultiplier = Number(config?.initialStopAtrMultiplier || process.env.INITIAL_STOP_ATR_MULTIPLIER || 2.0);
-      const takeProfitAtrMultiplier = Number(config?.partialTakeProfitAtrMultiplier || process.env.TAKE_PROFIT_PARTIAL_ATR_MULTIPLIER || 3.0);
-      const maxStopLossPct = Number(config?.maxNegativePnlStopPct || process.env.MAX_NEGATIVE_PNL_STOP_PCT || -10);
+      const initialStopAtrMultiplier = Number(config?.initialStopAtrMultiplier || 2.0);
+      const takeProfitAtrMultiplier = Number(config?.partialTakeProfitAtrMultiplier || 3.0);
+      const maxStopLossPct = Number(config?.maxNegativePnlStopPct || -10);
       
       // Cálculo do stop loss baseado em ATR
       const atrStopDistance = atr * initialStopAtrMultiplier;
@@ -521,7 +521,7 @@ export class AlphaFlowStrategy extends BaseStrategy {
    */
   getCapitalMultiplier(conviction, config = null) {
     // Usa configurações do bot se disponível, senão usa variáveis de ambiente
-    const capitalPercentage = config?.capitalPercentage || Number(process.env.CAPITAL_PERCENTAGE || 20);
+    const capitalPercentage = config?.capitalPercentage;
     
     switch (conviction) {
       case 'BRONZE':

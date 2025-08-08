@@ -20,7 +20,7 @@ class AccountController {
     }
     const apiKey = config.apiKey;
     const apiSecret = config.apiSecret;
-    const strategy = config?.strategy || process.env.TRADING_STRATEGY || 'DEFAULT';
+    const strategy = config?.strategy;
     const botKey = `${strategy}_${apiKey}`;
     
     // 1. VERIFICA O CACHE PARA ESTE BOT ESPECÍFICO
@@ -36,7 +36,7 @@ class AccountController {
     
     // 2. LÓGICA EXISTENTE (SE O CACHE FOR INVÁLIDO)
     // Determina a estratégia baseada na configuração ou variável de ambiente
-    const strategy = config?.strategy || process.env.TRADING_STRATEGY || 'DEFAULT';
+    const strategy = config?.strategy;
     
     // SEMPRE usa credenciais do config - lança exceção se não disponível
     if (!config?.apiKey || !config?.apiSecret) {
@@ -104,8 +104,8 @@ class AccountController {
     }
     
     // Usa configuração passada como parâmetro (prioridade) ou fallback para variável de ambiente
-    const maxOpenOrders = config?.limitOrder || parseInt(process.env.LIMIT_ORDER)
-    const minVolumeDollar = capitalAvailable / maxOpenOrders 
+    const maxOpenOrders = config?.limitOrder
+    const minVolumeDollar = capitalAvailable / maxOpenOrders
 
     const obj = {
         maxOpenOrders,

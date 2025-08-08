@@ -4,9 +4,13 @@
  */
 
 export class TimeframeConfig {
-  constructor() {
-    this.timeframe = process.env.ACCOUNT1_TIME || process.env.TIME || '5m';
-    this.executionMode = process.env.EXECUTION_MODE || 'REALTIME';
+  constructor(config) {
+    if (!config) {
+      throw new Error('TimeframeConfig: config é obrigatório');
+    }
+    
+    this.timeframe = config.time || '5m';
+    this.executionMode = config.executionMode || 'REALTIME';
   }
 
   /**
@@ -46,10 +50,8 @@ export class TimeframeConfig {
    * @returns {boolean} - True se deve analisar agora
    */
   shouldAnalyzeNow() {
-    // Verifica o EXECUTION_MODE atual em tempo real (pode ter sido alterado)
-    const currentExecutionMode = process.env.EXECUTION_MODE || 'REALTIME';
-    
-    if (currentExecutionMode !== 'ON_CANDLE_CLOSE') {
+    // Usa o executionMode da instância
+    if (this.executionMode !== 'ON_CANDLE_CLOSE') {
       return true; // Modo REALTIME sempre analisa
     }
 
@@ -83,10 +85,8 @@ export class TimeframeConfig {
   shouldWaitBeforeAnalysis(timeframe = null) {
     const targetTimeframe = timeframe || this.timeframe;
     
-    // Verifica o EXECUTION_MODE atual em tempo real (pode ter sido alterado)
-    const currentExecutionMode = process.env.EXECUTION_MODE || 'REALTIME';
-    
-    if (currentExecutionMode !== 'ON_CANDLE_CLOSE') {
+    // Usa o executionMode da instância
+    if (this.executionMode !== 'ON_CANDLE_CLOSE') {
       return { shouldWait: false, waitTime: 0, reason: 'REALTIME mode' };
     }
 

@@ -90,8 +90,8 @@ function showGlobalTimer(waitTimeMs = null) {
 
   // Função para calcular o progresso baseado no tempo real decorrido
   const calculateProgress = () => {
-    // Calcula o tempo decorrido desde o início do período atual
-    const timeframeMs = TimeframeConfig.parseTimeframeToMs(process.env.ACCOUNT1_TIME || process.env.TIME || '5m');
+    // Usa o timeframe passado como parâmetro ou fallback para activeBotConfig
+    const timeframeMs = waitTimeMs || TimeframeConfig.parseTimeframeToMs(activeBotConfig?.time || '5m');
     const now = Date.now();
     const currentPeriodStart = Math.floor(now / timeframeMs) * timeframeMs;
     const elapsedInPeriod = now - currentPeriodStart;
@@ -121,7 +121,8 @@ function showGlobalTimer(waitTimeMs = null) {
     // Limpa a linha atual
     clearProgressLine();
     // Mostra o progresso
-    process.stdout.write(`⏳ [${activeBotConfig.botName}] Aguardando próxima análise... `);
+    const botName = activeBotConfig?.botName || 'N/A';
+    process.stdout.write(`⏳ [${botName}] Aguardando próxima análise... `);
     process.stdout.write(`[${progressBar}] ${percentage}% | Próxima: ${timeString}`);
   };
 
@@ -240,7 +241,7 @@ async function startDecision() {
   
   // SISTEMA GLOBAL DE INTERVALO BASEADO NO EXECUTION_MODE
   let nextInterval;
-  const timeframeConfig = new TimeframeConfig();
+  const timeframeConfig = new TimeframeConfig(activeBotConfig);
   
   // Usa configuração do bot para determinar o modo de execução
   const executionMode = activeBotConfig.executionMode || 'REALTIME';
@@ -299,19 +300,6 @@ async function startStops() {
 // Função para exibir status do stop loss dinâmico
 function showDynamicStopLossStatus() {
   try {
-    // TODO: Implementar método getCurrentStopLossValues() no TrailingStop
-    // const status = TrailingStop.getCurrentStopLossValues();
-    const stopLossType = process.env.STOP_LOSS_TYPE || 'USD';
-    
-    console.log('\n🛡️ STATUS DO STOP LOSS DINÂMICO');
-    console.log('='.repeat(40));
-    console.log(`📊 Tipo: ${stopLossType}`);
-    console.log(`💰 Stop Loss USD: $0.00`); // TODO: Implementar
-    console.log(`📈 Stop Loss %: 0.00%`); // TODO: Implementar
-    console.log(`🔢 Total de fechamentos: 0`); // TODO: Implementar
-    console.log(`⚠️ Fechamentos prematuros: 0`); // TODO: Implementar
-    console.log(`⏰ Fechamentos tardios: 0`); // TODO: Implementar
-    
     console.log('='.repeat(40));
   } catch (error) {
     console.error('Erro ao exibir status do stop loss:', error.message);
@@ -498,7 +486,7 @@ async function startBot() {
     startOrphanOrderMonitor();
 
     // Verifica se deve fazer análise imediatamente ou aguardar
-    const timeframeConfig = new TimeframeConfig();
+    const timeframeConfig = new TimeframeConfig(activeBotConfig);
     const waitCheck = timeframeConfig.shouldWaitBeforeAnalysis(activeBotConfig.time);
     
     console.log(`🔧 [DEBUG] Execution Mode: ${activeBotConfig.executionMode}`);

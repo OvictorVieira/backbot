@@ -494,8 +494,8 @@ class OrderController {
     try {
       // Busca informações do mercado
       // Usa credenciais do config se disponível, senão usa variáveis de ambiente
-      const apiKey = config?.apiKey || process.env.API_KEY;
-      const apiSecret = config?.apiSecret || process.env.API_SECRET;
+      const apiKey = config?.apiKey;
+      const apiSecret = config?.apiSecret;
       
       const Account = await AccountController.get({ 
         apiKey, 
@@ -1142,7 +1142,7 @@ class OrderController {
       const Account = account || await AccountController.get(config);
       const isLong = parseFloat(position.netQuantity) > 0;
       const totalQuantity = Math.abs(parseFloat(position.netQuantity));
-      const partialPercentage = Number(process.env.PARTIAL_PROFIT_PERCENTAGE || 50);
+      const partialPercentage = Number(config?.partialTakeProfitPercentage || 50);
       const quantityToClose = (totalQuantity * partialPercentage) / 100;
 
       // Busca ordens abertas para o símbolo
@@ -1326,7 +1326,7 @@ class OrderController {
       
       if (closeResult) {
         // Log detalhado da taxa de fechamento parcial
-        const fee = market.fee || process.env.FEE || 0.0004;
+        const fee = market.fee || 0.0004;
         let closePrice = closeResult?.price || position.markPrice || position.entryPrice;
         const exitValue = parseFloat(body.quantity) * parseFloat(closePrice);
         const exitFee = exitValue * fee;

@@ -130,9 +130,6 @@ export class StrategySelector {
     const selectedStrategy = await this.selectStrategy();
     this.updateEnvFile(selectedStrategy);
     
-    // Atualiza a variável de ambiente para esta sessão
-    process.env.TRADING_STRATEGY = selectedStrategy;
-    
     console.log(`\n🚀 Iniciando Backbot com estratégia: ${selectedStrategy}`);
     console.log('⏳ Aguarde...\n');
     

@@ -434,8 +434,8 @@ export class BacktestEngine {
       const { ProMaxStopLoss } = await import('../Decision/Strategies/ProMaxStopLoss.js');
       
       // Instancia as estratégias de stop loss
-      this.stopLossStrategies.set('DEFAULT', new DefaultStopLoss());
-      this.stopLossStrategies.set('PRO_MAX', new ProMaxStopLoss());
+      this.stopLossStrategies.set('DEFAULT', new DefaultStopLoss(this.config));
+      this.stopLossStrategies.set('PRO_MAX', new ProMaxStopLoss(this.config));
       
       this.logger.info('✅ Estratégias de stop loss do bot real inicializadas');
     } catch (error) {

@@ -171,7 +171,7 @@ async function recoverBot(botId, config, startTime) {
     
     // Configura o intervalo de execução baseado no executionMode
     let executionInterval;
-    const timeframeConfig = new TimeframeConfig();
+    const timeframeConfig = new TimeframeConfig(config);
     const executionMode = config.executionMode || 'REALTIME';
     
     if (executionMode === 'ON_CANDLE_CLOSE') {
@@ -613,7 +613,7 @@ async function startBot(botId) {
     
     // Configura o intervalo de execução baseado no executionMode
     let executionInterval;
-    const timeframeConfig = new TimeframeConfig();
+    const timeframeConfig = new TimeframeConfig(botConfig);
     const executionMode = botConfig.executionMode || 'REALTIME';
     
     if (executionMode === 'ON_CANDLE_CLOSE') {

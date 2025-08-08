@@ -17,16 +17,27 @@ jest.spyOn(DefaultStopLoss.prototype, 'monitorTakeProfitMinimum').mockImplementa
 
 describe('DefaultStopLoss', () => {
   let defaultStopLoss;
+  let mockConfig;
 
   beforeEach(() => {
-    defaultStopLoss = new DefaultStopLoss();
+    // Mock config para os testes
+    mockConfig = {
+      enableTrailingStop: false,
+      maxNegativePnlStopPct: -10,
+      enableTpValidation: false
+    };
+    defaultStopLoss = new DefaultStopLoss(mockConfig);
   });
 
   describe('shouldClosePosition', () => {
-    test('should return null when ENABLE_TRAILING_STOP is true', () => {
-      // Mock process.env
-      const originalEnv = process.env.ENABLE_TRAILING_STOP;
-      process.env.ENABLE_TRAILING_STOP = 'true';
+    test('should return null when enableTrailingStop is true', () => {
+      // Mock config com enableTrailingStop = true
+      const mockConfig = {
+        enableTrailingStop: true,
+        maxNegativePnlStopPct: -10,
+        enableTpValidation: false
+      };
+      const stopLossWithTrailing = new DefaultStopLoss(mockConfig);
 
       const position = {
         symbol: 'BTC_USDC_PERP',
@@ -41,18 +52,11 @@ describe('DefaultStopLoss', () => {
         }]
       };
 
-      const result = defaultStopLoss.shouldClosePosition(position, account);
+      const result = stopLossWithTrailing.shouldClosePosition(position, account, null, mockConfig);
       expect(result).toBeNull();
-
-      // Restore original env
-      process.env.ENABLE_TRAILING_STOP = originalEnv;
     });
 
     test('should return null for invalid position data', () => {
-      // Mock process.env
-      const originalEnv = process.env.ENABLE_TRAILING_STOP;
-      process.env.ENABLE_TRAILING_STOP = 'false';
-
       const position = null;
       const account = {
         markets: [{
@@ -61,18 +65,11 @@ describe('DefaultStopLoss', () => {
         }]
       };
 
-      const result = defaultStopLoss.shouldClosePosition(position, account);
+      const result = defaultStopLoss.shouldClosePosition(position, account, null, mockConfig);
       expect(result).toBeNull();
-
-      // Restore original env
-      process.env.ENABLE_TRAILING_STOP = originalEnv;
     });
 
     test('should return null for invalid account data', () => {
-      // Mock process.env
-      const originalEnv = process.env.ENABLE_TRAILING_STOP;
-      process.env.ENABLE_TRAILING_STOP = 'false';
-
       const position = {
         symbol: 'BTC_USDC_PERP',
         netQuantity: '0.1',
@@ -81,18 +78,11 @@ describe('DefaultStopLoss', () => {
       };
       const account = null;
 
-      const result = defaultStopLoss.shouldClosePosition(position, account);
+      const result = defaultStopLoss.shouldClosePosition(position, account, null, mockConfig);
       expect(result).toBeNull();
-
-      // Restore original env
-      process.env.ENABLE_TRAILING_STOP = originalEnv;
     });
 
     test('should return null for position without symbol', () => {
-      // Mock process.env
-      const originalEnv = process.env.ENABLE_TRAILING_STOP;
-      process.env.ENABLE_TRAILING_STOP = 'false';
-
       const position = {
         netQuantity: '0.1',
         avgEntryPrice: '50000',
@@ -105,11 +95,8 @@ describe('DefaultStopLoss', () => {
         }]
       };
 
-      const result = defaultStopLoss.shouldClosePosition(position, account);
+      const result = defaultStopLoss.shouldClosePosition(position, account, null, mockConfig);
       expect(result).toBeNull();
-
-      // Restore original env
-      process.env.ENABLE_TRAILING_STOP = originalEnv;
     });
 
     test('should return null for position without netQuantity', () => {
@@ -129,7 +116,7 @@ describe('DefaultStopLoss', () => {
         }]
       };
 
-      const result = defaultStopLoss.shouldClosePosition(position, account);
+      const result = defaultStopLoss.shouldClosePosition(position, account, null, mockConfig);
       expect(result).toBeNull();
 
       // Restore original env
@@ -156,7 +143,7 @@ describe('DefaultStopLoss', () => {
         }]
       };
 
-      const result = defaultStopLoss.shouldClosePosition(position, account);
+      const result = defaultStopLoss.shouldClosePosition(position, account, null, mockConfig);
       expect(result).toBeNull();
 
       // Restore original env
@@ -184,7 +171,7 @@ describe('DefaultStopLoss', () => {
         }]
       };
 
-      const result = defaultStopLoss.shouldClosePosition(position, account);
+      const result = defaultStopLoss.shouldClosePosition(position, account, null, mockConfig);
       expect(result).toBeNull();
 
       // Restore original env
@@ -215,7 +202,7 @@ describe('DefaultStopLoss', () => {
         }]
       };
 
-      const result = defaultStopLoss.shouldClosePosition(position, account);
+      const result = defaultStopLoss.shouldClosePosition(position, account, null, mockConfig);
       expect(result).toBeNull();
 
       // Restore original env
@@ -246,7 +233,7 @@ describe('DefaultStopLoss', () => {
         }]
       };
 
-      const result = defaultStopLoss.shouldClosePosition(position, account);
+      const result = defaultStopLoss.shouldClosePosition(position, account, null, mockConfig);
       
       expect(result).not.toBeNull();
       expect(result.shouldClose).toBe(true);
@@ -283,7 +270,7 @@ describe('DefaultStopLoss', () => {
         }]
       };
 
-      const result = defaultStopLoss.shouldClosePosition(position, account);
+      const result = defaultStopLoss.shouldClosePosition(position, account, null, mockConfig);
       expect(result).toBeNull();
 
       // Restore original env
@@ -321,7 +308,7 @@ describe('DefaultStopLoss', () => {
         }]
       };
 
-      const result = defaultStopLoss.shouldClosePosition(position, account);
+      const result = defaultStopLoss.shouldClosePosition(position, account, null, mockConfig);
       
       // Como o monitorTakeProfitMinimum é assíncrono mas está sendo chamado de forma síncrona,
       // o resultado será null

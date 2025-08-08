@@ -4,9 +4,10 @@ export class BaseStopLoss {
    * @param {object} position - Dados da posição
    * @param {object} account - Dados da conta
    * @param {object} marketData - Dados de mercado atuais
+   * @param {object} config - Configuração do bot
    * @returns {object|null} - Objeto com decisão de fechamento ou null se não deve fechar
    */
-  shouldClosePosition(position, account, marketData) {
+  shouldClosePosition(position, account, marketData, config = null) {
     throw new Error('shouldClosePosition must be implemented by subclass');
   }
 
@@ -39,7 +40,7 @@ export class BaseStopLoss {
    */
   async monitorTakeProfitMinimum(position, account) {
     try {
-      const ENABLE_TP_VALIDATION = process.env.ENABLE_TP_VALIDATION === 'true';
+      const ENABLE_TP_VALIDATION = this.config?.enableTpValidation === 'true';
       if (!ENABLE_TP_VALIDATION) {
         return null;
       }
@@ -55,8 +56,8 @@ export class BaseStopLoss {
         return null;
       }
 
-      const MIN_TAKE_PROFIT_PCT = Number(process.env.MIN_TAKE_PROFIT_PCT || 0.5);
-      const TP_PARTIAL_PERCENTAGE = Number(process.env.TP_PARTIAL_PERCENTAGE || 50); // % da posição para realizar
+      const MIN_TAKE_PROFIT_PCT = Number(this.config?.minTakeProfitPct || 0.5);
+      const TP_PARTIAL_PERCENTAGE = Number(this.config?.tpPartialPercentage || 50); // % da posição para realizar
       
       // Verifica se atende ao critério mínimo de take profit
       const isValidPct = pnlPct >= MIN_TAKE_PROFIT_PCT;

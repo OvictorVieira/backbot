@@ -27,8 +27,15 @@ describe('AlphaFlowStrategy - Teste de Cálculo de Ordens', () => {
         min_quantity: 0.00001
       };
 
+      // Mock config para os testes
+      const mockConfig = {
+        order1WeightPct: 50,
+        order2WeightPct: 30,
+        order3WeightPct: 20
+      };
+
       // Chama o método calculateOrders
-      const orders = strategy.calculateOrders(signal, currentPrice, atr, investmentUSD, symbol, market);
+      const orders = strategy.calculateOrders(signal, currentPrice, atr, investmentUSD, symbol, market, mockConfig);
 
       // Validações
       expect(orders).toHaveLength(3);
@@ -77,8 +84,15 @@ describe('AlphaFlowStrategy - Teste de Cálculo de Ordens', () => {
         min_quantity: 0.00001
       };
 
+      // Mock config para os testes
+      const mockConfig = {
+        order1WeightPct: 50,
+        order2WeightPct: 30,
+        order3WeightPct: 20
+      };
+
       // Chama o método calculateOrders
-      const orders = strategy.calculateOrders(signal, currentPrice, atr, investmentUSD, symbol, market);
+      const orders = strategy.calculateOrders(signal, currentPrice, atr, investmentUSD, symbol, market, mockConfig);
 
       // Validações
       expect(orders).toHaveLength(3);
@@ -122,7 +136,14 @@ describe('AlphaFlowStrategy - Teste de Cálculo de Ordens', () => {
         min_quantity: 0.0001
       };
 
-      const orders = strategy.calculateOrders(signal, currentPrice, atr, investmentUSD, symbol, market);
+      // Mock config para os testes
+      const mockConfig = {
+        order1WeightPct: 50,
+        order2WeightPct: 30,
+        order3WeightPct: 20
+      };
+
+      const orders = strategy.calculateOrders(signal, currentPrice, atr, investmentUSD, symbol, market, mockConfig);
 
       expect(orders).toHaveLength(3);
       
@@ -153,7 +174,14 @@ describe('AlphaFlowStrategy - Teste de Cálculo de Ordens', () => {
         min_quantity: 0.00001
       };
 
-      const orders = strategy.calculateOrders(signal, currentPrice, atr, investmentUSD, symbol, market);
+      // Mock config para os testes
+      const mockConfig = {
+        order1WeightPct: 50,
+        order2WeightPct: 30,
+        order3WeightPct: 20
+      };
+
+      const orders = strategy.calculateOrders(signal, currentPrice, atr, investmentUSD, symbol, market, mockConfig);
 
       expect(orders).toHaveLength(3);
       
@@ -177,7 +205,14 @@ describe('AlphaFlowStrategy - Teste de Cálculo de Ordens', () => {
         min_quantity: 0.00001
       };
 
-      const orders = strategy.calculateOrders(signal, currentPrice, atr, investmentUSD, symbol, market);
+      // Mock config para os testes
+      const mockConfig = {
+        order1WeightPct: 50,
+        order2WeightPct: 30,
+        order3WeightPct: 20
+      };
+
+      const orders = strategy.calculateOrders(signal, currentPrice, atr, investmentUSD, symbol, market, mockConfig);
 
       orders.forEach((order, index) => {
         // Valida propriedades obrigatórias

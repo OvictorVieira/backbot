@@ -1494,7 +1494,7 @@ class TrailingStop {
 
       for (const position of positions) {
         const stopLossStrategy = await this.initializeStopLoss();
-        const stopLossDecision = stopLossStrategy.shouldClosePosition(position, Account);
+        const stopLossDecision = stopLossStrategy.shouldClosePosition(position, Account, null, this.config);
 
         if (stopLossDecision && stopLossDecision.shouldClose) {
           TrailingStop.colorLogger.positionClosed(`🛑 [STOP_LOSS] ${position.symbol}: Fechando por stop loss principal - ${stopLossDecision.reason}`);

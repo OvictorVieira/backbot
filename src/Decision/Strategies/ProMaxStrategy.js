@@ -12,9 +12,9 @@ export class ProMaxStrategy extends BaseStrategy {
   analyzeSignals(data, isBTCAnalysis = false, config = null) {
     try {
       // Para estratégia PRO_MAX, usa análise ADX (prioriza config passado)
-      const ADX_LENGTH = config?.adxLength || Number(process.env.ADX_LENGTH || 14);
-      const ADX_THRESHOLD = config?.adxThreshold || Number(process.env.ADX_THRESHOLD || 20);
-      const ADX_AVERAGE_LENGTH = config?.adxAverageLength || Number(process.env.ADX_AVERAGE_LENGTH || 21);
+      const ADX_LENGTH = config?.adxLength || Number(14);
+      const ADX_THRESHOLD = config?.adxThreshold || Number(20);
+      const ADX_AVERAGE_LENGTH = config?.adxAverageLength || Number(21);
       
       const adxAnalysis = this.analyzeADX(data, ADX_LENGTH, ADX_THRESHOLD, ADX_AVERAGE_LENGTH);
       
@@ -27,21 +27,21 @@ export class ProMaxStrategy extends BaseStrategy {
       
       // Análise de validação de indicadores (prioriza config passado)
       const validationAnalysis = this.analyzeValidations(data, {
-        useRSI: config?.useRsiValidation === 'true' || process.env.USE_RSI_VALIDATION === 'true',
-        useStoch: config?.useStochValidation === 'true' || process.env.USE_STOCH_VALIDATION === 'true',
-        useMACD: config?.useMacdValidation === 'true' || process.env.USE_MACD_VALIDATION === 'true',
-        rsiLength: config?.rsiLength || Number(process.env.RSI_LENGTH || 14),
-        rsiAverageLength: config?.rsiAverageLength || Number(process.env.RSI_AVERAGE_LENGTH || 14),
-        rsiBullThreshold: config?.rsiBullThreshold || Number(process.env.RSI_BULL_THRESHOLD || 45),
-        rsiBearThreshold: config?.rsiBearThreshold || Number(process.env.RSI_BEAR_THRESHOLD || 55),
-        stochKLength: config?.stochKLength || Number(process.env.STOCH_K_LENGTH || 14),
-        stochDLength: config?.stochDLength || Number(process.env.STOCH_D_LENGTH || 3),
-        stochSmooth: config?.stochSmooth || Number(process.env.STOCH_SMOOTH || 3),
-        stochBullThreshold: config?.stochBullThreshold || Number(process.env.STOCH_BULL_THRESHOLD || 45),
-        stochBearThreshold: config?.stochBearThreshold || Number(process.env.STOCH_BEAR_THRESHOLD || 55),
-        macdFastLength: config?.macdFastLength || Number(process.env.MACD_FAST_LENGTH || 12),
-        macdSlowLength: config?.macdSlowLength || Number(process.env.MACD_SLOW_LENGTH || 26),
-        macdSignalLength: config?.macdSignalLength || Number(process.env.MACD_SIGNAL_LENGTH || 9)
+        useRSI: config?.useRsiValidation === 'true',
+        useStoch: config?.useStochValidation === 'true',
+        useMACD: config?.useMacdValidation === 'true',
+        rsiLength: config?.rsiLength || Number(14),
+        rsiAverageLength: config?.rsiAverageLength || Number(14),
+        rsiBullThreshold: config?.rsiBullThreshold || Number(45),
+        rsiBearThreshold: config?.rsiBearThreshold || Number(55),
+        stochKLength: config?.stochKLength || Number(14),
+        stochDLength: config?.stochDLength || Number(3),
+        stochSmooth: config?.stochSmooth || Number(3),
+        stochBullThreshold: config?.stochBullThreshold || Number(45),
+        stochBearThreshold: config?.stochBearThreshold || Number(55),
+        macdFastLength: config?.macdFastLength || Number(12),
+        macdSlowLength: config?.macdSlowLength || Number(26),
+        macdSignalLength: config?.macdSignalLength || Number(9)
       });
       
       // Calcula confluências
@@ -53,7 +53,7 @@ export class ProMaxStrategy extends BaseStrategy {
       const bearSignalLevel = this.getSignalLevel(bearConfluences);
       
       // Verifica se deve ignorar sinais BRONZE
-      const IGNORE_BRONZE = process.env.IGNORE_BRONZE_SIGNALS === 'true';
+      const IGNORE_BRONZE = config?.ignoreBronzeSignals === 'true';
       const isValidBullSignal = !IGNORE_BRONZE || bullSignalLevel !== 'BRONZE';
       const isValidBearSignal = !IGNORE_BRONZE || bearSignalLevel !== 'BRONZE';
       
@@ -71,21 +71,21 @@ export class ProMaxStrategy extends BaseStrategy {
         
         // Detalha quais indicadores contribuíram para o sinal
         const validationAnalysis = this.analyzeValidations(data, {
-          useRSI: process.env.USE_RSI_VALIDATION === 'true',
-          useStoch: process.env.USE_STOCH_VALIDATION === 'true',
-          useMACD: process.env.USE_MACD_VALIDATION === 'true',
-          rsiLength: Number(process.env.RSI_LENGTH || 14),
-          rsiAverageLength: Number(process.env.RSI_AVERAGE_LENGTH || 14),
-          rsiBullThreshold: Number(process.env.RSI_BULL_THRESHOLD || 45),
-          rsiBearThreshold: Number(process.env.RSI_BEAR_THRESHOLD || 55),
-          stochKLength: Number(process.env.STOCH_K_LENGTH || 14),
-          stochDLength: Number(process.env.STOCH_D_LENGTH || 3),
-          stochSmooth: Number(process.env.STOCH_SMOOTH || 3),
-          stochBullThreshold: Number(process.env.STOCH_BULL_THRESHOLD || 45),
-          stochBearThreshold: Number(process.env.STOCH_BEAR_THRESHOLD || 55),
-          macdFastLength: Number(process.env.MACD_FAST_LENGTH || 12),
-          macdSlowLength: Number(process.env.MACD_SLOW_LENGTH || 26),
-          macdSignalLength: Number(process.env.MACD_SIGNAL_LENGTH || 9)
+          useRSI: config?.useRsiValidation === 'true',
+          useStoch: config?.useStochValidation === 'true',
+          useMACD: config?.useMacdValidation === 'true',
+          rsiLength: Number(14),
+          rsiAverageLength: Number(14),
+          rsiBullThreshold: Number(45),
+          rsiBearThreshold: Number(55),
+          stochKLength: Number(14),
+          stochDLength: Number(3),
+          stochSmooth: Number(3),
+          stochBullThreshold: Number(45),
+          stochBearThreshold: Number(55),
+          macdFastLength: Number(12),
+          macdSlowLength: Number(26),
+          macdSignalLength: Number(9)
         });
         
         if (validationAnalysis.rsi.bullish) analysisDetails.push(`✓ RSI: BULLISH`);
@@ -101,21 +101,21 @@ export class ProMaxStrategy extends BaseStrategy {
         
         // Detalha quais indicadores contribuíram para o sinal
         const validationAnalysis = this.analyzeValidations(data, {
-          useRSI: process.env.USE_RSI_VALIDATION === 'true',
-          useStoch: process.env.USE_STOCH_VALIDATION === 'true',
-          useMACD: process.env.USE_MACD_VALIDATION === 'true',
-          rsiLength: Number(process.env.RSI_LENGTH || 14),
-          rsiAverageLength: Number(process.env.RSI_AVERAGE_LENGTH || 14),
-          rsiBullThreshold: Number(process.env.RSI_BULL_THRESHOLD || 45),
-          rsiBearThreshold: Number(process.env.RSI_BEAR_THRESHOLD || 55),
-          stochKLength: Number(process.env.STOCH_K_LENGTH || 14),
-          stochDLength: Number(process.env.STOCH_D_LENGTH || 3),
-          stochSmooth: Number(process.env.STOCH_SMOOTH || 3),
-          stochBullThreshold: Number(process.env.STOCH_BULL_THRESHOLD || 45),
-          stochBearThreshold: Number(process.env.STOCH_BEAR_THRESHOLD || 55),
-          macdFastLength: Number(process.env.MACD_FAST_LENGTH || 12),
-          macdSlowLength: Number(process.env.MACD_SLOW_LENGTH || 26),
-          macdSignalLength: Number(process.env.MACD_SIGNAL_LENGTH || 9)
+          useRSI: config?.useRsiValidation === 'true',
+          useStoch: config?.useStochValidation === 'true',
+          useMACD: config?.useMacdValidation === 'true',
+          rsiLength: Number(14),
+          rsiAverageLength: Number(14),
+          rsiBullThreshold: Number(45),
+          rsiBearThreshold: Number(55),
+          stochKLength: Number(14),
+          stochDLength: Number(3),
+          stochSmooth: Number(3),
+          stochBullThreshold: Number(45),
+          stochBearThreshold: Number(55),
+          macdFastLength: Number(12),
+          macdSlowLength: Number(26),
+          macdSignalLength: Number(9)
         });
         
         if (validationAnalysis.rsi.bearish) analysisDetails.push(`✓ RSI: BEARISH`);
@@ -129,35 +129,35 @@ export class ProMaxStrategy extends BaseStrategy {
         
         // Detalha cada indicador individualmente
         const validationAnalysis = this.analyzeValidations(data, {
-          useRSI: process.env.USE_RSI_VALIDATION === 'true',
-          useStoch: process.env.USE_STOCH_VALIDATION === 'true',
-          useMACD: process.env.USE_MACD_VALIDATION === 'true',
-          rsiLength: Number(process.env.RSI_LENGTH || 14),
-          rsiAverageLength: Number(process.env.RSI_AVERAGE_LENGTH || 14),
-          rsiBullThreshold: Number(process.env.RSI_BULL_THRESHOLD || 45),
-          rsiBearThreshold: Number(process.env.RSI_BEAR_THRESHOLD || 55),
-          stochKLength: Number(process.env.STOCH_K_LENGTH || 14),
-          stochDLength: Number(process.env.STOCH_D_LENGTH || 3),
-          stochSmooth: Number(process.env.STOCH_SMOOTH || 3),
-          stochBullThreshold: Number(process.env.STOCH_BULL_THRESHOLD || 45),
-          stochBearThreshold: Number(process.env.STOCH_BEAR_THRESHOLD || 55),
-          macdFastLength: Number(process.env.MACD_FAST_LENGTH || 12),
-          macdSlowLength: Number(process.env.MACD_SLOW_LENGTH || 26),
-          macdSignalLength: Number(process.env.MACD_SIGNAL_LENGTH || 9)
+          useRSI: config?.useRsiValidation === 'true',
+          useStoch: config?.useStochValidation === 'true',
+          useMACD: config?.useMacdValidation === 'true',
+          rsiLength: Number(14),
+          rsiAverageLength: Number(14),
+          rsiBullThreshold: Number(45),
+          rsiBearThreshold: Number(55),
+          stochKLength: Number(14),
+          stochDLength: Number(3),
+          stochSmooth: Number(3),
+          stochBullThreshold: Number(45),
+          stochBearThreshold: Number(55),
+          macdFastLength: Number(12),
+          macdSlowLength: Number(26),
+          macdSignalLength: Number(9)
         });
         
         // Log detalhado dos indicadores
-        const useRsiValidation = config?.useRsiValidation === 'true' || process.env.USE_RSI_VALIDATION === 'true';
-        const useStochValidation = config?.useStochValidation === 'true' || process.env.USE_STOCH_VALIDATION === 'true';
-        const useMacdValidation = config?.useMacdValidation === 'true' || process.env.USE_MACD_VALIDATION === 'true';
+        const useRsiValidation = config?.useRsiValidation === 'true';
+        const useStochValidation = config?.useStochValidation === 'true';
+        const useMacdValidation = config?.useMacdValidation === 'true';
         
         if (useRsiValidation && data.rsi) {
           const rsi = data.rsi.value;
           const rsiAvg = data.rsi.avg || rsi;
           const rsiPrev = data.rsi.prev || rsi;
           const rsiAvgPrev = data.rsi.avgPrev || rsiAvg;
-          const rsiBullThreshold = config?.rsiBullThreshold || Number(process.env.RSI_BULL_THRESHOLD || 45);
-          const rsiBearThreshold = config?.rsiBearThreshold || Number(process.env.RSI_BEAR_THRESHOLD || 55);
+          const rsiBullThreshold = config?.rsiBullThreshold || Number(45);
+          const rsiBearThreshold = config?.rsiBearThreshold || Number(55);
           const rsiBullish = rsi > rsiAvg && rsi < rsiBullThreshold && rsiPrev <= rsiAvgPrev;
           const rsiBearish = rsi < rsiAvg && rsi > rsiBearThreshold && rsiPrev >= rsiAvgPrev;
           analysisDetails.push(`RSI: ${rsi?.toFixed(1) || 'N/A'} (${rsiBullish ? 'BULLISH' : rsiBearish ? 'BEARISH' : 'NEUTRO'})`);
@@ -174,8 +174,8 @@ export class ProMaxStrategy extends BaseStrategy {
           const stochD = data.stoch.d;
           const stochKPrev = data.stoch.kPrev || stochK;
           const stochDPrev = data.stoch.dPrev || stochD;
-          const stochBullThreshold = config?.stochBullThreshold || Number(process.env.STOCH_BULL_THRESHOLD || 45);
-          const stochBearThreshold = config?.stochBearThreshold || Number(process.env.STOCH_BEAR_THRESHOLD || 55);
+          const stochBullThreshold = config?.stochBullThreshold || Number(45);
+          const stochBearThreshold = config?.stochBearThreshold || Number(55);
           const stochBullish = stochK > stochD && stochK < stochBullThreshold && stochKPrev <= stochDPrev;
           const stochBearish = stochK < stochD && stochK > stochBearThreshold && stochKPrev >= stochDPrev;
           analysisDetails.push(`Stoch: K=${stochK?.toFixed(1) || 'N/A'}, D=${stochD?.toFixed(1) || 'N/A'} (${stochBullish ? 'BULLISH' : stochBearish ? 'BEARISH' : 'NEUTRO'})`);
@@ -239,33 +239,33 @@ export class ProMaxStrategy extends BaseStrategy {
       }
 
       // Configurações da estratégia PRO_MAX (prioriza config passado, depois variáveis de ambiente)
-      const IGNORE_BRONZE = config?.ignoreBronzeSignals === 'true' || process.env.IGNORE_BRONZE_SIGNALS === 'true';
-      const ADX_LENGTH = config?.adxLength || Number(process.env.ADX_LENGTH || 14);
-      const ADX_THRESHOLD = config?.adxThreshold || Number(process.env.ADX_THRESHOLD || 20);
-      const ADX_AVERAGE_LENGTH = config?.adxAverageLength || Number(process.env.ADX_AVERAGE_LENGTH || 21);
+      const IGNORE_BRONZE = config?.ignoreBronzeSignals === 'true';
+      const ADX_LENGTH = config?.adxLength || Number(14);
+      const ADX_THRESHOLD = config?.adxThreshold || Number(20);
+      const ADX_AVERAGE_LENGTH = config?.adxAverageLength || Number(21);
       
       // Configurações de validação (prioriza config passado)
-      const USE_RSI = config?.useRsiValidation === 'true' || process.env.USE_RSI_VALIDATION === 'true';
-      const USE_STOCH = config?.useStochValidation === 'true' || process.env.USE_STOCH_VALIDATION === 'true';
-      const USE_MACD = config?.useMacdValidation === 'true' || process.env.USE_MACD_VALIDATION === 'true';
+      const USE_RSI = config?.useRsiValidation === 'true';
+      const USE_STOCH = config?.useStochValidation === 'true';
+      const USE_MACD = config?.useMacdValidation === 'true';
       
       // Configurações RSI (prioriza config passado)
-      const RSI_LENGTH = config?.rsiLength || Number(process.env.RSI_LENGTH || 14);
-      const RSI_AVERAGE_LENGTH = config?.rsiAverageLength || Number(process.env.RSI_AVERAGE_LENGTH || 14);
-      const RSI_BULL_THRESHOLD = config?.rsiBullThreshold || Number(process.env.RSI_BULL_THRESHOLD || 45);
-      const RSI_BEAR_THRESHOLD = config?.rsiBearThreshold || Number(process.env.RSI_BEAR_THRESHOLD || 55);
+      const RSI_LENGTH = config?.rsiLength || Number(14);
+      const RSI_AVERAGE_LENGTH = config?.rsiAverageLength || Number(14);
+      const RSI_BULL_THRESHOLD = config?.rsiBullThreshold || Number(45);
+      const RSI_BEAR_THRESHOLD = config?.rsiBearThreshold || Number(55);
       
       // Configurações Stochastic (prioriza config passado)
-      const STOCH_K_LENGTH = config?.stochKLength || Number(process.env.STOCH_K_LENGTH || 14);
-      const STOCH_D_LENGTH = config?.stochDLength || Number(process.env.STOCH_D_LENGTH || 3);
-      const STOCH_SMOOTH = config?.stochSmooth || Number(process.env.STOCH_SMOOTH || 3);
-      const STOCH_BULL_THRESHOLD = config?.stochBullThreshold || Number(process.env.STOCH_BULL_THRESHOLD || 45);
-      const STOCH_BEAR_THRESHOLD = config?.stochBearThreshold || Number(process.env.STOCH_BEAR_THRESHOLD || 55);
+      const STOCH_K_LENGTH = config?.stochKLength || Number(14);
+      const STOCH_D_LENGTH = config?.stochDLength || Number(3);
+      const STOCH_SMOOTH = config?.stochSmooth || Number(3);
+      const STOCH_BULL_THRESHOLD = config?.stochBullThreshold || Number(45);
+      const STOCH_BEAR_THRESHOLD = config?.stochBearThreshold || Number(55);
       
       // Configurações MACD (prioriza config passado)
-      const MACD_FAST_LENGTH = config?.macdFastLength || Number(process.env.MACD_FAST_LENGTH || 12);
-      const MACD_SLOW_LENGTH = config?.macdSlowLength || Number(process.env.MACD_SLOW_LENGTH || 26);
-      const MACD_SIGNAL_LENGTH = config?.macdSignalLength || Number(process.env.MACD_SIGNAL_LENGTH || 9);
+      const MACD_FAST_LENGTH = config?.macdFastLength || Number(12);
+      const MACD_SLOW_LENGTH = config?.macdSlowLength || Number(26);
+      const MACD_SIGNAL_LENGTH = config?.macdSignalLength || Number(9);
 
       // Análise ADX
       const adxAnalysis = this.analyzeADX(data, ADX_LENGTH, ADX_THRESHOLD, ADX_AVERAGE_LENGTH);
@@ -605,11 +605,11 @@ export class ProMaxStrategy extends BaseStrategy {
   calculateStopAndMultipleTargets(data, price, action, config = null) {
     try {
       // Configurações das zonas de objetivo - Configuráveis via .env
-      const ATR_ZONE_MULTIPLIER = Number(process.env.ATR_ZONE_MULTIPLIER || 1.5);
-      const SL_ATR_MULTIPLIER = Number(process.env.SL_ATR_MULTIPLIER || 6.5);
+      const ATR_ZONE_MULTIPLIER = Number(config?.atrZoneMultiplier || 1.5);
+      const SL_ATR_MULTIPLIER = Number(config?.slAtrMultiplier || 6.5);
       
       // Usa configuração passada ou do .env
-      const MAX_TARGETS_PER_ORDER = config?.maxTargetsPerOrder || Number(process.env.MAX_TARGETS_PER_ORDER || 20);
+      const MAX_TARGETS_PER_ORDER = config?.maxTargetsPerOrder || Number(20);
       
       const adjustedATRMultiplier = ATR_ZONE_MULTIPLIER;
       

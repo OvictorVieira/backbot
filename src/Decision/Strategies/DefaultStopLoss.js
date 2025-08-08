@@ -26,11 +26,13 @@ export class DefaultStopLoss extends BaseStopLoss {
    * @param {object} position - Dados da posição
    * @param {object} account - Dados da conta
    * @param {object} marketData - Dados de mercado atuais
+   * @param {object} config - Configuração do bot
    * @returns {object|null} - Objeto com decisão de fechamento ou null se não deve fechar
    */
-  shouldClosePosition(position, account) {
+  shouldClosePosition(position, account, marketData, config = null) {
     try {
-      const enableTrailingStop = process.env.ENABLE_TRAILING_STOP === 'true';
+      // Usa config.enableTrailingStop se disponível, senão assume false
+      const enableTrailingStop = this.config?.enableTrailingStop === true;
 
       if (enableTrailingStop) {
         return null;
@@ -43,9 +45,9 @@ export class DefaultStopLoss extends BaseStopLoss {
       }
 
       // Configurações do stop loss - usar configurações do bot ou fallback para variável de ambiente
-      const MAX_NEGATIVE_PNL_STOP_PCT = Number(this.config?.maxNegativePnlStopPct || process.env.MAX_NEGATIVE_PNL_STOP_PCT || -10);
+      const MAX_NEGATIVE_PNL_STOP_PCT = Number(this.config?.maxNegativePnlStopPct || -10);
 
-      const ENABLE_TP_VALIDATION = process.env.ENABLE_TP_VALIDATION === 'true';
+      const ENABLE_TP_VALIDATION = this.config?.enableTpValidation === 'true';
       
       // Verifica se os valores são válidos
       if (isNaN(MAX_NEGATIVE_PNL_STOP_PCT)) {
