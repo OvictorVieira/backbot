@@ -61,6 +61,7 @@ interface BotCardProps {
   config: BotConfig;
   isRunning: boolean;
   isLoading?: boolean;
+  isRestarting?: boolean; // Novo estado para reinicialização
   botStatus?: any; // Status completo do bot incluindo nextValidationAt
   onStart: (strategyName: string) => void;
   onStop: (strategyName: string) => void;
@@ -129,6 +130,7 @@ export const BotCard: React.FC<BotCardProps> = ({
   config,
   isRunning,
   isLoading = false,
+  isRestarting = false,
   botStatus,
   onStart,
   onStop,
@@ -299,6 +301,21 @@ export const BotCard: React.FC<BotCardProps> = ({
   };
 
   const getActionButton = () => {
+    // Se está reiniciando, mostrar botão "Reiniciando..."
+    if (isRestarting) {
+      return (
+        <Button 
+          variant="default" 
+          size="sm" 
+          disabled={true}
+          className="flex items-center gap-2 bg-yellow-500 hover:bg-yellow-600"
+        >
+          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+          Reiniciando...
+        </Button>
+      );
+    }
+
     if (isRunning) {
       return (
         <Button 

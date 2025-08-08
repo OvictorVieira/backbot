@@ -63,6 +63,7 @@ export function DashboardPage() {
   const [selectedStrategy, setSelectedStrategy] = useState<string>('')
   const [showCreateBot, setShowCreateBot] = useState(false)
   const [loadingBots, setLoadingBots] = useState<Record<string, boolean>>({})
+  const [restartingBots, setRestartingBots] = useState<Record<string, boolean>>({})
 
   const [errorModal, setErrorModal] = useState<{
     isOpen: boolean;
@@ -192,6 +193,15 @@ export function DashboardPage() {
     try {
       console.log('🔄 Iniciando atualização do bot:', config.strategyName);
       
+      // Verificar se o bot estava rodando antes da atualização
+      const currentStatus = botStatuses.find(s => s.strategyName === config.strategyName);
+      const wasRunning = currentStatus?.isRunning || false;
+      
+      if (wasRunning) {
+        console.log('🔄 Bot estava rodando, definindo estado de reinicialização...');
+        setRestartingBots(prev => ({ ...prev, [config.strategyName]: true }));
+      }
+      
       // Salvar configuração na API
       console.log('💾 Salvando configuração na API...');
       const saveResponse = await axios.post(`${API_BASE_URL}/api/configs`, {
@@ -199,6 +209,12 @@ export function DashboardPage() {
         config: config
       })
       console.log('✅ Configuração salva:', saveResponse.data);
+      
+      // Se o bot estava rodando, aguardar um pouco para o reinício
+      if (wasRunning) {
+        console.log('⏳ Aguardando reinicialização do bot...');
+        await new Promise(resolve => setTimeout(resolve, 3000)); // Aguarda 3 segundos
+      }
       
       // Recarregar configurações após salvar
       console.log('🔄 Recarregando configurações...');
@@ -229,6 +245,9 @@ export function DashboardPage() {
         }
       }
       
+      // Limpar estado de reinicialização
+      setRestartingBots(prev => ({ ...prev, [config.strategyName]: false }));
+      
       setShowConfigForm(false)
       setSelectedStrategy('')
       console.log('✅ Modal fechado e estratégia limpa');
@@ -236,6 +255,9 @@ export function DashboardPage() {
     } catch (error: any) {
       console.error('❌ Erro ao salvar configuração:', error);
       console.error('Detalhes do erro:', error.response?.data || error.message);
+      
+      // Limpar estado de reinicialização em caso de erro
+      setRestartingBots(prev => ({ ...prev, [config.strategyName]: false }));
       
       let errorMessage = 'Erro ao salvar as configurações do bot. Tente novamente.';
       if (error.response?.data?.error) {
@@ -491,6 +513,7 @@ export function DashboardPage() {
                 config={config}
                 isRunning={status?.isRunning || false}
                 isLoading={loadingBots[config.strategyName] || false}
+                isRestarting={restartingBots[config.strategyName] || false}
                 botStatus={status}
                 onStart={() => handleStartBot(config.strategyName)}
                 onStop={() => handleStopBot(config.strategyName)}
