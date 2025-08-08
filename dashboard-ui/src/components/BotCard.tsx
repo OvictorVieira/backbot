@@ -300,6 +300,48 @@ export const BotCard: React.FC<BotCardProps> = ({
     return profitRatio.toString();
   };
 
+  // Função para determinar a cor do Win Rate
+  const getWinRateColor = (winRate: number) => {
+    if (winRate >= 50) {
+      return 'text-green-600';
+    } else if (winRate >= 30) {
+      return 'text-orange-600';
+    } else {
+      return 'text-red-600';
+    }
+  };
+
+  // Função para determinar a cor do Profit Factor
+  const getProfitFactorColor = (profitRatio: string | number) => {
+    if (profitRatio === "∞" || profitRatio === "Infinity") {
+      return 'text-green-600';
+    }
+    
+    if (typeof profitRatio === 'number') {
+      if (profitRatio >= 2.0) {
+        return 'text-green-600';
+      } else if (profitRatio >= 1.0) {
+        return 'text-orange-600';
+      } else {
+        return 'text-red-600';
+      }
+    }
+    
+    // Se for string, tentar converter para número
+    const numValue = parseFloat(profitRatio.toString());
+    if (!isNaN(numValue)) {
+      if (numValue >= 2.0) {
+        return 'text-green-600';
+      } else if (numValue >= 1.0) {
+        return 'text-orange-600';
+      } else {
+        return 'text-red-600';
+      }
+    }
+    
+    return 'text-red-600'; // Fallback
+  };
+
   const getActionButton = () => {
     // Se está reiniciando, mostrar botão "Reiniciando..."
     if (isRestarting) {
@@ -459,7 +501,7 @@ export const BotCard: React.FC<BotCardProps> = ({
                     </div>
                   </div>
                 </div>
-                <p className="text-purple-600 font-bold">{tradingStats.winRate}%</p>
+                <p className={`font-bold ${getWinRateColor(tradingStats.winRate)}`}>{tradingStats.winRate}%</p>
               </div>
               
               <div className="bg-orange-50 dark:bg-orange-950/20 p-2 rounded">
@@ -473,7 +515,7 @@ export const BotCard: React.FC<BotCardProps> = ({
                     </div>
                   </div>
                 </div>
-                <p className={`font-bold ${tradingStats.profitRatio === "∞" ? 'text-green-600' : 'text-red-600'}`}>
+                <p className={`font-bold ${getProfitFactorColor(tradingStats.profitRatio)}`}>
                   {formatProfitRatio(tradingStats.profitRatio)}
                 </p>
               </div>
