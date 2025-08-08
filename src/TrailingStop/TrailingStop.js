@@ -40,8 +40,8 @@ class TrailingStop {
   // Instância do ColorLogger para logs coloridos
   static colorLogger = new ColorLogger('TRAILING', 'STOP');
 
-  // Caminho para o arquivo de persistência
-  static persistenceFilePath = path.join(process.cwd(), 'persistence', 'trailing_state.json');
+  // Database service instance
+  static dbService = null;
 
   /**
    * Obtém a chave única do bot
@@ -79,87 +79,95 @@ class TrailingStop {
     return TrailingStop.trailingModeLoggedByBot.get(botKey);
   }
 
-  // Controle de debounce para evitar salvamentos excessivos
-  static saveTimeout = null;
-  static lastSaveTime = 0;
-  static saveDebounceMs = 5000; // Salva no máximo a cada 5 segundos
-
   /**
-   * Salva o estado do trailing stop em arquivo JSON com debounce
+   * Carrega o estado do trailing stop da base de dados
    */
-  static async saveStateToFile() {
+  static async loadStateFromDB(dbService) {
     try {
-      const now = Date.now();
+      if (!dbService || !dbService.isInitialized()) {
+        throw new Error('Database service must be initialized before loading state');
+      }
+
+      TrailingStop.dbService = dbService;
+
+      // Load all trailing states from database
+      const results = await dbService.getAll('SELECT symbol, state FROM trailing_state');
       
-      // Se tentou salvar muito recentemente, agenda para depois
-      if (now - TrailingStop.lastSaveTime < TrailingStop.saveDebounceMs) {
-        // Limpa timeout anterior se existir
-        if (TrailingStop.saveTimeout) {
-          clearTimeout(TrailingStop.saveTimeout);
+      // Clear existing state
+      TrailingStop.trailingStateByBot.clear();
+      
+      let totalStates = 0;
+      
+      for (const row of results) {
+        try {
+          const state = JSON.parse(row.state);
+          const symbol = row.symbol;
+          
+          // For now, we'll store all states in a single bot context
+          // This can be enhanced later to support multiple bots
+          const botKey = 'bot_default';
+          if (!TrailingStop.trailingStateByBot.has(botKey)) {
+            TrailingStop.trailingStateByBot.set(botKey, new Map());
+          }
+          
+          const trailingStateMap = TrailingStop.trailingStateByBot.get(botKey);
+          trailingStateMap.set(symbol, state);
+          totalStates++;
+          
+          console.log(`📊 [PERSISTENCE] ${botKey} - ${symbol}: Trailing Stop: $${state.trailingStopPrice?.toFixed(4) || 'N/A'}, Ativo: ${state.activated}`);
+        } catch (error) {
+          console.error(`❌ [PERSISTENCE] Error parsing state for ${row.symbol}:`, error.message);
         }
-        
-        // Agenda novo salvamento
-        TrailingStop.saveTimeout = setTimeout(async () => {
-          await TrailingStop.saveStateToFile();
-        }, TrailingStop.saveDebounceMs - (now - TrailingStop.lastSaveTime));
-        
-        return;
       }
       
-      TrailingStop.lastSaveTime = now;
+      console.log(`📂 [PERSISTENCE] Estado do trailing stop carregado: ${totalStates} posições da base de dados`);
       
-      // Converte o estado por bot para um formato serializável
-      const serializableState = {};
-      for (const [botKey, trailingStateMap] of TrailingStop.trailingStateByBot.entries()) {
-        serializableState[botKey] = Array.from(trailingStateMap.entries());
-      }
-      
-      const dir = path.dirname(TrailingStop.persistenceFilePath);
-      await fs.mkdir(dir, { recursive: true });
-      
-      await fs.writeFile(TrailingStop.persistenceFilePath, JSON.stringify(serializableState, null, 2));
-      
-      const totalStates = Object.values(serializableState).reduce((total, states) => total + states.length, 0);
-      TrailingStop.debug(`💾 [PERSISTENCE] Estado do trailing stop salvo: ${totalStates} posições em ${Object.keys(serializableState).length} bots`);
     } catch (error) {
-      console.error(`❌ [PERSISTENCE] Erro ao salvar estado do trailing stop:`, error.message);
+      console.error(`❌ [PERSISTENCE] Erro ao carregar estado do trailing stop:`, error.message);
+      console.log(`🔄 [PERSISTENCE] Iniciando com estado vazio devido ao erro`);
+      TrailingStop.trailingStateByBot.clear();
     }
   }
 
   /**
-   * Carrega o estado do trailing stop do arquivo JSON.
+   * Salva o estado do trailing stop na base de dados
    */
-  static async loadStateFromFile() {
+  static async saveStateToDB(symbol, state) {
     try {
-      try {
-        await fs.access(TrailingStop.persistenceFilePath);
-      } catch (error) {
-        console.log(`ℹ️ [PERSISTENCE] Arquivo de estado não encontrado, iniciando com estado vazio`);
+      if (!TrailingStop.dbService || !TrailingStop.dbService.isInitialized()) {
+        console.error(`❌ [PERSISTENCE] Database service not initialized, cannot save state`);
         return;
       }
+
+      await TrailingStop.dbService.run(
+        'INSERT OR REPLACE INTO trailing_state (symbol, state, updatedAt) VALUES (?, ?, ?)',
+        [symbol, JSON.stringify(state), new Date().toISOString()]
+      );
       
-      const fileContent = await fs.readFile(TrailingStop.persistenceFilePath, 'utf8');
-      const serializableState = JSON.parse(fileContent);
-      
-      // Converte o estado serializado de volta para o formato por bot
-      TrailingStop.trailingStateByBot.clear();
-      for (const [botKey, statesArray] of Object.entries(serializableState)) {
-        const trailingStateMap = new Map(statesArray);
-        TrailingStop.trailingStateByBot.set(botKey, trailingStateMap);
-      }
-      
-      const totalStates = Object.values(serializableState).reduce((total, states) => total + states.length, 0);
-      console.log(`📂 [PERSISTENCE] Estado do trailing stop carregado: ${totalStates} posições em ${Object.keys(serializableState).length} bots`);
-      
-      for (const [botKey, statesArray] of Object.entries(serializableState)) {
-        for (const [symbol, state] of statesArray) {
-          console.log(`📊 [PERSISTENCE] ${botKey} - ${symbol}: Trailing Stop: $${state.trailingStopPrice?.toFixed(4) || 'N/A'}, Ativo: ${state.activated}`);
-        }
-      }
+      TrailingStop.debug(`💾 [PERSISTENCE] Estado do trailing stop salvo para ${symbol}`);
     } catch (error) {
-      console.error(`❌ [PERSISTENCE] Erro ao carregar estado do trailing stop:`, error.message);
-      console.log(`🔄 [PERSISTENCE] Iniciando com estado vazio devido ao erro`);
-      TrailingStop.trailingState = new Map();
+      console.error(`❌ [PERSISTENCE] Erro ao salvar estado do trailing stop para ${symbol}:`, error.message);
+    }
+  }
+
+  /**
+   * Limpa o estado do trailing stop da base de dados
+   */
+  static async clearStateFromDB(symbol) {
+    try {
+      if (!TrailingStop.dbService || !TrailingStop.dbService.isInitialized()) {
+        console.error(`❌ [PERSISTENCE] Database service not initialized, cannot clear state`);
+        return;
+      }
+
+      await TrailingStop.dbService.run(
+        'DELETE FROM trailing_state WHERE symbol = ?',
+        [symbol]
+      );
+      
+      TrailingStop.debug(`🗑️ [PERSISTENCE] Estado do trailing stop removido para ${symbol}`);
+    } catch (error) {
+      console.error(`❌ [PERSISTENCE] Erro ao limpar estado do trailing stop para ${symbol}:`, error.message);
     }
   }
 
@@ -203,7 +211,12 @@ class TrailingStop {
       
       if (cleanedStates > 0) {
         console.log(`💾 [CLEANUP] Salvando estado limpo com ${cleanedStates} estados removidos...`);
-        await TrailingStop.saveStateToFile();
+        // Save all remaining states to database
+        for (const [botKey, trailingStateMap] of TrailingStop.trailingStateByBot.entries()) {
+          for (const [symbol, state] of trailingStateMap.entries()) {
+            await TrailingStop.saveStateToDB(symbol, state);
+          }
+        }
         console.log(`✅ [CLEANUP] Limpeza concluída: ${cleanedStates} estados obsoletos removidos`);
       } else {
         console.log(`ℹ️ [CLEANUP] Nenhum estado obsoleto encontrado`);
@@ -218,8 +231,9 @@ class TrailingStop {
    * Preenche o estado do Trailing Stop para posições abertas existentes
    * que não possuem estado inicial (migração automática)
    * @param {object} config - Configurações específicas do bot
+   * @param {DatabaseService} dbService - Database service instance
    */
-  static async backfillStateForOpenPositions(config = null) {
+  static async backfillStateForOpenPositions(config = null, dbService = null) {
     try {
       console.log(`🔄 [MIGRATION] Iniciando migração do Trailing Stop...`);
       
@@ -352,11 +366,28 @@ class TrailingStop {
       }
 
       if (newStatesCreated > 0) {
-        console.log(`💾 [MIGRATION] Salvando ${newStatesCreated} estados frescos no arquivo...`);
-        await TrailingStop.saveStateToFile();
+        console.log(`💾 [MIGRATION] Salvando ${newStatesCreated} estados frescos na base de dados...`);
+        // Save all states to database using the provided dbService
+        if (dbService && dbService.isInitialized()) {
+          for (const [botKey, trailingStateMap] of TrailingStop.trailingStateByBot.entries()) {
+            for (const [symbol, state] of trailingStateMap.entries()) {
+              await dbService.run(
+                'INSERT OR REPLACE INTO trailing_state (symbol, state, updatedAt) VALUES (?, ?, ?)',
+                [symbol, JSON.stringify(state), new Date().toISOString()]
+              );
+            }
+          }
+        } else {
+          // Fallback to the static method
+          for (const [botKey, trailingStateMap] of TrailingStop.trailingStateByBot.entries()) {
+            for (const [symbol, state] of trailingStateMap.entries()) {
+              await TrailingStop.saveStateToDB(symbol, state);
+            }
+          }
+        }
         console.log(`✅ [MIGRATION] Migração concluída: ${newStatesCreated} estados criados com dados atuais`);
       } else {
-        console.log(`ℹ️ [MIGRATION] Nenhum novo estado necessário - arquivo limpo e atualizado`);
+        console.log(`ℹ️ [MIGRATION] Nenhum novo estado necessário - base de dados limpa e atualizada`);
       }
 
     } catch (error) {
@@ -420,7 +451,7 @@ class TrailingStop {
         if (firstBotKey) {
           const trailingStateMap = TrailingStop.trailingStateByBot.get(firstBotKey);
           trailingStateMap.set(symbol, recoveredState);
-          await TrailingStop.saveStateToFile();
+          await TrailingStop.saveStateToDB(symbol, recoveredState);
         }
         
         console.log(`🎯 [ATR_RECOVERY] ${symbol}: Stop Loss Inteligente configurado - Volatilidade: ${atrValue.toFixed(6)}, Stop Loss: $${initialAtrStopPrice.toFixed(4)}, Take Profit Parcial: $${partialTakeProfitPrice.toFixed(4)}`);
@@ -549,7 +580,7 @@ class TrailingStop {
       }
     }
     
-    await TrailingStop.saveStateToFile();
+    await TrailingStop.clearStateFromDB(symbol);
   }
 
   /**
@@ -584,11 +615,14 @@ class TrailingStop {
       
       clearLeverageAdjustLog();
       
-      try {
-        await fs.unlink(TrailingStop.persistenceFilePath);
-        console.log(`🗑️ [FORCE_CLEANUP] Arquivo de persistência removido`);
-      } catch (error) {
-        console.log(`ℹ️ [FORCE_CLEANUP] Arquivo de persistência não encontrado`);
+      // Clear all states from database
+      if (TrailingStop.dbService && TrailingStop.dbService.isInitialized()) {
+        try {
+          await TrailingStop.dbService.run('DELETE FROM trailing_state');
+          console.log(`🗑️ [FORCE_CLEANUP] Todos os estados removidos da base de dados`);
+        } catch (error) {
+          console.error(`❌ [FORCE_CLEANUP] Erro ao limpar base de dados:`, error.message);
+        }
       }
       
       console.log(`✅ [FORCE_CLEANUP] Limpeza completa concluída: ${totalStateCount} estados removidos de todos os bots`);
@@ -752,7 +786,10 @@ class TrailingStop {
       console.error(`[TRAILING_UPDATE] Erro ao atualizar trailing stop para ${position.symbol}:`, error.message);
       return null;
     } finally {
-      await TrailingStop.saveStateToFile();
+      // Save state to database if needed
+      if (trailingState) {
+        await TrailingStop.saveStateToDB(position.symbol, trailingState);
+      }
     }
   }
 
@@ -828,7 +865,7 @@ class TrailingStop {
         // Salva o estado no bot atual
         const trailingStateMap = this.getTrailingState();
         trailingStateMap.set(position.symbol, newState);
-        await TrailingStop.saveStateToFile();
+        await TrailingStop.saveStateToDB(position.symbol, newState);
         
         TrailingStop.colorLogger.trailingActivated(`${position.symbol}: 🎯 Stop Loss Inteligente ATIVADO! Fase: Proteção Inicial - PnL: ${pnlPct.toFixed(2)}%, Entrada: $${entryPrice.toFixed(4)}, Atual: $${currentPrice.toFixed(4)}, Volatilidade: ${atrValue?.toFixed(6) || 'N/A'}, Stop Loss Final: $${finalStopPrice?.toFixed(4) || 'N/A'}, Take Profit: $${partialTakeProfitPrice?.toFixed(4) || 'N/A'}`);
         
@@ -886,7 +923,7 @@ class TrailingStop {
             console.error(`❌ [BREAKEVEN] ${position.symbol}: Erro ao atualizar stop loss para breakeven:`, error.message);
           }
           
-          await TrailingStop.saveStateToFile();
+          await TrailingStop.saveStateToDB(position.symbol, trailingState);
           
           return trailingState;
         }
@@ -988,7 +1025,7 @@ class TrailingStop {
 
         const trailingStateMap = this.getTrailingState();
         trailingStateMap.set(position.symbol, newState);
-        await TrailingStop.saveStateToFile();
+        await TrailingStop.saveStateToDB(position.symbol, newState);
         
         TrailingStop.colorLogger.trailingActivated(`${position.symbol}: Trailing Stop ATIVADO! Posição lucrativa detectada - PnL: ${pnlPct.toFixed(2)}%, Preço de Entrada: $${entryPrice.toFixed(4)}, Preço Atual: $${currentPrice.toFixed(4)}, Stop Inicial: $${initialStopLossPrice.toFixed(4)}`);
         
@@ -1007,7 +1044,7 @@ class TrailingStop {
           trailingState.lowestPrice = currentPrice;
         }
         
-        await TrailingStop.saveStateToFile();
+        await TrailingStop.saveStateToDB(position.symbol, trailingState);
         
         TrailingStop.colorLogger.trailingActivated(`${position.symbol}: Trailing Stop REATIVADO! Estado existente ativado - PnL: ${pnlPct.toFixed(2)}%, Preço Atual: $${currentPrice.toFixed(4)}, Stop: $${trailingState.trailingStopPrice.toFixed(4)}`);
         
@@ -1725,8 +1762,9 @@ class TrailingStop {
 
 const trailingStopInstance = new TrailingStop('DEFAULT');
 
-trailingStopInstance.saveStateToFile = TrailingStop.saveStateToFile;
-trailingStopInstance.loadStateFromFile = TrailingStop.loadStateFromFile;
+trailingStopInstance.saveStateToDB = TrailingStop.saveStateToDB;
+trailingStopInstance.loadStateFromDB = TrailingStop.loadStateFromDB;
+trailingStopInstance.clearStateFromDB = TrailingStop.clearStateFromDB;
 trailingStopInstance.clearTrailingState = TrailingStop.clearTrailingState;
 trailingStopInstance.onPositionClosed = TrailingStop.onPositionClosed;
 trailingStopInstance.calculatePnL = TrailingStop.calculatePnL;

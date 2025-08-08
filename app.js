@@ -16,6 +16,7 @@ import MultiBotManager from './src/MultiBot/MultiBotManager.js';
 import AccountConfig from './src/Config/AccountConfig.js';
 import TimeframeConfig from './src/Config/TimeframeConfig.js';
 import ConfigManager from './src/Config/ConfigManager.js';
+import DatabaseService from './src/Services/DatabaseService.js';
 import readline from 'readline';
 
 // BOT_MODE removido - sempre usa modo DEFAULT
@@ -447,12 +448,23 @@ async function startBot() {
     
     console.log(`🤖 Iniciando bot: ${activeBotConfig.botName} (${activeBotConfig.strategyName})`);
     
-    // Carrega o estado persistido do Trailing Stop
-    await TrailingStop.loadStateFromFile();
-    
-    // Migração automática: cria estado para posições abertas existentes
-          // Migração do Trailing Stop será executada individualmente para cada bot
-      console.log('ℹ️ [APP] Migração do Trailing Stop será executada individualmente para cada bot');
+    // 1. Inicializar a base de dados
+    console.log('🔧 [DATABASE] Inicializando base de dados...');
+    const dbService = new DatabaseService();
+    await dbService.init();
+
+    // 2. Inicializar OrdersService
+    console.log('📋 [ORDERS] Inicializando OrdersService...');
+    const OrdersService = await import('./src/Services/OrdersService.js');
+    OrdersService.default.init(dbService);
+
+    // 3. Carregar o estado do Trailing Stop da base de dados
+    console.log('📂 [PERSISTENCE] Carregando estado do Trailing Stop...');
+    await TrailingStop.loadStateFromDB(dbService);
+
+    // 4. Preencher o estado para posições abertas que não estavam na base de dados
+    console.log('🔄 [BACKFILL] Preenchendo estado para posições abertas...');
+    await TrailingStop.backfillStateForOpenPositions(activeBotConfig, dbService);
     
     // Inicializa a estratégia selecionada
     initializeDecisionStrategy(activeBotConfig.strategyName);

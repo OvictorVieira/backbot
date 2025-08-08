@@ -1338,15 +1338,15 @@ app.delete('/api/configs/:botId', async (req, res) => {
       console.log(`🧹 [DELETE] Estado do trailing stop do bot ${botIdNum} removido`);
     }
     
-    // 3. Limpa ordens do bot (se existir OrdersAdapter)
+    // 3. Limpa ordens do bot usando OrdersService
     try {
-      const OrdersAdapter = await import('./src/Persistence/adapters/OrdersAdapter.js');
-      const ordersRemoved = OrdersAdapter.default.clearOrdersByBotId(botIdNum);
+      const OrdersService = await import('./src/Services/OrdersService.js');
+      const ordersRemoved = await OrdersService.default.clearOrdersByBotId(botIdNum);
       if (ordersRemoved > 0) {
         console.log(`🧹 [DELETE] ${ordersRemoved} ordens do bot ${botIdNum} removidas`);
       }
     } catch (error) {
-      console.log(`ℹ️ [DELETE] OrdersAdapter não disponível ou erro: ${error.message}`);
+      console.log(`ℹ️ [DELETE] OrdersService não disponível ou erro: ${error.message}`);
     }
     
     // 4. Remove de instâncias ativas (se ainda estiver lá)
