@@ -7,7 +7,7 @@ import Markets from '../Backpack/Public/Markets.js';
 import TrailingStop from '../TrailingStop/TrailingStop.js';
 import ConfigManager from '../Config/ConfigManager.js';
 import ConfigManagerSQLite from '../Config/ConfigManagerSQLite.js';
-import BotOrdersManager from '../Config/BotOrdersManager.js';
+import BotOrdersManager, { initializeBotOrdersManager } from '../Config/BotOrdersManager.js';
 import Logger from '../Utils/Logger.js';
 
 class OrderController {
@@ -1628,7 +1628,7 @@ class OrderController {
       
       // Registra a ordem no sistema de persistência
       if (limitResult && limitResult.id && config && config.id) {
-        BotOrdersManager.addOrder(
+        await BotOrdersManager.addOrder(
           config.id,
           limitResult.id,
           market,
@@ -1786,7 +1786,7 @@ class OrderController {
         
         // Registra a ordem no sistema de persistência
         if (marketResult && marketResult.id && config && config.id) {
-          BotOrdersManager.addOrder(
+          await BotOrdersManager.addOrder(
             config.id,
             marketResult.id,
             market,
@@ -3986,7 +3986,7 @@ class OrderController {
         console.log(`✅ [TP_CREATE] ${symbol}: Take Profit criado com sucesso - ID: ${result.id}`);
         
         // Registra a ordem no sistema de persistência
-        BotOrdersManager.addOrder(
+        await BotOrdersManager.addOrder(
           config.id,
           result.id,
           symbol,

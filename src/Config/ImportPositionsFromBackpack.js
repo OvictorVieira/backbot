@@ -1,5 +1,5 @@
 import Futures from '../Backpack/Authenticated/Futures.js';
-import BotOrdersManager from './BotOrdersManager.js';
+import BotOrdersManager, { initializeBotOrdersManager } from './BotOrdersManager.js';
 
 class ImportPositionsFromBackpack {
   
@@ -41,7 +41,7 @@ class ImportPositionsFromBackpack {
             const absQuantity = Math.abs(quantity);
             
             // Adiciona à persistência
-            BotOrdersManager.addOrder(
+            await BotOrdersManager.addOrder(
               botId,
               `POSITION_${Date.now()}_${importedCount}`, // ID único para posição
               symbol,
@@ -117,7 +117,7 @@ class ImportPositionsFromBackpack {
             const side = quantity > 0 ? 'BUY' : 'SELL';
             const absQuantity = Math.abs(quantity);
             
-            BotOrdersManager.addOrder(
+            await BotOrdersManager.addOrder(
               botId,
               `POSITION_${Date.now()}_${importedCount}`,
               symbol,

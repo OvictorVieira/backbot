@@ -1,4 +1,5 @@
 import nacl from 'tweetnacl';
+import Logger from '../../Utils/Logger.js';
 
 export function auth({ instruction, params = {}, timestamp, window = 30000, apiKey, apiSecret }) {
   try {
@@ -44,9 +45,9 @@ export function auth({ instruction, params = {}, timestamp, window = 30000, apiK
       'Content-Type': 'application/json; charset=utf-8'
     };
   } catch (error) {
-    console.log(error.stack);
+    Logger.debug(error.stack);
 
-    console.error('❌ Erro na autenticação:', error.message);
+    Logger.error('❌ Erro na autenticação:', error.message);
     throw error;
   }
 }

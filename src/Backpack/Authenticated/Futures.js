@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { auth } from './Authentication.js';
+import Logger from '../../Utils/Logger.js';
 
 class Futures {
 
@@ -27,7 +28,7 @@ class Futures {
         return response.data;
       } catch (error) {
         if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
-          console.warn('⚠️ getOpenPositions - Timeout, tentando novamente em 2s...');
+          Logger.warn('⚠️ getOpenPositions - Timeout, tentando novamente em 2s...');
           // Retry após 2 segundos
           await new Promise(resolve => setTimeout(resolve, 2000));
           try {
@@ -43,14 +44,14 @@ class Futures {
               timeout: 20000, // Timeout maior na segunda tentativa
             });
             
-            console.log('✅ getOpenPositions - Retry bem-sucedido');
+            Logger.info('✅ getOpenPositions - Retry bem-sucedido');
             return retryResponse.data;
           } catch (retryError) {
-            console.error('❌ getOpenPositions - Retry falhou:', retryError.response?.data || retryError.message);
+            Logger.error('❌ getOpenPositions - Retry falhou:', retryError.response?.data || retryError.message);
             return null;
           }
         } else {
-          console.error('❌ getOpenPositions - ERROR!', error.response?.data || error.message);
+          Logger.error('❌ getOpenPositions - ERROR!', error.response?.data || error.message);
           return null;
         }
       }

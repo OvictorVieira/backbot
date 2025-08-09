@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { auth } from './Authentication.js';
+import Logger from '../../Utils/Logger.js';
 
 class Capital {
 
@@ -18,7 +19,7 @@ class Capital {
 
       return response.data
     } catch (error) {
-      console.error('getBalances - ERROR!', error.response?.data || error.message);
+      Logger.error('getBalances - ERROR!', error.response?.data || error.message);
       return null
     }
   }
@@ -41,7 +42,7 @@ class Capital {
 
       return response.data
     } catch (error) {
-      console.error('getCollateral - ERROR!', error.response?.data || error.message);
+      Logger.error('getCollateral - ERROR!', error.response?.data || error.message);
       return null
     }
   }
@@ -70,7 +71,7 @@ class Capital {
 
     return response.data;
   } catch (error) {
-    console.error('getDeposits - ERROR!', error.response?.data || error.message);
+    Logger.error('getDeposits - ERROR!', error.response?.data || error.message);
     return null;
   }
 }
@@ -80,7 +81,7 @@ class Capital {
     const timestamp = Date.now();
 
      if (!blockchain) {
-      console.error('blockchain required');
+      Logger.error('blockchain required');
       return null;
     }
 

@@ -561,26 +561,28 @@ export function DashboardPage() {
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {configs.map((config) => {
-            const status = getBotStatus(config.id || 0)
-            
-            return (
-              <BotCard
-                key={config.id || config.strategyName}
-                config={config}
-                isRunning={status?.isRunning || false}
-                isLoading={loadingBots[config.id?.toString() || config.strategyName] || false}
-                isRestarting={restartingBots[config.id?.toString() || config.strategyName] || false}
-                botStatus={status}
-                onStart={() => handleStartBot(config.id?.toString() || config.strategyName)}
-                onStop={() => handleStopBot(config.id?.toString() || config.strategyName)}
-                onConfigure={() => handleEditBot(config.id?.toString() || config.strategyName)}
-                onEdit={() => handleEditBot(config.id?.toString() || config.strategyName)}
-                onDelete={handleDeleteBot}
-              />
-            )
-          })}
+        <div className="w-full max-w-[2400px]">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 3xl:grid-cols-6 gap-4 gap-y-6">
+            {configs.map((config) => {
+              const status = getBotStatus(config.id || 0)
+              
+              return (
+                <BotCard
+                  key={config.id || config.strategyName}
+                  config={config}
+                  isRunning={status?.isRunning || false}
+                  isLoading={loadingBots[config.id?.toString() || config.strategyName] || false}
+                  isRestarting={restartingBots[config.id?.toString() || config.strategyName] || false}
+                  botStatus={status}
+                  onStart={() => handleStartBot(config.id?.toString() || config.strategyName)}
+                  onStop={() => handleStopBot(config.id?.toString() || config.strategyName)}
+                  onConfigure={() => handleEditBot(config.id?.toString() || config.strategyName)}
+                  onEdit={() => handleEditBot(config.id?.toString() || config.strategyName)}
+                  onDelete={handleDeleteBot}
+                />
+              )
+            })}
+          </div>
         </div>
       )}
 

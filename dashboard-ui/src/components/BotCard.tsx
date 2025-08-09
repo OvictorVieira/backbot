@@ -427,7 +427,7 @@ export const BotCard: React.FC<BotCardProps> = ({
   };
 
   return (
-    <Card className={`w-full ${isRestarting ? 'ring-2 ring-orange-500 ring-opacity-50 animate-pulse' : ''}`}>
+    <Card className={`w-full max-w-sm ${isRestarting ? 'ring-2 ring-orange-500 ring-opacity-50 animate-pulse' : ''}`}>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex-1 min-w-0">

@@ -32,11 +32,12 @@ import TimeframeConfig from './src/Config/TimeframeConfig.js';
 import ConfigManager from './src/Config/ConfigManager.js';
 import ConfigManagerSQLite from './src/Config/ConfigManagerSQLite.js';
 import History from './src/Backpack/Authenticated/History.js';
-import BotOrdersManager from './src/Config/BotOrdersManager.js';
+import BotOrdersManager, { initializeBotOrdersManager } from './src/Config/BotOrdersManager.js';
 import ImportOrdersFromBackpack from './src/Config/ImportOrdersFromBackpack.js';
 import ImportPositionsFromBackpack from './src/Config/ImportPositionsFromBackpack.js';
 import DatabaseService from './src/Services/DatabaseService.js';
 import Markets from './src/Backpack/Public/Markets.js';
+import PositionSyncService from './src/Services/PositionSyncService.js';
 
 // Configuração do servidor Express
 const app = express();
@@ -193,6 +194,14 @@ async function recoverBot(botId, config, startTime) {
         // Atualiza status no ConfigManager
         await ConfigManagerSQLite.updateBotStatusById(botId, 'running');
         
+        // Inicia sincronização de posições para este bot
+        try {
+          await PositionSyncService.startSyncForBot(botId, config);
+          Logger.info(`🔄 [BOT] Sincronização de posições iniciada para bot ${botId}`);
+        } catch (syncError) {
+          Logger.error(`❌ [BOT] Erro ao iniciar sincronização de posições para bot ${botId}:`, syncError.message);
+        }
+        
         // Executa análise
         await startDecision(botId);
         
@@ -295,9 +304,10 @@ async function recoverBot(botId, config, startTime) {
 
 // Função para inicializar e executar o Decision
 async function startDecision(botId) {
+  let botConfig = null;
   try {
     // Carrega configuração do bot
-    const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
+    botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
     if (!botConfig) {
       throw new Error(`Configuração não encontrada para bot ID: ${botId}`);
     }
@@ -337,7 +347,7 @@ async function startDecision(botId) {
     broadcastViaWs({
       type: 'DECISION_ERROR',
       botId,
-      botName: botConfig?.botName,
+      botName: botConfig?.botName || 'Unknown',
       timestamp: new Date().toISOString(),
       error: error.message
     });
@@ -348,9 +358,10 @@ async function startDecision(botId) {
 
 // Função para inicializar e executar o TrailingStop
 async function startStops(botId) {
+  let botConfig = null;
   try {
     // Carrega configuração do bot
-    const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
+    botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
     if (!botConfig) {
       throw new Error(`Configuração não encontrada para bot ID: ${botId}`);
     }
@@ -392,7 +403,7 @@ async function startStops(botId) {
     broadcastViaWs({
       type: 'TRAILING_STOP_ERROR',
       botId,
-      botName: botConfig?.botName,
+      botName: botConfig?.botName || 'Unknown',
       timestamp: new Date().toISOString(),
       error: error.message
     });
@@ -633,12 +644,21 @@ async function startBot(botId, forceRestart = false) {
     
     // Função de execução do bot
     const executeBot = async () => {
+      let currentBotConfig = null;
       try {
         // Recarrega a configuração do bot para garantir que está atualizada
-        const currentBotConfig = await ConfigManagerSQLite.getBotConfigById(botId);
+        currentBotConfig = await ConfigManagerSQLite.getBotConfigById(botId);
         
         // Atualiza status no ConfigManager
         await ConfigManagerSQLite.updateBotStatusById(botId, 'running');
+        
+        // Inicia sincronização de posições para este bot
+        try {
+          await PositionSyncService.startSyncForBot(botId, currentBotConfig);
+          Logger.info(`🔄 [BOT] Sincronização de posições iniciada para bot ${botId}`);
+        } catch (syncError) {
+          Logger.error(`❌ [BOT] Erro ao iniciar sincronização de posições para bot ${botId}:`, syncError.message);
+        }
         
         // Executa análise
         await startDecision(botId);
@@ -803,6 +823,14 @@ async function stopBot(botId) {
     
     // Remove configurações de rate limit do bot
     monitorRateLimits.delete(botId);
+    
+    // Para sincronização de posições
+    try {
+      PositionSyncService.stopSyncForBot(botId);
+      Logger.info(`🛑 [BOT] Sincronização de posições parada para bot ${botId}`);
+    } catch (syncError) {
+      Logger.error(`❌ [BOT] Erro ao parar sincronização de posições para bot ${botId}:`, syncError.message);
+    }
     
     // Atualiza status no ConfigManager
     await ConfigManagerSQLite.updateBotStatusById(botId, 'stopped');
@@ -1111,10 +1139,58 @@ app.post('/api/bot/stop', async (req, res) => {
   }
 });
 
+// POST /api/bot/update-running - Atualiza configuração de bot em execução
+app.post('/api/bot/update-running', async (req, res) => {
+  try {
+    const { botId, config } = req.body;
+    
+    if (!botId || !config) {
+      return res.status(400).json({
+        success: false,
+        error: 'botId e config são obrigatórios'
+      });
+    }
+    
+    console.log(`🔄 [BOT_UPDATE] Atualizando configuração do bot ${botId} em execução...`);
+    
+    // Verifica se o bot está realmente rodando
+    if (!activeBotInstances.has(botId)) {
+      return res.status(400).json({
+        success: false,
+        error: `Bot ${botId} não está em execução`
+      });
+    }
+    
+    // Atualiza a configuração no banco de dados
+    await ConfigManagerSQLite.updateBotConfigById(botId, config);
+    
+    // Atualiza a configuração na instância ativa do bot
+    const botInstance = activeBotInstances.get(botId);
+    if (botInstance && botInstance.updateConfig) {
+      await botInstance.updateConfig(config);
+    }
+    
+    console.log(`✅ [BOT_UPDATE] Bot ${botId} atualizado com sucesso`);
+    
+    res.json({
+      success: true,
+      message: `Bot ${botId} atualizado com sucesso`,
+      botId: botId
+    });
+  } catch (error) {
+    console.error(`❌ [BOT_UPDATE] Erro ao atualizar bot ${req.body?.botId}:`, error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // POST /api/configs - Salva/atualiza configuração de bot
 app.post('/api/configs', async (req, res) => {
   try {
     const { strategyName, botName, config: botConfig } = req.body;
+    console.log('🔄 [CONFIG] Recebendo requisição para atualizar configuração:', { strategyName, botName, hasConfig: !!botConfig, configKeys: botConfig ? Object.keys(botConfig) : [] });
     
     // Se o request tem a estrutura { botName, config: {...} }
     if (botName && botConfig) {
@@ -1344,6 +1420,14 @@ app.post('/api/configs', async (req, res) => {
 // GET /api/configs - Retorna todas as configurações
 app.get('/api/configs', async (req, res) => {
   try {
+    // Verifica se o ConfigManagerSQLite está inicializado
+    if (!ConfigManagerSQLite.dbService || !ConfigManagerSQLite.dbService.isInitialized()) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database service não está inicializado'
+      });
+    }
+    
     const configs = await ConfigManagerSQLite.loadConfigs();
     
     res.json({
@@ -1351,6 +1435,7 @@ app.get('/api/configs', async (req, res) => {
       data: configs
     });
   } catch (error) {
+    console.error('❌ Erro no endpoint /api/configs:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -1535,6 +1620,90 @@ app.get('/api/klines', async (req, res) => {
       data: mockKlines
     });
   } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// GET /api/health - Endpoint de saúde do sistema
+app.get('/api/health', async (req, res) => {
+  try {
+    const health = {
+      database: {
+        initialized: ConfigManagerSQLite.dbService?.isInitialized() || false,
+        path: ConfigManagerSQLite.dbService?.dbPath || 'N/A'
+      },
+      configManager: {
+        initialized: !!ConfigManagerSQLite.dbService
+      },
+      timestamp: new Date().toISOString()
+    };
+    
+    res.json({
+      success: true,
+      data: health
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// GET /api/tokens/available - Retorna tokens/markets disponíveis
+app.get('/api/tokens/available', async (req, res) => {
+  try {
+    console.log('🔍 [API] Buscando tokens disponíveis...');
+    
+    // Usar a classe Markets para obter dados da Backpack API
+    const Markets = await import('./src/Backpack/Public/Markets.js');
+    console.log('✅ [API] Markets importado com sucesso');
+    
+    const marketsInstance = new Markets.default();
+    console.log('✅ [API] Instância Markets criada');
+    
+    const markets = await marketsInstance.getMarkets();
+    console.log(`📊 [API] Dados recebidos da API: ${markets ? markets.length : 0} mercados`);
+    
+    if (!markets || !Array.isArray(markets)) {
+      console.error('❌ [API] Dados inválidos recebidos da API:', markets);
+      return res.status(500).json({
+        success: false,
+        error: 'Erro ao obter dados de mercado da API'
+      });
+    }
+    
+    // Filtrar apenas mercados PERP ativos
+    console.log(`🔍 [API] Filtrando ${markets.length} mercados...`);
+    console.log(`🔍 [API] Primeiros 3 mercados:`, markets.slice(0, 3).map(m => ({ symbol: m.symbol, marketType: m.marketType, orderBookState: m.orderBookState })));
+    
+    const availableTokens = markets
+      .filter(market => 
+        market.marketType === 'PERP' && 
+        market.orderBookState === 'Open'
+      )
+      .map(market => ({
+        symbol: market.symbol,
+        baseSymbol: market.baseSymbol,
+        quoteSymbol: market.quoteSymbol,
+        marketType: market.marketType,
+        orderBookState: market.orderBookState,
+        status: market.status || 'Unknown'
+      }))
+      .sort((a, b) => a.symbol.localeCompare(b.symbol));
+    
+    console.log(`✅ [API] Tokens filtrados: ${availableTokens.length} PERP ativos`);
+    
+    res.json({
+      success: true,
+      tokens: availableTokens,
+      total: availableTokens.length
+    });
+  } catch (error) {
+    console.error('❌ Erro ao buscar tokens disponíveis:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -2260,7 +2429,7 @@ app.get('/api/bot/performance/simple', async (req, res) => {
         error: `Bot com ID ${botId} não encontrado`
       });
     }
-    
+
     // Validação das credenciais
     if (!botConfig.apiKey || !botConfig.apiSecret) {
       return res.status(400).json({
@@ -2268,10 +2437,10 @@ app.get('/api/bot/performance/simple', async (req, res) => {
         error: 'Bot não possui credenciais de API configuradas'
       });
     }
-    
+
     // Usa botClientOrderId do bot ou botName como fallback
     const botClientOrderId = botConfig.botClientOrderId || botConfig.botName;
-    
+
     console.log(`🔍 Testando performance para bot ${botId} (${botClientOrderId})`);
     console.log(`🔍 Configuração do bot:`, {
       id: botConfig.id,
@@ -2279,7 +2448,7 @@ app.get('/api/bot/performance/simple', async (req, res) => {
       botClientOrderId: botConfig.botClientOrderId,
       orderCounter: botConfig.orderCounter
     });
-    
+
     console.log(`🔍 [ENDPOINT] Chamando History.analyzeBotPerformance...`);
     console.log(`🔍 [ENDPOINT] History object:`, typeof History);
     console.log(`🔍 [ENDPOINT] History.analyzeBotPerformance:`, typeof History.analyzeBotPerformance);
@@ -2291,7 +2460,7 @@ app.get('/api/bot/performance/simple', async (req, res) => {
       botConfig.apiSecret
     );
     console.log(`🔍 [ENDPOINT] History.analyzeBotPerformance concluído`);
-    
+
     res.json({
       success: true,
       data: {
@@ -2304,7 +2473,7 @@ app.get('/api/bot/performance/simple', async (req, res) => {
         analysisPeriod: performanceData.analysisPeriod
       }
     });
-    
+
   } catch (error) {
     console.error('Erro no endpoint simples:', error);
     res.status(500).json({
@@ -2314,222 +2483,105 @@ app.get('/api/bot/performance/simple', async (req, res) => {
   }
 });
 
-// GET /api/bot/orders - Endpoint para listar ordens do bot
-app.get('/api/bot/orders', async (req, res) => {
+// Inicialização do servidor
+async function initializeServer() {
   try {
-    const { botId } = req.query;
+    Logger.info('🚀 [SERVER] Iniciando servidor API...');
     
-    if (!botId) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'botId é obrigatório' 
-      });
+    // Inicializa o database service
+    const dbService = new DatabaseService();
+    await dbService.init();
+    
+    // Inicializa o ConfigManager SQLite
+    ConfigManagerSQLite.initialize(dbService);
+    
+    // Inicializa o OrdersService
+    const OrdersService = await import('./src/Services/OrdersService.js');
+    OrdersService.default.init(dbService);
+    
+    // Inicializa o BotOrdersManager
+    await initializeBotOrdersManager();
+    
+    // Carrega o estado persistido do Trailing Stop do banco de dados
+    if (dbService && dbService.isInitialized()) {
+      await TrailingStop.loadStateFromDB(dbService);
+    } else {
+      Logger.warn('⚠️ [SERVER] Database service não inicializado, Trailing Stop será carregado individualmente para cada bot');
     }
-
-    const botIdNum = parseInt(botId);
-    if (isNaN(botIdNum)) {
-      return res.status(400).json({
-        success: false,
-        error: 'botId deve ser um número válido'
-      });
-    }
-
-    const botOrders = BotOrdersManager.getBotOrders(botIdNum);
-    const stats = BotOrdersManager.getBotOrderStats(botIdNum);
-
-    res.json({
-      success: true,
-      data: {
-        botId: botIdNum,
-        orders: botOrders,
-        stats: stats
-      }
+    
+    // Migração automática: cria estado para posições abertas existentes
+    // Será executada individualmente para cada bot quando iniciarem
+    Logger.debug('ℹ️ [SERVER] Migração do Trailing Stop será executada individualmente para cada bot');
+    
+    // PnL Controller será executado individualmente para cada bot
+    Logger.debug('ℹ️ [SERVER] PnL Controller será executado individualmente para cada bot');
+    
+    // Inicializa o PositionSyncService
+    Logger.info('🔄 [SERVER] Inicializando PositionSyncService...');
+    
+    // Inicializa o servidor primeiro
+    server.listen(PORT, () => {
+      Logger.info(`✅ [SERVER] Servidor rodando na porta ${PORT}`);
+      Logger.info(`📊 [SERVER] API disponível em http://localhost:${PORT}`);
+      Logger.info(`🔌 [SERVER] WebSocket disponível em ws://localhost:${PORT}`);
+      Logger.info(`🤖 [SERVER] Estratégias disponíveis: ${StrategyFactory.getAvailableStrategies().join(', ')}`);
     });
-
+    
+    // Carrega e recupera bots em background (não bloqueia o servidor)
+    loadAndRecoverBots();
+    
   } catch (error) {
-    console.error('❌ Erro no endpoint /api/bot/orders:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
+    Logger.error('❌ [SERVER] Erro ao inicializar servidor:', error.message);
+    process.exit(1);
   }
-});
+}
 
-// POST /api/bot/orders/import - Importa ordens ativas da Backpack
-app.post('/api/bot/orders/import', async (req, res) => {
+// Inicializa o servidor
+initializeServer();
+
+export { startBot, stopBot, activeBotInstances, broadcast };
+
+// GET /api/bot/:botId/sync-status - Retorna status da sincronização de posições
+app.get('/api/bot/:botId/sync-status', async (req, res) => {
   try {
-    const { botId } = req.body;
-    
-    if (!botId) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'botId é obrigatório' 
-      });
-    }
-
+    const { botId } = req.params;
     const botIdNum = parseInt(botId);
+    
     if (isNaN(botIdNum)) {
       return res.status(400).json({
         success: false,
         error: 'botId deve ser um número válido'
       });
     }
-
-    const config = await ConfigManagerSQLite.getBotConfigById(botIdNum);
-    if (!config) {
+    
+    // Busca configuração do bot
+    const botConfig = await ConfigManagerSQLite.getBotConfigById(botIdNum);
+    if (!botConfig) {
       return res.status(404).json({
         success: false,
         error: `Bot com ID ${botId} não encontrado`
       });
     }
-
-    console.log(`🔄 [API] Iniciando importação de ordens para Bot ${botId}`);
     
-    const result = await ImportOrdersFromBackpack.importActiveOrders(botIdNum, config);
-
-    res.json({
-      success: result.success,
-      data: result
-    });
-
-  } catch (error) {
-    console.error('❌ Erro no endpoint /api/bot/orders/import:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
-  }
-});
-
-// POST /api/bot/orders/import-all - Importa ordens de todos os bots
-app.post('/api/bot/orders/import-all', async (req, res) => {
-  try {
-    console.log(`🔄 [API] Iniciando importação de ordens para todos os bots`);
-    
-    const result = await ImportOrdersFromBackpack.importAllBotsOrders();
-
-    res.json({
-      success: result.success,
-      data: result
-    });
-
-  } catch (error) {
-    console.error('❌ Erro no endpoint /api/bot/orders/import-all:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
-  }
-});
-
-// GET /api/bot/orders/test - Teste do BotOrdersManager
-app.get('/api/bot/orders/test', async (req, res) => {
-  try {
-    console.log(`🔍 [TEST] Testando BotOrdersManager`);
-    console.log(`🔍 [TEST] Total de ordens: ${BotOrdersManager.orders.orders.length}`);
-    console.log(`🔍 [TEST] Ordens do Bot 1: ${BotOrdersManager.getBotOrders(1).length}`);
+    // Obtém status da sincronização
+    const syncStatus = PositionSyncService.getSyncStatus();
+    const botSyncStatus = syncStatus[botIdNum] || { isActive: false, lastSync: null };
     
     res.json({
       success: true,
       data: {
-        totalOrders: BotOrdersManager.orders.orders.length,
-        bot1Orders: BotOrdersManager.getBotOrders(1).length,
-        bot1OrdersList: BotOrdersManager.getBotOrders(1).map(o => ({ symbol: o.symbol, side: o.side, quantity: o.quantity }))
+        botId: botIdNum,
+        botName: botConfig.botName,
+        syncStatus: botSyncStatus,
+        lastSync: botSyncStatus.lastSync ? new Date(botSyncStatus.lastSync).toISOString() : null
       }
     });
-
-  } catch (error) {
-    console.error('❌ Erro no endpoint /api/bot/orders/test:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
-  }
-});
-
-// GET /api/bot/orders/stats - Estatísticas do sistema de persistência
-app.get('/api/bot/orders/stats', async (req, res) => {
-  try {
-    const result = ImportOrdersFromBackpack.showStats();
-
-    res.json({
-      success: result.success,
-      data: result
-    });
-
-  } catch (error) {
-    console.error('❌ Erro no endpoint /api/bot/orders/stats:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
-  }
-});
-
-// POST /api/bot/orders/cleanup - Limpa ordens antigas
-app.post('/api/bot/orders/cleanup', async (req, res) => {
-  try {
-    const { daysOld = 30 } = req.body;
     
-    const result = ImportOrdersFromBackpack.cleanOldOrders(daysOld);
-
-    res.json({
-      success: result.success,
-      data: result
-    });
-
   } catch (error) {
-    console.error('❌ Erro no endpoint /api/bot/orders/cleanup:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
-  }
-});
-
-// POST /api/bot/positions/import - Importa posições ativas da Backpack
-app.post('/api/bot/positions/import', async (req, res) => {
-  try {
-    const { botId } = req.query;
-    
-    if (!botId) {
-      return res.status(400).json({
-        success: false,
-        error: 'botId é obrigatório'
-      });
-    }
-    
-    const result = await ImportPositionsFromBackpack.importActivePositions(parseInt(botId));
-
-    res.json({
-      success: result.success,
-      data: result
-    });
-
-  } catch (error) {
-    console.error('❌ Erro no endpoint /api/bot/positions/import:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
-  }
-});
-
-// POST /api/bot/positions/import-all - Importa posições de todos os bots
-app.post('/api/bot/positions/import-all', async (req, res) => {
-  try {
-    const result = await ImportPositionsFromBackpack.importAllBotsPositions();
-
-    res.json({
-      success: result.success,
-      data: result
-    });
-
-  } catch (error) {
-    console.error('❌ Erro no endpoint /api/bot/positions/import-all:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    console.error('❌ Erro ao buscar status da sincronização:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 });
@@ -2569,12 +2621,37 @@ app.get('/api/bot/summary', async (req, res) => {
     console.log(`🔍 [SUMMARY] Gerando resumo para bot ${botId} (${botClientOrderId})`);
     
     // Busca dados de performance
-    const performanceData = await History.analyzeBotPerformance(
-      botClientOrderId, 
-      { days: 30, limit: 100 }, 
-      botConfig.apiKey, 
-      botConfig.apiSecret
-    );
+    let performanceData;
+    try {
+      performanceData = await History.analyzeBotPerformance(
+        botClientOrderId, 
+        { days: 30, limit: 100 }, 
+        botConfig.apiKey, 
+        botConfig.apiSecret
+      );
+    } catch (error) {
+      console.log(`⚠️ [SUMMARY] Erro ao buscar dados de performance: ${error.message}`);
+      // Cria dados padrão se não conseguir buscar
+      performanceData = {
+        performance: {
+          totalTrades: 0,
+          winningTrades: 0,
+          losingTrades: 0,
+          winRate: 0,
+          profitFactor: 0,
+          totalPnl: 0,
+          averagePnl: 0,
+          maxDrawdown: 0,
+          openTrades: 0,
+          totalVolume: 0
+        },
+        positions: {
+          closed: 0,
+          open: 0,
+          total: 0
+        }
+      };
+    }
     
     // Busca posições ativas
     let activePositions = [];
@@ -2623,7 +2700,6 @@ app.get('/api/bot/summary', async (req, res) => {
       
     }
 
-
     // Calcula estatísticas do card
     const summary = {
       botId: botIdNum,
@@ -2662,332 +2738,6 @@ app.get('/api/bot/summary', async (req, res) => {
     res.status(500).json({ 
       success: false, 
       error: error.message 
-    });
-  }
-});
-
-// GET /api/bot/positions/show - Mostra posições ativas da Backpack
-app.get('/api/bot/positions/show', async (req, res) => {
-  try {
-    const { botId } = req.query;
-    
-    if (!botId) {
-      return res.status(400).json({
-        success: false,
-        error: 'botId é obrigatório'
-      });
-    }
-    
-    const botIdNum = parseInt(botId);
-    if (isNaN(botIdNum)) {
-      return res.status(400).json({
-        success: false,
-        error: 'botId deve ser um número válido'
-      });
-    }
-    
-    // Busca configuração do bot
-    const botConfig = await ConfigManagerSQLite.getBotConfigById(botIdNum);
-    if (!botConfig) {
-      return res.status(404).json({
-        success: false,
-        error: `Bot com ID ${botId} não encontrado`
-      });
-    }
-    
-    // Validação das credenciais
-    if (!botConfig.apiKey || !botConfig.apiSecret) {
-      return res.status(400).json({
-        success: false,
-        error: 'Bot não possui credenciais de API configuradas'
-      });
-    }
-    
-    console.log(`🔍 [POSITIONS_SHOW] Buscando posições para bot ${botId} (${botConfig.botName})`);
-    
-    const positions = await Futures.getOpenPositions(botConfig.apiKey, botConfig.apiSecret);
-    
-    res.json({
-      success: true,
-      data: {
-        botId: botIdNum,
-        botName: botConfig.botName,
-        totalPositions: positions ? positions.length : 0,
-        positions: positions || []
-      }
-    });
-
-  } catch (error) {
-    console.error('❌ Erro no endpoint /api/bot/positions/show:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
-  }
-});
-
-// Inicialização do servidor
-async function initializeServer() {
-  try {
-    Logger.info('🚀 [SERVER] Iniciando servidor API...');
-    
-    // Inicializa o database service
-    const dbService = new DatabaseService();
-    await dbService.init();
-    
-    // Inicializa o ConfigManager SQLite
-    ConfigManagerSQLite.initialize(dbService);
-    
-    // Carrega o estado persistido do Trailing Stop do banco de dados
-    if (dbService && dbService.isInitialized()) {
-      await TrailingStop.loadStateFromDB(dbService);
-    } else {
-      Logger.warn('⚠️ [SERVER] Database service não inicializado, Trailing Stop será carregado individualmente para cada bot');
-    }
-    
-    // Migração automática: cria estado para posições abertas existentes
-    // Será executada individualmente para cada bot quando iniciarem
-    Logger.debug('ℹ️ [SERVER] Migração do Trailing Stop será executada individualmente para cada bot');
-    
-    // PnL Controller será executado individualmente para cada bot
-    Logger.debug('ℹ️ [SERVER] PnL Controller será executado individualmente para cada bot');
-    
-    // Inicializa o servidor primeiro
-    server.listen(PORT, () => {
-      Logger.info(`✅ [SERVER] Servidor rodando na porta ${PORT}`);
-      Logger.info(`📊 [SERVER] API disponível em http://localhost:${PORT}`);
-      Logger.info(`🔌 [SERVER] WebSocket disponível em ws://localhost:${PORT}`);
-      Logger.info(`🤖 [SERVER] Estratégias disponíveis: ${StrategyFactory.getAvailableStrategies().join(', ')}`);
-    });
-    
-    // Carrega e recupera bots em background (não bloqueia o servidor)
-    loadAndRecoverBots();
-    
-  } catch (error) {
-    Logger.error('❌ [SERVER] Erro ao inicializar servidor:', error.message);
-    process.exit(1);
-  }
-}
-
-// Inicializa o servidor
-initializeServer();
-
-export { startBot, stopBot, activeBotInstances, broadcast };
-
-// TODO: Endpoint para atualizar alavancagem da conta - Removido temporariamente
-/*
-app.post('/api/account/update-leverage', async (req, res) => {
-  try {
-    const { apiKey, apiSecret, leverageLimit } = req.body;
-    
-    if (!apiKey || !apiSecret) {
-      return res.status(400).json({
-        error: 'API Key e API Secret são obrigatórios'
-      });
-    }
-
-    if (!leverageLimit || leverageLimit < 1 || leverageLimit > 100) {
-      return res.status(400).json({
-        error: 'Alavancagem deve estar entre 1x e 100x'
-      });
-    }
-
-    console.log(`🔧 [API] Testando acesso à conta...`);
-    
-    // Importa Account dinamicamente para evitar problemas de importação
-    const Account = (await import('./src/Backpack/Authenticated/Account.js')).default;
-    
-    // Primeiro testa se conseguimos acessar a conta
-    const accountInfo = await Account.getAccount(null, apiKey, apiSecret);
-    console.log(`🔧 [API] Informações da conta:`, accountInfo);
-    
-    if (!accountInfo) {
-      return res.status(401).json({
-        error: 'Erro ao acessar conta',
-        message: 'Não foi possível acessar a conta com as credenciais fornecidas'
-      });
-    }
-    
-    console.log(`🔧 [API] Atualizando alavancagem para ${leverageLimit}x...`);
-    
-    const result = await Account.updateAccount(
-      leverageLimit,
-      true, // autoBorrowSettlements
-      true, // autoLend
-      true, // autoRepayBorrows
-      apiKey,
-      apiSecret
-    );
-
-    console.log(`🔧 [API] Resultado do updateAccount:`, result);
-    
-    if (result && (result.success || result.message)) {
-      console.log(`✅ [API] Alavancagem atualizada para ${leverageLimit}x`);
-      res.json({
-        success: true,
-        message: `Alavancagem atualizada para ${leverageLimit}x`,
-        leverageLimit
-      });
-    } else {
-      console.error('❌ [API] Erro ao atualizar alavancagem - resultado inválido');
-      res.status(500).json({
-        error: 'Erro ao atualizar alavancagem na Backpack',
-        message: 'A API da Backpack retornou um erro. Isso pode acontecer se as credenciais estiverem incorretas ou se a conta não tiver permissão para alterar a alavancagem.'
-      });
-    }
-    
-  } catch (error) {
-    console.error('❌ [API] Erro ao atualizar alavancagem:', error.message);
-    
-    // Mensagens de erro mais específicas
-    let errorMessage = error.message;
-    if (error.message.includes('API_SECRET inválido')) {
-      errorMessage = 'API Secret inválido. Verifique se está correto.';
-    } else if (error.message.includes('API_SECRET e API_KEY são obrigatórios')) {
-      errorMessage = 'API Key e API Secret são obrigatórios.';
-    } else if (error.message.includes('bad seed size') || error.message.includes('API_SECRET deve ter 32 bytes')) {
-      errorMessage = 'API Secret inválido. Deve ser um base64 válido de 32 bytes. Verifique suas credenciais da Backpack.';
-    }
-    
-    res.status(500).json({ 
-      error: 'Erro ao atualizar alavancagem',
-      message: errorMessage 
-    });
-  }
-});
-*/
-
-
-
-// Endpoint para buscar tokens disponíveis
-app.get('/api/tokens/available', async (req, res) => {
-  try {
-    console.log('🔍 [API] Buscando tokens disponíveis...');
-    
-    const marketsInstance = new Markets();
-    const markets = await marketsInstance.getMarkets();
-    
-    if (!markets) {
-      console.error('❌ [API] Erro ao buscar mercados da Backpack');
-      return res.status(500).json({ 
-        error: 'Erro ao buscar mercados da Backpack Exchange',
-        message: 'Não foi possível conectar com a API da Backpack'
-      });
-    }
-
-    // Filtra apenas mercados PERP ativos
-    const perpMarkets = markets.filter(market => 
-      market.marketType === "PERP" && 
-      market.orderBookState === "Open"
-    );
-
-    // Busca dados de volume das últimas 24h para todos os tokens
-    console.log('📊 [API] Buscando dados de volume das últimas 24h...');
-    const tickers = await marketsInstance.getTickers("1d");
-    
-    // Cria um mapa de volume por símbolo
-    const volumeMap = new Map();
-    if (tickers && Array.isArray(tickers)) {
-      tickers.forEach(ticker => {
-        if (ticker.symbol && ticker.volume) {
-          volumeMap.set(ticker.symbol, ticker.volume);
-        }
-      });
-    }
-
-    // Mapeia os tokens com dados de volume
-    const availableTokens = perpMarkets.map(market => ({
-      symbol: market.symbol,
-      baseAsset: market.baseSymbol,
-      quoteAsset: market.quoteSymbol,
-      status: market.orderBookState,
-      volume24h: volumeMap.get(market.symbol) || "0"
-    }))
-    .sort((a, b) => {
-      // Ordena por volume das últimas 24h (maior para menor)
-      const volumeA = parseFloat(a.volume24h) || 0;
-      const volumeB = parseFloat(b.volume24h) || 0;
-      return volumeB - volumeA;
-    });
-
-    console.log(`✅ [API] ${availableTokens.length} tokens disponíveis encontrados`);
-    
-    res.json({
-      success: true,
-      tokens: availableTokens,
-      total: availableTokens.length
-    });
-    
-  } catch (error) {
-    console.error('❌ [API] Erro ao buscar tokens:', error.message);
-    res.status(500).json({ 
-      error: 'Erro interno do servidor',
-      message: error.message 
-    });
-  }
-});
-
-// POST /api/bot/update-running - Atualiza bot em execução (para, atualiza, reinicia)
-app.post('/api/bot/update-running', async (req, res) => {
-  try {
-    const { botId, config: newConfig } = req.body;
-    
-    if (!botId || !newConfig) {
-      return res.status(400).json({
-        success: false,
-        error: 'botId e config são obrigatórios'
-      });
-    }
-    
-    console.log(`🔄 [UPDATE_RUNNING] Iniciando atualização do bot ${botId}`);
-    
-    // 1. Verifica se o bot existe e está rodando
-    const currentConfig = await ConfigManagerSQLite.getBotConfigById(botId);
-    if (!currentConfig) {
-      return res.status(404).json({
-        success: false,
-        error: `Bot ${botId} não encontrado`
-      });
-    }
-    
-    const isRunning = currentConfig.status === 'running' && activeBotInstances.has(botId);
-    console.log(`📊 [UPDATE_RUNNING] Bot ${botId} status: ${currentConfig.status}, isRunning: ${isRunning}`);
-    
-    // 2. Se está rodando, para o bot
-    if (isRunning) {
-      console.log(`⏹️ [UPDATE_RUNNING] Parando bot ${botId}...`);
-      await stopBot(botId);
-      console.log(`✅ [UPDATE_RUNNING] Bot ${botId} parado com sucesso`);
-      
-      // Aguarda um pouco para garantir que parou completamente
-      await new Promise(resolve => setTimeout(resolve, 2000));
-    }
-    
-    // 3. Atualiza a configuração
-    console.log(`💾 [UPDATE_RUNNING] Atualizando configuração do bot ${botId}...`);
-    await ConfigManagerSQLite.updateBotConfigById(botId, newConfig);
-    console.log(`✅ [UPDATE_RUNNING] Configuração do bot ${botId} atualizada`);
-    
-    // 4. Se estava rodando, reinicia o bot
-    if (isRunning) {
-      console.log(`🚀 [UPDATE_RUNNING] Reiniciando bot ${botId}...`);
-      await startBot(botId, true); // forceRestart = true
-      console.log(`✅ [UPDATE_RUNNING] Bot ${botId} reiniciado com sucesso`);
-    }
-    
-    // 5. Retorna sucesso
-    res.json({
-      success: true,
-      message: `Bot ${botId} atualizado com sucesso${isRunning ? ' e reiniciado' : ''}`,
-      botId: botId,
-      wasRunning: isRunning
-    });
-    
-  } catch (error) {
-    console.error(`❌ [UPDATE_RUNNING] Erro ao atualizar bot:`, error.message);
-    res.status(500).json({
-      success: false,
-      error: error.message
     });
   }
 });

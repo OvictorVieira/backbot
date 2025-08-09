@@ -1,5 +1,5 @@
 import Order from '../Backpack/Authenticated/Order.js';
-import BotOrdersManager from './BotOrdersManager.js';
+import BotOrdersManager, { initializeBotOrdersManager } from './BotOrdersManager.js';
 import ConfigManager from './ConfigManager.js';
 
 class ImportOrdersFromBackpack {
@@ -49,7 +49,7 @@ class ImportOrdersFromBackpack {
           const orderType = order.orderType || 'LIMIT';
 
           // Registra a ordem no sistema de persistência
-          BotOrdersManager.addOrder(
+          await BotOrdersManager.addOrder(
             botId,
             order.orderId,
             order.symbol,
@@ -208,15 +208,15 @@ class ImportOrdersFromBackpack {
   /**
    * Limpa ordens antigas do sistema
    */
-  static cleanOldOrders(daysOld = 30) {
+  static async cleanOldOrders(daysOld = 30) {
     try {
       console.log(`🧹 [CLEANUP] Limpando ordens com mais de ${daysOld} dias...`);
       
-      const result = BotOrdersManager.cleanOldOrders(daysOld);
+      const result = await BotOrdersManager.cleanOldOrders(daysOld);
       
-      console.log(`✅ [CLEANUP] Limpeza concluída: ${result.removed} ordens removidas, ${result.remaining} restantes`);
+      console.log(`✅ [CLEANUP] Limpeza concluída: ${result} ordens removidas`);
       
-      return result;
+      return { success: true, removed: result };
     } catch (error) {
       console.error(`❌ [CLEANUP] Erro na limpeza:`, error.message);
       return {
@@ -229,18 +229,33 @@ class ImportOrdersFromBackpack {
   /**
    * Mostra estatísticas das ordens
    */
-  static showStats() {
+  static async showStats() {
     try {
       console.log(`📊 [STATS] Gerando estatísticas das ordens...`);
       
-      const stats = BotOrdersManager.getBotOrderStats();
+      // Busca estatísticas de todos os bots
+      const configs = await ConfigManagerSQLite.loadConfigs();
+      const statsByBot = {};
+      let totalOrders = 0;
+
+      for (const config of configs) {
+        const stats = await BotOrdersManager.getBotOrderStats(config.id);
+        statsByBot[config.botName] = stats;
+        totalOrders += stats.totalOrders;
+      }
+      
+      const result = {
+        totalOrders,
+        ordersByBot: statsByBot,
+        ordersByType: {}, // Será preenchido se necessário
+        ordersBySide: {}  // Será preenchido se necessário
+      };
       
       console.log(`📊 [STATS] Estatísticas:`);
-      console.log(`   • Total de ordens: ${stats.totalOrders}`);
-      console.log(`   • Ordens por bot:`, stats.ordersByBot);
-      console.log(`   • Tipos de ordem:`, stats.ordersByType);
+      console.log(`   • Total de ordens: ${totalOrders}`);
+      console.log(`   • Ordens por bot:`, Object.keys(statsByBot).length);
       
-      return stats;
+      return result;
     } catch (error) {
       console.error(`❌ [STATS] Erro ao gerar estatísticas:`, error.message);
       return {

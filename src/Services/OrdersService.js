@@ -328,6 +328,121 @@ class OrdersService {
       return [];
     }
   }
+
+  /**
+   * Obtém todas as ordens
+   * @returns {Array} Array com todas as ordens
+   */
+  static async getAllOrders() {
+    try {
+      if (!OrdersService.dbService || !OrdersService.dbService.isInitialized()) {
+        throw new Error('Database service not initialized');
+      }
+
+      const orders = await OrdersService.dbService.getAll(
+        'SELECT * FROM bot_orders ORDER BY timestamp DESC'
+      );
+
+      return orders || [];
+    } catch (error) {
+      console.error(`❌ [ORDERS_SERVICE] Erro ao obter todas as ordens:`, error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Obtém uma ordem pelo externalOrderId
+   * @param {string} externalOrderId - ID externo da ordem
+   * @returns {Object|null} Ordem encontrada ou null
+   */
+  static async getOrderByExternalId(externalOrderId) {
+    try {
+      if (!OrdersService.dbService || !OrdersService.dbService.isInitialized()) {
+        throw new Error('Database service not initialized');
+      }
+
+      const order = await OrdersService.dbService.get(
+        'SELECT * FROM bot_orders WHERE externalOrderId = ?',
+        [externalOrderId]
+      );
+
+      return order || null;
+    } catch (error) {
+      console.error(`❌ [ORDERS_SERVICE] Erro ao obter ordem por externalOrderId ${externalOrderId}:`, error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Remove uma ordem pelo externalOrderId
+   * @param {string} externalOrderId - ID externo da ordem
+   * @returns {number} Número de ordens removidas
+   */
+  static async removeOrderByExternalId(externalOrderId) {
+    try {
+      if (!OrdersService.dbService || !OrdersService.dbService.isInitialized()) {
+        throw new Error('Database service not initialized');
+      }
+
+      const result = await OrdersService.dbService.run(
+        'DELETE FROM bot_orders WHERE externalOrderId = ?',
+        [externalOrderId]
+      );
+
+      if (result.changes > 0) {
+        console.log(`🗑️ [ORDERS_SERVICE] Ordem ${externalOrderId} removida`);
+      }
+
+      return result.changes;
+    } catch (error) {
+      console.error(`❌ [ORDERS_SERVICE] Erro ao remover ordem ${externalOrderId}:`, error.message);
+      return 0;
+    }
+  }
+
+  /**
+   * Atualiza uma ordem pelo externalOrderId
+   * @param {string} externalOrderId - ID externo da ordem
+   * @param {Object} updates - Campos a serem atualizados
+   * @returns {number} Número de ordens atualizadas
+   */
+  static async updateOrderByExternalId(externalOrderId, updates) {
+    try {
+      if (!OrdersService.dbService || !OrdersService.dbService.isInitialized()) {
+        throw new Error('Database service not initialized');
+      }
+
+      // Constrói a query dinamicamente baseada nos campos fornecidos
+      const updateFields = [];
+      const values = [];
+
+      for (const [key, value] of Object.entries(updates)) {
+        if (key !== 'id' && key !== 'externalOrderId') { // Protege campos que não devem ser atualizados
+          updateFields.push(`${key} = ?`);
+          values.push(value);
+        }
+      }
+
+      if (updateFields.length === 0) {
+        console.warn(`⚠️ [ORDERS_SERVICE] Nenhum campo válido para atualizar`);
+        return 0;
+      }
+
+      values.push(externalOrderId);
+      const query = `UPDATE bot_orders SET ${updateFields.join(', ')} WHERE externalOrderId = ?`;
+
+      const result = await OrdersService.dbService.run(query, values);
+
+      if (result.changes > 0) {
+        console.log(`✏️ [ORDERS_SERVICE] Ordem ${externalOrderId} atualizada`);
+      }
+
+      return result.changes;
+    } catch (error) {
+      console.error(`❌ [ORDERS_SERVICE] Erro ao atualizar ordem ${externalOrderId}:`, error.message);
+      return 0;
+    }
+  }
 }
 
 export default OrdersService;

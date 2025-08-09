@@ -1,49 +1,164 @@
 import fs from 'fs';
 import path from 'path';
+import OrdersService from '../Services/OrdersService.js';
 
 class BotOrdersManager {
   constructor() {
     this.ordersFile = path.join(process.cwd(), 'persistence', 'bot_orders.json');
-    console.log(`🔍 [BOT_ORDERS] Inicializando com arquivo: ${this.ordersFile}`);
-    this.orders = this.loadOrders();
-    console.log(`🔍 [BOT_ORDERS] Ordens carregadas: ${this.orders.orders.length}`);
+    console.log(`🔍 [BOT_ORDERS] Inicializando com SQLite: ${this.ordersFile}`);
+    
+    try {
+      // Inicializa com JSON como fallback
+      this.orders = this.loadOrdersFromJson();
+      
+      // Garante que sempre temos a estrutura correta
+      if (!this.orders || !this.orders.orders || !Array.isArray(this.orders.orders)) {
+        console.log(`⚠️ [BOT_ORDERS] Estrutura inválida detectada, criando estrutura vazia`);
+        this.orders = { orders: [] };
+      }
+      
+      console.log(`🔍 [BOT_ORDERS] Ordens carregadas: ${this.orders.orders.length}`);
+    } catch (error) {
+      console.error('❌ [BOT_ORDERS] Erro no construtor:', error.message);
+      console.log(`⚠️ [BOT_ORDERS] Criando estrutura vazia como fallback`);
+      this.orders = { orders: [] };
+    }
   }
 
   /**
-   * Carrega as ordens do arquivo JSON
+   * Inicializa o sistema (método assíncrono para SQLite)
    */
-  loadOrders() {
+  async initialize() {
     try {
-      console.log(`🔍 [LOAD_ORDERS] Verificando arquivo: ${this.ordersFile}`);
+      // Tenta carregar do SQLite primeiro
+      if (OrdersService.dbService && OrdersService.dbService.isInitialized()) {
+        console.log(`✅ [BOT_ORDERS] Inicializando com SQLite database`);
+        const orders = await OrdersService.getAllOrders();
+        this.orders = { orders: orders || [] };
+        console.log(`📊 [BOT_ORDERS] Ordens carregadas do SQLite: ${this.orders.orders.length}`);
+      } else {
+        console.log(`ℹ️ [BOT_ORDERS] SQLite não disponível, usando JSON`);
+        // Recarrega do JSON para garantir que temos os dados mais recentes
+        this.orders = this.loadOrdersFromJson();
+      }
+    } catch (error) {
+      console.error('❌ [BOT_ORDERS] Erro ao inicializar com SQLite:', error.message);
+      console.log(`⚠️ [BOT_ORDERS] Continuando com JSON`);
+      // Recarrega do JSON como fallback
+      this.orders = this.loadOrdersFromJson();
+    }
+  }
+
+  /**
+   * Carrega as ordens do SQLite (com fallback para JSON)
+   */
+  async loadOrders() {
+    try {
+      // Se já temos ordens carregadas, retorna elas
+      if (this.orders && this.orders.orders) {
+        return this.orders;
+      }
+
+      // Tenta carregar do SQLite primeiro
+      if (OrdersService.dbService && OrdersService.dbService.isInitialized()) {
+        console.log(`✅ [LOAD_ORDERS] Usando SQLite database`);
+        const orders = await OrdersService.getAllOrders();
+        this.orders = { orders: orders || [] };
+        return this.orders;
+      } else {
+        // Fallback para JSON se SQLite não estiver disponível
+        console.log(`⚠️ [LOAD_ORDERS] SQLite não disponível, usando JSON fallback`);
+        this.orders = this.loadOrdersFromJson();
+        return this.orders;
+      }
+    } catch (error) {
+      console.error('❌ Erro ao carregar ordens do SQLite:', error.message);
+      console.log(`⚠️ [LOAD_ORDERS] Fallback para JSON`);
+      this.orders = this.loadOrdersFromJson();
+      return this.orders;
+    }
+  }
+
+  /**
+   * Carrega as ordens do arquivo JSON (fallback)
+   */
+  loadOrdersFromJson() {
+    try {
+      console.log(`🔍 [LOAD_ORDERS] Verificando arquivo JSON: ${this.ordersFile}`);
       if (fs.existsSync(this.ordersFile)) {
-        console.log(`✅ [LOAD_ORDERS] Arquivo existe`);
+        console.log(`✅ [LOAD_ORDERS] Arquivo JSON existe`);
         const data = fs.readFileSync(this.ordersFile, 'utf8');
         console.log(`📄 [LOAD_ORDERS] Dados lidos: ${data.length} caracteres`);
-        const parsed = JSON.parse(data);
-        console.log(`📊 [LOAD_ORDERS] Ordens parseadas: ${parsed.orders?.length || 0}`);
+        
+        if (!data || data.trim() === '') {
+          console.log(`⚠️ [LOAD_ORDERS] Arquivo JSON vazio, criando estrutura vazia`);
+          return { orders: [] };
+        }
+        
+        let parsed;
+        try {
+          parsed = JSON.parse(data);
+        } catch (parseError) {
+          console.error(`❌ [LOAD_ORDERS] Erro ao fazer parse do JSON:`, parseError.message);
+          return { orders: [] };
+        }
+        
+        // Verifica se a estrutura está correta
+        if (!parsed || typeof parsed !== 'object') {
+          console.log(`⚠️ [LOAD_ORDERS] Estrutura JSON inválida, criando estrutura vazia`);
+          return { orders: [] };
+        }
+        
+        // Se não tem a propriedade orders, cria
+        if (!parsed.orders || !Array.isArray(parsed.orders)) {
+          console.log(`⚠️ [LOAD_ORDERS] Propriedade 'orders' não encontrada ou não é array, criando`);
+          return { orders: [] };
+        }
+        
+        console.log(`📊 [LOAD_ORDERS] Ordens parseadas: ${parsed.orders.length}`);
         return parsed;
       }
-      console.log(`⚠️ [LOAD_ORDERS] Arquivo não existe, criando estrutura vazia`);
+      console.log(`⚠️ [LOAD_ORDERS] Arquivo JSON não existe, criando estrutura vazia`);
       return { orders: [] };
     } catch (error) {
-      console.error('❌ Erro ao carregar ordens dos bots:', error.message);
+      console.error('❌ Erro ao carregar ordens do JSON:', error.message);
       return { orders: [] };
     }
   }
 
   /**
-   * Salva as ordens no arquivo JSON
+   * Salva as ordens no SQLite (com fallback para JSON)
    */
-  saveOrders() {
+  async saveOrders() {
+    try {
+      if (OrdersService.dbService && OrdersService.dbService.isInitialized()) {
+        console.log(`✅ [SAVE_ORDERS] Ordens já estão no SQLite`);
+        return;
+      } else {
+        // Fallback para JSON se SQLite não estiver disponível
+        console.log(`⚠️ [SAVE_ORDERS] SQLite não disponível, usando JSON fallback`);
+        this.saveOrdersToJson();
+      }
+    } catch (error) {
+      console.error('❌ Erro ao salvar ordens no SQLite:', error.message);
+      console.log(`⚠️ [SAVE_ORDERS] Fallback para JSON`);
+      this.saveOrdersToJson();
+    }
+  }
+
+  /**
+   * Salva as ordens no arquivo JSON (fallback)
+   */
+  saveOrdersToJson() {
     try {
       const dir = path.dirname(this.ordersFile);
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
       fs.writeFileSync(this.ordersFile, JSON.stringify(this.orders, null, 2));
-      console.log(`💾 Ordens salvas em: ${this.ordersFile}`);
+      console.log(`💾 Ordens salvas em JSON: ${this.ordersFile}`);
     } catch (error) {
-      console.error('❌ Erro ao salvar ordens dos bots:', error.message);
+      console.error('❌ Erro ao salvar ordens no JSON:', error.message);
     }
   }
 
@@ -57,7 +172,7 @@ class BotOrdersManager {
    * @param {number} price - Preço
    * @param {string} orderType - Tipo da ordem (MARKET/LIMIT)
    */
-  addOrder(botId, externalOrderId, symbol, side, quantity, price, orderType) {
+  async addOrder(botId, externalOrderId, symbol, side, quantity, price, orderType) {
     const order = {
       botId,
       externalOrderId,
@@ -66,13 +181,35 @@ class BotOrdersManager {
       quantity,
       price,
       orderType,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      status: 'PENDING', // Status inicial da ordem
+      fills: [], // Array para armazenar fills da ordem
+      totalFilledQuantity: 0, // Quantidade total preenchida
+      averageFillPrice: 0, // Preço médio dos fills
+      closePrice: null, // Preço de fechamento (quando aplicável)
+      closeTime: null, // Timestamp de fechamento
+      closeQuantity: null, // Quantidade fechada
+      closeType: null, // Tipo de fechamento (MANUAL, AUTO, STOP_LOSS, TAKE_PROFIT)
+      pnl: null // PnL da ordem (quando fechada)
     };
 
-    this.orders.orders.push(order);
-    this.saveOrders();
-    
-    console.log(`📝 [BOT_ORDERS] Ordem registrada: Bot ${botId} -> Order ${externalOrderId} (${symbol} ${side} ${quantity})`);
+    try {
+      // Tenta salvar no SQLite primeiro
+      if (OrdersService.dbService && OrdersService.dbService.isInitialized()) {
+        await OrdersService.addOrder(order);
+        console.log(`📝 [BOT_ORDERS] Ordem registrada no SQLite: Bot ${botId} -> Order ${externalOrderId} (${symbol} ${side} ${quantity})`);
+      } else {
+        // Fallback para JSON se SQLite não estiver disponível
+        this.orders.orders.push(order);
+        this.saveOrdersToJson();
+        console.log(`📝 [BOT_ORDERS] Ordem registrada no JSON: Bot ${botId} -> Order ${externalOrderId} (${symbol} ${side} ${quantity})`);
+      }
+    } catch (error) {
+      console.error('❌ Erro ao adicionar ordem:', error.message);
+      // Fallback para JSON
+      this.orders.orders.push(order);
+      this.saveOrdersToJson();
+    }
   }
 
   /**
@@ -80,12 +217,28 @@ class BotOrdersManager {
    * @param {number} botId - ID do bot
    * @returns {Array} Lista de ordens do bot
    */
-  getBotOrders(botId) {
-    console.log(`🔍 [BOT_ORDERS] Buscando ordens para Bot ${botId}`);
-    console.log(`🔍 [BOT_ORDERS] Total de ordens no sistema: ${this.orders.orders.length}`);
-    const botOrders = this.orders.orders.filter(order => order.botId === botId);
-    console.log(`🔍 [BOT_ORDERS] Ordens encontradas para Bot ${botId}: ${botOrders.length}`);
-    return botOrders;
+  async getBotOrders(botId) {
+    try {
+      // Tenta buscar do SQLite primeiro
+      if (OrdersService.dbService && OrdersService.dbService.isInitialized()) {
+        console.log(`🔍 [BOT_ORDERS] Buscando ordens do SQLite para Bot ${botId}`);
+        const orders = await OrdersService.getOrdersByBotId(botId);
+        console.log(`🔍 [BOT_ORDERS] Ordens encontradas no SQLite para Bot ${botId}: ${orders.length}`);
+        return orders;
+      } else {
+        // Fallback para JSON se SQLite não estiver disponível
+        console.log(`🔍 [BOT_ORDERS] Buscando ordens do JSON para Bot ${botId}`);
+        console.log(`🔍 [BOT_ORDERS] Total de ordens no sistema JSON: ${this.orders.orders.length}`);
+        const botOrders = this.orders.orders.filter(order => order.botId === botId);
+        console.log(`🔍 [BOT_ORDERS] Ordens encontradas no JSON para Bot ${botId}: ${botOrders.length}`);
+        return botOrders;
+      }
+    } catch (error) {
+      console.error('❌ Erro ao buscar ordens do SQLite:', error.message);
+      // Fallback para JSON
+      const botOrders = this.orders.orders.filter(order => order.botId === botId);
+      return botOrders;
+    }
   }
 
   /**
@@ -93,8 +246,21 @@ class BotOrdersManager {
    * @param {string} externalOrderId - ID da ordem na exchange
    * @returns {Object|null} Ordem encontrada ou null
    */
-  getOrderByExternalId(externalOrderId) {
-    return this.orders.orders.find(order => order.externalOrderId === externalOrderId) || null;
+  async getOrderByExternalId(externalOrderId) {
+    try {
+      // Tenta buscar do SQLite primeiro
+      if (OrdersService.dbService && OrdersService.dbService.isInitialized()) {
+        const order = await OrdersService.getOrderByExternalId(externalOrderId);
+        return order;
+      } else {
+        // Fallback para JSON
+        return this.orders.orders.find(order => order.externalOrderId === externalOrderId) || null;
+      }
+    } catch (error) {
+      console.error('❌ Erro ao buscar ordem do SQLite:', error.message);
+      // Fallback para JSON
+      return this.orders.orders.find(order => order.externalOrderId === externalOrderId) || null;
+    }
   }
 
   /**
@@ -103,8 +269,8 @@ class BotOrdersManager {
    * @param {number} botId - ID do bot
    * @returns {boolean} True se a ordem pertence ao bot
    */
-  isOrderFromBot(externalOrderId, botId) {
-    const order = this.getOrderByExternalId(externalOrderId);
+  async isOrderFromBot(externalOrderId, botId) {
+    const order = await this.getOrderByExternalId(externalOrderId);
     return order && order.botId === botId;
   }
 
@@ -112,12 +278,30 @@ class BotOrdersManager {
    * Remove uma ordem (quando cancelada ou expirada)
    * @param {string} externalOrderId - ID da ordem na exchange
    */
-  removeOrder(externalOrderId) {
-    const index = this.orders.orders.findIndex(order => order.externalOrderId === externalOrderId);
-    if (index !== -1) {
-      const removedOrder = this.orders.orders.splice(index, 1)[0];
-      this.saveOrders();
-      console.log(`🗑️ [BOT_ORDERS] Ordem removida: ${externalOrderId} (Bot ${removedOrder.botId})`);
+  async removeOrder(externalOrderId) {
+    try {
+      // Tenta remover do SQLite primeiro
+      if (OrdersService.dbService && OrdersService.dbService.isInitialized()) {
+        await OrdersService.removeOrderByExternalId(externalOrderId);
+        console.log(`🗑️ [BOT_ORDERS] Ordem removida do SQLite: ${externalOrderId}`);
+      } else {
+        // Fallback para JSON
+        const index = this.orders.orders.findIndex(order => order.externalOrderId === externalOrderId);
+        if (index !== -1) {
+          const removedOrder = this.orders.orders.splice(index, 1)[0];
+          this.saveOrdersToJson();
+          console.log(`🗑️ [BOT_ORDERS] Ordem removida do JSON: ${externalOrderId} (Bot ${removedOrder.botId})`);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Erro ao remover ordem:', error.message);
+      // Fallback para JSON
+      const index = this.orders.orders.findIndex(order => order.externalOrderId === externalOrderId);
+      if (index !== -1) {
+        const removedOrder = this.orders.orders.splice(index, 1)[0];
+        this.saveOrdersToJson();
+        console.log(`🗑️ [BOT_ORDERS] Ordem removida do JSON (fallback): ${externalOrderId} (Bot ${removedOrder.botId})`);
+      }
     }
   }
 
@@ -126,13 +310,32 @@ class BotOrdersManager {
    * @param {string} externalOrderId - ID da ordem na exchange
    * @param {Object} updates - Campos a serem atualizados
    */
-  updateOrder(externalOrderId, updates) {
-    const order = this.getOrderByExternalId(externalOrderId);
-    if (order) {
-      Object.assign(order, updates);
-      order.lastUpdated = new Date().toISOString();
-      this.saveOrders();
-      console.log(`✏️ [BOT_ORDERS] Ordem atualizada: ${externalOrderId}`);
+  async updateOrder(externalOrderId, updates) {
+    try {
+      // Tenta atualizar no SQLite primeiro
+      if (OrdersService.dbService && OrdersService.dbService.isInitialized()) {
+        await OrdersService.updateOrderByExternalId(externalOrderId, updates);
+        console.log(`✏️ [BOT_ORDERS] Ordem atualizada no SQLite: ${externalOrderId}`);
+      } else {
+        // Fallback para JSON
+        const order = this.orders.orders.find(o => o.externalOrderId === externalOrderId);
+        if (order) {
+          Object.assign(order, updates);
+          order.lastUpdated = new Date().toISOString();
+          this.saveOrdersToJson();
+          console.log(`✏️ [BOT_ORDERS] Ordem atualizada no JSON: ${externalOrderId}`);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Erro ao atualizar ordem:', error.message);
+      // Fallback para JSON
+      const order = this.orders.orders.find(o => o.externalOrderId === externalOrderId);
+      if (order) {
+        Object.assign(order, updates);
+        order.lastUpdated = new Date().toISOString();
+        this.saveOrdersToJson();
+        console.log(`✏️ [BOT_ORDERS] Ordem atualizada no JSON (fallback): ${externalOrderId}`);
+      }
     }
   }
 
@@ -141,38 +344,170 @@ class BotOrdersManager {
    * @param {number} botId - ID do bot
    * @returns {Object} Estatísticas das ordens
    */
-  getBotOrderStats(botId) {
-    const botOrders = this.getBotOrders(botId);
-    
-    return {
-      totalOrders: botOrders.length,
-      buyOrders: botOrders.filter(order => order.side === 'BUY').length,
-      sellOrders: botOrders.filter(order => order.side === 'SELL').length,
-      symbols: [...new Set(botOrders.map(order => order.symbol))],
-      firstOrder: botOrders.length > 0 ? botOrders[0].timestamp : null,
-      lastOrder: botOrders.length > 0 ? botOrders[botOrders.length - 1].timestamp : null
-    };
+  async getBotOrderStats(botId) {
+    try {
+      const botOrders = await this.getBotOrders(botId);
+      
+      // Separa ordens por status
+      const openOrders = botOrders.filter(order => 
+        !order.status || order.status === 'PENDING' || order.status === 'OPEN'
+      );
+      const closedOrders = botOrders.filter(order => 
+        order.status === 'CLOSED' || order.status === 'FILLED'
+      );
+      
+      // Calcula PnL total
+      const totalPnl = closedOrders.reduce((sum, order) => {
+        return sum + (order.pnl || 0);
+      }, 0);
+      
+      // Calcula win rate
+      const winningTrades = closedOrders.filter(order => (order.pnl || 0) > 0).length;
+      const losingTrades = closedOrders.filter(order => (order.pnl || 0) < 0).length;
+      const winRate = closedOrders.length > 0 ? (winningTrades / closedOrders.length) * 100 : 0;
+      
+      return {
+        totalOrders: botOrders.length,
+        openOrders: openOrders.length,
+        closedOrders: closedOrders.length,
+        buyOrders: botOrders.filter(order => order.side === 'BUY').length,
+        sellOrders: botOrders.filter(order => order.side === 'SELL').length,
+        symbols: [...new Set(botOrders.map(order => order.symbol))],
+        firstOrder: botOrders.length > 0 ? botOrders[0].timestamp : null,
+        lastOrder: botOrders.length > 0 ? botOrders[botOrders.length - 1].timestamp : null,
+        totalPnl: totalPnl,
+        winningTrades: winningTrades,
+        losingTrades: losingTrades,
+        winRate: winRate,
+        averagePnl: closedOrders.length > 0 ? totalPnl / closedOrders.length : 0
+      };
+    } catch (error) {
+      console.error('❌ Erro ao obter estatísticas:', error.message);
+      return {
+        totalOrders: 0,
+        openOrders: 0,
+        closedOrders: 0,
+        buyOrders: 0,
+        sellOrders: 0,
+        symbols: [],
+        firstOrder: null,
+        lastOrder: null,
+        totalPnl: 0,
+        winningTrades: 0,
+        losingTrades: 0,
+        winRate: 0,
+        averagePnl: 0
+      };
+    }
   }
 
   /**
    * Limpa ordens antigas (opcional - para manutenção)
    * @param {number} daysOld - Número de dias para considerar como "antiga"
    */
-  cleanOldOrders(daysOld = 30) {
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - daysOld);
-    
-    const initialCount = this.orders.orders.length;
-    this.orders.orders = this.orders.orders.filter(order => {
-      return new Date(order.timestamp) > cutoffDate;
-    });
-    
-    const removedCount = initialCount - this.orders.orders.length;
-    if (removedCount > 0) {
-      this.saveOrders();
-      console.log(`🧹 [BOT_ORDERS] ${removedCount} ordens antigas removidas`);
+  async cleanOldOrders(daysOld = 30) {
+    try {
+      // Tenta limpar do SQLite primeiro
+      if (OrdersService.dbService && OrdersService.dbService.isInitialized()) {
+        const removedCount = await OrdersService.cleanupOldOrders(daysOld);
+        console.log(`🧹 [BOT_ORDERS] ${removedCount} ordens antigas removidas do SQLite`);
+        return removedCount;
+      } else {
+        // Fallback para JSON
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - daysOld);
+        
+        const initialCount = this.orders.orders.length;
+        this.orders.orders = this.orders.orders.filter(order => {
+          return new Date(order.timestamp) > cutoffDate;
+        });
+        
+        const removedCount = initialCount - this.orders.orders.length;
+        if (removedCount > 0) {
+          this.saveOrdersToJson();
+          console.log(`🧹 [BOT_ORDERS] ${removedCount} ordens antigas removidas do JSON`);
+        }
+        return removedCount;
+      }
+    } catch (error) {
+      console.error('❌ Erro ao limpar ordens antigas:', error.message);
+      return 0;
+    }
+  }
+
+  /**
+   * Migra ordens do JSON para o SQLite
+   * @returns {number} Número de ordens migradas
+   */
+  async migrateToSqlite() {
+    try {
+      if (!OrdersService.dbService || !OrdersService.dbService.isInitialized()) {
+        console.log(`⚠️ [MIGRATION] SQLite não está disponível`);
+        return 0;
+      }
+
+      if (!fs.existsSync(this.ordersFile)) {
+        console.log(`ℹ️ [MIGRATION] Arquivo JSON não existe, nada para migrar`);
+        return 0;
+      }
+
+      // Carrega ordens do JSON
+      const jsonData = this.loadOrdersFromJson();
+      const orders = jsonData.orders || [];
+
+      if (orders.length === 0) {
+        console.log(`ℹ️ [MIGRATION] Nenhuma ordem para migrar`);
+        return 0;
+      }
+
+      console.log(`🚀 [MIGRATION] Iniciando migração de ${orders.length} ordens do JSON para SQLite`);
+
+      let migratedCount = 0;
+      let errorCount = 0;
+
+      for (const order of orders) {
+        try {
+          // Verifica se a ordem já existe no SQLite
+          const existingOrder = await OrdersService.getOrderByExternalId(order.externalOrderId);
+          if (!existingOrder) {
+            await OrdersService.addOrder(order);
+            migratedCount++;
+          } else {
+            console.log(`ℹ️ [MIGRATION] Ordem ${order.externalOrderId} já existe no SQLite, pulando`);
+          }
+        } catch (error) {
+          console.error(`❌ [MIGRATION] Erro ao migrar ordem ${order.externalOrderId}:`, error.message);
+          errorCount++;
+        }
+      }
+
+      console.log(`✅ [MIGRATION] Migração concluída: ${migratedCount} ordens migradas, ${errorCount} erros`);
+
+      if (migratedCount > 0) {
+        // Cria backup do arquivo JSON original
+        const backupFile = this.ordersFile.replace('.json', '_backup_' + new Date().toISOString().replace(/[:.]/g, '-') + '.json');
+        fs.copyFileSync(this.ordersFile, backupFile);
+        console.log(`💾 [MIGRATION] Backup do JSON criado: ${backupFile}`);
+      }
+
+      return migratedCount;
+    } catch (error) {
+      console.error('❌ Erro na migração:', error.message);
+      return 0;
     }
   }
 }
 
-export default new BotOrdersManager();
+// Cria a instância
+const botOrdersManager = new BotOrdersManager();
+
+// Função para inicializar quando necessário
+async function initializeBotOrdersManager() {
+  if (botOrdersManager && typeof botOrdersManager.initialize === 'function') {
+    await botOrdersManager.initialize();
+  }
+}
+
+// Exporta tanto a instância quanto a função de inicialização
+export { initializeBotOrdersManager };
+export default botOrdersManager;

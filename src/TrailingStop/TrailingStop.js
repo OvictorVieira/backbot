@@ -726,6 +726,7 @@ class TrailingStop {
    * @returns {object|null} - Estado atualizado do trailing stop ou null se não aplicável
    */
   async updateTrailingStopForPosition(position) {
+    let trailingState = null;
     try {
       const enableTrailingStop = this.config?.enableTrailingStop || false;
       const enableHybridStrategy = this.config?.enableHybridStopStrategy || false;
@@ -769,7 +770,7 @@ class TrailingStop {
       }
 
       const trailingStateMap = this.getTrailingState();
-      let trailingState = trailingStateMap.get(position.symbol);
+      trailingState = trailingStateMap.get(position.symbol);
 
       // === ESTRATÉGIA HÍBRIDA (ATR) ===
       if (enableHybridStrategy) {
@@ -1118,6 +1119,7 @@ class TrailingStop {
    */
   checkTrailingStopTrigger(position, trailingState) {
     try {
+      // Early return if trailingState is not properly defined
       if (!trailingState || !trailingState.activated || !trailingState.trailingStopPrice) {
         return null;
       }

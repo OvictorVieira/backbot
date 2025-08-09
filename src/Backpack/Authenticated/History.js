@@ -1,8 +1,9 @@
 import axios from 'axios';
 import { auth } from './Authentication.js';
-import BotOrdersManager from '../../Config/BotOrdersManager.js';
+import BotOrdersManager, { initializeBotOrdersManager } from '../../Config/BotOrdersManager.js';
 import ConfigManager from '../../Config/ConfigManager.js';
 import Futures from './Futures.js';
+import Logger from '../../Utils/Logger.js';
 
 class History {
 
@@ -34,7 +35,7 @@ class History {
 
       return response.data
     } catch (error) {
-      console.error('getBorrowHistory - ERROR!', error.response?.data || error.message);
+      Logger.error('getBorrowHistory - ERROR!', error.response?.data || error.message);
       return null
     }
   }
@@ -67,7 +68,7 @@ class History {
 
       return response.data
     } catch (error) {
-      console.error('getInterestHistory - ERROR!', error.response?.data || error.message);
+      Logger.error('getInterestHistory - ERROR!', error.response?.data || error.message);
       return null
     }
   }
@@ -99,7 +100,7 @@ class History {
 
       return response.data
     } catch (error) {
-      console.error('getBorrowPositionHistory - ERROR!', error.response?.data || error.message);
+      Logger.error('getBorrowPositionHistory - ERROR!', error.response?.data || error.message);
       return null
     }
   }
@@ -134,7 +135,7 @@ class History {
 
     return response.data;
   } catch (error) {
-    console.error('getFillHistory - ERROR!', error.response?.data || error.message);
+    Logger.error('getFillHistory - ERROR!', error.response?.data || error.message);
     return null;
   }
   }
@@ -164,7 +165,7 @@ class History {
 
       return response.data;
     } catch (error) {
-      console.error('getFundingPayments - ERROR!', error.response?.data || error.message);
+      Logger.error('getFundingPayments - ERROR!', error.response?.data || error.message);
       return null;
     }
   }
@@ -196,7 +197,7 @@ class History {
 
       return response.data;
     } catch (error) {
-      console.error('getOrderHistory - ERROR!', error.response?.data || error.message);
+      Logger.error('getOrderHistory - ERROR!', error.response?.data || error.message);
       return null;
     }
   }
@@ -275,15 +276,29 @@ class History {
     try {
       const { days = 90, limit = 1000 } = options;
       
+      console.log(`🔍 [ANALYZE] Iniciando análise para botClientOrderId: ${botClientOrderId}`);
+      console.log(`🔍 [ANALYZE] Opções:`, { days, limit });
+      
       // Buscar fills da Backpack (fonte única de dados)
       let fills = [];
       if (apiKey && apiSecret) {
         try {
+          console.log(`🔍 [ANALYZE] Buscando fills da Backpack...`);
           const fillsData = await this.getFillHistory(null, null, null, null, limit, null, null, null, null, apiKey, apiSecret);
+          
+          console.log(`🔍 [ANALYZE] Fills brutos recebidos da Backpack:`, {
+            total: fillsData ? fillsData.length : 0,
+            sample: fillsData && fillsData.length > 0 ? fillsData[0] : null
+          });
           
           if (fillsData && Array.isArray(fillsData)) {
             // Filtrar fills que pertencem ao bot usando clientId
+            console.log(`🔍 [ANALYZE] Filtrando fills para botClientOrderId: ${botClientOrderId}`);
             fills = this.filterBotFillsByClientId(fillsData, botClientOrderId);
+            console.log(`🔍 [ANALYZE] Fills filtrados para o bot:`, {
+              total: fills.length,
+              sample: fills.length > 0 ? fills[0] : null
+            });
           }
         } catch (error) {
           console.log(`⚠️ [ANALYZE] Erro ao buscar fills da Backpack: ${error.message}`);
@@ -361,24 +376,48 @@ class History {
     const botClientOrderIdStr = botClientOrderId ? botClientOrderId.toString() : '';
     
     console.log(`🔍 [FILTER] Filtrando fills para botClientOrderId: ${botClientOrderId}`);
+    console.log(`🔍 [FILTER] Total de fills para filtrar: ${fills.length}`);
+    
+    let fillsWithClientId = 0;
+    let fillsWithoutClientId = 0;
+    let fillsMatched = 0;
     
     for (const fill of fills) {
       // Verifica clientId (método principal)
       const clientId = fill.clientId || fill.clientOrderId || fill.client_order_id;
       
       if (!clientId) {
+        fillsWithoutClientId++;
         continue; // Pula fills sem clientId
       }
       
+      fillsWithClientId++;
       const clientIdStr = clientId.toString();
       
       // Verifica se o clientId começa com o botClientOrderId
       const matches = clientIdStr.startsWith(botClientOrderIdStr);
       
       if (matches) {
+        fillsMatched++;
         filteredFills.push(fill);
+        console.log(`✅ [FILTER] Fill encontrado:`, {
+          symbol: fill.symbol,
+          side: fill.side,
+          quantity: fill.quantity,
+          price: fill.price,
+          clientId: clientIdStr,
+          botClientOrderId: botClientOrderIdStr
+        });
       }
     }
+    
+    console.log(`🔍 [FILTER] Resumo da filtragem:`, {
+      totalFills: fills.length,
+      fillsWithClientId,
+      fillsWithoutClientId,
+      fillsMatched,
+      filteredFills: filteredFills.length
+    });
     
     return filteredFills;
   }
@@ -393,9 +432,9 @@ class History {
   /**
    * Cria posições abertas baseadas nas ordens importadas
    */
-  createOpenPositionsFromImportedOrders(botId) {
+  async createOpenPositionsFromImportedOrders(botId) {
     console.log(`🔍 [CREATE_POSITIONS] INICIANDO - Bot ${botId}`);
-    const orders = BotOrdersManager.getBotOrders(botId);
+    const orders = await BotOrdersManager.getBotOrders(botId);
     console.log(`🔍 [CREATE_POSITIONS] Encontradas ${orders.length} ordens para Bot ${botId}`);
     console.log(`🔍 [CREATE_POSITIONS] Primeira ordem:`, orders[0]);
     

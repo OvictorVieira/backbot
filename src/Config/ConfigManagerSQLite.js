@@ -36,22 +36,41 @@ class ConfigManagerSQLite {
    */
   static async loadConfigs() {
     try {
+      Logger.info('🔍 [CONFIG_SQLITE] Iniciando carregamento de configurações...');
+      
+      if (!ConfigManagerSQLite.dbService || !ConfigManagerSQLite.dbService.isInitialized()) {
+        Logger.error('❌ [CONFIG_SQLITE] Database service não está inicializado');
+        throw new Error('Database service não está inicializado');
+      }
+      
+      Logger.info('🔍 [CONFIG_SQLITE] Executando query SELECT...');
       const results = await ConfigManagerSQLite.dbService.getAll(
         'SELECT botId, config, createdAt, updatedAt FROM bot_configs ORDER BY botId'
       );
       
-      return results.map(row => {
-        const config = JSON.parse(row.config);
-        return {
-          id: row.botId,
-          ...config,
-          createdAt: row.createdAt,
-          updatedAt: row.updatedAt
-        };
-      });
+      Logger.info(`🔍 [CONFIG_SQLITE] Query executada, ${results.length} resultados encontrados`);
+      
+      const configs = results.map(row => {
+        try {
+          const config = JSON.parse(row.config);
+          return {
+            id: row.botId,
+            ...config,
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt
+          };
+        } catch (parseError) {
+          Logger.error(`❌ [CONFIG_SQLITE] Erro ao fazer parse do JSON para botId ${row.botId}:`, parseError.message);
+          return null;
+        }
+      }).filter(config => config !== null);
+      
+      Logger.info(`✅ [CONFIG_SQLITE] ${configs.length} configurações carregadas com sucesso`);
+      return configs;
+      
     } catch (error) {
       Logger.error('❌ [CONFIG_SQLITE] Erro ao carregar configurações:', error.message);
-      return [];
+      throw error;
     }
   }
 

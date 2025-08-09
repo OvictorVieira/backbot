@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { auth } from './Authentication.js';
+import Logger from '../../Utils/Logger.js';
 
 class Order {
 
@@ -7,12 +8,12 @@ class Order {
     const timestamp = Date.now();
 
      if (!symbol) {
-      console.error('symbol required');
+      Logger.error('symbol required');
       return null;
     }
 
     if (!orderId && !clientId) {
-      console.error('clientId or orderId is required');
+      Logger.error('clientId or orderId is required');
       return null;
     }
 
@@ -35,7 +36,7 @@ class Order {
       });
       return response.data
     } catch (error) {
-      console.error('getOpenOrder - ERROR!', error.response?.data || error.message);
+      Logger.error('getOpenOrder - ERROR!', error.response?.data || error.message);
       return null
     }
   }
@@ -65,7 +66,7 @@ class Order {
       return response.data
     } catch (error) {
       if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
-        console.warn('⚠️ getOpenOrders - Timeout, tentando novamente em 2s...');
+        Logger.warn('⚠️ getOpenOrders - Timeout, tentando novamente em 2s...');
         // Retry após 2 segundos
         await new Promise(resolve => setTimeout(resolve, 2000));
         try {
@@ -83,14 +84,14 @@ class Order {
             timeout: 20000 // Timeout maior na segunda tentativa
           });
           
-          console.log('✅ getOpenOrders - Retry bem-sucedido');
+          Logger.info('✅ getOpenOrders - Retry bem-sucedido');
           return retryResponse.data;
         } catch (retryError) {
-          console.error('❌ getOpenOrders - Retry falhou:', retryError.response?.data || retryError.message);
+          Logger.error('❌ getOpenOrders - Retry falhou:', retryError.response?.data || retryError.message);
           return null;
         }
       } else {
-        console.error('getOpenOrders - ERROR!', error.response?.data || error.message);
+        Logger.error('getOpenOrders - ERROR!', error.response?.data || error.message);
         return null
       }
     }
@@ -143,7 +144,7 @@ class Order {
       
       return data;
     } catch (err) {
-      console.error(`❌ [Order.executeOrder] Erro ao enviar ordem:`, {
+      Logger.error(`❌ [Order.executeOrder] Erro ao enviar ordem:`, {
         status: err.response?.status,
         statusText: err.response?.statusText,
         data: err.response?.data,
@@ -161,7 +162,7 @@ class Order {
     const timestamp = Date.now();
 
     if (!symbol) {
-      console.error('symbol required');
+      Logger.error('symbol required');
       return null;
     }
 
@@ -185,7 +186,7 @@ class Order {
       });
       return response.data
     } catch (error) {
-    console.error('cancelOpenOrder - ERROR!', error.response?.data || error.message);
+    Logger.error('cancelOpenOrder - ERROR!', error.response?.data || error.message);
     return null
     }
 
@@ -195,7 +196,7 @@ class Order {
     const timestamp = Date.now();
 
      if (!symbol) {
-      console.error('symbol required');
+      Logger.error('symbol required');
       return null;
     }
 
@@ -218,7 +219,7 @@ class Order {
       });
       return response.data
     } catch (error) {
-      console.error('cancelOpenOrders - ERROR!', error.response?.data || error.message);
+      Logger.error('cancelOpenOrders - ERROR!', error.response?.data || error.message);
       return null
     }
   }

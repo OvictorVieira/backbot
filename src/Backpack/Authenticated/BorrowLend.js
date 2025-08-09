@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { auth } from './Authentication.js';
+import Logger from '../../Utils/Logger.js';
 
 class BorrowLend {
   
@@ -18,7 +19,7 @@ class BorrowLend {
 
       return response.data;
     } catch (error) {
-      console.error('getBorrowLendPositionQuery - ERROR!', error.response?.data || error.message);
+      Logger.error('getBorrowLendPositionQuery - ERROR!', error.response?.data || error.message);
       return null;
     }
   }
@@ -27,17 +28,17 @@ class BorrowLend {
     const timestamp = Date.now();
 
     if (!symbol) {
-      console.error('symbol required');
+      Logger.error('symbol required');
       return null;
     }
 
     if (!side) {
-      console.error('side required');
+      Logger.error('side required');
       return null;
     }
 
     if (!quantity) {
-      console.error('quantity required');
+      Logger.error('quantity required');
       return null;
     }
 
@@ -60,7 +61,7 @@ class BorrowLend {
 
       return response.data;
     } catch (error) {
-      console.error('borrowLendExecute - ERROR!', error.response?.data || error.message);
+      Logger.error('borrowLendExecute - ERROR!', error.response?.data || error.message);
       return null;
     }
   }

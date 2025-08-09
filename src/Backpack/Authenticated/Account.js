@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { auth } from './Authentication.js';
+import Logger from '../../Utils/Logger.js';
 
 class Account {
 
@@ -21,7 +22,7 @@ class Account {
 
       return response.data;
     } catch (error) {
-      console.error('getAccount - ERROR!', error.response?.data || error.message);
+      Logger.error('getAccount - ERROR!', error.response?.data || error.message);
       return null;
     }
   }
@@ -31,7 +32,7 @@ class Account {
     const timestamp = Date.now();
 
     if (!symbol) {
-      console.error('symbol required');
+      Logger.error('symbol required');
       return null;
     }
 
@@ -51,7 +52,7 @@ class Account {
 
       return response.data;
     } catch (error) {
-      console.error('getMaxBorrowQuantity - ERROR!', error.response?.data || error.message);
+      Logger.error('getMaxBorrowQuantity - ERROR!', error.response?.data || error.message);
       return null;
     }
   }
@@ -61,12 +62,12 @@ class Account {
     const timestamp = Date.now();
 
      if (!symbol) {
-      console.error('symbol required');
+      Logger.error('symbol required');
       return null;
     }
 
      if (!side) {
-      console.error('side required');
+      Logger.error('side required');
       return null;
     }
 
@@ -86,7 +87,7 @@ class Account {
 
       return response.data;
     } catch (error) {
-      console.error('getMaxOrderQuantity - ERROR!', error.response?.data || error.message);
+      Logger.error('getMaxOrderQuantity - ERROR!', error.response?.data || error.message);
       return null;
     }
   }
@@ -95,7 +96,7 @@ class Account {
     const timestamp = Date.now();
 
     if (!symbol) {
-      console.error('symbol required');
+      Logger.error('symbol required');
       return null;
     }
 
@@ -114,7 +115,7 @@ class Account {
       });
       return response.data;
     } catch (error) {
-      console.error('getMaxWithdrawalQuantity - ERROR!', error.response?.data || error.message);
+      Logger.error('getMaxWithdrawalQuantity - ERROR!', error.response?.data || error.message);
       return null;
     }
   }
