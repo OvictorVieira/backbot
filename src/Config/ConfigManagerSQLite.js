@@ -1,4 +1,5 @@
 import DatabaseService from '../Services/DatabaseService.js';
+import Logger from '../Utils/Logger.js';
 
 /**
  * ConfigManager SQLite - Versão que usa banco de dados SQLite
@@ -15,7 +16,7 @@ class ConfigManagerSQLite {
    */
   static initialize(dbService) {
     ConfigManagerSQLite.dbService = dbService;
-    console.log('🔧 [CONFIG_SQLITE] ConfigManager SQLite inicializado');
+    Logger.info('🔧 [CONFIG_SQLITE] ConfigManager SQLite inicializado');
   }
 
   /**
@@ -49,7 +50,7 @@ class ConfigManagerSQLite {
         };
       });
     } catch (error) {
-      console.error('❌ [CONFIG_SQLITE] Erro ao carregar configurações:', error.message);
+      Logger.error('❌ [CONFIG_SQLITE] Erro ao carregar configurações:', error.message);
       return [];
     }
   }
@@ -60,7 +61,7 @@ class ConfigManagerSQLite {
    */
   static async saveConfigs(configs) {
     try {
-      console.log(`💾 [CONFIG_SQLITE] Iniciando salvamento de ${configs.length} configurações...`);
+      Logger.info(`💾 [CONFIG_SQLITE] Iniciando salvamento de ${configs.length} configurações...`);
       
       // Limpa todas as configurações existentes
       await ConfigManagerSQLite.dbService.run('DELETE FROM bot_configs');
@@ -77,9 +78,9 @@ class ConfigManagerSQLite {
         );
       }
       
-      console.log(`✅ [CONFIG_SQLITE] Configurações salvas com sucesso`);
+      Logger.info(`✅ [CONFIG_SQLITE] Configurações salvas com sucesso`);
     } catch (error) {
-      console.error('❌ [CONFIG_SQLITE] Erro ao salvar configurações:', error.message);
+      Logger.error('❌ [CONFIG_SQLITE] Erro ao salvar configurações:', error.message);
       throw error;
     }
   }
@@ -349,8 +350,8 @@ class ConfigManagerSQLite {
       const config = await this.getBotConfigById(botId);
       if (!config) return false;
       
-      // Verifica se o bot não está rodando e não está em erro
-      return config.status !== 'running' && config.status !== 'error';
+      // Verifica se o bot está habilitado e não está rodando
+      return config.enabled && config.status !== 'running';
     } catch (error) {
       console.error(`❌ [CONFIG_SQLITE] Erro ao verificar se bot ${botId} pode ser iniciado:`, error.message);
       return false;
@@ -360,9 +361,26 @@ class ConfigManagerSQLite {
   /**
    * Obtém status de um bot por ID
    * @param {number} botId - ID único do bot
-   * @returns {Promise<Object|null>} Status do bot ou null
+   * @returns {Promise<string|null>} Status do bot ou null
    */
   static async getBotStatusById(botId) {
+    try {
+      const config = await this.getBotConfigById(botId);
+      if (!config) return null;
+      
+      return config.status || 'stopped';
+    } catch (error) {
+      console.error(`❌ [CONFIG_SQLITE] Erro ao obter status do bot ${botId}:`, error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Obtém status completo de um bot por ID
+   * @param {number} botId - ID único do bot
+   * @returns {Promise<Object|null>} Status completo do bot ou null
+   */
+  static async getBotStatusCompleteById(botId) {
     try {
       const config = await this.getBotConfigById(botId);
       if (!config) return null;
@@ -377,7 +395,7 @@ class ConfigManagerSQLite {
         config: config
       };
     } catch (error) {
-      console.error(`❌ [CONFIG_SQLITE] Erro ao obter status do bot ${botId}:`, error.message);
+      console.error(`❌ [CONFIG_SQLITE] Erro ao obter status completo do bot ${botId}:`, error.message);
       return null;
     }
   }
@@ -477,7 +495,7 @@ class ConfigManagerSQLite {
       enableHybridStopStrategy: false,
       initialStopAtrMultiplier: 2.0,
       trailingStopAtrMultiplier: 1.5,
-      partialTakeProfitAtrMultiplier: 3.0,
+      partialTakeProfitAtrMultiplier: 1.5,
       partialTakeProfitPercentage: 50,
       enableTrailingStop: false,
       trailingStopDistance: 1.5,

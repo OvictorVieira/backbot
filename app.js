@@ -1,4 +1,6 @@
 import dotenv from 'dotenv';
+import Logger from './src/Utils/Logger.js';
+
 dotenv.config();
 
 // Define a URL da API se não estiver definida
@@ -56,19 +58,19 @@ let orphanOrdersLastErrorTime = null;
 // Inicializa o TrailingStop com a estratégia correta
 function initializeTrailingStop() {
   if (!activeBotConfig) {
-    console.error('❌ Configuração do bot não encontrada para inicializar TrailingStop');
+    Logger.error('❌ Configuração do bot não encontrada para inicializar TrailingStop');
     return;
   }
   
   // Verifica se as credenciais estão configuradas
   if (!activeBotConfig.apiKey || !activeBotConfig.apiSecret) {
-    console.error('❌ Credenciais de API não configuradas para inicializar TrailingStop');
-    console.error(`💡 Configure as credenciais para o bot: ${activeBotConfig.botName}`);
+    Logger.error('❌ Credenciais de API não configuradas para inicializar TrailingStop');
+    Logger.error(`💡 Configure as credenciais para o bot: ${activeBotConfig.botName}`);
     return;
   }
   
   const strategyType = activeBotConfig.strategyName || 'DEFAULT';
-  console.log(`🔧 [APP_INIT] Inicializando TrailingStop com estratégia: ${strategyType}`);
+  Logger.debug(`🔧 [APP_INIT] Inicializando TrailingStop com estratégia: ${strategyType}`);
   const trailingStopInstance = new TrailingStop(strategyType, activeBotConfig);
   trailingStopInstance.reinitializeStopLoss(strategyType);
 }
@@ -192,7 +194,7 @@ function showGlobalTimer(waitTimeMs = null) {
       console.warn = originalWarn;
       // Limpa a linha do progresso
       clearProgressLine();
-      console.log(`🔄 [${activeBotConfig.botName}] Iniciando nova análise...\n`);
+      Logger.info(`🔄 [${activeBotConfig.botName}] Iniciando nova análise...\n`);
     }
   }, 1000);
 }
@@ -250,11 +252,11 @@ async function startDecision() {
   if (executionMode === 'ON_CANDLE_CLOSE') {
     // Modo ON_CANDLE_CLOSE: Aguarda o próximo fechamento de vela
     nextInterval = timeframeConfig.getTimeUntilNextCandleClose(activeBotConfig.time);
-    console.log(`⏰ [${activeBotConfig.botName}][ON_CANDLE_CLOSE] Próxima análise em ${Math.floor(nextInterval / 1000)}s`);
+          Logger.debug(`⏰ [${activeBotConfig.botName}][ON_CANDLE_CLOSE] Próxima análise em ${Math.floor(nextInterval / 1000)}s`);
   } else {
     // Modo REALTIME: Análise a cada 60 segundos
     nextInterval = 60000;
-    console.log(`⏰ [${activeBotConfig.botName}][REALTIME] Próxima análise em ${Math.floor(nextInterval / 1000)}s`);
+          Logger.debug(`⏰ [${activeBotConfig.botName}][REALTIME] Próxima análise em ${Math.floor(nextInterval / 1000)}s`);
   }
   
   console.log(`🔧 [${activeBotConfig.botName}][DEBUG] Execution Mode: ${executionMode}, Next Interval: ${nextInterval}ms`);

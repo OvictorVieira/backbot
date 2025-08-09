@@ -1,5 +1,6 @@
 import { validateLeverageForSymbol } from '../../Utils/Utils.js';
 import AccountController from '../../Controllers/AccountController.js';
+import Logger from '../../Utils/Logger.js';
 
 export class BaseStrategy {
   /**
@@ -140,7 +141,7 @@ export class BaseStrategy {
       if (Account && Account.leverage) {
         const rawLeverage = Account.leverage;
         leverage = validateLeverageForSymbol(data.market.symbol, rawLeverage);
-        console.log(`🔧 [BASE_STRATEGY] ${data.market.symbol}: Alavancagem ${rawLeverage}x -> ${leverage}x (validada)`);
+        Logger.debug(`🔧 [BASE_STRATEGY] ${data.market.symbol}: Alavancagem ${rawLeverage}x -> ${leverage}x (validada)`);
       }
     } catch (error) {
       console.warn(`⚠️ [BASE_STRATEGY] ${data.market.symbol}: Erro ao obter alavancagem, usando 1x: ${error.message}`);
@@ -150,7 +151,7 @@ export class BaseStrategy {
     const baseStopLossPct = Math.abs(stopLossPct);
     const actualStopLossPct = baseStopLossPct / leverage;
     
-    console.log(`🔧 [BASE_STRATEGY] ${data.market.symbol}: Stop Loss - Bruto: ${baseStopLossPct}%, Real: ${actualStopLossPct.toFixed(2)}% (leverage ${leverage}x)`);
+            Logger.debug(`🔧 [BASE_STRATEGY] ${data.market.symbol}: Stop Loss - Bruto: ${baseStopLossPct}%, Real: ${actualStopLossPct.toFixed(2)}% (leverage ${leverage}x)`);
 
     // Converte percentuais para decimais (usando o valor corrigido pela alavancagem)
     const stopLossDecimal = actualStopLossPct / 100;

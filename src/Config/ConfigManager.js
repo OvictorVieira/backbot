@@ -519,7 +519,7 @@ class ConfigManager {
       enableHybridStopStrategy: false, // Valor padrão
       initialStopAtrMultiplier: 2.0, // Valor padrão
       trailingStopAtrMultiplier: 1.5, // Valor padrão
-      partialTakeProfitAtrMultiplier: 3.0, // Valor padrão
+      partialTakeProfitAtrMultiplier: 1.5, // Valor padrão
       partialTakeProfitPercentage: 50, // Valor padrão
       // Configurações de Trailing Stop
       enableTrailingStop: false, // Valor padrão
@@ -565,7 +565,7 @@ class ConfigManager {
       enableHybridStopStrategy: false, // Valor padrão
       initialStopAtrMultiplier: 2.0, // Valor padrão
       trailingStopAtrMultiplier: 1.5, // Valor padrão
-      partialTakeProfitAtrMultiplier: 3.0, // Valor padrão
+      partialTakeProfitAtrMultiplier: 1.5, // Valor padrão
       partialTakeProfitPercentage: 50, // Valor padrão
       // Configurações de Trailing Stop
       enableTrailingStop: false, // Valor padrão

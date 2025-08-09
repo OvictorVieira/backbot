@@ -1,5 +1,10 @@
 import dotenv from 'dotenv';
+import Logger from './src/Utils/Logger.js';
+
 dotenv.config();
+
+// Verifica configuração do Logger (apenas para debug)
+// Logger.checkConfig();
 
 // Define a URL da API se não estiver definida
 if (!process.env.API_URL) {
@@ -118,16 +123,16 @@ async function loadAndRecoverBots() {
     );
     
     if (botsToRecover.length === 0) {
-      console.log(`ℹ️ [PERSISTENCE] Nenhum bot para recuperar encontrado`);
+      Logger.debug(`ℹ️ [PERSISTENCE] Nenhum bot para recuperar encontrado`);
       return;
     }
     
-    console.log(`📋 [PERSISTENCE] Carregando ${botsToRecover.length} bots para recuperação...`);
+    Logger.debug(`📋 [PERSISTENCE] Carregando ${botsToRecover.length} bots para recuperação...`);
     
     // Executa todos os bots em paralelo sem aguardar
     const recoveryPromises = botsToRecover.map(async (botConfig) => {
       try {
-        console.log(`🔄 [PERSISTENCE] Iniciando recuperação do bot: ${botConfig.id} (${botConfig.botName}) - Status anterior: ${botConfig.status}`);
+        Logger.debug(`🔄 [PERSISTENCE] Iniciando recuperação do bot: ${botConfig.id} (${botConfig.botName}) - Status anterior: ${botConfig.status}`);
         await recoverBot(botConfig.id, botConfig, botConfig.startTime);
       } catch (error) {
         console.error(`❌ [PERSISTENCE] Erro ao recuperar bot ${botConfig.id}:`, error.message);
@@ -136,7 +141,7 @@ async function loadAndRecoverBots() {
     
     // Executa em background sem bloquear
     Promise.all(recoveryPromises).then(() => {
-      console.log(`✅ [PERSISTENCE] Recuperação de bots concluída`);
+      Logger.info(`✅ [PERSISTENCE] Recuperação de bots concluída`);
     }).catch((error) => {
       console.error(`❌ [PERSISTENCE] Erro na recuperação de bots:`, error.message);
     });
@@ -280,7 +285,7 @@ async function recoverBot(botId, config, startTime) {
       status: 'running'
     });
     
-    console.log(`✅ [PERSISTENCE] Bot ${botId} (${config.botName}) recuperado com sucesso`);
+            Logger.info(`✅ [PERSISTENCE] Bot ${botId} (${config.botName}) recuperado com sucesso`);
     
   } catch (error) {
     console.error(`❌ [PERSISTENCE] Erro ao recuperar bot ${botId}:`, error.message);
@@ -359,7 +364,7 @@ async function startStops(botId) {
     }
 
     // Executa o trailing stop passando as configurações
-    console.log(`🔧 [STOPS] Bot ${botId}: Config recebida:`, {
+    Logger.debug(`🔧 [STOPS] Bot ${botId}: Config recebida:`, {
       id: config.id,
       botName: config.botName,
       hasApiKey: !!config.apiKey,
@@ -556,12 +561,14 @@ async function startOrphanOrderMonitor(botId) {
 }
 
 // Função para iniciar um bot específico
-async function startBot(botId) {
+async function startBot(botId, forceRestart = false) {
+  let botConfig = null; // Declaração movida para fora do try
+  
   try {
-    console.log(`🚀 [BOT] Iniciando bot com ID: ${botId}`);
+    Logger.info(`🚀 [BOT] Iniciando bot com ID: ${botId}`);
     
-    // Verifica se o bot pode ser iniciado
-    if (!await ConfigManagerSQLite.canStartBotById(botId)) {
+    // Verifica se o bot pode ser iniciado (a menos que seja um restart forçado)
+    if (!forceRestart && !await ConfigManagerSQLite.canStartBotById(botId)) {
       const currentStatus = await ConfigManagerSQLite.getBotStatusById(botId);
       if (currentStatus === 'running') {
         throw new Error(`Bot ${botId} já está rodando`);
@@ -577,14 +584,14 @@ async function startBot(botId) {
     }
     
     // Verifica se a configuração existe
-    const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
+    botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
     if (!botConfig) {
       throw new Error(`Configuração não encontrada para bot ID: ${botId}`);
     }
     
     // Debug: Verifica se as credenciais estão presentes
     if (!botConfig.apiKey || !botConfig.apiSecret) {
-      console.warn(`⚠️ [BOT] Bot ${botId} (${botConfig.botName}) não tem credenciais configuradas`);
+      Logger.warn(`⚠️ [BOT] Bot ${botId} (${botConfig.botName}) não tem credenciais configuradas`);
     }
     
     if (!botConfig.enabled) {
@@ -615,14 +622,14 @@ async function startBot(botId) {
     if (executionMode === 'ON_CANDLE_CLOSE') {
       // Modo ON_CANDLE_CLOSE: Aguarda o próximo fechamento de vela
       executionInterval = timeframeConfig.getTimeUntilNextCandleClose(botConfig.time || '5m');
-      console.log(`⏰ [ON_CANDLE_CLOSE] Bot ${botId}: Próxima análise em ${Math.floor(executionInterval / 1000)}s`);
+      Logger.debug(`⏰ [ON_CANDLE_CLOSE] Bot ${botId}: Próxima análise em ${Math.floor(executionInterval / 1000)}s`);
     } else {
       // Modo REALTIME: Análise a cada 60 segundos
       executionInterval = 60000;
-      console.log(`⏰ [REALTIME] Bot ${botId}: Próxima análise em ${Math.floor(executionInterval / 1000)}s`);
+      Logger.debug(`⏰ [REALTIME] Bot ${botId}: Próxima análise em ${Math.floor(executionInterval / 1000)}s`);
     }
     
-    console.log(`🔧 [DEBUG] Bot ${botId}: Execution Mode: ${executionMode}, Next Interval: ${executionInterval}ms`);
+    Logger.debug(`🔧 [DEBUG] Bot ${botId}: Execution Mode: ${executionMode}, Next Interval: ${executionInterval}ms`);
     
     // Função de execução do bot
     const executeBot = async () => {
@@ -653,7 +660,7 @@ async function startBot(botId) {
         try {
           await PnlController.run(24, currentBotConfig);
         } catch (pnlError) {
-          console.warn(`⚠️ [BOT] Erro no PnL Controller para bot ${botId}:`, pnlError.message);
+          Logger.warn(`⚠️ [BOT] Erro no PnL Controller para bot ${botId}:`, pnlError.message);
         }
         
         // Executa migração do Trailing Stop para este bot específico
@@ -712,7 +719,7 @@ async function startBot(botId) {
       executeBot
     });
     
-    console.log(`✅ [BOT] Bot ${botId} iniciado com sucesso`);
+    Logger.info(`✅ [BOT] Bot ${botId} iniciado com sucesso`);
     
     // Emite evento de início bem-sucedido
     broadcastViaWs({
@@ -723,7 +730,7 @@ async function startBot(botId) {
     });
     
   } catch (error) {
-    console.error(`❌ [BOT] Erro ao iniciar bot ${botId}:`, error.message);
+    Logger.error(`❌ [BOT] Erro ao iniciar bot ${botId}:`, error.message);
     
     // Atualiza status de erro no ConfigManager
     await ConfigManagerSQLite.updateBotStatusById(botId, 'error');
@@ -741,10 +748,32 @@ async function startBot(botId) {
   }
 }
 
+// Função para reiniciar um bot (para e inicia novamente)
+async function restartBot(botId) {
+  try {
+    Logger.info(`🔄 [BOT] Reiniciando bot: ${botId}`);
+    
+    // Para o bot primeiro
+    await stopBot(botId);
+    Logger.info(`⏹️ [BOT] Bot ${botId} parado com sucesso`);
+    
+    // Aguarda um pouco para garantir que parou
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Reinicia o bot com restart forçado
+    await startBot(botId, true);
+    Logger.info(`✅ [BOT] Bot ${botId} reiniciado com sucesso`);
+    
+  } catch (error) {
+    Logger.error(`❌ [BOT] Erro ao reiniciar bot ${botId}:`, error.message);
+    throw error;
+  }
+}
+
 // Função para parar um bot específico
 async function stopBot(botId) {
   try {
-    console.log(`🛑 [BOT] Parando bot: ${botId}`);
+    Logger.info(`🛑 [BOT] Parando bot: ${botId}`);
     
     // Verifica se o bot existe
     const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
@@ -778,7 +807,7 @@ async function stopBot(botId) {
     // Atualiza status no ConfigManager
     await ConfigManagerSQLite.updateBotStatusById(botId, 'stopped');
     
-    console.log(`✅ [BOT] Bot ${botId} parado com sucesso`);
+    Logger.info(`✅ [BOT] Bot ${botId} parado com sucesso`);
     
     // Emite evento de parada
     broadcastViaWs({
@@ -788,7 +817,7 @@ async function stopBot(botId) {
     });
     
   } catch (error) {
-    console.error(`❌ [BOT] Erro ao parar bot ${botId}:`, error.message);
+    Logger.error(`❌ [BOT] Erro ao parar bot ${botId}:`, error.message);
     throw error;
   }
 }
@@ -1110,27 +1139,47 @@ app.post('/api/configs', async (req, res) => {
       if (botConfig.id) {
         // Verifica se o bot estava rodando antes da atualização
         const currentConfig = await ConfigManagerSQLite.getBotConfigById(botConfig.id);
-        const wasRunning = currentConfig && currentConfig.status === 'running';
+        const wasRunning = currentConfig && currentConfig.status === 'running' && activeBotInstances.has(botConfig.id);
         
-        await ConfigManagerSQLite.updateBotConfigById(botConfig.id, botConfig);
-        
-        // Se o bot estava rodando, reinicia automaticamente
         if (wasRunning) {
-          console.log(`🔄 [CONFIG] Bot ${botConfig.id} estava rodando, reiniciando...`);
-          try {
-            await startBot(botConfig.id);
-            console.log(`✅ [CONFIG] Bot ${botConfig.id} reiniciado com sucesso`);
-          } catch (error) {
-            console.error(`❌ [CONFIG] Erro ao reiniciar bot ${botConfig.id}:`, error.message);
+          // Se está rodando, usa a nova rota de atualização
+          console.log(`🔄 [CONFIG] Bot ${botConfig.id} está rodando, usando atualização segura...`);
+          
+          // Chama a nova rota de atualização
+          const updateResponse = await fetch(`http://localhost:${PORT}/api/bot/update-running`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              botId: botConfig.id,
+              config: botConfig
+            })
+          });
+          
+          const updateResult = await updateResponse.json();
+          
+          if (!updateResult.success) {
+            throw new Error(updateResult.error || 'Erro ao atualizar bot em execução');
           }
+          
+          res.json({
+            success: true,
+            message: updateResult.message,
+            botId: botConfig.id,
+            wasRunning: true
+          });
+        } else {
+          // Se não está rodando, atualiza normalmente
+          await ConfigManagerSQLite.updateBotConfigById(botConfig.id, botConfig);
+          
+          res.json({
+            success: true,
+            message: `Bot ${botConfig.id} atualizado com sucesso`,
+            botId: botConfig.id,
+            wasRunning: false
+          });
         }
-        
-        res.json({
-          success: true,
-          message: `Bot ${botConfig.id} atualizado com sucesso${wasRunning ? ' e reiniciado' : ''}`,
-          botId: botConfig.id,
-          wasRunning: wasRunning
-        });
       } else {
         const botId = await ConfigManagerSQLite.addBotConfig(botConfig);
         res.json({
@@ -1162,27 +1211,47 @@ app.post('/api/configs', async (req, res) => {
       if (botConfig.id) {
         // Verifica se o bot estava rodando antes da atualização
         const currentConfig = await ConfigManagerSQLite.getBotConfigById(botConfig.id);
-        const wasRunning = currentConfig && currentConfig.status === 'running';
+        const wasRunning = currentConfig && currentConfig.status === 'running' && activeBotInstances.has(botConfig.id);
         
-        await ConfigManagerSQLite.updateBotConfigById(botConfig.id, botConfig);
-        
-        // Se o bot estava rodando, reinicia automaticamente
         if (wasRunning) {
-          console.log(`🔄 [CONFIG] Bot ${botConfig.id} estava rodando, reiniciando...`);
-          try {
-            await startBot(botConfig.id);
-            console.log(`✅ [CONFIG] Bot ${botConfig.id} reiniciado com sucesso`);
-          } catch (error) {
-            console.error(`❌ [CONFIG] Erro ao reiniciar bot ${botConfig.id}:`, error.message);
+          // Se está rodando, usa a nova rota de atualização
+          console.log(`🔄 [CONFIG] Bot ${botConfig.id} está rodando, usando atualização segura...`);
+          
+          // Chama a nova rota de atualização
+          const updateResponse = await fetch(`http://localhost:${PORT}/api/bot/update-running`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              botId: botConfig.id,
+              config: botConfig
+            })
+          });
+          
+          const updateResult = await updateResponse.json();
+          
+          if (!updateResult.success) {
+            throw new Error(updateResult.error || 'Erro ao atualizar bot em execução');
           }
+          
+          res.json({
+            success: true,
+            message: updateResult.message,
+            botId: botConfig.id,
+            wasRunning: true
+          });
+        } else {
+          // Se não está rodando, atualiza normalmente
+          await ConfigManagerSQLite.updateBotConfigById(botConfig.id, botConfig);
+          
+          res.json({
+            success: true,
+            message: `Bot ${botConfig.id} atualizado com sucesso`,
+            botId: botConfig.id,
+            wasRunning: false
+          });
         }
-        
-        res.json({
-          success: true,
-          message: `Bot ${botConfig.id} atualizado com sucesso${wasRunning ? ' e reiniciado' : ''}`,
-          botId: botConfig.id,
-          wasRunning: wasRunning
-        });
       } else {
         const botId = await ConfigManagerSQLite.addBotConfig(botConfig);
         res.json({
@@ -1213,27 +1282,47 @@ app.post('/api/configs', async (req, res) => {
       if (config.id) {
         // Verifica se o bot estava rodando antes da atualização
         const currentConfig = await ConfigManagerSQLite.getBotConfigById(config.id);
-        const wasRunning = currentConfig && currentConfig.status === 'running';
+        const wasRunning = currentConfig && currentConfig.status === 'running' && activeBotInstances.has(config.id);
         
-        await ConfigManagerSQLite.updateBotConfigById(config.id, config);
-        
-        // Se o bot estava rodando, reinicia automaticamente
         if (wasRunning) {
-          console.log(`🔄 [CONFIG] Bot ${config.id} estava rodando, reiniciando...`);
-          try {
-            await startBot(config.id);
-            console.log(`✅ [CONFIG] Bot ${config.id} reiniciado com sucesso`);
-          } catch (error) {
-            console.error(`❌ [CONFIG] Erro ao reiniciar bot ${config.id}:`, error.message);
+          // Se está rodando, usa a nova rota de atualização
+          console.log(`🔄 [CONFIG] Bot ${config.id} está rodando, usando atualização segura...`);
+          
+          // Chama a nova rota de atualização
+          const updateResponse = await fetch(`http://localhost:${PORT}/api/bot/update-running`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              botId: config.id,
+              config: config
+            })
+          });
+          
+          const updateResult = await updateResponse.json();
+          
+          if (!updateResult.success) {
+            throw new Error(updateResult.error || 'Erro ao atualizar bot em execução');
           }
+          
+          res.json({
+            success: true,
+            message: updateResult.message,
+            botId: config.id,
+            wasRunning: true
+          });
+        } else {
+          // Se não está rodando, atualiza normalmente
+          await ConfigManagerSQLite.updateBotConfigById(config.id, config);
+          
+          res.json({
+            success: true,
+            message: `Bot ${config.id} atualizado com sucesso`,
+            botId: config.id,
+            wasRunning: false
+          });
         }
-        
-        res.json({
-          success: true,
-          message: `Bot ${config.id} atualizado com sucesso${wasRunning ? ' e reiniciado' : ''}`,
-          botId: config.id,
-          wasRunning: wasRunning
-        });
       } else {
         const botId = await ConfigManagerSQLite.addBotConfig(config);
         res.json({
@@ -1244,6 +1333,7 @@ app.post('/api/configs', async (req, res) => {
       }
     }
   } catch (error) {
+    console.error(`❌ [CONFIG] Erro ao processar configuração:`, error.message);
     res.status(500).json({
       success: false,
       error: error.message
@@ -2639,7 +2729,7 @@ app.get('/api/bot/positions/show', async (req, res) => {
 // Inicialização do servidor
 async function initializeServer() {
   try {
-    console.log('🚀 [SERVER] Iniciando servidor API...');
+    Logger.info('🚀 [SERVER] Iniciando servidor API...');
     
     // Inicializa o database service
     const dbService = new DatabaseService();
@@ -2652,29 +2742,29 @@ async function initializeServer() {
     if (dbService && dbService.isInitialized()) {
       await TrailingStop.loadStateFromDB(dbService);
     } else {
-      console.log('⚠️ [SERVER] Database service não inicializado, Trailing Stop será carregado individualmente para cada bot');
+      Logger.warn('⚠️ [SERVER] Database service não inicializado, Trailing Stop será carregado individualmente para cada bot');
     }
     
     // Migração automática: cria estado para posições abertas existentes
     // Será executada individualmente para cada bot quando iniciarem
-    console.log('ℹ️ [SERVER] Migração do Trailing Stop será executada individualmente para cada bot');
+    Logger.debug('ℹ️ [SERVER] Migração do Trailing Stop será executada individualmente para cada bot');
     
     // PnL Controller será executado individualmente para cada bot
-    console.log('ℹ️ [SERVER] PnL Controller será executado individualmente para cada bot');
+    Logger.debug('ℹ️ [SERVER] PnL Controller será executado individualmente para cada bot');
     
     // Inicializa o servidor primeiro
     server.listen(PORT, () => {
-      console.log(`✅ [SERVER] Servidor rodando na porta ${PORT}`);
-      console.log(`📊 [SERVER] API disponível em http://localhost:${PORT}`);
-      console.log(`🔌 [SERVER] WebSocket disponível em ws://localhost:${PORT}`);
-      console.log(`🤖 [SERVER] Estratégias disponíveis: ${StrategyFactory.getAvailableStrategies().join(', ')}`);
+      Logger.info(`✅ [SERVER] Servidor rodando na porta ${PORT}`);
+      Logger.info(`📊 [SERVER] API disponível em http://localhost:${PORT}`);
+      Logger.info(`🔌 [SERVER] WebSocket disponível em ws://localhost:${PORT}`);
+      Logger.info(`🤖 [SERVER] Estratégias disponíveis: ${StrategyFactory.getAvailableStrategies().join(', ')}`);
     });
     
     // Carrega e recupera bots em background (não bloqueia o servidor)
     loadAndRecoverBots();
     
   } catch (error) {
-    console.error('❌ [SERVER] Erro ao inicializar servidor:', error.message);
+    Logger.error('❌ [SERVER] Erro ao inicializar servidor:', error.message);
     process.exit(1);
   }
 }
@@ -2833,6 +2923,71 @@ app.get('/api/tokens/available', async (req, res) => {
     res.status(500).json({ 
       error: 'Erro interno do servidor',
       message: error.message 
+    });
+  }
+});
+
+// POST /api/bot/update-running - Atualiza bot em execução (para, atualiza, reinicia)
+app.post('/api/bot/update-running', async (req, res) => {
+  try {
+    const { botId, config: newConfig } = req.body;
+    
+    if (!botId || !newConfig) {
+      return res.status(400).json({
+        success: false,
+        error: 'botId e config são obrigatórios'
+      });
+    }
+    
+    console.log(`🔄 [UPDATE_RUNNING] Iniciando atualização do bot ${botId}`);
+    
+    // 1. Verifica se o bot existe e está rodando
+    const currentConfig = await ConfigManagerSQLite.getBotConfigById(botId);
+    if (!currentConfig) {
+      return res.status(404).json({
+        success: false,
+        error: `Bot ${botId} não encontrado`
+      });
+    }
+    
+    const isRunning = currentConfig.status === 'running' && activeBotInstances.has(botId);
+    console.log(`📊 [UPDATE_RUNNING] Bot ${botId} status: ${currentConfig.status}, isRunning: ${isRunning}`);
+    
+    // 2. Se está rodando, para o bot
+    if (isRunning) {
+      console.log(`⏹️ [UPDATE_RUNNING] Parando bot ${botId}...`);
+      await stopBot(botId);
+      console.log(`✅ [UPDATE_RUNNING] Bot ${botId} parado com sucesso`);
+      
+      // Aguarda um pouco para garantir que parou completamente
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+    
+    // 3. Atualiza a configuração
+    console.log(`💾 [UPDATE_RUNNING] Atualizando configuração do bot ${botId}...`);
+    await ConfigManagerSQLite.updateBotConfigById(botId, newConfig);
+    console.log(`✅ [UPDATE_RUNNING] Configuração do bot ${botId} atualizada`);
+    
+    // 4. Se estava rodando, reinicia o bot
+    if (isRunning) {
+      console.log(`🚀 [UPDATE_RUNNING] Reiniciando bot ${botId}...`);
+      await startBot(botId, true); // forceRestart = true
+      console.log(`✅ [UPDATE_RUNNING] Bot ${botId} reiniciado com sucesso`);
+    }
+    
+    // 5. Retorna sucesso
+    res.json({
+      success: true,
+      message: `Bot ${botId} atualizado com sucesso${isRunning ? ' e reiniciado' : ''}`,
+      botId: botId,
+      wasRunning: isRunning
+    });
+    
+  } catch (error) {
+    console.error(`❌ [UPDATE_RUNNING] Erro ao atualizar bot:`, error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 });

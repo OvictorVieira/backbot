@@ -1,6 +1,7 @@
 import { BaseStopLoss } from './BaseStopLoss.js';
 import TrailingStop from '../../TrailingStop/TrailingStop.js';
 import ColorLogger from '../../Utils/ColorLogger.js';
+import Logger from '../../Utils/Logger.js';
 
 export class DefaultStopLoss extends BaseStopLoss {
   constructor(config = null) {
@@ -16,9 +17,7 @@ export class DefaultStopLoss extends BaseStopLoss {
    * @param {string} message - Mensagem de debug
    */
   static debug(message) {
-    if (process.env.LOG_TYPE === 'debug') {
-      console.log(message);
-    }
+    Logger.debug(message);
   }
 
   /**
@@ -40,7 +39,7 @@ export class DefaultStopLoss extends BaseStopLoss {
 
       // Validação inicial dos dados
       if (!this.validateData(position, account)) {
-        console.error(`❌ [STOP_LOSS_DEBUG] ${position.symbol}: Dados inválidos - position: ${!!position}, account: ${!!account}, symbol: ${position?.symbol}, netQuantity: ${position?.netQuantity}`);
+        Logger.error(`❌ [STOP_LOSS_DEBUG] ${position.symbol}: Dados inválidos - position: ${!!position}, account: ${!!account}, symbol: ${position?.symbol}, netQuantity: ${position?.netQuantity}`);
         return null;
       }
 
@@ -51,15 +50,15 @@ export class DefaultStopLoss extends BaseStopLoss {
       
       // Verifica se os valores são válidos
       if (isNaN(MAX_NEGATIVE_PNL_STOP_PCT)) {
-        console.error(`❌ [STOP_LOSS_ERROR] Valor inválido detectado:`);
-        console.error(`   MAX_NEGATIVE_PNL_STOP_PCT: ${MAX_NEGATIVE_PNL_STOP_PCT} (isNaN: ${isNaN(MAX_NEGATIVE_PNL_STOP_PCT)})`);
+        Logger.error(`❌ [STOP_LOSS_ERROR] Valor inválido detectado:`);
+        Logger.error(`   MAX_NEGATIVE_PNL_STOP_PCT: ${MAX_NEGATIVE_PNL_STOP_PCT} (isNaN: ${isNaN(MAX_NEGATIVE_PNL_STOP_PCT)})`);
         return null;
       }
       
       // Verifica se os valores são números finitos
       if (!isFinite(MAX_NEGATIVE_PNL_STOP_PCT)) {
-        console.error(`❌ [STOP_LOSS_ERROR] Valor não finito detectado:`);
-        console.error(`   MAX_NEGATIVE_PNL_STOP_PCT: ${MAX_NEGATIVE_PNL_STOP_PCT} (isFinite: ${isFinite(MAX_NEGATIVE_PNL_STOP_PCT)})`);
+        Logger.error(`❌ [STOP_LOSS_ERROR] Valor não finito detectado:`);
+        Logger.error(`   MAX_NEGATIVE_PNL_STOP_PCT: ${MAX_NEGATIVE_PNL_STOP_PCT} (isFinite: ${isFinite(MAX_NEGATIVE_PNL_STOP_PCT)})`);
         return null;
       }
 
@@ -68,9 +67,9 @@ export class DefaultStopLoss extends BaseStopLoss {
       
       // Verifica se o PnL é válido
       if (isNaN(pnl) || isNaN(pnlPct)) {
-        console.error(`❌ [STOP_LOSS_ERROR] PnL inválido detectado:`);
-        console.error(`   pnl: ${pnl} (isNaN: ${isNaN(pnl)})`);
-        console.error(`   pnlPct: ${pnlPct} (isNaN: ${isNaN(pnlPct)})`);
+        Logger.error(`❌ [STOP_LOSS_ERROR] PnL inválido detectado:`);
+        Logger.error(`   pnl: ${pnl} (isNaN: ${isNaN(pnl)})`);
+        Logger.error(`   pnlPct: ${pnlPct} (isNaN: ${isNaN(pnlPct)})`);
         return null;
       }
 
@@ -79,10 +78,10 @@ export class DefaultStopLoss extends BaseStopLoss {
       const shouldCloseByPercentage = pnlPct <= MAX_NEGATIVE_PNL_STOP_PCT;
       
       if (shouldCloseByPercentage) {
-        console.log(`🚨 [STOP_LOSS] ${position.symbol}: Fechando por stop loss em %`);
-        console.log(`   • PnL atual: ${pnlPct.toFixed(2)}%`);
-        console.log(`   • Limite: ${MAX_NEGATIVE_PNL_STOP_PCT}%`);
-        console.log(`   • Diferença: ${(pnlPct - MAX_NEGATIVE_PNL_STOP_PCT).toFixed(2)}%`);
+        Logger.info(`🚨 [STOP_LOSS] ${position.symbol}: Fechando por stop loss em %`);
+        Logger.info(`   • PnL atual: ${pnlPct.toFixed(2)}%`);
+        Logger.info(`   • Limite: ${MAX_NEGATIVE_PNL_STOP_PCT}%`);
+        Logger.info(`   • Diferença: ${(pnlPct - MAX_NEGATIVE_PNL_STOP_PCT).toFixed(2)}%`);
         return {
           shouldClose: true,
           reason: `PERCENTAGE: PnL ${pnlPct}% <= limite ${MAX_NEGATIVE_PNL_STOP_PCT}%`,

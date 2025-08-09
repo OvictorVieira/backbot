@@ -5,6 +5,7 @@ import AccountController from '../Controllers/AccountController.js';
 import Markets from '../Backpack/Public/Markets.js';
 import { calculateIndicators } from './Indicators.js';
 import { StrategyFactory } from './Strategies/StrategyFactory.js';
+import Logger from '../Utils/Logger.js';
 
 const STRATEGY_DEFAULT = 'DEFAULT';
 
@@ -16,11 +17,11 @@ class Decision {
       throw new Error('❌ Estratégia deve ser definida via parâmetro. Use o terminal para selecionar a estratégia.');
     }
     
-    console.log(`🔍 Decision: Estratégia definida via terminal: "${strategyType}"`);
+    Logger.debug(`🔍 Decision: Estratégia definida via terminal: "${strategyType}"`);
     
     this.strategy = StrategyFactory.createStrategy(strategyType);
     
-    console.log(`🤖 Estratégia carregada: ${strategyType.toUpperCase()}`);
+    Logger.info(`🤖 Estratégia carregada: ${strategyType.toUpperCase()}`);
     
     // Cache simples para dados de mercado
     this.marketCache = new Map();
@@ -32,9 +33,9 @@ class Decision {
    * @param {string} strategyType - Tipo da estratégia
    */
   reinitializeStrategy(strategyType) {
-    console.log(`🔄 Re-inicializando estratégia: ${strategyType.toUpperCase()}`);
+    Logger.info(`🔄 Re-inicializando estratégia: ${strategyType.toUpperCase()}`);
     this.strategy = StrategyFactory.createStrategy(strategyType);
-    console.log(`✅ Estratégia re-inicializada: ${strategyType.toUpperCase()}`);
+    Logger.info(`✅ Estratégia re-inicializada: ${strategyType.toUpperCase()}`);
   }
 
   /**
@@ -537,7 +538,7 @@ class Decision {
     // Pula análise do BTC para AlphaFlow (cada moeda tem suas particularidades)
     let btcTrend = 'NEUTRAL';
     if (this.strategy.constructor.name !== 'AlphaFlowStrategy') {
-      console.log(`\n📊 ANÁLISE DO BTC (${currentTimeframe}):`);
+      Logger.debug(`\n📊 ANÁLISE DO BTC (${currentTimeframe}):`);
       try {
         // Usa 100 candles para garantir que todos os indicadores tenham dados suficientes
         const markets = new Markets();
@@ -574,11 +575,11 @@ class Decision {
           console.log(`   ⚠️ BTC: Dados de candles insuficientes`);
         }
       } catch (error) {
-        console.log(`   ❌ BTC: Erro na análise - ${error.message}`);
+        Logger.error(`   ❌ BTC: Erro na análise - ${error.message}`);
         console.log(`      Detalhes: ${error.stack?.split('\n')[1] || 'Erro desconhecido'}`);
       }
     } else {
-      console.log(`\n🧠 ALPHAFLOW: Análise BTC desabilitada (cada moeda tem suas particularidades)`);
+              Logger.debug(`\n🧠 ALPHAFLOW: Análise BTC desabilitada (cada moeda tem suas particularidades)`);
     }
 
     const dataset = await this.getDataset(Account, allClosedMarkets, currentTimeframe, logger, config)
@@ -705,7 +706,7 @@ class Decision {
 
     // Validação de resultados antes de executar ordens
     if (!rows || rows.length === 0) {
-      console.log(`📊 Nenhuma oportunidade de trading encontrada nesta análise`);
+      Logger.info(`📊 Nenhuma oportunidade de trading encontrada nesta análise`);
       return;
     }
 

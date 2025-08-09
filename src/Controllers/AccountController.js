@@ -1,6 +1,7 @@
 import Markets from '../Backpack/Public/Markets.js'
 import Account from '../Backpack/Authenticated/Account.js';
 import Capital from '../Backpack/Authenticated/Capital.js';
+import Logger from '../Utils/Logger.js';
 
 class AccountController {
 
@@ -50,14 +51,14 @@ class AccountController {
 
     // Verifica se os dados da conta foram obtidos com sucesso
     if (!Accounts || !Collateral) {
-      console.error('❌ Falha ao obter dados da conta. Verifique suas credenciais de API.');
+      Logger.error('❌ Falha ao obter dados da conta. Verifique suas credenciais de API.');
       return null;
     }
 
     const marketsInstance = new Markets();
     let markets = await marketsInstance.getMarkets();
     if (!markets) {
-      console.error('❌ AccountController.get - Markets.getMarkets() retornou null. API pode estar offline.');
+      Logger.error('❌ AccountController.get - Markets.getMarkets() retornou null. API pode estar offline.');
       return null;
     }
 
@@ -76,7 +77,7 @@ class AccountController {
         
         // Limita o decimal_price para evitar erro "Price decimal too long"
         if (decimal_price > 6) {
-          console.warn(`⚠️ [ACCOUNT] ${el.symbol}: decimal_price muito alto (${decimal_price}), limitando a 6 casas decimais`);
+          Logger.warn(`⚠️ [ACCOUNT] ${el.symbol}: decimal_price muito alto (${decimal_price}), limitando a 6 casas decimais`);
           decimal_price = 6;
         }
         
@@ -96,7 +97,7 @@ class AccountController {
     
     // Log explicativo do cálculo do capital (apenas na primeira vez para este bot)
     if (!AccountController.capitalLoggedByBot.get(botKey)) {
-      console.log(`\n📊 [${strategy}] CÁLCULO DO CAPITAL:
+      Logger.info(`\n📊 [${strategy}] CÁLCULO DO CAPITAL:
    • Patrimônio Líquido Disponível: $${netEquityAvailable.toFixed(2)}
    • Alavancagem: ${leverage}x
    • Margem de segurança: 95%
@@ -124,7 +125,7 @@ class AccountController {
     return obj
 
     } catch (error) {
-      console.error('❌ AccountController.get - Error:', error.message)
+      Logger.error('❌ AccountController.get - Error:', error.message)
       return null 
     }
 
@@ -146,7 +147,7 @@ class AccountController {
           
           // Limita o decimal_price para evitar erro "Price decimal too long"
           if (decimal_price > 6) {
-            console.warn(`⚠️ [ACCOUNT] ${el.symbol}: decimal_price muito alto (${decimal_price}), limitando a 6 casas decimais`);
+            Logger.warn(`⚠️ [ACCOUNT] ${el.symbol}: decimal_price muito alto (${decimal_price}), limitando a 6 casas decimais`);
             decimal_price = 6;
           }
           
@@ -175,7 +176,7 @@ class AccountController {
   static clearCache() {
     AccountController.accountCacheByBot.clear();
     AccountController.lastCacheTimeByBot.clear();
-    console.log(`🔄 [ACCOUNT] Cache limpo para todos os bots - próxima chamada buscará dados frescos`);
+    Logger.info(`🔄 [ACCOUNT] Cache limpo para todos os bots - próxima chamada buscará dados frescos`);
   }
 
   /**
@@ -186,7 +187,7 @@ class AccountController {
     AccountController.accountCacheByBot.delete(botKey);
     AccountController.lastCacheTimeByBot.delete(botKey);
     AccountController.capitalLoggedByBot.delete(botKey);
-    console.log(`🔄 [ACCOUNT] Cache limpo para bot ${strategyName} - próxima chamada buscará dados frescos`);
+    Logger.info(`🔄 [ACCOUNT] Cache limpo para bot ${strategyName} - próxima chamada buscará dados frescos`);
   }
 
   /**

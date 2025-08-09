@@ -214,10 +214,10 @@ export function DashboardPage() {
       })
       console.log('✅ Configuração salva:', saveResponse.data);
       
-      // Se o bot estava rodando, aguardar um pouco para o reinício
+      // Se o bot estava rodando, aguardar mais tempo para garantir que reiniciou
       if (wasRunning) {
         console.log('⏳ Aguardando reinicialização do bot...');
-        await new Promise(resolve => setTimeout(resolve, 3000)); // Aguarda 3 segundos
+        await new Promise(resolve => setTimeout(resolve, 5000)); // Aguarda 5 segundos
       }
       
       // Recarregar configurações após salvar
@@ -460,7 +460,7 @@ export function DashboardPage() {
                   enableHybridStopStrategy: false,
                   initialStopAtrMultiplier: 2.0,
                   trailingStopAtrMultiplier: 1.5,
-                  partialTakeProfitAtrMultiplier: 3.0,
+                  partialTakeProfitAtrMultiplier: 1.5,
                   partialTakeProfitPercentage: 50,
                   enableTrailingStop: false,
                   trailingStopDistance: 1.5,

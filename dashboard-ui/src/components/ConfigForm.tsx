@@ -61,7 +61,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
     enableHybridStopStrategy: config.enableHybridStopStrategy || false,
     initialStopAtrMultiplier: config.initialStopAtrMultiplier || 2.0,
     trailingStopAtrMultiplier: config.trailingStopAtrMultiplier || 1.5,
-    partialTakeProfitAtrMultiplier: config.partialTakeProfitAtrMultiplier || 3.0,
+    partialTakeProfitAtrMultiplier: config.partialTakeProfitAtrMultiplier || 1.5,
     partialTakeProfitPercentage: config.partialTakeProfitPercentage || 50,
     enableTrailingStop: config.enableTrailingStop || false,
     trailingStopDistance: config.trailingStopDistance || 1.5,
@@ -169,14 +169,15 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
     setSelectedMode('profit');
     setFormData(prev => ({
       ...prev,
-      capitalPercentage: 15,
-      time: '1h',
+      capitalPercentage: 20,
+      time: '30m',
       maxNegativePnlStopPct: -10,
-      minProfitPercentage: 5,
-      maxSlippagePct: 1.0,
-      executionMode: 'ON_CANDLE_CLOSE',
+      minProfitPercentage: 10,
+      maxSlippagePct: 0.5,
+      executionMode: 'REALTIME',
       enableHybridStopStrategy: true,
       enableTrailingStop: true,
+      partialTakeProfitAtrMultiplier: 2.0,
       maxOpenOrders: 3
     }));
   };
@@ -1551,12 +1552,21 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
         <Button 
           onClick={handleSave} 
           disabled={saving || (isEditMode ? (apiKeysChanged && !apiKeysValidated) : !apiKeysValidated)}
-          className="flex items-center gap-2"
+          className={`flex items-center gap-2 transition-all duration-300 ${
+            saving 
+              ? 'bg-blue-600 hover:bg-blue-700 shadow-lg scale-105 animate-pulse text-white' 
+              : ''
+          }`}
         >
           {saving ? (
             <>
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-              Salvando...
+              <span className="animate-pulse">Salvando...</span>
+              <div className="flex space-x-1 ml-2">
+                <div className="w-1 h-1 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                <div className="w-1 h-1 bg-white rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                <div className="w-1 h-1 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+              </div>
             </>
           ) : (
             <>
@@ -1570,7 +1580,14 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
             </>
           )}
         </Button>
-        <Button variant="outline" onClick={onCancel} disabled={saving} className="flex items-center gap-2">
+        <Button 
+          variant="outline" 
+          onClick={onCancel} 
+          disabled={saving} 
+          className={`flex items-center gap-2 transition-all duration-300 ${
+            saving ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-100 dark:hover:bg-gray-800'
+          }`}
+        >
           <X className="h-4 w-4" />
           Cancelar
         </Button>

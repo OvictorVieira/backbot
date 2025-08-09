@@ -1,4 +1,5 @@
 import { BaseStrategy } from './BaseStrategy.js';
+import Logger from '../../Utils/Logger.js';
 
 export class AlphaFlowStrategy extends BaseStrategy {
   /**
@@ -18,19 +19,19 @@ export class AlphaFlowStrategy extends BaseStrategy {
     if (!this.validateData(data)) {
       return null;
     }
-    console.log(`   ✅ ${symbol}: Dados válidos - iniciando análise`);
+    Logger.debug(`   ✅ ${symbol}: Dados válidos - iniciando análise`);
 
     // Debug dos indicadores disponíveis
-    console.log(`   📊 ${symbol} - Indicadores:`);
-    console.log(`      • Momentum: ${data.momentum?.isBullish ? 'BULLISH' : data.momentum?.isBearish ? 'BEARISH' : 'NEUTRAL'}`);
-    console.log(`      • Money Flow: ${data.moneyFlow?.isBullish ? 'BULLISH' : data.moneyFlow?.isBearish ? 'BEARISH' : 'NEUTRAL'}`);
-    console.log(`      • Macro Bias: ${data.macroMoneyFlow?.macroBias === 1 ? 'BULLISH' : data.macroMoneyFlow?.macroBias === -1 ? 'BEARISH' : 'NEUTRAL'}`);
-    console.log(`      • CVD Divergence: ${data.cvdDivergence?.bullish ? 'BULLISH' : data.cvdDivergence?.bearish ? 'BEARISH' : 'NEUTRAL'}`);
-    console.log(`      • VWAP: ${data.vwap?.vwap ? 'OK' : 'MISSING'}`);
-    console.log(`      • ATR: ${data.atr?.atr ? 'OK' : 'MISSING'}`);
+    Logger.debug(`   📊 ${symbol} - Indicadores:`);
+    Logger.debug(`      • Momentum: ${data.momentum?.isBullish ? 'BULLISH' : data.momentum?.isBearish ? 'BEARISH' : 'NEUTRAL'}`);
+    Logger.debug(`      • Money Flow: ${data.moneyFlow?.isBullish ? 'BULLISH' : data.moneyFlow?.isBearish ? 'BEARISH' : 'NEUTRAL'}`);
+    Logger.debug(`      • Macro Bias: ${data.macroMoneyFlow?.macroBias === 1 ? 'BULLISH' : data.macroMoneyFlow?.macroBias === -1 ? 'BEARISH' : 'NEUTRAL'}`);
+    Logger.debug(`      • CVD Divergence: ${data.cvdDivergence?.bullish ? 'BULLISH' : data.cvdDivergence?.bearish ? 'BEARISH' : 'NEUTRAL'}`);
+    Logger.debug(`      • VWAP: ${data.vwap?.vwap ? 'OK' : 'MISSING'}`);
+    Logger.debug(`      • ATR: ${data.atr?.atr ? 'OK' : 'MISSING'}`);
 
     // Análise de confluência para sinais LONG
-    console.log(`   🔍 ${symbol}: Verificando sinais LONG...`);
+    Logger.debug(`   🔍 ${symbol}: Verificando sinais LONG...`);
     const longSignal = this.analyzeLongSignal(data);
     if (longSignal) {
       // Calcula as 3 ordens escalonadas

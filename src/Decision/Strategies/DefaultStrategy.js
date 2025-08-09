@@ -1,6 +1,7 @@
 import { BaseStrategy } from './BaseStrategy.js';
 import Markets from '../../Backpack/Public/Markets.js';
 import { calculateIndicators } from '../Indicators.js';
+import Logger from '../../Utils/Logger.js';
 
 export class DefaultStrategy extends BaseStrategy {
   /**
@@ -227,23 +228,23 @@ export class DefaultStrategy extends BaseStrategy {
       const moneyFlowValidation = this.validateMoneyFlowConfirmation(data, signals.isLong, data.market.symbol === 'BTC_USDC_PERP');
       
       if (!moneyFlowValidation.isValid) {
-        console.log(`❌ ${data.market.symbol}: Sinal ${signals.signalType} rejeitado - ${moneyFlowValidation.reason}`);
-        console.log(`   💰 Money Flow: ${moneyFlowValidation.details}`);
+        Logger.debug(`❌ ${data.market.symbol}: Sinal ${signals.signalType} rejeitado - ${moneyFlowValidation.reason}`);
+        Logger.debug(`   💰 Money Flow: ${moneyFlowValidation.details}`);
         return null;
       }
 
-      console.log(`✅ ${data.market.symbol}: Money Flow confirma ${signals.isLong ? 'LONG' : 'SHORT'} - ${moneyFlowValidation.details}`);
+              Logger.debug(`✅ ${data.market.symbol}: Money Flow confirma ${signals.isLong ? 'LONG' : 'SHORT'} - ${moneyFlowValidation.details}`);
 
       // FILTRO DE TENDÊNCIA VWAP (sentimento intradiário)
       const vwapValidation = this.validateVWAPTrend(data, signals.isLong, data.market.symbol === 'BTC_USDC_PERP');
       
       if (!vwapValidation.isValid) {
-        console.log(`❌ ${data.market.symbol}: Sinal ${signals.signalType} rejeitado - ${vwapValidation.reason}`);
-        console.log(`   📊 VWAP: ${vwapValidation.details}`);
+        Logger.debug(`❌ ${data.market.symbol}: Sinal ${signals.signalType} rejeitado - ${vwapValidation.reason}`);
+        Logger.debug(`   📊 VWAP: ${vwapValidation.details}`);
         return null;
       }
 
-      console.log(`✅ ${data.market.symbol}: VWAP confirma ${signals.isLong ? 'LONG' : 'SHORT'} - ${vwapValidation.details}`);
+              Logger.debug(`✅ ${data.market.symbol}: VWAP confirma ${signals.isLong ? 'LONG' : 'SHORT'} - ${vwapValidation.details}`);
 
       // FILTRO DE TENDÊNCIA DO BTC (usando tendência já calculada)
       if (data.market.symbol !== 'BTC_USDC_PERP') {
@@ -254,12 +255,12 @@ export class DefaultStrategy extends BaseStrategy {
 
         // Validação restritiva: só permite operações alinhadas com a tendência do BTC
         if (signals.isLong && btcTrend === 'BEARISH') {
-          console.log(`❌ ${data.market.symbol}: Sinal ${signals.signalType} rejeitado - BTC em tendência BEARISH (não permite LONG em altcoins)`);
+          Logger.debug(`❌ ${data.market.symbol}: Sinal ${signals.signalType} rejeitado - BTC em tendência BEARISH (não permite LONG em altcoins)`);
           return null; // BTC em baixa - não entrar LONG em altcoins
         }
 
         if (!signals.isLong && btcTrend === 'BULLISH') {
-          console.log(`❌ ${data.market.symbol}: Sinal ${signals.signalType} rejeitado - BTC em tendência BULLISH (não permite SHORT em altcoins)`);
+          Logger.debug(`❌ ${data.market.symbol}: Sinal ${signals.signalType} rejeitado - BTC em tendência BULLISH (não permite SHORT em altcoins)`);
           return null; // BTC em alta - não entrar SHORT em altcoins
         }
       }
@@ -291,7 +292,7 @@ export class DefaultStrategy extends BaseStrategy {
       const entry = price;
       
       // Log detalhado dos valores calculados
-      console.log(`\n📊 [DEFAULT] ${data.market.symbol}: Entry: ${entry.toFixed(6)}, Stop: ${stop.toFixed(6)} (${((Math.abs(entry - stop) / entry) * 100).toFixed(2)}%), Target: ${target.toFixed(6)} (${((Math.abs(target - entry) / entry) * 100).toFixed(2)}%)`);
+      Logger.info(`\n📊 [DEFAULT] ${data.market.symbol}: Entry: ${entry.toFixed(6)}, Stop: ${stop.toFixed(6)} (${((Math.abs(entry - stop) / entry) * 100).toFixed(2)}%), Target: ${target.toFixed(6)} (${((Math.abs(target - entry) / entry) * 100).toFixed(2)}%)`);
 
       // Cálculo de PnL e risco
       const { pnl, risk } = this.calculatePnLAndRisk(action, entry, stop, target, investmentUSD, fee);
@@ -310,7 +311,7 @@ export class DefaultStrategy extends BaseStrategy {
         btcTrendMsg = `BTC: ${btcTrend}`;
       }
       
-      console.log(`✅ ${data.market.symbol}: ${action.toUpperCase()} - Tendência: ${btcTrendMsg} - Sinal: ${signals.signalType} - Money Flow: ${moneyFlowValidation.reason} - VWAP: ${vwapValidation.reason}`);
+      Logger.info(`✅ ${data.market.symbol}: ${action.toUpperCase()} - Tendência: ${btcTrendMsg} - Sinal: ${signals.signalType} - Money Flow: ${moneyFlowValidation.reason} - VWAP: ${vwapValidation.reason}`);
 
       // Retorna decisão de trading (a execução será feita pelo Decision.js)
       return {
@@ -331,7 +332,7 @@ export class DefaultStrategy extends BaseStrategy {
       };
 
     } catch (error) {
-      console.error('DefaultStrategy.analyzeTrade - Error:', error);
+      Logger.error('DefaultStrategy.analyzeTrade - Error:', error.message);
       return null;
     }
   }
@@ -357,7 +358,7 @@ export class DefaultStrategy extends BaseStrategy {
 
     if (!hasEssentialIndicators) {
       if (isBTCAnalysis) {
-        console.log(`   ⚠️ BTC: Indicadores essenciais incompletos - RSI: ${rsi?.value}`);
+        Logger.debug(`   ⚠️ BTC: Indicadores essenciais incompletos - RSI: ${rsi?.value}`);
       }
       return { hasSignal: false, analysisDetails: ['Indicadores essenciais incompletos'] };
     }
@@ -371,7 +372,7 @@ export class DefaultStrategy extends BaseStrategy {
       if (!hasAdx) missingIndicators.push('ADX/D+/D-');
       
       if (missingIndicators.length > 0) {
-        console.log(`   ℹ️ BTC: Indicadores opcionais faltando: ${missingIndicators.join(', ')} - continuando análise`);
+        Logger.debug(`   ℹ️ BTC: Indicadores opcionais faltando: ${missingIndicators.join(', ')} - continuando análise`);
       }
     }
 

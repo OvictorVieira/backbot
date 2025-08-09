@@ -1,4 +1,5 @@
 import { BaseStrategy } from './BaseStrategy.js';
+import Logger from '../../Utils/Logger.js';
 
 export class ProMaxStrategy extends BaseStrategy {
   
@@ -306,10 +307,10 @@ export class ProMaxStrategy extends BaseStrategy {
 
       // Log de sinais ignorados (BRONZE)
       if (IGNORE_BRONZE && adxAnalysis.bullishCondition && bullConfluences === 1) {
-        console.log(`⚠️ [PRO_MAX] ${data.market.symbol} (BRONZE): Sinal LONG ignorado - IGNORE_BRONZE_SIGNALS=true`);
+        Logger.debug(`⚠️ [PRO_MAX] ${data.market.symbol} (BRONZE): Sinal LONG ignorado - IGNORE_BRONZE_SIGNALS=true`);
       }
       if (IGNORE_BRONZE && adxAnalysis.bearishCondition && bearConfluences === 1) {
-        console.log(`⚠️ [PRO_MAX] ${data.market.symbol} (BRONZE): Sinal SHORT ignorado - IGNORE_BRONZE_SIGNALS=true`);
+        Logger.debug(`⚠️ [PRO_MAX] ${data.market.symbol} (BRONZE): Sinal SHORT ignorado - IGNORE_BRONZE_SIGNALS=true`);
       }
 
       // Determina ação baseada nas confluências
@@ -346,7 +347,7 @@ export class ProMaxStrategy extends BaseStrategy {
       const { pnl, risk } = this.calculatePnLAndRisk(action, entry, stop, firstTarget, investmentUSD, fee);
 
       // Log apenas quando há operação para ser aberta
-      console.log(`✅ [PRO_MAX] ${data.market.symbol} (${signalLevel}): ${action.toUpperCase()} - Confluências: ${action === 'long' ? bullConfluences : bearConfluences}/4 - Targets: ${targets.length} - PnL $${pnl.toFixed(2)}`);
+      Logger.info(`✅ [PRO_MAX] ${data.market.symbol} (${signalLevel}): ${action.toUpperCase()} - Confluências: ${action === 'long' ? bullConfluences : bearConfluences}/4 - Targets: ${targets.length} - PnL $${pnl.toFixed(2)}`);
 
       return {
         market: data.market.symbol,
@@ -362,7 +363,7 @@ export class ProMaxStrategy extends BaseStrategy {
       };
 
     } catch (error) {
-      console.error('ProMaxStrategy.analyzeTrade - Error:', error);
+      Logger.error('ProMaxStrategy.analyzeTrade - Error:', error.message);
       return null;
     }
   }
@@ -403,7 +404,7 @@ export class ProMaxStrategy extends BaseStrategy {
         bearishCondition
       };
     } catch (error) {
-      console.error('ProMaxStrategy.analyzeADX - Error:', error);
+      Logger.error('ProMaxStrategy.analyzeADX - Error:', error.message);
       return { isValid: false };
     }
   }
@@ -616,7 +617,7 @@ export class ProMaxStrategy extends BaseStrategy {
       // Usa ATR dos dados ou calcula
       const atr = data.atr?.atr || 0;
       if (!atr || atr <= 0) {
-        console.log(`⚠️ ATR não disponível para ${data.market.symbol}`);
+        Logger.debug(`⚠️ ATR não disponível para ${data.market.symbol}`);
         return null;
       }
 
@@ -635,7 +636,7 @@ export class ProMaxStrategy extends BaseStrategy {
         const calculatedDistance = price - stop;
         if (calculatedDistance < minDistance) {
           stop = price - minDistance;
-          console.log(`⚠️ [PRO_MAX] ${data.market.symbol}: Stop loss ajustado para distância mínima de 2% (${minDistance.toFixed(6)})`);
+          Logger.debug(`⚠️ [PRO_MAX] ${data.market.symbol}: Stop loss ajustado para distância mínima de 2% (${minDistance.toFixed(6)})`);
         }
         
         // Múltiplos targets para LONG (como no PineScript)
@@ -655,7 +656,7 @@ export class ProMaxStrategy extends BaseStrategy {
         const calculatedDistance = stop - price;
         if (calculatedDistance < minDistance) {
           stop = price + minDistance;
-          console.log(`⚠️ [PRO_MAX] ${data.market.symbol}: Stop loss ajustado para distância mínima de 2% (${minDistance.toFixed(6)})`);
+          Logger.debug(`⚠️ [PRO_MAX] ${data.market.symbol}: Stop loss ajustado para distância mínima de 2% (${minDistance.toFixed(6)})`);
         }
         
         // Múltiplos targets para SHORT (como no PineScript)
@@ -670,16 +671,16 @@ export class ProMaxStrategy extends BaseStrategy {
 
       // Validações de segurança
       if (stop <= 0 || targets.length === 0) {
-        console.log(`⚠️ Stop ou targets inválidos para ${data.market.symbol}`);
+        Logger.debug(`⚠️ Stop ou targets inválidos para ${data.market.symbol}`);
         return null;
       }
 
-      console.log(`🎯 ${data.market.symbol}: ${action.toUpperCase()} - Stop: ${stop.toFixed(6)} - Targets: ${targets.length} (${targets.slice(0, 3).map(t => t.toFixed(6)).join(', ')}${targets.length > 3 ? '...' : ''})`);
+      Logger.info(`🎯 ${data.market.symbol}: ${action.toUpperCase()} - Stop: ${stop.toFixed(6)} - Targets: ${targets.length} (${targets.slice(0, 3).map(t => t.toFixed(6)).join(', ')}${targets.length > 3 ? '...' : ''})`);
 
       return { stop, targets };
 
     } catch (error) {
-      console.error('ProMaxStrategy.calculateStopAndMultipleTargets - Error:', error);
+      Logger.error('ProMaxStrategy.calculateStopAndMultipleTargets - Error:', error.message);
       return null;
     }
   }

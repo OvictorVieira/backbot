@@ -1,6 +1,7 @@
 import { DefaultStrategy } from './DefaultStrategy.js';
 import { ProMaxStrategy } from './ProMaxStrategy.js';
 import { AlphaFlowStrategy } from './AlphaFlowStrategy.js';
+import Logger from '../../Utils/Logger.js';
 
 export class StrategyFactory {
   /**
@@ -9,23 +10,23 @@ export class StrategyFactory {
    * @returns {BaseStrategy} - Instância da estratégia
    */
   static createStrategy(strategyType) {
-    console.log(`🔍 StrategyFactory: Tipo recebido: "${strategyType}"`);
+    Logger.debug(`🔍 StrategyFactory: Tipo recebido: "${strategyType}"`);
     
     const strategy = strategyType?.toUpperCase() || 'DEFAULT';
-    console.log(`🔍 StrategyFactory: Tipo processado: "${strategy}"`);
+    Logger.debug(`🔍 StrategyFactory: Tipo processado: "${strategy}"`);
     
     switch(strategy) {
       case 'DEFAULT':
-        console.log(`✅ StrategyFactory: Criando estratégia DEFAULT`);
+        Logger.debug(`✅ StrategyFactory: Criando estratégia DEFAULT`);
         return new DefaultStrategy();
       case 'PRO_MAX':
-        console.log(`✅ StrategyFactory: Criando estratégia PRO_MAX`);
+        Logger.debug(`✅ StrategyFactory: Criando estratégia PRO_MAX`);
         return new ProMaxStrategy();
       case 'ALPHA_FLOW':
-        console.log(`✅ StrategyFactory: Criando estratégia ALPHA_FLOW`);
+        Logger.debug(`✅ StrategyFactory: Criando estratégia ALPHA_FLOW`);
         return new AlphaFlowStrategy();
       default:
-        console.log(`⚠️ Estratégia "${strategy}" não encontrada, usando DEFAULT`);
+        Logger.warn(`⚠️ Estratégia "${strategy}" não encontrada, usando DEFAULT`);
         return new DefaultStrategy();
     }
   }

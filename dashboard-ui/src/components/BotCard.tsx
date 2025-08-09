@@ -284,6 +284,11 @@ export const BotCard: React.FC<BotCardProps> = ({
     if (!config.enabled) {
       return <div className="w-3 h-3 bg-gray-400 rounded-full"></div>;
     }
+    if (isRestarting) {
+      return (
+        <div className="w-3 h-3 bg-orange-500 rounded-full animate-spin"></div>
+      );
+    }
     if (isRunning) {
       return (
         <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
@@ -365,7 +370,7 @@ export const BotCard: React.FC<BotCardProps> = ({
           variant="default" 
           size="sm" 
           disabled={true}
-          className="flex items-center gap-2 bg-yellow-500 hover:bg-yellow-600"
+          className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white"
         >
           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
           Reiniciando...
@@ -422,7 +427,7 @@ export const BotCard: React.FC<BotCardProps> = ({
   };
 
   return (
-    <Card className="w-full">
+    <Card className={`w-full ${isRestarting ? 'ring-2 ring-orange-500 ring-opacity-50 animate-pulse' : ''}`}>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex-1 min-w-0">
@@ -436,6 +441,19 @@ export const BotCard: React.FC<BotCardProps> = ({
       </CardHeader>
       
       <CardContent className="space-y-3">
+        {/* Status de Reinicialização */}
+        {isRestarting && (
+          <div className="bg-orange-50 border border-orange-200 rounded-md p-3 mb-3">
+            <div className="flex items-center gap-2 text-orange-800">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-orange-600"></div>
+              <span className="text-sm font-medium">Reiniciando bot...</span>
+            </div>
+            <p className="text-xs text-orange-600 mt-1">
+              O bot está sendo atualizado e reiniciado. Aguarde um momento.
+            </p>
+          </div>
+        )}
+        
         {/* Configurações Básicas */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs sm:text-sm">
           <div>

@@ -189,7 +189,7 @@ class ConfigManagerV2 {
       enableHybridStopStrategy: false,
       initialStopAtrMultiplier: 2,
       trailingStopAtrMultiplier: 1.5,
-      partialTakeProfitAtrMultiplier: 3,
+      partialTakeProfitAtrMultiplier: 1.5,
       partialTakeProfitPercentage: 50,
       enableTrailingStop: false,
       trailingStopDistance: 1.5,

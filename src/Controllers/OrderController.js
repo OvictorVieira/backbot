@@ -8,6 +8,7 @@ import TrailingStop from '../TrailingStop/TrailingStop.js';
 import ConfigManager from '../Config/ConfigManager.js';
 import ConfigManagerSQLite from '../Config/ConfigManagerSQLite.js';
 import BotOrdersManager from '../Config/BotOrdersManager.js';
+import Logger from '../Utils/Logger.js';
 
 class OrderController {
 
@@ -55,7 +56,7 @@ class OrderController {
       if (remainder !== 0) {
         const adjustedPrice = Math.round(price / tickSize) * tickSize;
         formattedPrice = adjustedPrice.toFixed(safeDecimalPrice);
-        console.warn(`⚠️ [PRICE_ADJUST] Preço ${price} não é múltiplo de ${tickSize}, ajustado para ${adjustedPrice}`);
+        Logger.warn(`⚠️ [PRICE_ADJUST] Preço ${price} não é múltiplo de ${tickSize}, ajustado para ${adjustedPrice}`);
       }
     }
     
@@ -72,24 +73,30 @@ class OrderController {
       // Se temos o config, usamos diretamente o botClientOrderId
       if (config && config.botClientOrderId) {
         const orderId = await ConfigManagerSQLite.getNextOrderId(config.id);
-        console.log(`🆔 [ORDER_ID] Gerado ID único usando config: ${orderId} (Bot ID: ${config.id}, botClientOrderId: ${config.botClientOrderId})`);
-        return orderId;
+        Logger.debug(`🆔 [ORDER_ID] Gerado ID único usando config: ${orderId} (Bot ID: ${config.id}, botClientOrderId: ${config.botClientOrderId})`);
+        // Converte para número inteiro para compatibilidade com a API da Backpack
+        const numericId = parseInt(orderId.replace(/_/g, ''));
+        Logger.debug(`🆔 [ORDER_ID] ID convertido para número: ${numericId}`);
+        return numericId;
       }
       
       // Fallback: tenta obter o bot por nome se config não for null
       if (config && config.id) {
         const botConfig = await ConfigManagerSQLite.getBotConfigByBotName(config.id);
         if (botConfig && botConfig.id) {
-          const orderId = await ConfigManagerSQLite.getNextOrderId(botConfig.id);
-          console.log(`🆔 [ORDER_ID] Gerado ID único por nome: ${orderId} (Bot ID: ${botConfig.id})`);
-          return orderId;
+                  const orderId = await ConfigManagerSQLite.getNextOrderId(botConfig.id);
+        Logger.debug(`🆔 [ORDER_ID] Gerado ID único por nome: ${orderId} (Bot ID: ${botConfig.id})`);
+        // Converte para número inteiro para compatibilidade com a API da Backpack
+        const numericId = parseInt(orderId.replace(/_/g, ''));
+        Logger.debug(`🆔 [ORDER_ID] ID convertido para número: ${numericId}`);
+        return numericId;
         }
       }
       
       // Se não conseguiu gerar ID único, ERRO - não deve gerar aleatório
       throw new Error(`Não foi possível gerar ID único. Config ou botClientOrderId não encontrado.`);
     } catch (error) {
-      console.error(`❌ [ORDER_ID] Erro ao gerar ID único:`, error.message);
+      Logger.error(`❌ [ORDER_ID] Erro ao gerar ID único:`, error.message);
       // Em vez de parar o bot, gera um ID de emergência baseado no timestamp
       const emergencyId = Math.floor(Date.now() / 1000) % 1000000;
       console.warn(`⚠️ [ORDER_ID] Usando ID de emergência: ${emergencyId}`);
@@ -100,9 +107,9 @@ class OrderController {
   /**
    * Gera ID único para ordens de take profit
    */
-  static generateTakeProfitOrderId(config, targetIndex = 0) {
+  static async generateTakeProfitOrderId(config, targetIndex = 0) {
     try {
-      const baseId = this.generateUniqueOrderId(config);
+      const baseId = await this.generateUniqueOrderId(config);
       // Adiciona sufixo para identificar que é take profit
       return parseInt(`${baseId}${targetIndex + 1}`);
     } catch (error) {
@@ -117,9 +124,9 @@ class OrderController {
   /**
    * Gera ID único para ordens de stop loss
    */
-  static generateStopLossOrderId(config) {
+  static async generateStopLossOrderId(config) {
     try {
-      const baseId = this.generateUniqueOrderId(config);
+      const baseId = await this.generateUniqueOrderId(config);
       // Adiciona sufixo para identificar que é stop loss
       return parseInt(`${baseId}999`);
     } catch (error) {
@@ -134,9 +141,9 @@ class OrderController {
   /**
    * Gera ID único para ordens de failsafe
    */
-  static generateFailsafeOrderId(config, type = 'stop') {
+  static async generateFailsafeOrderId(config, type = 'stop') {
     try {
-      const baseId = this.generateUniqueOrderId(config);
+      const baseId = await this.generateUniqueOrderId(config);
       // Adiciona sufixo para identificar que é failsafe
       const suffix = type === 'stop' ? '1001' : '1002';
       return parseInt(`${baseId}${suffix}`);
@@ -163,15 +170,15 @@ class OrderController {
       }
 
       // Obtém todas as ordens da exchange
-      console.log(`🔍 [BOT_ORDERS] Buscando todas as ordens da conta para filtrar por bot ID: ${botId}`);
+      Logger.debug(`🔍 [BOT_ORDERS] Buscando todas as ordens da conta para filtrar por bot ID: ${botId}`);
       const allOrders = await Order.getOpenOrders(null, "PERP", config.apiKey, config.apiSecret);
       
       if (!allOrders || allOrders.length === 0) {
-        console.log(`📋 [BOT_ORDERS] Nenhuma ordem encontrada na conta`);
+        Logger.debug(`📋 [BOT_ORDERS] Nenhuma ordem encontrada na conta`);
         return [];
       }
 
-      console.log(`📋 [BOT_ORDERS] Total de ordens na conta: ${allOrders.length}`);
+              Logger.debug(`📋 [BOT_ORDERS] Total de ordens na conta: ${allOrders.length}`);
 
       // Obtém configuração do bot por ID
       const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
@@ -180,12 +187,12 @@ class OrderController {
         return [];
       }
 
-      console.log(`🔍 [BOT_ORDERS] Filtrando ordens para bot: ${botConfig.botName} (botClientOrderId: ${botConfig.botClientOrderId})`);
+              Logger.debug(`🔍 [BOT_ORDERS] Filtrando ordens para bot: ${botConfig.botName} (botClientOrderId: ${botConfig.botClientOrderId})`);
 
       // Filtra ordens do bot específico usando botClientOrderId
       const botOrders = allOrders.filter(order => {
         if (!order.clientId) {
-          console.log(`   ⚠️ [BOT_ORDERS] Ordem sem clientId: ${order.id}`);
+          Logger.debug(`   ⚠️ [BOT_ORDERS] Ordem sem clientId: ${order.id}`);
           return false;
         }
         
@@ -196,17 +203,17 @@ class OrderController {
         const isBotOrder = clientIdStr.startsWith(botClientOrderIdStr);
         
         if (isBotOrder) {
-          console.log(`   ✅ [BOT_ORDERS] Ordem do bot encontrada: ${order.symbol} (ID: ${order.clientId})`);
+          Logger.debug(`   ✅ [BOT_ORDERS] Ordem do bot encontrada: ${order.symbol} (ID: ${order.clientId})`);
         }
         
         return isBotOrder;
       });
 
-      console.log(`📋 [BOT_ORDERS] Encontradas ${botOrders.length} ordens para bot ID ${botId} (${botConfig.botName})`);
+              Logger.debug(`📋 [BOT_ORDERS] Encontradas ${botOrders.length} ordens para bot ID ${botId} (${botConfig.botName})`);
       
       // Log detalhado das ordens encontradas
       botOrders.forEach(order => {
-        console.log(`   📄 [BOT_ORDERS] ${order.symbol}: ${order.orderType} ${order.side} @ ${order.price} (ID: ${order.clientId})`);
+                  Logger.debug(`   📄 [BOT_ORDERS] ${order.symbol}: ${order.orderType} ${order.side} @ ${order.price} (ID: ${order.clientId})`);
       });
 
       return botOrders;
@@ -254,7 +261,7 @@ class OrderController {
       // Obtém todas as ordens da exchange
       const allOrders = await Order.getOpenOrders(null, "PERP", config.apiKey, config.apiSecret);
       if (!allOrders || allOrders.length === 0) {
-        console.log(`📋 [ALL_BOTS_ORDERS] Nenhuma ordem encontrada`);
+        Logger.debug(`📋 [ALL_BOTS_ORDERS] Nenhuma ordem encontrada`);
         return {};
       }
 
@@ -284,10 +291,10 @@ class OrderController {
         }
       }
 
-      console.log(`📋 [ALL_BOTS_ORDERS] Resumo:`);
+              Logger.debug(`📋 [ALL_BOTS_ORDERS] Resumo:`);
       Object.keys(botsOrders).forEach(botName => {
         const botData = botsOrders[botName];
-        console.log(`   🤖 ${botName} (${botData.strategyName}): ${botData.orders.length} ordens`);
+                  Logger.debug(`   🤖 ${botName} (${botData.strategyName}): ${botData.orders.length} ordens`);
       });
 
       return botsOrders;
@@ -313,7 +320,7 @@ class OrderController {
       createdAt: Date.now()
     };
     OrderController.pendingEntryOrdersByBot[botName][market] = orderDataWithTimestamp;
-    console.log(`\n[MONITOR-${botName}] Ordem registrada para monitoramento: ${market}`);
+    Logger.debug(`\n[MONITOR-${botName}] Ordem registrada para monitoramento: ${market}`);
   }
 
   /**
@@ -558,13 +565,13 @@ class OrderController {
 
       // Log explicativo quando são criadas menos ordens do que o esperado
       if (finalTPs < targets.length) {
-        console.log(`📊 [PRO_MAX] ${market}: Ajuste de quantidade de TPs:`);
-        console.log(`   • Targets calculados: ${targets.length}`);
-        console.log(`   • Tamanho da posição: ${totalQuantity}`);
-        console.log(`   • Step size mínimo: ${stepSize_quantity}`);
-        console.log(`   • Máximo de TPs possíveis: ${maxTPs} (${totalQuantity} ÷ ${stepSize_quantity})`);
-        console.log(`   • Limite configurado: ${maxTakeProfitOrders} (MAX_TAKE_PROFIT_ORDERS)`);
-        console.log(`   • TPs que serão criados: ${finalTPs}`);
+              Logger.debug(`📊 [PRO_MAX] ${market}: Ajuste de quantidade de TPs:`);
+      Logger.debug(`   • Targets calculados: ${targets.length}`);
+      Logger.debug(`   • Tamanho da posição: ${totalQuantity}`);
+      Logger.debug(`   • Step size mínimo: ${stepSize_quantity}`);
+      Logger.debug(`   • Máximo de TPs possíveis: ${maxTPs} (${totalQuantity} ÷ ${stepSize_quantity})`);
+      Logger.debug(`   • Limite configurado: ${maxTakeProfitOrders} (MAX_TAKE_PROFIT_ORDERS)`);
+      Logger.debug(`   • TPs que serão criados: ${finalTPs}`);
         if (finalTPs < nTPs) {
           console.log(`   • Motivo: Limitado pela configuração MAX_TAKE_PROFIT_ORDERS=${maxTakeProfitOrders}`);
         } else {
@@ -612,7 +619,7 @@ class OrderController {
         }
         return formatted.toString();
       };
-      console.log(`🎯 [PRO_MAX] ${market}: Criando ${actualTargets} take profits. Quantidades: [${quantities.join(', ')}] (total: ${totalQuantity})`);
+      Logger.info(`🎯 [PRO_MAX] ${market}: Criando ${actualTargets} take profits. Quantidades: [${quantities.join(', ')}] (total: ${totalQuantity})`);
       // Cria ordens de take profit
       for (let i = 0; i < actualTargets; i++) {
         const targetPrice = parseFloat(usedTargets[i]);
@@ -631,13 +638,13 @@ class OrderController {
           takeProfitLimitPrice: formatPrice(targetPrice),
           timeInForce: 'GTC',
           selfTradePrevention: 'RejectTaker',
-          clientId: OrderController.generateUniqueOrderId(config)
+          clientId: await OrderController.generateUniqueOrderId(config)
         };
         const result = await Order.executeOrder(orderBody, config?.apiKey, config?.apiSecret);
         if (result && !result.error) {
-          console.log(`✅ [PRO_MAX] ${market}: Take Profit ${i + 1}/${actualTargets} criado - Preço: ${targetPrice.toFixed(6)}, Quantidade: ${qty}, OrderID: ${result.id || 'N/A'}`);
+          Logger.info(`✅ [PRO_MAX] ${market}: Take Profit ${i + 1}/${actualTargets} criado - Preço: ${targetPrice.toFixed(6)}, Quantidade: ${qty}, OrderID: ${result.id || 'N/A'}`);
         } else {
-          console.log(`❌ [PRO_MAX] ${market}: Take Profit ${i + 1}/${actualTargets} FALHOU - Preço: ${targetPrice.toFixed(6)}, Quantidade: ${qty}, Motivo: ${result?.error || 'desconhecido'}`);
+          Logger.error(`❌ [PRO_MAX] ${market}: Take Profit ${i + 1}/${actualTargets} FALHOU - Preço: ${targetPrice.toFixed(6)}, Quantidade: ${qty}, Motivo: ${result?.error || 'desconhecido'}`);
         }
       }
 
@@ -652,14 +659,14 @@ class OrderController {
           quantity: formatQuantity(totalQuantity),
           price: formatPrice(stop),
           timeInForce: 'GTC',
-          clientId: OrderController.generateUniqueOrderId(config)
+          clientId: await OrderController.generateUniqueOrderId(config)
         };
         const stopResult = await Order.executeOrder(stopBody, config?.apiKey, config?.apiSecret);
         
         if (stopResult && !stopResult.error) {
-          console.log(`🛡️ [PRO_MAX] ${market}: Stop loss criado - Preço: ${stop.toFixed(6)}, Quantidade: ${totalQuantity}`);
+          Logger.info(`🛡️ [PRO_MAX] ${market}: Stop loss criado - Preço: ${stop.toFixed(6)}, Quantidade: ${totalQuantity}`);
         } else {
-          console.log(`⚠️ [PRO_MAX] ${market}: Não foi possível criar stop loss. Motivo: ${stopResult && stopResult.error ? stopResult.error : 'desconhecido'}`);
+          Logger.warn(`⚠️ [PRO_MAX] ${market}: Não foi possível criar stop loss. Motivo: ${stopResult && stopResult.error ? stopResult.error : 'desconhecido'}`);
         }
       }
 
@@ -1508,8 +1515,8 @@ class OrderController {
       
       // Log inicial da execução híbrida
       const strategyNameToUse = config?.strategyName || botName;
-      console.log(`\n🚀 [${strategyNameToUse}] ${market}: Iniciando execução híbrida`);
-      console.log(`📊 [${strategyNameToUse}] ${market}: Preço de entrada: $${entryPrice.toFixed(6)} | Quantidade: ${quantity} | Valor: $${orderValue.toFixed(2)}`);
+      Logger.info(`\n🚀 [${strategyNameToUse}] ${market}: Iniciando execução híbrida`);
+      Logger.info(`📊 [${strategyNameToUse}] ${market}: Preço de entrada: $${entryPrice.toFixed(6)} | Quantidade: ${quantity} | Valor: $${orderValue.toFixed(2)}`);
       
       // Calcula preços de stop loss e take profit (com ajuste por alavancagem)
       const stopPrice = parseFloat(stop);
@@ -1553,14 +1560,14 @@ class OrderController {
       // Verifica se o Trailing Stop está habilitado para determinar se deve criar Take Profit fixo
       const enableTrailingStop = config?.enableTrailingStop === true;
       
-      console.log(`🛡️ [${strategyNameToUse}] ${market}: Configurando ordens de segurança integradas`);
-      console.log(`   • Stop Loss: $${stopPrice.toFixed(6)}`);
+      Logger.info(`🛡️ [${strategyNameToUse}] ${market}: Configurando ordens de segurança integradas`);
+      Logger.info(`   • Stop Loss: $${stopPrice.toFixed(6)}`);
       
       if (enableTrailingStop) {
-        console.log(`   • Take Profit: Será gerenciado dinamicamente pelo Trailing Stop`);
-      } else {
-        console.log(`   • Take Profit: $${targetPrice.toFixed(6)} (fixo na corretora)`);
-      }
+                  Logger.info(`   • Take Profit: Será gerenciado dinamicamente pelo Trailing Stop`);
+        } else {
+          Logger.info(`   • Take Profit: $${targetPrice.toFixed(6)} (fixo na corretora)`);
+        }
       
       const body = {
         symbol: market,
@@ -1575,7 +1582,7 @@ class OrderController {
         stopLossLimitPrice: formatPrice(leverageAdjustedStopPrice),
         timeInForce: "GTC",
         selfTradePrevention: "RejectTaker",
-        clientId: OrderController.generateUniqueOrderId(config)
+        clientId: await OrderController.generateUniqueOrderId(config)
       };
       
       // Adiciona parâmetros de take profit APENAS se o Trailing Stop estiver desabilitado
@@ -1758,7 +1765,7 @@ class OrderController {
         quantity,
         timeInForce: "IOC",
         selfTradePrevention: "RejectTaker",
-        clientId: OrderController.generateUniqueOrderId(config)
+        clientId: await OrderController.generateUniqueOrderId(config)
       };
       
       // SEMPRE usa credenciais do config - lança exceção se não disponível
@@ -2063,7 +2070,7 @@ class OrderController {
     triggerBy: 'LastPrice',
     triggerPrice: formatPrice(triggerPrice),
     triggerQuantity: formatQuantity(quantity),
-    clientId: OrderController.generateUniqueOrderId(config)
+    clientId: await OrderController.generateUniqueOrderId(config)
   };
 
     return await Order.executeOrder(body, config?.apiKey, config?.apiSecret);
@@ -2216,7 +2223,7 @@ class OrderController {
           triggerPrice: formatPrice(stopLossPrice), 
           triggerQuantity: formatQuantity(totalQuantity), 
           timeInForce: 'GTC',
-          clientId: OrderController.generateUniqueOrderId(config)
+          clientId: await OrderController.generateUniqueOrderId(config)
         };
 
         console.log(`🔄 [${botName}] ${position.symbol}: Criando stop loss - Trigger Price: $${stopLossPrice.toFixed(6)}`);
@@ -2587,7 +2594,7 @@ class OrderController {
         stopLossLimitPrice: formatPrice(stopLossPrice),
         timeInForce: 'GTC',
         selfTradePrevention: 'RejectTaker',
-        clientId: OrderController.generateFailsafeOrderId(botName, config, 'stop')
+        clientId: await OrderController.generateFailsafeOrderId(config, 'stop')
       };
 
       // 5. Cria ordem de Take Profit APENAS se o Trailing Stop estiver desabilitado
@@ -2602,10 +2609,10 @@ class OrderController {
           price: formatPrice(takeProfitPrice),
           takeProfitTriggerBy: 'LastPrice',
           takeProfitTriggerPrice: formatPrice(takeProfitPrice),
-          takeProfitLimitPrice: formatPrice(takeProfitPrice),
-          timeInForce: 'GTC',
-          selfTradePrevention: 'RejectTaker',
-          clientId: OrderController.generateUniqueOrderId(config)
+                  takeProfitLimitPrice: formatPrice(takeProfitPrice),
+        timeInForce: 'GTC',
+        selfTradePrevention: 'RejectTaker',
+        clientId: await OrderController.generateUniqueOrderId(config)
         };
       }
 
@@ -3448,7 +3455,7 @@ class OrderController {
         price: formatPrice(entry),
         timeInForce: 'GTC',
         selfTradePrevention: 'RejectTaker',
-        clientId: OrderController.generateUniqueOrderId(config)
+        clientId: await OrderController.generateUniqueOrderId(config)
       };
 
       // Adiciona parâmetros de stop loss se fornecido
@@ -3642,7 +3649,7 @@ class OrderController {
   static async monitorAndCreateTakeProfit(config) {
     try {
       if (!config?.apiKey || !config?.apiSecret) {
-        console.log(`⚠️ [TP_MONITOR] API_KEY e API_SECRET são obrigatórios`);
+        Logger.warn(`⚠️ [TP_MONITOR] API_KEY e API_SECRET são obrigatórios`);
         return;
       }
 
@@ -3651,24 +3658,24 @@ class OrderController {
         return;
       }
 
-      console.log(`🔍 [TP_MONITOR] Verificando ${positions.length} posições para Take Profit...`);
+      Logger.debug(`🔍 [TP_MONITOR] Verificando ${positions.length} posições para Take Profit...`);
 
       for (const position of positions) {
         try {
           // 🔧 NOVO: Valida se a posição foi criada pelo bot
           const isBotPosition = await OrderController.isPositionCreatedByBot(position, config);
           if (!isBotPosition) {
-            console.log(`⏭️ [TP_MONITOR] ${position.symbol}: Posição não criada pelo bot - pulando`);
+            Logger.debug(`⏭️ [TP_MONITOR] ${position.symbol}: Posição não criada pelo bot - pulando`);
             continue;
           }
 
           await OrderController.createTakeProfitForPosition(position, config);
         } catch (error) {
-          console.error(`❌ [TP_MONITOR] Erro ao processar ${position.symbol}:`, error.message);
+          Logger.error(`❌ [TP_MONITOR] Erro ao processar ${position.symbol}:`, error.message);
         }
       }
     } catch (error) {
-      console.error(`❌ [TP_MONITOR] Erro no monitor de Take Profit:`, error.message);
+      Logger.error(`❌ [TP_MONITOR] Erro no monitor de Take Profit:`, error.message);
     }
   }
 
@@ -3687,14 +3694,22 @@ class OrderController {
         return; // Posição fechada
       }
 
+      // 🔧 CORREÇÃO CRÍTICA: Verifica se o Trailing Stop está ativo
+      const enableTrailingStop = config?.enableTrailingStop === true;
+      if (enableTrailingStop) {
+        Logger.debug(`⏭️ [TP_CREATE] ${symbol}: Trailing Stop ativo - NÃO criando Take Profit fixo`);
+        Logger.debug(`ℹ️ [TP_CREATE] ${symbol}: Take Profit será gerenciado dinamicamente pelo Trailing Stop`);
+        return; // Não cria TP fixo quando trailing stop está ativo
+      }
+
       // Verifica se já existe ordem de Take Profit
       const hasTakeProfit = await OrderController.hasTakeProfitOrder(symbol, position, config);
       if (hasTakeProfit) {
-        console.log(`ℹ️ [TP_CREATE] ${symbol}: Take Profit já existe, pulando criação`);
+        Logger.debug(`ℹ️ [TP_CREATE] ${symbol}: Take Profit já existe, pulando criação`);
         return; // Já existe TP
       }
 
-      console.log(`🎯 [TP_CREATE] ${symbol}: Criando Take Profit...`);
+      Logger.info(`🎯 [TP_CREATE] ${symbol}: Criando Take Profit...`);
 
       // Obtém informações do mercado para formatação correta
       let Account;
@@ -3705,18 +3720,18 @@ class OrderController {
           strategy: config?.strategyName || 'DEFAULT' 
         });
       } catch (error) {
-        console.error(`❌ [TP_CREATE] ${symbol}: Erro ao obter Account:`, error.message);
+        Logger.error(`❌ [TP_CREATE] ${symbol}: Erro ao obter Account:`, error.message);
         return;
       }
 
       if (!Account || !Account.markets) {
-        console.error(`❌ [TP_CREATE] ${symbol}: Account inválido ou sem markets:`, Account);
+        Logger.error(`❌ [TP_CREATE] ${symbol}: Account inválido ou sem markets:`, Account);
         return;
       }
 
       const marketInfo = Account.markets.find(m => m.symbol === symbol);
       if (!marketInfo) {
-        console.error(`❌ [TP_CREATE] ${symbol}: Market info não encontrada`);
+        Logger.error(`❌ [TP_CREATE] ${symbol}: Market info não encontrada`);
         return;
       }
 
@@ -3767,7 +3782,7 @@ class OrderController {
 
       let enableHybridStopStrategy = config?.enableHybridStopStrategy || false;
       let takeProfitPrice = null;
-      let takeProfitQuantity = Math.abs(currentNetQuantity);
+      let takeProfitQuantity = Math.abs(currentNetQuantity); // Será ajustado baseado na estratégia
 
       if (enableHybridStopStrategy) {
         // Modo Híbrido: Usa ATR para calcular TP parcial
@@ -3783,19 +3798,48 @@ class OrderController {
         } else {
           console.log(`⚠️ [TP_HYBRID] ${symbol}: ATR não disponível ou inválido (${atrValue}), usando TP total`);
           enableHybridStopStrategy = false; // Fallback para TP total
+          takeProfitQuantity = Math.abs(currentNetQuantity); // Quantidade total para fallback
         }
       }
 
       if (!enableHybridStopStrategy) {
         // Modo Tradicional: TP total baseado em minProfitPercentage
         const minProfitPercentage = Number(config?.minProfitPercentage || 10);
-        const profitMultiplier = (100 + minProfitPercentage) / 100;
         
-        takeProfitPrice = currentIsLong 
-          ? entryPrice * profitMultiplier
-          : entryPrice / profitMultiplier;
+        // 🔧 CORREÇÃO CRÍTICA: Obtém a alavancagem da conta para calcular o TP correto
+        let leverage = 1; // Default
+        try {
+          const Account = await AccountController.get({ 
+            apiKey: config.apiKey, 
+            apiSecret: config.apiSecret,
+            strategy: config?.strategyName || 'DEFAULT' 
+          });
+          if (Account && Account.leverage) {
+            leverage = parseFloat(Account.leverage);
+            console.log(`🔧 [TP_TRADITIONAL] ${symbol}: Alavancagem ${leverage}x`);
+          }
+        } catch (error) {
+          console.warn(`⚠️ [TP_TRADITIONAL] ${symbol}: Erro ao obter alavancagem, usando 1x: ${error.message}`);
+        }
         
-        console.log(`📊 [TP_TRADITIONAL] ${symbol}: TP Total ${minProfitPercentage}% - Preço: $${takeProfitPrice?.toFixed(4)}, Qty: ${takeProfitQuantity.toFixed(6)}`);
+        // 🔧 CORREÇÃO CRÍTICA: Calcula o TP real considerando a alavancagem
+        const actualProfitPct = minProfitPercentage / leverage;
+        
+        console.log(`🔧 [TP_TRADITIONAL] ${symbol}: TP - Bruto: ${minProfitPercentage}%, Real: ${actualProfitPct.toFixed(2)}% (leverage ${leverage}x)`);
+        
+        // Calcula o preço de TP considerando a alavancagem
+        if (currentIsLong) {
+          // Para LONG: TP acima do preço de entrada
+          takeProfitPrice = entryPrice * (1 + (actualProfitPct / 100));
+        } else {
+          // Para SHORT: TP abaixo do preço de entrada
+          takeProfitPrice = entryPrice * (1 - (actualProfitPct / 100));
+        }
+        
+        // 🔧 CORREÇÃO: Garante que a quantidade seja total quando não é híbrido
+        takeProfitQuantity = Math.abs(currentNetQuantity);
+        
+        console.log(`📊 [TP_TRADITIONAL] ${symbol}: TP Total ${minProfitPercentage}% (efetivo ${actualProfitPct.toFixed(2)}%) - Preço: $${takeProfitPrice?.toFixed(4)}, Qty: ${takeProfitQuantity.toFixed(6)}`);
       }
 
       if (!takeProfitPrice || takeProfitPrice <= 0 || isNaN(takeProfitPrice)) {
@@ -3866,9 +3910,23 @@ class OrderController {
                 console.log(`ℹ️ [TP_CREATE] ${symbol}: TP existente insuficiente (${existingQty} < ${tolerance}). Continuando criação.`);
               }
             } else {
-              console.log(`ℹ️ [TP_CREATE] ${symbol}: Já existe TP reduceOnly aberto (${existingQty}). Ignorando para evitar duplicidade.`);
-              console.log(`✅ [TP_CREATE] ${symbol}: Saindo da função - TP total já existe.`);
-              return;
+              // 🔧 CORREÇÃO: Verifica se o TP existente é realmente total (não parcial)
+              const isTotalTP = existingReduceOnly.some(order => {
+                const orderQty = Math.abs(parseFloat(order.quantity || 0));
+                const positionQty = Math.abs(currentNetQuantity);
+                const isTotal = orderQty >= positionQty * 0.99; // 99% da posição = total
+                
+                console.log(`🔍 [TP_CREATE] ${symbol}: Ordem ${order.id} - Qty: ${orderQty}, Posição: ${positionQty}, É total: ${isTotal}`);
+                return isTotal;
+              });
+              
+              if (isTotalTP) {
+                console.log(`ℹ️ [TP_CREATE] ${symbol}: Já existe TP total aberto (${existingQty}). Ignorando para evitar duplicidade.`);
+                console.log(`✅ [TP_CREATE] ${symbol}: Saindo da função - TP total já existe.`);
+                return;
+              } else {
+                console.log(`⚠️ [TP_CREATE] ${symbol}: TP existente é parcial (${existingQty}) mas queremos total. Continuando criação.`);
+              }
             }
           }
         }
@@ -3912,7 +3970,7 @@ class OrderController {
         takeProfitLimitPrice: formattedLimitPrice,
         timeInForce: 'GTC',
         selfTradePrevention: 'RejectTaker',
-        clientId: OrderController.generateUniqueOrderId(config)
+        clientId: await OrderController.generateUniqueOrderId(config)
       };
 
       console.log(`📊 [TP_CREATE] ${symbol}: Enviando ordem TP - Side: ${takeProfitOrder.side}, Qty: ${takeProfitOrder.quantity}, Price: ${takeProfitOrder.price}, Current Position: ${currentNetQuantity}`);
@@ -4074,15 +4132,15 @@ class OrderController {
       });
 
       if (botFill) {
-        console.log(`✅ [BOT_VALIDATION] ${symbol}: Posição criada pelo bot - ClientId: ${botFill.clientId}`);
+        Logger.debug(`✅ [BOT_VALIDATION] ${symbol}: Posição criada pelo bot - ClientId: ${botFill.clientId}`);
         return true;
       } else {
-        console.log(`❌ [BOT_VALIDATION] ${symbol}: Posição não criada pelo bot - ClientIds encontrados: ${fills.map(f => f.clientId).join(', ')}`);
+        Logger.debug(`❌ [BOT_VALIDATION] ${symbol}: Posição não criada pelo bot - ClientIds encontrados: ${fills.map(f => f.clientId).join(', ')}`);
         return false;
       }
 
     } catch (error) {
-      console.error(`❌ [BOT_VALIDATION] Erro ao validar posição ${position.symbol}:`, error.message);
+      Logger.error(`❌ [BOT_VALIDATION] Erro ao validar posição ${position.symbol}:`, error.message);
       return false;
     }
   }

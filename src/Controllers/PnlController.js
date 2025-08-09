@@ -1,4 +1,5 @@
 import History from '../Backpack/Authenticated/History.js';
+import Logger from '../Utils/Logger.js';
 
 class PnlController {
   async run(hour = 24, config = null) {
@@ -36,10 +37,10 @@ class PnlController {
         config.apiSecret
       );
       const result = this.summarizeTrades(fills)
-      console.log(`last ${hour}h:`, result);
+      Logger.info(`last ${hour}h:`, result);
 
        } catch (error) {
-      console.log(error)
+      Logger.error('❌ PnlController.run - Error:', error.message)
     }
   } 
   
@@ -47,7 +48,7 @@ class PnlController {
     try {
       // Verifica se trades é válido
       if (!trades || !Array.isArray(trades) || trades.length === 0) {
-        console.log('📊 Nenhum trade encontrado para análise');
+        Logger.info('📊 Nenhum trade encontrado para análise');
         return { totalFee: 0, totalVolume: 0, volumeBylFee: 0 };
       }
 
@@ -81,7 +82,7 @@ class PnlController {
       return { totalFee: overall.totalFee, totalVolume: overall.totalVolume, volumeBylFee: volumeBylFee };
 
     } catch (error) {
-      console.error('❌ PnlController.summarizeTrades - Error:', error.message);
+      Logger.error('❌ PnlController.summarizeTrades - Error:', error.message);
       return { totalFee: 0, totalVolume: 0, volumeBylFee: 0 };
     }
   }

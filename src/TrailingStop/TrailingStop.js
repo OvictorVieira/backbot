@@ -6,6 +6,7 @@ import Markets from '../Backpack/Public/Markets.js';
 import AccountController from '../Controllers/AccountController.js';
 import { validateLeverageForSymbol, clearLeverageAdjustLog } from '../Utils/Utils.js';
 import ColorLogger from '../Utils/ColorLogger.js';
+import Logger from '../Utils/Logger.js';
 import { promises as fs } from 'fs';
 import path from 'path';
 
@@ -13,7 +14,7 @@ class TrailingStop {
 
   constructor(strategyType = null, config = null) {
     const finalStrategyType = strategyType || 'DEFAULT';
-    console.log(`🔧 [TRAILING_INIT] Inicializando TrailingStop com estratégia: ${finalStrategyType}`);
+    Logger.debug(`🔧 [TRAILING_INIT] Inicializando TrailingStop com estratégia: ${finalStrategyType}`);
     this.strategyType = finalStrategyType;
     this.config = config; // Armazena a configuração do bot
     this.stopLossStrategy = null; // Será inicializado de forma assíncrona
@@ -28,7 +29,7 @@ class TrailingStop {
   async initializeStopLoss() {
     if (!this.stopLossStrategy) {
       this.stopLossStrategy = await StopLossFactory.createStopLoss(this.strategyType, this.config);
-      console.log(`🔧 [TRAILING_INIT] Stop loss strategy criada: ${this.stopLossStrategy.constructor.name}`);
+      Logger.debug(`🔧 [TRAILING_INIT] Stop loss strategy criada: ${this.stopLossStrategy.constructor.name}`);
     }
     return this.stopLossStrategy;
   }
