@@ -50,8 +50,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
   onCancel,
   isEditMode = false
 }) => {
-  console.log('🔍 [ConfigForm] Config recebido:', config);
-  console.log('🔍 [ConfigForm] isEditMode:', isEditMode);
+
   
   const [formData, setFormData] = useState<BotConfig>({
     ...config,
@@ -84,10 +83,11 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
   } | null>(null);
   const [availableTokens, setAvailableTokens] = useState<Array<{
     symbol: string;
-    baseAsset: string;
-    quoteAsset: string;
+    baseSymbol: string;
+    quoteSymbol: string;
+    marketType: string;
+    orderBookState: string;
     status: string;
-    volume24h: string;
   }>>([]);
   const [loadingTokens, setLoadingTokens] = useState(false);
   const [tokenSearchTerm, setTokenSearchTerm] = useState('');
@@ -117,12 +117,11 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
       
       if (response.data.success) {
         setAvailableTokens(response.data.tokens);
-        console.log(`✅ [ConfigForm] ${response.data.total} tokens carregados`);
       } else {
-        console.error('❌ [ConfigForm] Erro ao buscar tokens:', response.data.error);
+        // Error handling without console logs
       }
     } catch (error) {
-      console.error('❌ [ConfigForm] Erro ao buscar tokens:', error.message);
+      // Error handling without console logs
     } finally {
       setLoadingTokens(false);
     }
@@ -344,8 +343,8 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
 
   // Filtrar tokens baseado no termo de busca
   const filteredTokens = availableTokens.filter(token =>
-    token.symbol.toLowerCase().includes(tokenSearchTerm.toLowerCase()) ||
-    token.baseAsset.toLowerCase().includes(tokenSearchTerm.toLowerCase())
+    token.symbol?.toLowerCase().includes(tokenSearchTerm.toLowerCase()) ||
+    token.baseSymbol?.toLowerCase().includes(tokenSearchTerm.toLowerCase())
   );
 
   const validateForm = (): boolean => {
@@ -488,8 +487,6 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
       /*
       if (formData.apiKey && formData.apiSecret) {
         try {
-          console.log(`🔧 [ConfigForm] Atualizando alavancagem para ${formattedData.leverageLimit}x...`);
-          
           const leverageResponse = await axios.post('http://localhost:3001/api/account/update-leverage', {
             apiKey: formData.apiKey,
             apiSecret: formData.apiSecret,
@@ -497,13 +494,12 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
           });
 
           if (leverageResponse.data.success) {
-            console.log(`✅ [ConfigForm] Alavancagem atualizada para ${formattedData.leverageLimit}x`);
+            // Leverage updated successfully
           } else {
-            console.warn(`⚠️ [ConfigForm] Erro ao atualizar alavancagem: ${leverageResponse.data.error}`);
+            // Error updating leverage
           }
         } catch (leverageError) {
-          console.warn(`⚠️ [ConfigForm] Erro ao atualizar alavancagem: ${leverageError.message}`);
-          // Não impede o salvamento se a atualização de alavancagem falhar
+          // Error updating leverage - doesn't prevent saving
         }
       }
       */
@@ -583,7 +579,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
     );
   };
 
-  console.log('🔍 [ConfigForm] Renderizando componente...');
+
 
   return (
     <Card className="w-full">
@@ -854,6 +850,11 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                     </p>
                   ) : (
                     filteredTokens.map((token) => {
+                      // Verificar se o token tem as propriedades necessárias
+                      if (!token.symbol || !token.baseSymbol) {
+                        return null; // Pular tokens inválidos
+                      }
+                      
                       const isSelected = formData.authorizedTokens.includes(token.symbol);
                       return (
                         <div
@@ -877,9 +878,9 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                             <div>
                               <div className="font-medium text-sm">
                                 {token.symbol.replace('_USDC_PERP', '')}-PERP
-            </div>
+                              </div>
                               <div className="text-xs text-muted-foreground">
-                                {token.baseAsset} • Volume 24h: ${formatVolume(token.volume24h || '0')}
+                                {token.baseSymbol} • {token.marketType || 'PERP'}
                               </div>
                             </div>
                           </div>
@@ -888,7 +889,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                           </div>
                         </div>
                       );
-                    })
+                    }).filter(Boolean) // Remover tokens inválidos (null)
                   )}
                 </div>
               </div>

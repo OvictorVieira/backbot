@@ -63,7 +63,14 @@ class DatabaseService {
           price REAL NOT NULL,
           orderType TEXT NOT NULL,
           timestamp TEXT NOT NULL,
-          status TEXT DEFAULT 'PENDING'
+          status TEXT DEFAULT 'PENDING',
+          exchangeCreatedAt TEXT,
+          closePrice REAL,
+          closeTime TEXT,
+          closeQuantity REAL,
+          closeType TEXT,
+          pnl REAL,
+          pnlPct REAL
         );
       `);
 
@@ -78,10 +85,45 @@ class DatabaseService {
         );
       `);
 
+      // Migra tabela existente se necessário
+      await this.migrateBotOrdersTable();
+
       console.log(`📋 [DATABASE] Tables created successfully`);
     } catch (error) {
       console.error(`❌ [DATABASE] Error creating tables:`, error.message);
       throw error;
+    }
+  }
+
+  /**
+   * Migra a tabela bot_orders para incluir novas colunas se necessário
+   */
+  async migrateBotOrdersTable() {
+    try {
+      // Verifica se as novas colunas já existem
+      const tableInfo = await this.getAll("PRAGMA table_info(bot_orders)");
+      const columnNames = tableInfo.map(col => col.name);
+      
+      const newColumns = [
+        { name: 'exchangeCreatedAt', type: 'TEXT' },
+        { name: 'closePrice', type: 'REAL' },
+        { name: 'closeTime', type: 'TEXT' },
+        { name: 'closeQuantity', type: 'REAL' },
+        { name: 'closeType', type: 'TEXT' },
+        { name: 'pnl', type: 'REAL' },
+        { name: 'pnlPct', type: 'REAL' }
+      ];
+
+      for (const column of newColumns) {
+        if (!columnNames.includes(column.name)) {
+          console.log(`🔄 [DATABASE] Adicionando coluna ${column.name} à tabela bot_orders`);
+          await this.db.exec(`ALTER TABLE bot_orders ADD COLUMN ${column.name} ${column.type}`);
+        }
+      }
+
+      console.log(`✅ [DATABASE] Migração da tabela bot_orders concluída`);
+    } catch (error) {
+      console.error(`❌ [DATABASE] Erro na migração da tabela bot_orders:`, error.message);
     }
   }
 

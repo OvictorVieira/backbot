@@ -15,7 +15,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const getInitialTheme = (): Theme => {
     if (typeof window !== 'undefined') {
       const savedTheme = localStorage.getItem('backbot-theme') as Theme
-      console.log('🔍 Carregando tema do localStorage:', savedTheme)
+
       if (savedTheme && (savedTheme === 'light' || savedTheme === 'dark')) {
         return savedTheme
       }
@@ -36,7 +36,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== 'undefined') {
       const currentSavedTheme = localStorage.getItem('backbot-theme')
       if (currentSavedTheme !== theme) {
-        console.log('💾 Salvando tema no localStorage:', theme)
+
         localStorage.setItem('backbot-theme', theme)
       }
     }

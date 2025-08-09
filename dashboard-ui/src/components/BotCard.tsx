@@ -188,18 +188,7 @@ export const BotCard: React.FC<BotCardProps> = ({
 
   // Calcular próximo tempo de execução baseado no nextValidationAt do status
   useEffect(() => {
-    console.log('🔍 [BotCard] Debug countdown:', {
-      isRunning,
-      botStatus: botStatus ? 'present' : 'missing',
-      nextValidationAt: botStatus?.config?.nextValidationAt || 'missing',
-      configId: config.id
-    });
-    
     if (!isRunning || !botStatus?.config?.nextValidationAt) {
-      console.log('🔍 [BotCard] Setting nextExecution to null:', {
-        isRunning,
-      hasNextValidationAt: !!botStatus?.config?.nextValidationAt
-      });
       setNextExecution(null);
       return;
     }
@@ -211,17 +200,8 @@ export const BotCard: React.FC<BotCardProps> = ({
     const now = Date.now();
     const diff = nextValidationDate.getTime() - now;
     
-    console.log('🔍 [BotCard] Time calculation:', {
-      nextValidationAt: botStatus.config.nextValidationAt,
-      nextValidationDate: nextValidationDate.toISOString(),
-      now: new Date(now).toISOString(),
-      diff,
-      diffSeconds: Math.floor(diff / 1000)
-    });
-    
     // Se já passou do tempo, não mostra countdown
     if (diff <= 0) {
-      console.log('🔍 [BotCard] Time already passed, setting nextExecution to null');
       setNextExecution(null);
       return;
     }
@@ -242,7 +222,6 @@ export const BotCard: React.FC<BotCardProps> = ({
       })
     };
     
-    console.log('🔍 [BotCard] Setting nextExecution:', nextExec);
     setNextExecution(nextExec);
   }, [config.id, isRunning, botStatus?.config?.nextValidationAt]);
 
@@ -306,6 +285,10 @@ export const BotCard: React.FC<BotCardProps> = ({
       return profitRatio.toFixed(2);
     }
     return profitRatio.toString();
+  };
+
+  const formatWinRate = (winRate: number) => {
+    return winRate.toFixed(2);
   };
 
   // Função para determinar a cor do Win Rate
@@ -536,7 +519,7 @@ export const BotCard: React.FC<BotCardProps> = ({
                     </div>
                   </div>
                 </div>
-                <p className={`font-bold ${getWinRateColor(tradingStats.winRate)}`}>{tradingStats.winRate}%</p>
+                <p className={`font-bold ${getWinRateColor(tradingStats.winRate)}`}>{formatWinRate(tradingStats.winRate)}%</p>
               </div>
               
               <div className="bg-orange-50 dark:bg-orange-950/20 p-2 rounded">
@@ -585,14 +568,6 @@ export const BotCard: React.FC<BotCardProps> = ({
             
             <div className="text-xs text-muted-foreground">
               {(() => {
-                console.log('🔍 [BotCard] Countdown display logic:', {
-                  isRunning,
-                  hasCountdown: !!countdown,
-                  countdown,
-                  hasNextValidationAt: !!botStatus?.config?.nextValidationAt,
-                  hasTradingStats: !!tradingStats
-                });
-                
                 if (isRunning && countdown && countdown !== '') {
                   return (
                     <span>

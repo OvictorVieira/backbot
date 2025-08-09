@@ -137,7 +137,7 @@ export function TradingChart({ symbol, className = '' }: TradingChartProps) {
     wsRef.current = ws
 
     ws.onopen = () => {
-      console.log('WebSocket conectado para TradingChart')
+      // WebSocket connected
     }
 
     ws.onmessage = (event) => {

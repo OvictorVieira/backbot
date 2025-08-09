@@ -189,24 +189,10 @@ class OrderController {
 
               Logger.debug(`🔍 [BOT_ORDERS] Filtrando ordens para bot: ${botConfig.botName} (botClientOrderId: ${botConfig.botClientOrderId})`);
 
-      // Filtra ordens do bot específico usando botClientOrderId
+      // Filtra ordens do bot específico usando botClientOrderId e validação de tempo
       const botOrders = allOrders.filter(order => {
-        if (!order.clientId) {
-          Logger.debug(`   ⚠️ [BOT_ORDERS] Ordem sem clientId: ${order.id}`);
-          return false;
-        }
-        
-        // Verifica se o clientId começa com o botClientOrderId do bot
-        const clientIdStr = order.clientId.toString();
-        const botClientOrderIdStr = botConfig.botClientOrderId.toString();
-        
-        const isBotOrder = clientIdStr.startsWith(botClientOrderIdStr);
-        
-        if (isBotOrder) {
-          Logger.debug(`   ✅ [BOT_ORDERS] Ordem do bot encontrada: ${order.symbol} (ID: ${order.clientId})`);
-        }
-        
-        return isBotOrder;
+        // Usa a validação centralizada
+        return OrderController.validateOrderForImport(order, botConfig);
       });
 
               Logger.debug(`📋 [BOT_ORDERS] Encontradas ${botOrders.length} ordens para bot ID ${botId} (${botConfig.botName})`);
@@ -279,7 +265,12 @@ class OrderController {
           const clientIdStr = order.clientId.toString();
           const botClientOrderIdStr = botConfig.botClientOrderId.toString();
           
-          return clientIdStr.startsWith(botClientOrderIdStr);
+          const isBotOrder = clientIdStr.startsWith(botClientOrderIdStr);
+          
+          if (!isBotOrder) return false;
+          
+          // Usa a validação centralizada
+          return OrderController.validateOrderForImport(order, botConfig);
         });
 
         if (botOrders.length > 0) {
@@ -302,6 +293,45 @@ class OrderController {
       console.error(`❌ [ALL_BOTS_ORDERS] Erro ao recuperar ordens de todos os bots:`, error.message);
       return {};
     }
+  }
+
+  /**
+   * Valida se uma ordem deve ser importada baseado no tempo de criação do bot
+   * @param {Object} order - Dados da ordem
+   * @param {Object} botConfig - Configuração do bot
+   * @returns {boolean} True se a ordem deve ser importada
+   */
+  static validateOrderForImport(order, botConfig) {
+    // VALIDAÇÃO CRÍTICA: Verifica se a ordem pertence ao bot (clientId começa com botClientOrderId)
+    if (!order.clientId || !botConfig.botClientOrderId) {
+      Logger.debug(`   ⚠️ [ORDER_VALIDATION] Ordem ${order.symbol} ignorada - sem clientId ou botClientOrderId`);
+      return false;
+    }
+
+    const clientIdStr = order.clientId.toString();
+    const botClientOrderIdStr = botConfig.botClientOrderId.toString();
+    
+    if (!clientIdStr.startsWith(botClientOrderIdStr)) {
+      Logger.debug(`   ⚠️ [ORDER_VALIDATION] Ordem ${order.symbol} ignorada - não pertence ao bot (clientId: ${clientIdStr}, botClientOrderId: ${botClientOrderIdStr})`);
+      return false;
+    }
+
+    // VALIDAÇÃO DE TEMPO: Verifica se a ordem foi criada após a criação do bot
+    if (botConfig.createdAt && order.exchangeCreatedAt) {
+      const botCreatedAt = new Date(botConfig.createdAt).getTime();
+      const orderTime = new Date(order.exchangeCreatedAt).getTime();
+      
+      if (orderTime < botCreatedAt) {
+        Logger.debug(`   ⏰ [ORDER_VALIDATION] Ordem antiga ignorada: ${order.symbol} (ID: ${order.clientId}) - Ordem: ${new Date(orderTime).toISOString()}, Bot criado: ${new Date(botCreatedAt).toISOString()}`);
+        return false;
+      }
+      
+      Logger.debug(`   ✅ [ORDER_VALIDATION] Ordem válida: ${order.symbol} (ID: ${order.clientId}) - Tempo: ${new Date(orderTime).toISOString()}`);
+    } else {
+      Logger.debug(`   ✅ [ORDER_VALIDATION] Ordem do bot encontrada (sem validação de tempo): ${order.symbol} (ID: ${order.clientId})`);
+    }
+
+    return true;
   }
 
   /**
@@ -3694,7 +3724,6 @@ class OrderController {
         return; // Posição fechada
       }
 
-      // 🔧 CORREÇÃO CRÍTICA: Verifica se o Trailing Stop está ativo
       const enableTrailingStop = config?.enableTrailingStop === true;
       if (enableTrailingStop) {
         Logger.debug(`⏭️ [TP_CREATE] ${symbol}: Trailing Stop ativo - NÃO criando Take Profit fixo`);

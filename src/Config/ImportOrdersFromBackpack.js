@@ -1,6 +1,7 @@
 import Order from '../Backpack/Authenticated/Order.js';
 import BotOrdersManager, { initializeBotOrdersManager } from './BotOrdersManager.js';
 import ConfigManager from './ConfigManager.js';
+import OrderController from '../Controllers/OrderController.js';
 
 class ImportOrdersFromBackpack {
   
@@ -42,6 +43,11 @@ class ImportOrdersFromBackpack {
             continue;
           }
 
+          // Usa a validação centralizada do OrderController
+          if (!OrderController.validateOrderForImport(order, config)) {
+            continue;
+          }
+
           // Determina o lado da ordem
           const side = order.side === 'Bid' ? 'BUY' : 'SELL';
           
@@ -56,7 +62,8 @@ class ImportOrdersFromBackpack {
             side,
             quantity,
             parseFloat(order.price),
-            orderType
+            orderType,
+            order.createdAt // Timestamp de criação na exchange
           );
 
           importedOrders.push({

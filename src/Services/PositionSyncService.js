@@ -2,6 +2,7 @@ import History from '../Backpack/Authenticated/History.js';
 import Futures from '../Backpack/Authenticated/Futures.js';
 import BotOrdersManager from '../Config/BotOrdersManager.js';
 import Logger from '../Utils/Logger.js';
+import PositionTrackingService from './PositionTrackingService.js';
 
 /**
  * Serviço para sincronizar posições e detectar fechamentos automáticos
@@ -72,19 +73,19 @@ class PositionSyncService {
       const startTime = Date.now();
       Logger.debug(`🔄 [POSITION_SYNC] Iniciando sincronização para bot ${botId}`);
 
-      // 1. Busca fills recentes da corretora
-      const recentFills = await this.getRecentFills(botId, config);
+      // NOVO SISTEMA: Usa PositionTrackingService para rastreamento baseado em fills
+      Logger.info(`🔄 [POSITION_SYNC] Usando novo sistema de rastreamento de posições`);
       
-      // 2. Busca posições abertas da corretora
+      // 1. Rastreia posições usando o novo sistema
+      const trackingResult = await PositionTrackingService.trackBotPositions(botId, config);
+      
+      // 2. Busca posições abertas da corretora para comparação
       const openPositions = await this.getOpenPositions(config);
       
-      // 3. Busca ordens abertas do nosso banco
-      const ourOpenOrders = await this.getOurOpenOrders(botId);
+      // 3. Detecta fechamentos automáticos baseado no novo sistema
+      const closedPositions = await this.detectClosedPositionsNew(botId, config, trackingResult);
       
-      // 4. Detecta fechamentos automáticos
-      const closedPositions = await this.detectClosedPositions(botId, config, ourOpenOrders, recentFills);
-      
-      // 5. Atualiza estatísticas
+      // 4. Atualiza estatísticas
       await this.updateBotStatistics(botId, config);
 
       const duration = Date.now() - startTime;
@@ -177,7 +178,55 @@ class PositionSyncService {
   }
 
   /**
-   * Detecta posições que foram fechadas automaticamente
+   * NOVO MÉTODO: Detecta posições fechadas usando o novo sistema de rastreamento
+   * @param {number} botId - ID do bot
+   * @param {object} config - Configuração do bot
+   * @param {object} trackingResult - Resultado do rastreamento de posições
+   */
+  async detectClosedPositionsNew(botId, config, trackingResult) {
+    const closedPositions = [];
+
+    try {
+      const { reconstructedPositions } = trackingResult;
+      
+      // Filtra posições que foram fechadas
+      const closedPositionsData = reconstructedPositions.filter(pos => pos.isClosed);
+      
+      Logger.info(`🔍 [POSITION_SYNC] Novo sistema detectou ${closedPositionsData.length} posições fechadas para bot ${botId}`);
+
+      // Para cada posição fechada, atualiza o banco
+      for (const position of closedPositionsData) {
+        try {
+          await this.handleClosedPositionNew(botId, position);
+          
+          closedPositions.push({
+            symbol: position.symbol,
+            side: position.side,
+            originalOrder: position.originalOrder,
+            closureType: position.closeType,
+            closePrice: position.closePrice,
+            closeQuantity: position.closeQuantity,
+            closeTime: position.closeTime,
+            pnl: position.pnl,
+            pnlPct: position.pnlPct
+          });
+          
+        } catch (error) {
+          Logger.error(`❌ [POSITION_SYNC] Erro ao processar posição fechada ${position.symbol}:`, error.message);
+        }
+      }
+
+      Logger.info(`✅ [POSITION_SYNC] Processadas ${closedPositions.length} posições fechadas para bot ${botId}`);
+
+    } catch (error) {
+      Logger.error(`❌ [POSITION_SYNC] Erro ao detectar posições fechadas (novo sistema) para bot ${botId}:`, error.message);
+    }
+
+    return closedPositions;
+  }
+
+  /**
+   * MÉTODO LEGADO: Detecta posições que foram fechadas automaticamente (mantido para compatibilidade)
    * @param {number} botId - ID do bot
    * @param {object} config - Configuração do bot
    * @param {Array} ourOpenOrders - Nossas ordens abertas
@@ -277,7 +326,36 @@ class PositionSyncService {
   }
 
   /**
-   * Manipula uma posição que foi fechada automaticamente
+   * NOVO MÉTODO: Manipula posições fechadas usando o novo sistema
+   * @param {number} botId - ID do bot
+   * @param {object} position - Posição reconstruída
+   */
+  async handleClosedPositionNew(botId, position) {
+    try {
+      const { symbol, side, originalOrder, closePrice, closeTime, closeQuantity, closeType, pnl, pnlPct } = position;
+      
+      Logger.info(`🔍 [POSITION_SYNC] NOVO SISTEMA: Posição fechada: ${symbol} ${side} ${closeQuantity}`);
+
+      // Atualiza a ordem no banco com status fechado
+      await BotOrdersManager.updateOrder(originalOrder.externalOrderId, {
+        status: 'CLOSED',
+        closePrice: closePrice,
+        closeTime: closeTime,
+        closeQuantity: closeQuantity,
+        closeType: closeType,
+        pnl: pnl,
+        pnlPct: pnlPct
+      });
+
+      Logger.info(`💰 [POSITION_SYNC] NOVO SISTEMA: PnL: $${pnl.toFixed(2)} (${pnlPct.toFixed(2)}%) para ${symbol}`);
+
+    } catch (error) {
+      Logger.error(`❌ [POSITION_SYNC] Erro ao manipular posição fechada (novo sistema):`, error.message);
+    }
+  }
+
+  /**
+   * MÉTODO LEGADO: Manipula uma posição que foi fechada automaticamente (mantido para compatibilidade)
    * @param {number} botId - ID do bot
    * @param {object} order - Ordem original
    * @param {object} positionStatus - Status da posição
@@ -329,17 +407,25 @@ class PositionSyncService {
   }
 
   /**
-   * Atualiza estatísticas do bot
+   * Atualiza estatísticas do bot usando o novo sistema
    * @param {number} botId - ID do bot
    * @param {object} config - Configuração do bot
    */
   async updateBotStatistics(botId, config) {
     try {
-      // Busca estatísticas atualizadas
-      const stats = await BotOrdersManager.getBotOrderStats(botId);
+      // Usa o novo sistema para obter estatísticas atualizadas
+      const trackingResult = await PositionTrackingService.trackBotPositions(botId, config);
+      const { performanceMetrics } = trackingResult;
       
-      Logger.debug(`📊 [POSITION_SYNC] Estatísticas atualizadas para bot ${botId}: ${stats.totalOrders} ordens`);
-
+      Logger.info(`📊 [POSITION_SYNC] Estatísticas atualizadas para bot ${botId}:`);
+      Logger.info(`   • Total de posições: ${performanceMetrics.totalPositions}`);
+      Logger.info(`   • Posições fechadas: ${performanceMetrics.closedPositions}`);
+      Logger.info(`   • Win Rate: ${performanceMetrics.winRate.toFixed(2)}%`);
+      Logger.info(`   • Profit Factor: ${performanceMetrics.profitFactor.toFixed(2)}`);
+      Logger.info(`   • PnL Total: $${performanceMetrics.totalPnl.toFixed(2)}`);
+      
+      // TODO: Salvar estatísticas no banco de dados
+      
     } catch (error) {
       Logger.error(`❌ [POSITION_SYNC] Erro ao atualizar estatísticas do bot ${botId}:`, error.message);
     }

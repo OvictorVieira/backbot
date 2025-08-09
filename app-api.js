@@ -38,6 +38,7 @@ import ImportPositionsFromBackpack from './src/Config/ImportPositionsFromBackpac
 import DatabaseService from './src/Services/DatabaseService.js';
 import Markets from './src/Backpack/Public/Markets.js';
 import PositionSyncService from './src/Services/PositionSyncService.js';
+import PositionTrackingService from './src/Services/PositionTrackingService.js';
 
 // Configuração do servidor Express
 const app = express();
@@ -2586,6 +2587,51 @@ app.get('/api/bot/:botId/sync-status', async (req, res) => {
   }
 });
 
+// GET /api/bot/test-tracking/:botId - Testa o PositionTrackingService
+app.get('/api/bot/test-tracking/:botId', async (req, res) => {
+  try {
+    const { botId } = req.params;
+    const botIdNum = parseInt(botId);
+    
+    if (isNaN(botIdNum)) {
+      return res.status(400).json({
+        success: false,
+        error: 'botId deve ser um número válido'
+      });
+    }
+    
+    // Busca configuração do bot
+    const botConfig = await ConfigManagerSQLite.getBotConfigById(botIdNum);
+    if (!botConfig) {
+      return res.status(404).json({
+        success: false,
+        error: `Bot com ID ${botId} não encontrado`
+      });
+    }
+    
+    console.log(`🧪 [TEST] Testando PositionTrackingService para bot ${botIdNum}`);
+    
+    // Testa o PositionTrackingService
+    const trackingResult = await PositionTrackingService.trackBotPositions(botIdNum, botConfig);
+    
+    res.json({
+      success: true,
+      data: {
+        botId: botIdNum,
+        botName: botConfig.botName,
+        trackingResult: trackingResult
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Erro no teste do PositionTrackingService:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
 // GET /api/bot/summary - Retorna resumo completo das estatísticas do bot para o card
 app.get('/api/bot/summary', async (req, res) => {
   try {
@@ -2620,18 +2666,38 @@ app.get('/api/bot/summary', async (req, res) => {
     
     console.log(`🔍 [SUMMARY] Gerando resumo para bot ${botId} (${botClientOrderId})`);
     
-    // Busca dados de performance
+    // NOVO SISTEMA: Usa PositionTrackingService para dados de performance
     let performanceData;
     try {
-      performanceData = await History.analyzeBotPerformance(
-        botClientOrderId, 
-        { days: 30, limit: 100 }, 
-        botConfig.apiKey, 
-        botConfig.apiSecret
-      );
+      console.log(`🔄 [SUMMARY] Usando novo sistema de rastreamento para bot ${botIdNum}`);
+      
+      const trackingResult = await PositionTrackingService.trackBotPositions(botIdNum, botConfig);
+      const { performanceMetrics, reconstructedPositions } = trackingResult;
+      
+      // Converte para o formato esperado pelo endpoint
+      performanceData = {
+        performance: {
+          totalTrades: performanceMetrics.totalTrades, // CORREÇÃO: Usa totalTrades ao invés de totalPositions
+          winningTrades: performanceMetrics.winningTrades,
+          losingTrades: performanceMetrics.losingTrades,
+          winRate: performanceMetrics.winRate,
+          profitFactor: performanceMetrics.profitFactor,
+          totalPnl: performanceMetrics.totalPnl,
+          averagePnl: performanceMetrics.averagePnl, // CORREÇÃO: Usa averagePnl ao invés de avgPnl
+          maxDrawdown: performanceMetrics.maxDrawdown || 0,
+          openTrades: performanceMetrics.openTrades, // CORREÇÃO: Usa openTrades ao invés de openPositions
+          totalVolume: performanceMetrics.totalVolume || 0
+        },
+        positions: {
+          closed: performanceMetrics.closedTrades,
+          open: performanceMetrics.openTrades,
+          total: performanceMetrics.totalTrades
+        }
+      };
+      
     } catch (error) {
-      console.log(`⚠️ [SUMMARY] Erro ao buscar dados de performance: ${error.message}`);
-      // Cria dados padrão se não conseguir buscar
+      console.warn(`⚠️ [SUMMARY] Erro ao buscar dados de performance (novo sistema): ${error.message}`);
+      
       performanceData = {
         performance: {
           totalTrades: 0,
@@ -2659,7 +2725,7 @@ app.get('/api/bot/summary', async (req, res) => {
       const positionsData = await Futures.getOpenPositions(botConfig.apiKey, botConfig.apiSecret);
       activePositions = positionsData || [];
     } catch (error) {
-      console.log(`⚠️ [SUMMARY] Erro ao buscar posições ativas: ${error.message}`);
+      console.warn(`⚠️ [SUMMARY] Erro ao buscar posições ativas: ${error.message}`);
     }
     
     // Calcula profitRatio profissional baseado na análise trade a trade
@@ -2667,10 +2733,8 @@ app.get('/api/bot/summary', async (req, res) => {
     if (performanceData.performance.totalTrades > 0) {
       const winningTrades = performanceData.performance.winningTrades;
       const losingTrades = performanceData.performance.losingTrades;
-      const totalTrades = performanceData.performance.totalTrades;
       const totalPnl = performanceData.performance.totalPnl;
       const profitFactor = performanceData.performance.profitFactor;
-      const winRate = performanceData.performance.winRate;
       
       // Cálculo profissional do Profit Ratio como número float:
       // 1. Se tem trades vencedores e perdedores, usa Profit Factor
@@ -2710,9 +2774,9 @@ app.get('/api/bot/summary', async (req, res) => {
         winningTrades: performanceData.performance.winningTrades,
         losingTrades: performanceData.performance.losingTrades,
         winRate: performanceData.performance.winRate,
-        profitRatio: profitRatio, // 🔧 CORRIGIDO: Retorna ∞ para infinito
+        profitRatio: profitRatio,
         totalTrades: performanceData.performance.totalTrades,
-        openPositions: activePositions.length // Usa apenas posições reais da Backpack
+        openPositions: activePositions.length
       },
       performance: {
         totalPnl: performanceData.performance.totalPnl,
@@ -2722,8 +2786,8 @@ app.get('/api/bot/summary', async (req, res) => {
       },
       positions: {
         closed: performanceData.positions.closed,
-        open: activePositions.length, // Usa apenas posições reais da Backpack
-        total: performanceData.positions.closed + activePositions.length // Fechadas + Abertas reais
+        open: activePositions.length,
+        total: performanceData.positions.closed + activePositions.length
       },
       lastUpdated: new Date().toISOString()
     };
@@ -2735,6 +2799,85 @@ app.get('/api/bot/summary', async (req, res) => {
 
   } catch (error) {
     console.error('❌ Erro no endpoint /api/bot/summary:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// GET /api/bot/test-api/:botId - Testa a API da corretora diretamente
+app.get('/api/bot/test-api/:botId', async (req, res) => {
+  try {
+    const { botId } = req.params;
+    const botIdNum = parseInt(botId);
+    
+    if (isNaN(botIdNum)) {
+      return res.status(400).json({
+        success: false,
+        error: 'botId deve ser um número válido'
+      });
+    }
+    
+    const botConfig = await ConfigManagerSQLite.getBotConfigById(botIdNum);
+    if (!botConfig) {
+      return res.status(404).json({
+        success: false,
+        error: `Bot com ID ${botId} não encontrado`
+      });
+    }
+    
+    console.log(`🧪 [TEST-API] Testando API da corretora para bot ${botIdNum}`);
+    
+    // Testa busca de fills diretamente
+    const History = (await import('./src/Backpack/Authenticated/History.js')).default;
+    
+    const now = Date.now();
+    const sevenDaysAgo = now - (7 * 24 * 60 * 60 * 1000);
+    
+    const fills = await History.getFillHistory(
+      null, // symbol - todos os símbolos
+      null, // orderId
+      sevenDaysAgo,
+      now,
+      1000, // limit
+      0, // offset
+      null, // fillType
+      'PERP', // marketType
+      null, // sortDirection
+      botConfig.apiKey,
+      botConfig.apiSecret
+    );
+    
+    // Retorna mais detalhes dos fills para debug
+    const fillsDetails = fills ? fills.map(fill => ({
+      symbol: fill.symbol,
+      side: fill.side,
+      quantity: fill.quantity,
+      price: fill.price,
+      timestamp: fill.timestamp,
+      orderId: fill.orderId,
+      clientId: fill.clientId,
+      fee: fill.fee,
+      feeSymbol: fill.feeSymbol
+    })) : [];
+    
+    res.json({
+      success: true,
+      data: {
+        botId: botIdNum,
+        botName: botConfig.botName,
+        apiTest: {
+          fillsCount: fills ? fills.length : 0,
+          fillsSample: fills && fills.length > 0 ? fills[0] : null,
+          fillsDetails: fillsDetails,
+          error: null
+        }
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Erro no teste da API da corretora:', error);
     res.status(500).json({ 
       success: false, 
       error: error.message 

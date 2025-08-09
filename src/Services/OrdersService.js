@@ -23,8 +23,8 @@ class OrdersService {
       }
 
       const result = await OrdersService.dbService.run(
-        `INSERT INTO bot_orders (botId, externalOrderId, symbol, side, quantity, price, orderType, timestamp, status) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO bot_orders (botId, externalOrderId, symbol, side, quantity, price, orderType, timestamp, status, exchangeCreatedAt, closePrice, closeTime, closeQuantity, closeType, pnl, pnlPct) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           order.botId,
           order.externalOrderId,
@@ -34,7 +34,14 @@ class OrdersService {
           order.price,
           order.orderType,
           order.timestamp || new Date().toISOString(),
-          order.status || 'PENDING'
+          order.status || 'PENDING',
+          order.exchangeCreatedAt || null,
+          order.closePrice || null,
+          order.closeTime || null,
+          order.closeQuantity || null,
+          order.closeType || null,
+          order.pnl || null,
+          order.pnlPct || null
         ]
       );
 
@@ -198,8 +205,8 @@ class OrdersService {
       cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
 
       const result = await OrdersService.dbService.run(
-        'DELETE FROM bot_orders WHERE timestamp < ?',
-        [cutoffDate.toISOString()]
+        'DELETE FROM bot_orders WHERE exchangeCreatedAt < ? OR (exchangeCreatedAt IS NULL AND timestamp < ?)',
+        [cutoffDate.toISOString(), cutoffDate.toISOString()]
       );
 
       if (result.changes > 0) {

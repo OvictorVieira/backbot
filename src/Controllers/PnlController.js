@@ -1,13 +1,35 @@
 import History from '../Backpack/Authenticated/History.js';
 import Logger from '../Utils/Logger.js';
+import PositionTrackingService from '../Services/PositionTrackingService.js';
 
 class PnlController {
-  async run(hour = 24, config = null) {
+  async run(hour = 24, config = null, botId = null) {
     try {
       // SEMPRE usa credenciais do config - lança exceção se não disponível
       if (!config?.apiKey || !config?.apiSecret) {
         throw new Error('API_KEY e API_SECRET são obrigatórios - deve ser passado da config do bot');
       }
+      
+      // NOVO SISTEMA: Se botId for fornecido, usa o novo sistema de rastreamento
+      if (botId) {
+        Logger.info(`🔄 [PNL] Usando novo sistema de rastreamento para bot ${botId}`);
+        
+        const trackingResult = await PositionTrackingService.trackBotPositions(botId, config);
+        const { performanceMetrics, reconstructedPositions } = trackingResult;
+        
+        Logger.info(`📊 [PNL] Resultados do novo sistema para bot ${botId}:`);
+        Logger.info(`   • Total de posições: ${performanceMetrics.totalPositions}`);
+        Logger.info(`   • Posições fechadas: ${performanceMetrics.closedPositions}`);
+        Logger.info(`   • Win Rate: ${performanceMetrics.winRate.toFixed(2)}%`);
+        Logger.info(`   • Profit Factor: ${performanceMetrics.profitFactor.toFixed(2)}`);
+        Logger.info(`   • PnL Total: $${performanceMetrics.totalPnl.toFixed(2)}`);
+        Logger.info(`   • PnL Médio: $${performanceMetrics.avgPnl.toFixed(2)}`);
+        
+        return performanceMetrics;
+      }
+      
+      // SISTEMA LEGADO: Para compatibilidade, mantém o comportamento anterior
+      Logger.info(`🔄 [PNL] Usando sistema legado de cálculo de PnL`);
       
       const now = Date.now();                                  // timestamp atual em ms
       const oneDayAgo = now - hour * 60 * 60 * 1000;            // 24h atrás em ms
@@ -38,9 +60,12 @@ class PnlController {
       );
       const result = this.summarizeTrades(fills)
       Logger.info(`last ${hour}h:`, result);
+      
+      return result;
 
-       } catch (error) {
+    } catch (error) {
       Logger.error('❌ PnlController.run - Error:', error.message)
+      return null;
     }
   } 
   

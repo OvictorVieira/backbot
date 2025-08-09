@@ -129,19 +129,15 @@ export function DashboardPage() {
 
   const handleStartBot = async (botId: string) => {
     try {
-      console.log(`🔄 Iniciando bot: ${botId}`)
       setLoadingBots(prev => ({ ...prev, [botId]: true }))
       
       await axios.post(`${API_BASE_URL}/api/bot/start`, { botId: parseInt(botId) })
-      console.log(`✅ Bot ${botId} iniciado com sucesso`)
       
       // Recarregar status após iniciar
       const response = await axios.get(`${API_BASE_URL}/api/bot/status`)
       setBotStatuses(response.data.data)
-      console.log(`📊 Status atualizado:`, response.data.data)
       
     } catch (error: any) {
-      console.error(`❌ Erro ao iniciar bot ${botId}:`, error)
       let errorMessage = 'Erro ao iniciar o bot. Tente novamente.';
       if (error.response?.data?.error) {
         errorMessage = error.response.data.error;
@@ -155,26 +151,21 @@ export function DashboardPage() {
         message: errorMessage
       });
     } finally {
-      console.log(`🔚 Limpando loading para ${botId}`)
       setLoadingBots(prev => ({ ...prev, [botId]: false }))
     }
   }
 
   const handleStopBot = async (botId: string) => {
     try {
-      console.log(`🛑 Parando bot: ${botId}`)
       setLoadingBots(prev => ({ ...prev, [botId]: true }))
       
       await axios.post(`${API_BASE_URL}/api/bot/stop`, { botId: parseInt(botId) })
-      console.log(`✅ Bot ${botId} parado com sucesso`)
       
       // Recarregar status após parar
       const response = await axios.get(`${API_BASE_URL}/api/bot/status`)
       setBotStatuses(response.data.data)
-      console.log(`📊 Status atualizado:`, response.data.data)
       
     } catch (error: any) {
-      console.error(`❌ Erro ao parar bot ${botId}:`, error)
       let errorMessage = 'Erro ao parar o bot. Tente novamente.';
       if (error.response?.data?.error) {
         errorMessage = error.response.data.error;
@@ -188,64 +179,50 @@ export function DashboardPage() {
         message: errorMessage
       });
     } finally {
-      console.log(`🔚 Limpando loading para ${botId}`)
       setLoadingBots(prev => ({ ...prev, [botId]: false }))
     }
   }
 
   const handleConfigSaved = async (config: BotConfig) => {
     try {
-      console.log('🔄 Iniciando atualização do bot:', config.strategyName);
-      
       // Verificar se o bot estava rodando antes da atualização
       const currentStatus = botStatuses.find(s => s.strategyName === config.strategyName);
       const wasRunning = currentStatus?.isRunning || false;
       
       if (wasRunning) {
-        console.log('🔄 Bot estava rodando, definindo estado de reinicialização...');
         setRestartingBots(prev => ({ ...prev, [config.strategyName]: true }));
       }
       
       // Salvar configuração na API
-      console.log('💾 Salvando configuração na API...');
       const saveResponse = await axios.post(`${API_BASE_URL}/api/configs`, {
         strategyName: config.strategyName,
         config: config
       })
-      console.log('✅ Configuração salva:', saveResponse.data);
       
       // Se o bot estava rodando, aguardar mais tempo para garantir que reiniciou
       if (wasRunning) {
-        console.log('⏳ Aguardando reinicialização do bot...');
         await new Promise(resolve => setTimeout(resolve, 5000)); // Aguarda 5 segundos
       }
       
       // Recarregar configurações após salvar
-      console.log('🔄 Recarregando configurações...');
       const response = await axios.get(`${API_BASE_URL}/api/configs`)
       setConfigs(response.data.data)
-      console.log('✅ Configurações recarregadas');
       
       // Recarregar status dos bots
-      console.log('🔄 Recarregando status dos bots...');
       const statusResponse = await axios.get(`${API_BASE_URL}/api/bot/status`)
       setBotStatuses(statusResponse.data.data)
-      console.log('✅ Status dos bots atualizado');
       
       // Se o bot estiver rodando, recalcular nextValidationAt
       const updatedStatus = statusResponse.data.data.find((s: any) => s.strategyName === config.strategyName);
       if (updatedStatus?.isRunning) {
-        console.log('🔄 Bot está rodando, recalculando nextValidationAt...');
         try {
           await axios.get(`${API_BASE_URL}/api/bot/${updatedStatus.id}/next-execution`);
-          console.log('✅ nextValidationAt recalculado');
           
           // Recarregar status novamente para pegar o novo nextValidationAt
           const finalStatusResponse = await axios.get(`${API_BASE_URL}/api/bot/status`);
           setBotStatuses(finalStatusResponse.data.data);
-          console.log('✅ Status final atualizado');
         } catch (error) {
-          console.error('❌ Erro ao recalcular nextValidationAt:', error);
+          // Error handling without console logs
         }
       }
       
@@ -254,7 +231,6 @@ export function DashboardPage() {
       
       setShowConfigForm(false)
       setSelectedStrategy('')
-      console.log('✅ Modal fechado e estratégia limpa');
       
     } catch (error: any) {
       console.error('❌ Erro ao salvar configuração:', error);
@@ -311,8 +287,6 @@ export function DashboardPage() {
       setConfigs(response.data.data)
       setShowCreateBot(false)
     } catch (error: any) {
-      console.error('Erro ao criar bot:', error)
-      
       let errorMessage = 'Erro ao criar bot. Verifique suas credenciais e tente novamente.'
       if (error.response?.data?.error) {
         errorMessage = error.response.data.error
@@ -328,7 +302,6 @@ export function DashboardPage() {
 
   const getBotStatus = (botId: number) => {
     const status = botStatuses.find(status => status.id === botId)
-    console.log(`🔍 [getBotStatus] Bot ID ${botId}:`, status)
     return status
   }
 
@@ -440,10 +413,8 @@ export function DashboardPage() {
                 const botId = parseInt(selectedStrategy);
                 const foundConfig = configs.find(c => c.id === botId);
                 if (foundConfig) {
-                  console.log('🔍 [DashboardPage] Config encontrada:', foundConfig);
                   return foundConfig;
                 }
-                console.log('❌ [DashboardPage] Config não encontrada para botId:', botId);
                 // Fallback para configuração padrão
                 return {
                   strategyName: 'DEFAULT',
