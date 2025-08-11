@@ -5,7 +5,7 @@ import OrderController from '../Controllers/OrderController.js';
 
 /**
  * PositionTrackingService - Novo sistema de rastreamento de posições
- * 
+ *
  * Este serviço implementa a nova lógica de identificação de posições:
  * 1. Identifica posições abertas baseado nas ordens salvas no nosso banco
  * 2. Calcula mudanças de posição baseado nos fills da corretora (sem depender do clientId)
@@ -77,12 +77,12 @@ class PositionTrackingService {
       }
 
       const orders = await OrdersService.getOrdersByBotId(botId);
-      
+
       // CORREÇÃO: Busca TODAS as ordens do bot (não apenas "abertas")
       // porque precisamos do histórico completo para identificar trades
-      const allOrders = orders.filter(order => 
+      const allOrders = orders.filter(order =>
         // Filtra apenas ordens de abertura (não stop loss, take profit, etc.)
-        ['BUY', 'SELL'].includes(order.side) && 
+        ['BUY', 'SELL'].includes(order.side) &&
         ['MARKET', 'LIMIT'].includes(order.orderType) &&
         !order.orderType.includes('PROFIT') &&
         !order.orderType.includes('LOSS')
@@ -133,7 +133,7 @@ class PositionTrackingService {
       }
 
       Logger.debug(`📊 [POSITION_TRACKING] Fills recebidos da corretora: ${fills.length}`);
-      
+
       // VALIDAÇÃO CRÍTICA: Filtra fills que pertencem ao bot e foram criados após a criação do bot
       const validFills = fills.filter(fill => {
         // Cria um objeto "order" com os dados do fill para usar na validação
@@ -142,26 +142,26 @@ class PositionTrackingService {
           clientId: fill.clientId,
           createdAt: fill.createdAt || fill.timestamp
         };
-        
+
         // Usa a validação centralizada do OrderController
         const isValid = OrderController.validateOrderForImport(orderForValidation, config);
-        
+
         if (!isValid) {
           Logger.debug(`   ⚠️ [POSITION_TRACKING] Fill ignorado: ${fill.symbol} (clientId: ${fill.clientId}) - não pertence ao bot ou é muito antigo`);
         }
-        
+
         return isValid;
       });
-      
+
       Logger.info(`📊 [POSITION_TRACKING] Fills válidos após validação: ${validFills.length}/${fills.length}`);
-      
+
       // DEBUG: Log dos primeiros fills para verificar formato
       if (validFills.length > 0) {
         Logger.debug(`🔍 [POSITION_TRACKING] Primeiro fill válido:`, JSON.stringify(validFills[0], null, 2));
       } else {
         Logger.warn(`⚠️ [POSITION_TRACKING] NENHUM FILL VÁLIDO ENCONTRADO!`);
       }
-      
+
       return validFills;
 
     } catch (error) {
@@ -191,14 +191,14 @@ class PositionTrackingService {
         validOrders = ourOpenOrders.filter(order => {
           const orderTime = new Date(order.timestamp).getTime();
           const isValid = orderTime >= botCreatedAt;
-          
+
           if (!isValid) {
             Logger.debug(`   ⏰ [POSITION_TRACKING] Ordem antiga ignorada: ${order.symbol} (ID: ${order.id}) - Ordem: ${new Date(orderTime).toISOString()}, Bot criado: ${new Date(botCreatedAt).toISOString()}`);
           }
-          
+
           return isValid;
         });
-        
+
         Logger.info(`📊 [POSITION_TRACKING] Ordens válidas após validação de tempo: ${validOrders.length}/${ourOpenOrders.length}`);
       } else {
         Logger.warn(`⚠️ [POSITION_TRACKING] Configuração do bot não possui createdAt - todas as ordens serão consideradas válidas`);
@@ -206,17 +206,17 @@ class PositionTrackingService {
 
       // Agrupa fills por símbolo
       const fillsBySymbol = this.groupFillsBySymbol(fills);
-      
+
       const ordersBySymbol = this.groupOrdersBySymbol(validOrders);
-      
+
       const reconstructedPositions = [];
 
       // Para cada símbolo, reconstrói a posição consolidada
       for (const [symbol, symbolOrders] of Object.entries(ordersBySymbol)) {
         const symbolFills = fillsBySymbol[symbol] || [];
-        
+
         console.log(`🔍 [DEBUG] Processando símbolo ${symbol}: ${symbolOrders.length} ordens, ${symbolFills.length} fills`);
-        
+
         if (symbolFills.length === 0) {
           // Sem fills para este símbolo - posição ainda não foi executada
           const consolidatedOrder = this.consolidateOrdersBySymbol(symbolOrders);
@@ -265,10 +265,10 @@ class PositionTrackingService {
       const side = consolidatedOrder.side; // BUY ou SELL
       const totalOrderQuantity = parseFloat(consolidatedOrder.quantity);
       const averageOrderPrice = parseFloat(consolidatedOrder.price);
-      
+
       // Ordena fills por timestamp (mais antigo primeiro)
       const sortedFills = symbolFills.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-      
+
       // Identifica trades individuais baseado no padrão de fills
       const trades = [];
       let currentTrade = null;
@@ -303,13 +303,13 @@ class PositionTrackingService {
           // Saída - fecha um trade
           if (currentTrade) {
             const quantityToClose = Math.min(fillQuantity, currentTrade.entryQuantity);
-            
+
             if (quantityToClose > 0) {
               // Fecha o trade atual
-              const tradePnl = side === 'BUY' 
+              const tradePnl = side === 'BUY'
                 ? (fillPrice - currentTrade.entryPrice) * quantityToClose
                 : (currentTrade.entryPrice - fillPrice) * quantityToClose;
-              
+
               trades.push({
                 symbol: symbolOrders[0].symbol,
                 side: currentTrade.side,
@@ -322,29 +322,29 @@ class PositionTrackingService {
                 pnl: tradePnl,
                 isClosed: true
               });
-              
+
               totalPnl += tradePnl;
-              
+
               // Atualiza quantidade restante
               currentTrade.entryQuantity -= quantityToClose;
               remainingQuantity -= quantityToClose;
-              
+
               // Se o trade foi completamente fechado, inicia um novo
               if (currentTrade.entryQuantity <= 0) {
                 currentTrade = null;
               }
             }
-            
+
             // Se ainda há quantidade no fill, processa como fechamento de outro trade
             if (fillQuantity > quantityToClose) {
               const remainingFillQuantity = fillQuantity - quantityToClose;
               if (remainingFillQuantity > 0 && remainingQuantity > 0) {
                 // Fecha parte da posição restante
                 const closeQuantity = Math.min(remainingFillQuantity, remainingQuantity);
-                const tradePnl = side === 'BUY' 
+                const tradePnl = side === 'BUY'
                   ? (fillPrice - averageOrderPrice) * closeQuantity
                   : (averageOrderPrice - fillPrice) * closeQuantity;
-                
+
                 trades.push({
                   symbol: symbolOrders[0].symbol,
                   side: side,
@@ -357,7 +357,7 @@ class PositionTrackingService {
                   pnl: tradePnl,
                   isClosed: true
                 });
-                
+
                 totalPnl += tradePnl;
                 remainingQuantity -= closeQuantity;
               }
@@ -366,10 +366,10 @@ class PositionTrackingService {
             // Sem trade ativo, fecha parte da posição original
             const closeQuantity = Math.min(fillQuantity, remainingQuantity);
             if (closeQuantity > 0) {
-              const tradePnl = side === 'BUY' 
+              const tradePnl = side === 'BUY'
                 ? (fillPrice - averageOrderPrice) * closeQuantity
                 : (averageOrderPrice - fillPrice) * closeQuantity;
-              
+
               trades.push({
                 symbol: symbolOrders[0].symbol,
                 side: side,
@@ -382,7 +382,7 @@ class PositionTrackingService {
                 pnl: tradePnl,
                 isClosed: true
               });
-              
+
               totalPnl += tradePnl;
               remainingQuantity -= closeQuantity;
             }
@@ -481,7 +481,7 @@ class PositionTrackingService {
    */
   static groupFillsBySymbol(fills) {
     const grouped = {};
-    
+
     for (const fill of fills) {
       const symbol = fill.symbol;
       if (!grouped[symbol]) {
@@ -500,7 +500,7 @@ class PositionTrackingService {
    */
   static groupOrdersBySymbol(orders) {
     const grouped = {};
-    
+
     for (const order of orders) {
       const symbol = order.symbol;
       if (!grouped[symbol]) {
@@ -508,7 +508,7 @@ class PositionTrackingService {
       }
       grouped[symbol].push(order);
     }
-    
+
     return grouped;
   }
 
@@ -544,31 +544,31 @@ class PositionTrackingService {
     try {
       // Extrai todos os trades individuais de todas as posições
       const allTrades = [];
-      
+
       for (const position of positions) {
         if (position.trades && Array.isArray(position.trades)) {
           allTrades.push(...position.trades);
         }
       }
-      
+
       console.log(`🔍 [DEBUG] calculatePerformanceMetrics:`);
       console.log(`   - Total de posições: ${positions.length}`);
       console.log(`   - Total de trades extraídos: ${allTrades.length}`);
-      
+
       // Filtra apenas trades válidos
-      const validTrades = allTrades.filter(trade => 
-        trade && 
-        trade.symbol && 
+      const validTrades = allTrades.filter(trade =>
+        trade &&
+        trade.symbol &&
         trade.entryQuantity > 0
       );
-      
+
       const closedTrades = validTrades.filter(trade => trade.isClosed);
       const openTrades = validTrades.filter(trade => !trade.isClosed);
-      
+
       console.log(`   - Trades válidos: ${validTrades.length}`);
       console.log(`   - Trades fechados: ${closedTrades.length}`);
       console.log(`   - Trades abertos: ${openTrades.length}`);
-      
+
       if (validTrades.length === 0) {
         return {
           totalTrades: 0,
@@ -591,20 +591,20 @@ class PositionTrackingService {
 
       const winningTrades = closedTrades.filter(trade => trade.pnl > 0);
       const losingTrades = closedTrades.filter(trade => trade.pnl < 0);
-      
+
       const totalPnl = closedTrades.reduce((sum, trade) => sum + trade.pnl, 0);
       const totalWinningPnl = winningTrades.reduce((sum, trade) => sum + trade.pnl, 0);
       const totalLosingPnl = Math.abs(losingTrades.reduce((sum, trade) => sum + trade.pnl, 0));
-      
+
       const winRate = closedTrades.length > 0 ? (winningTrades.length / closedTrades.length) * 100 : 0;
       const profitFactor = totalLosingPnl > 0 ? totalWinningPnl / totalLosingPnl : 0;
       const averagePnl = closedTrades.length > 0 ? totalPnl / closedTrades.length : 0;
-      
+
       // Calcula drawdown
       let maxDrawdown = 0;
       let peak = 0;
       let runningPnl = 0;
-      
+
       for (const trade of closedTrades) {
         runningPnl += trade.pnl;
         if (runningPnl > peak) {
@@ -615,7 +615,7 @@ class PositionTrackingService {
           maxDrawdown = drawdown;
         }
       }
-      
+
       // Calcula volume total
       const totalVolume = closedTrades.reduce((sum, trade) => {
         return sum + (trade.entryQuantity * trade.entryPrice);
@@ -624,24 +624,26 @@ class PositionTrackingService {
       // Calcula tempo médio de holding
       let totalHoldingTime = 0;
       let validHoldingTimes = 0;
-      
+
       for (const trade of closedTrades) {
         if (trade.exitTime && trade.entryTime) {
           const entryTime = new Date(trade.entryTime);
           const exitTime = new Date(trade.exitTime);
           const holdingTime = exitTime - entryTime;
-          
+
           if (holdingTime > 0) {
             totalHoldingTime += holdingTime;
             validHoldingTimes++;
           }
         }
       }
-      
+
       const averageHoldingTime = validHoldingTimes > 0 ? totalHoldingTime / validHoldingTimes : 0;
 
+      const totalTrades = winningTrades.length + losingTrades.length + openTrades.length;
+
       const result = {
-        totalTrades: validTrades.length,
+        totalTrades: totalTrades,
         totalPositions: positions.length,
         closedTrades: closedTrades.length,
         closedPositions: closedTrades.length,
@@ -659,13 +661,13 @@ class PositionTrackingService {
         totalWinningPnl,
         totalLosingPnl
       };
-      
+
       console.log(`   - RESULTADO FINAL:`);
       console.log(`     - totalTrades: ${result.totalTrades}`);
       console.log(`     - closedTrades: ${result.closedTrades}`);
       console.log(`     - openTrades: ${result.openTrades}`);
       console.log(`     - totalPnl: ${result.totalPnl}`);
-      
+
       return result;
 
     } catch (error) {
@@ -720,7 +722,7 @@ class PositionTrackingService {
   static async getBotPositionHistory(botId, config, options = {}) {
     try {
       const { days = 30, includeOpen = true } = options;
-      
+
       Logger.info(`🔍 [POSITION_TRACKING] Buscando histórico de posições para bot ${botId} (últimos ${days} dias)`);
 
       // Busca fills do período
@@ -756,13 +758,13 @@ class PositionTrackingService {
 
       // Busca nossas ordens do período
       const ourOrders = await this.getOurOrdersInPeriod(botId, startTime, now);
-      
+
       // Reconstrói posições
       const positions = await this.reconstructPositionsFromFills(fills, ourOrders, config);
-      
+
       // Filtra posições baseado nas opções
-      const filteredPositions = includeOpen 
-        ? positions 
+      const filteredPositions = includeOpen
+        ? positions
         : positions.filter(pos => pos.isClosed);
 
       // Calcula métricas
@@ -800,7 +802,7 @@ class PositionTrackingService {
       }
 
       const orders = await OrdersService.getOrdersByBotId(botId);
-      
+
       // Filtra ordens do período
       const periodOrders = orders.filter(order => {
         const orderTime = new Date(order.timestamp).getTime();

@@ -287,13 +287,17 @@ class ConfigManagerSQLite {
 
   /**
    * Gera ID único para ordem
-   * @param {number} botId - ID do bot
+   * @param {number} botId - ID do bot (não usado no clientId final)
    * @param {number} botClientOrderId - botClientOrderId do bot
    * @param {number} orderCounter - Contador de ordens
-   * @returns {string} ID único da ordem
+   * @returns {number} ID único da ordem como número inteiro
    */
   static generateOrderId(botId, botClientOrderId, orderCounter) {
-    return `${botId}_${botClientOrderId}_${orderCounter}`;
+    // Concatena botClientOrderId + orderCounter para manter compatibilidade com validações
+    // Exemplo: botClientOrderId=730, orderCounter=1 → 7301
+    // Exemplo: botClientOrderId=870, orderCounter=2 → 8702
+    // O botId não é incluído no clientId final para manter a lógica de validação
+    return parseInt(`${botClientOrderId}${orderCounter}`);
   }
 
   /**
