@@ -1794,9 +1794,18 @@ class OrderController {
 
       try {
         await Order.cancelOpenOrder(market, limitResult.id, null, config?.apiKey, config?.apiSecret);
-                  console.log(`✅ [${botName}] ${market}: Ordem LIMIT cancelada com sucesso.`);
+        Logger.info(`✅ [${botName}] ${market}: Ordem LIMIT cancelada com sucesso.`);
+        
+        // IMPORTANTE: Atualizar status da ordem no banco para CANCELLED
+        try {
+          const { default: OrdersService } = await import('../Services/OrdersService.js');
+          await OrdersService.updateOrderStatus(limitResult.id, 'CANCELLED', 'LIMIT_TIMEOUT');
+          Logger.debug(`✅ [${botName}] ${market}: Status da ordem atualizado para CANCELLED no banco`);
+        } catch (updateError) {
+          Logger.warn(`⚠️ [${botName}] ${market}: Erro ao atualizar status no banco: ${updateError.message}`);
+        }
       } catch (cancelError) {
-                  console.warn(`⚠️ [${botName}] ${market}: Erro ao cancelar ordem LIMIT: ${cancelError.message}`);
+        Logger.warn(`⚠️ [${botName}] ${market}: Erro ao cancelar ordem LIMIT: ${cancelError.message}`);
       }
 
       // 4. Revalida sinal e slippage

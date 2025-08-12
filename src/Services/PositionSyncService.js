@@ -88,7 +88,24 @@ class PositionSyncService {
       // 3. Detecta fechamentos automáticos baseado no novo sistema
       const closedPositions = await this.detectClosedPositionsNew(botId, config, trackingResult);
       
-      // 4. Atualiza estatísticas
+      // 4. Sincroniza status das ordens com a corretora
+      try {
+        const { default: OrdersService } = await import('./OrdersService.js');
+        const syncedOrders = await OrdersService.syncOrdersWithExchange(botId, config);
+        if (syncedOrders > 0) {
+          Logger.info(`🔄 [POSITION_SYNC] Bot ${botId}: ${syncedOrders} ordens sincronizadas com a corretora`);
+        }
+
+        // 4.1. Calcula P&L para ordens FILLED
+        const processedPnL = await OrdersService.calculatePnLForFilledOrders(botId, config);
+        if (processedPnL > 0) {
+          Logger.info(`🧮 [POSITION_SYNC] Bot ${botId}: ${processedPnL} ordens processadas com P&L`);
+        }
+      } catch (syncError) {
+        Logger.warn(`⚠️ [POSITION_SYNC] Erro na sincronização de ordens do bot ${botId}: ${syncError.message}`);
+      }
+
+      // 5. Atualiza estatísticas
       await this.updateBotStatistics(botId, config);
 
       const duration = Date.now() - startTime;

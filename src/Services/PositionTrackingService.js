@@ -565,13 +565,13 @@ class PositionTrackingService {
         `SELECT 
            COUNT(*) as totalTrades,
            SUM(CASE WHEN status IN ('CLOSED', 'FILLED') THEN 1 ELSE 0 END) as executedTrades,
-           SUM(CASE WHEN status = 'CLOSED' THEN 1 ELSE 0 END) as closedTrades,
-           SUM(CASE WHEN status = 'CLOSED' AND pnl > 0 THEN 1 ELSE 0 END) as winTrades,
-           SUM(CASE WHEN status = 'CLOSED' AND pnl < 0 THEN 1 ELSE 0 END) as lossTrades,
-           SUM(CASE WHEN status = 'CLOSED' THEN pnl ELSE 0 END) as totalPnl,
-           AVG(CASE WHEN status = 'CLOSED' THEN pnl ELSE NULL END) as avgPnl,
-           MAX(CASE WHEN status = 'CLOSED' THEN pnl ELSE NULL END) as maxWin,
-           MIN(CASE WHEN status = 'CLOSED' THEN pnl ELSE NULL END) as maxLoss
+           SUM(CASE WHEN status IN ('CLOSED', 'FILLED') AND closePrice IS NOT NULL THEN 1 ELSE 0 END) as closedTrades,
+           SUM(CASE WHEN status IN ('CLOSED', 'FILLED') AND pnl > 0 THEN 1 ELSE 0 END) as winTrades,
+           SUM(CASE WHEN status IN ('CLOSED', 'FILLED') AND pnl < 0 THEN 1 ELSE 0 END) as lossTrades,
+           SUM(CASE WHEN status IN ('CLOSED', 'FILLED') THEN COALESCE(pnl, 0) ELSE 0 END) as totalPnl,
+           AVG(CASE WHEN status IN ('CLOSED', 'FILLED') AND pnl IS NOT NULL THEN pnl ELSE NULL END) as avgPnl,
+           MAX(CASE WHEN status IN ('CLOSED', 'FILLED') THEN pnl ELSE NULL END) as maxWin,
+           MIN(CASE WHEN status IN ('CLOSED', 'FILLED') THEN pnl ELSE NULL END) as maxLoss
          FROM bot_orders 
          WHERE botId = ?`,
         [botId]

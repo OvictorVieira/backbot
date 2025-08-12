@@ -631,6 +631,275 @@ class OrdersService {
       return 0;
     }
   }
+
+  /**
+   * Atualiza o status de uma ordem
+   * @param {string} externalOrderId - ID externo da ordem
+   * @param {string} newStatus - Novo status da ordem
+   * @param {string} cancelReason - Razão do cancelamento (opcional)
+   * @returns {Promise<boolean>} - True se atualizado com sucesso
+   */
+  static async updateOrderStatus(externalOrderId, newStatus, cancelReason = null) {
+    try {
+      if (!OrdersService.dbService) {
+        console.warn(`⚠️ [ORDERS_SERVICE] Database não inicializado para updateOrderStatus`);
+        return false;
+      }
+
+      const updateFields = ['status = ?'];
+      const updateValues = [newStatus];
+
+      // Se for cancelamento, adiciona a razão
+      if (newStatus === 'CANCELLED' && cancelReason) {
+        updateFields.push('closeType = ?');
+        updateValues.push(cancelReason);
+      }
+
+      // Adiciona timestamp de atualização
+      updateFields.push('closeTime = ?');
+      updateValues.push(new Date().toISOString());
+
+      const result = await OrdersService.dbService.run(
+        `UPDATE bot_orders SET ${updateFields.join(', ')} WHERE externalOrderId = ?`,
+        [...updateValues, externalOrderId]
+      );
+
+      if (result.changes > 0) {
+        Logger.debug(`✅ [ORDERS_SERVICE] Status da ordem ${externalOrderId} atualizado para ${newStatus}`);
+        return true;
+      } else {
+        Logger.warn(`⚠️ [ORDERS_SERVICE] Ordem ${externalOrderId} não encontrada para atualização`);
+        return false;
+      }
+    } catch (error) {
+      Logger.error(`❌ [ORDERS_SERVICE] Erro ao atualizar status da ordem ${externalOrderId}:`, error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Sincroniza status de ordens pendentes com a corretora
+   * @param {number} botId - ID do bot
+   * @param {object} config - Configuração do bot com API keys
+   * @returns {Promise<number>} - Número de ordens sincronizadas
+   */
+  static async syncOrdersWithExchange(botId, config) {
+    try {
+      if (!config?.apiKey || !config?.apiSecret) {
+        Logger.warn(`⚠️ [ORDERS_SYNC] Credenciais não disponíveis para bot ${botId}`);
+        return 0;
+      }
+
+      // Busca ordens pendentes no banco
+      const pendingOrders = await OrdersService.dbService.getAll(
+        `SELECT * FROM bot_orders 
+         WHERE botId = ? AND status IN ('PENDING', 'FILLED') 
+         AND externalOrderId IS NOT NULL 
+         ORDER BY timestamp DESC LIMIT 50`,
+        [botId]
+      );
+
+      if (!pendingOrders || pendingOrders.length === 0) {
+        Logger.debug(`📊 [ORDERS_SYNC] Nenhuma ordem pendente para bot ${botId}`);
+        return 0;
+      }
+
+      Logger.debug(`🔄 [ORDERS_SYNC] Sincronizando ${pendingOrders.length} ordens para bot ${botId}`);
+
+      const { default: Order } = await import('../Backpack/Authenticated/Order.js');
+      let syncedCount = 0;
+
+      for (const order of pendingOrders) {
+        try {
+          // Consulta status real na corretora
+          const exchangeOrder = await Order.getOpenOrder(
+            order.symbol, 
+            order.externalOrderId, 
+            order.clientId
+          );
+
+          if (!exchangeOrder) {
+            // Ordem não encontrada na corretora - pode ter sido executada ou cancelada
+            Logger.debug(`🔍 [ORDERS_SYNC] Ordem ${order.externalOrderId} não encontrada na corretora`);
+            
+            // Verifica no histórico de fills se foi executada
+            const { default: History } = await import('../Backpack/Authenticated/History.js');
+            const fills = await History.getFillHistory(
+              order.symbol,
+              order.externalOrderId,
+              Date.now() - (24 * 60 * 60 * 1000), // últimas 24h
+              Date.now(),
+              10,
+              0,
+              null,
+              'PERP',
+              'desc',
+              config.apiKey,
+              config.apiSecret
+            );
+
+            if (fills && fills.length > 0) {
+              // Ordem foi executada
+              await OrdersService.updateOrderStatus(order.externalOrderId, 'FILLED', 'EXCHANGE_EXECUTED');
+              Logger.info(`✅ [ORDERS_SYNC] Ordem ${order.externalOrderId} marcada como FILLED`);
+              syncedCount++;
+            } else {
+              // Ordem foi cancelada
+              await OrdersService.updateOrderStatus(order.externalOrderId, 'CANCELLED', 'EXCHANGE_CANCELLED');
+              Logger.info(`❌ [ORDERS_SYNC] Ordem ${order.externalOrderId} marcada como CANCELLED`);
+              syncedCount++;
+            }
+          } else {
+            // Ordem ainda está ativa na corretora
+            const exchangeStatus = exchangeOrder.status;
+            
+            if (exchangeStatus === 'Filled' && order.status !== 'FILLED') {
+              await OrdersService.updateOrderStatus(order.externalOrderId, 'FILLED', 'EXCHANGE_EXECUTED');
+              Logger.info(`✅ [ORDERS_SYNC] Ordem ${order.externalOrderId} atualizada para FILLED`);
+              syncedCount++;
+            } else if (['Cancelled', 'Rejected'].includes(exchangeStatus) && order.status !== 'CANCELLED') {
+              await OrdersService.updateOrderStatus(order.externalOrderId, 'CANCELLED', 'EXCHANGE_CANCELLED');
+              Logger.info(`❌ [ORDERS_SYNC] Ordem ${order.externalOrderId} atualizada para CANCELLED`);
+              syncedCount++;
+            }
+          }
+
+          // Delay para evitar rate limiting
+          await new Promise(resolve => setTimeout(resolve, 100));
+
+        } catch (orderError) {
+          Logger.warn(`⚠️ [ORDERS_SYNC] Erro ao sincronizar ordem ${order.externalOrderId}: ${orderError.message}`);
+        }
+      }
+
+      Logger.info(`📊 [ORDERS_SYNC] Bot ${botId}: ${syncedCount} ordens sincronizadas`);
+      return syncedCount;
+
+    } catch (error) {
+      Logger.error(`❌ [ORDERS_SYNC] Erro na sincronização do bot ${botId}:`, error.message);
+      return 0;
+    }
+  }
+
+  /**
+   * Calcula P&L para ordens FILLED que ainda não têm P&L calculado
+   * @param {number} botId - ID do bot
+   * @param {object} config - Configuração do bot
+   * @returns {Promise<number>} - Número de ordens processadas
+   */
+  static async calculatePnLForFilledOrders(botId, config) {
+    try {
+      if (!config?.apiKey || !config?.apiSecret) {
+        Logger.warn(`⚠️ [PNL_CALC] Credenciais não disponíveis para bot ${botId}`);
+        return 0;
+      }
+
+      // Busca ordens FILLED sem P&L calculado
+      const filledOrders = await OrdersService.dbService.getAll(
+        `SELECT * FROM bot_orders 
+         WHERE botId = ? AND status = 'FILLED' 
+         AND (pnl IS NULL OR closePrice IS NULL)
+         ORDER BY timestamp ASC`,
+        [botId]
+      );
+
+      if (!filledOrders || filledOrders.length === 0) {
+        Logger.debug(`📊 [PNL_CALC] Nenhuma ordem FILLED sem P&L para bot ${botId}`);
+        return 0;
+      }
+
+      Logger.debug(`🧮 [PNL_CALC] Calculando P&L para ${filledOrders.length} ordens do bot ${botId}`);
+
+      const { default: History } = await import('../Backpack/Authenticated/History.js');
+      let processedCount = 0;
+
+      for (const order of filledOrders) {
+        try {
+          // Busca fills desta ordem específica
+          const fills = await History.getFillHistory(
+            order.symbol,
+            order.externalOrderId,
+            Date.now() - (7 * 24 * 60 * 60 * 1000), // últimos 7 dias
+            Date.now(),
+            100,
+            0,
+            null,
+            'PERP',
+            'desc',
+            config.apiKey,
+            config.apiSecret
+          );
+
+          if (fills && fills.length > 0) {
+            // Calcula P&L baseado nos fills
+            let totalPnl = 0;
+            let totalQuantity = 0;
+            let weightedPrice = 0;
+            let lastFillPrice = 0;
+
+            for (const fill of fills) {
+              if (fill.orderId === order.externalOrderId) {
+                const fillQuantity = Math.abs(parseFloat(fill.quantity));
+                const fillPrice = parseFloat(fill.price);
+                
+                totalQuantity += fillQuantity;
+                weightedPrice += fillPrice * fillQuantity;
+                lastFillPrice = fillPrice;
+              }
+            }
+
+            if (totalQuantity > 0) {
+              const avgExecutionPrice = weightedPrice / totalQuantity;
+              
+              // Para cálculo simplificado, usa-se a diferença entre preço de entrada e atual
+              // Em um sistema mais sofisticado, seria necessário rastrear pares de entrada/saída
+              const entryPrice = parseFloat(order.price);
+              const executionPrice = avgExecutionPrice;
+              
+              // Calcula P&L básico (será refinado quando implementarmos tracking completo)
+              const pnlEstimate = (executionPrice - entryPrice) * totalQuantity;
+              
+              // Atualiza a ordem com os dados calculados
+              await OrdersService.dbService.run(
+                `UPDATE bot_orders SET 
+                 closePrice = ?, 
+                 closeTime = ?, 
+                 closeQuantity = ?,
+                 pnl = ?,
+                 pnlPct = ?,
+                 status = 'CLOSED'
+                 WHERE id = ?`,
+                [
+                  avgExecutionPrice,
+                  new Date().toISOString(),
+                  totalQuantity,
+                  pnlEstimate,
+                  entryPrice > 0 ? (pnlEstimate / (entryPrice * totalQuantity)) * 100 : 0,
+                  order.id
+                ]
+              );
+
+              Logger.info(`✅ [PNL_CALC] Ordem ${order.externalOrderId} atualizada com P&L: ${pnlEstimate.toFixed(4)}`);
+              processedCount++;
+            }
+          }
+
+          // Delay para evitar rate limiting
+          await new Promise(resolve => setTimeout(resolve, 200));
+
+        } catch (orderError) {
+          Logger.warn(`⚠️ [PNL_CALC] Erro ao processar ordem ${order.externalOrderId}: ${orderError.message}`);
+        }
+      }
+
+      Logger.info(`📊 [PNL_CALC] Bot ${botId}: ${processedCount} ordens processadas com P&L`);
+      return processedCount;
+
+    } catch (error) {
+      Logger.error(`❌ [PNL_CALC] Erro no cálculo de P&L do bot ${botId}:`, error.message);
+      return 0;
+    }
+  }
 }
 
 export default OrdersService;
