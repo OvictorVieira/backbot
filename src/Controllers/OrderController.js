@@ -4111,8 +4111,8 @@ class OrderController {
       const netQuantity = parseFloat(position.netQuantity || 0);
       const isLong = netQuantity > 0;
 
-      console.log(`🔍 [TP_CHECK] ${symbol}: Verificando TP existente - Posição: ${netQuantity} (${isLong ? 'LONG' : 'SHORT'})`);
-      console.log(`🔍 [TP_CHECK] ${symbol}: Ordens encontradas: ${orders?.length || 0}`);
+      Logger.debug(`🔍 [TP_CHECK] ${symbol}: Verificando TP existente - Posição: ${netQuantity} (${isLong ? 'LONG' : 'SHORT'})`);
+      Logger.debug(`🔍 [TP_CHECK] ${symbol}: Ordens encontradas: ${orders?.length || 0}`);
 
       if (orders && orders.length > 0) {
         const relevantOrders = orders.filter(order =>
@@ -4121,7 +4121,7 @@ class OrderController {
           order.reduceOnly === true
         );
 
-        console.log(`🔍 [TP_CHECK] ${symbol}: Ordens relevantes (Limit + reduceOnly): ${relevantOrders.length}`);
+        Logger.debug(`🔍 [TP_CHECK] ${symbol}: Ordens relevantes (Limit + reduceOnly): ${relevantOrders.length}`);
 
         for (const order of relevantOrders) {
           const orderSide = order.side;
@@ -4129,19 +4129,19 @@ class OrderController {
           const orderQty = parseFloat(order.quantity || 0);
           const positionQty = Math.abs(netQuantity);
 
-          console.log(`🔍 [TP_CHECK] ${symbol}: Ordem ${order.id} - Side: ${orderSide} (esperado: ${expectedSide}), Qty: ${orderQty} (posição: ${positionQty})`);
+          Logger.debug(`🔍 [TP_CHECK] ${symbol}: Ordem ${order.id} - Side: ${orderSide} (esperado: ${expectedSide}), Qty: ${orderQty} (posição: ${positionQty})`);
 
           if (orderSide === expectedSide && orderQty === positionQty) {
-            console.log(`✅ [TP_CHECK] ${symbol}: TP encontrado - Ordem ${order.id}`);
+            Logger.debug(`✅ [TP_CHECK] ${symbol}: TP encontrado - Ordem ${order.id}`);
             return true;
           }
         }
       }
 
-      console.log(`❌ [TP_CHECK] ${symbol}: Nenhum TP encontrado`);
+      Logger.debug(`❌ [TP_CHECK] ${symbol}: Nenhum TP encontrado`);
       return false;
     } catch (error) {
-      console.error(`❌ [TP_CHECK] Erro ao verificar TP para ${symbol}:`, error.message);
+      Logger.error(`❌ [TP_CHECK] Erro ao verificar TP para ${symbol}:`, error.message);
       return false;
     }
   }
