@@ -1231,8 +1231,8 @@ class OrderController {
       const quantityToClose = (totalQuantity * partialPercentage) / 100;
 
       // Busca ordens abertas para o símbolo
-      const Order = await import('../Backpack/Authenticated/Order.js');
-      const openOrders = await Order.getOpenOrders(symbol, "PERP", config?.apiKey, config?.apiSecret);
+      const OrderModule = await import('../Backpack/Authenticated/Order.js');
+      const openOrders = await OrderModule.default.getOpenOrders(symbol, "PERP", config?.apiKey, config?.apiSecret);
 
       if (!openOrders || openOrders.length === 0) {
         return false;
@@ -3952,8 +3952,8 @@ class OrderController {
 
       // Verificar ordens abertas para evitar duplicidade de TPs (parciais ou totais)
       try {
-        const Order = await import('../Backpack/Authenticated/Order.js');
-        const openOrders = await Order.getOpenOrders(symbol, 'PERP', config.apiKey, config.apiSecret);
+        const OrderModule = await import('../Backpack/Authenticated/Order.js');
+        const openOrders = await OrderModule.default.getOpenOrders(symbol, 'PERP', config.apiKey, config.apiSecret);
         if (Array.isArray(openOrders)) {
           const closeSide = currentIsLong ? 'Ask' : 'Bid';
           const existingReduceOnly = openOrders.filter(o =>
@@ -4066,8 +4066,8 @@ class OrderController {
 
       console.log(`📊 [TP_CREATE] ${symbol}: Enviando ordem TP - Side: ${takeProfitOrder.side}, Qty: ${takeProfitOrder.quantity}, Price: ${takeProfitOrder.price}, Current Position: ${currentNetQuantity}`);
 
-      const Order = await import('../Backpack/Authenticated/Order.js');
-      const result = await Order.executeOrder(
+      const OrderModule = await import('../Backpack/Authenticated/Order.js');
+      const result = await OrderModule.default.executeOrder(
         takeProfitOrder,
         config.apiKey,
         config.apiSecret
@@ -4106,8 +4106,8 @@ class OrderController {
    */
   static async hasTakeProfitOrder(symbol, position, config) {
     try {
-      const Order = await import('../Backpack/Authenticated/Order.js');
-      const orders = await Order.getOpenOrders(symbol, "PERP", config.apiKey, config.apiSecret);
+      const OrderModule = await import('../Backpack/Authenticated/Order.js');
+      const orders = await OrderModule.default.getOpenOrders(symbol, "PERP", config.apiKey, config.apiSecret);
       const netQuantity = parseFloat(position.netQuantity || 0);
       const isLong = netQuantity > 0;
 
