@@ -43,12 +43,10 @@ class ConfigManagerSQLite {
         throw new Error('Database service não está inicializado');
       }
       
-      Logger.info('🔍 [CONFIG_SQLITE] Executando query SELECT...');
+      Logger.debug('🔍 [CONFIG_SQLITE] Carregando configurações...');
       const results = await ConfigManagerSQLite.dbService.getAll(
         'SELECT botId, config, createdAt, updatedAt FROM bot_configs ORDER BY botId'
       );
-      
-      Logger.info(`🔍 [CONFIG_SQLITE] Query executada, ${results.length} resultados encontrados`);
       
       const configs = results.map(row => {
         try {
@@ -65,7 +63,7 @@ class ConfigManagerSQLite {
         }
       }).filter(config => config !== null);
       
-      Logger.info(`✅ [CONFIG_SQLITE] ${configs.length} configurações carregadas com sucesso`);
+      Logger.infoOnce('config-load', `✅ [CONFIG_SQLITE] ${configs.length} configurações carregadas`);
       return configs;
       
     } catch (error) {

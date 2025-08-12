@@ -38,3 +38,5 @@ persistence/
 
 tasks.md
 context.md
+
+src/Persistence/bot.db

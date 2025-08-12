@@ -9,8 +9,14 @@ import ConfigManager from '../Config/ConfigManager.js';
 import ConfigManagerSQLite from '../Config/ConfigManagerSQLite.js';
 import BotOrdersManager, { initializeBotOrdersManager } from '../Config/BotOrdersManager.js';
 import Logger from '../Utils/Logger.js';
+import { calculateIndicators } from '../Decision/Indicators.js';
+import { ProMaxStrategy } from '../Decision/Strategies/ProMaxStrategy.js';
+import OrdersService from '../Services/OrdersService.js';
 
 class OrderController {
+
+  // Instância centralizada do OrdersService
+  static ordersService = new OrdersService();
 
   // Armazena ordens de entrada pendentes para monitoramento POR BOT (apenas estratégia PRO_MAX)
   static pendingEntryOrdersByBot = {};
@@ -75,7 +81,9 @@ class OrderController {
         const orderId = await ConfigManagerSQLite.getNextOrderId(config.id);
         Logger.debug(`🆔 [ORDER_ID] Gerado ID único usando config: ${orderId} (Bot ID: ${config.id}, botClientOrderId: ${config.botClientOrderId})`);
         // Converte para número inteiro para compatibilidade com a API da Backpack
-        const numericId = parseInt(orderId.replace(/_/g, ''));
+        // Garante que orderId seja uma string antes de usar replace()
+        const orderIdStr = String(orderId);
+        const numericId = parseInt(orderIdStr.replace(/_/g, ''));
         Logger.debug(`🆔 [ORDER_ID] ID convertido para número: ${numericId}`);
         return numericId;
       }
@@ -86,8 +94,8 @@ class OrderController {
         if (botConfig && botConfig.id) {
                   const orderId = await ConfigManagerSQLite.getNextOrderId(botConfig.id);
         Logger.debug(`🆔 [ORDER_ID] Gerado ID único por nome: ${orderId} (Bot ID: ${botConfig.id})`);
-        // Converte para número inteiro para compatibilidade com a API da Backpack
-        const numericId = parseInt(orderId.replace(/_/g, ''));
+        const orderIdStr = String(orderId);
+        const numericId = parseInt(orderIdStr.replace(/_/g, ''));
         Logger.debug(`🆔 [ORDER_ID] ID convertido para número: ${numericId}`);
         return numericId;
         }
@@ -127,11 +135,9 @@ class OrderController {
   static async generateStopLossOrderId(config) {
     try {
       const baseId = await this.generateUniqueOrderId(config);
-      // Adiciona sufixo para identificar que é stop loss
       return parseInt(`${baseId}999`);
     } catch (error) {
       console.error(`❌ [ORDER_ID] Erro ao gerar ID para stop loss:`, error.message);
-      // Em vez de parar o bot, gera um ID de emergência
       const emergencyId = Math.floor(Date.now() / 1000) % 1000000 + 999;
       console.warn(`⚠️ [ORDER_ID] Usando ID de emergência para stop loss: ${emergencyId}`);
       return emergencyId;
@@ -550,14 +556,12 @@ class OrderController {
 
       // Recalcula os targets usando a estratégia PRO_MAX
       // Importa a estratégia para usar o cálculo
-      const { ProMaxStrategy } = await import('../Decision/Strategies/ProMaxStrategy.js');
       const strategy = new ProMaxStrategy();
       // Para o cálculo, precisamos de dados de mercado (ATR, etc). Usamos o último candle disponível.
       // Usa o timeframe da ordem ou fallback para configuração
       const timeframe = orderData?.time || config?.time || '5m';
       const markets = new Markets();
       const candles = await markets.getKLines(market, timeframe, 30);
-      const { calculateIndicators } = await import('../Decision/Indicators.js');
       const indicators = await calculateIndicators(candles, timeframe, market);
       const data = { ...indicators, market: marketInfo, marketPrice: entryPrice };
       const action = isLong ? 'long' : 'short';
@@ -664,7 +668,23 @@ class OrderController {
           selfTradePrevention: 'RejectTaker',
           clientId: await OrderController.generateUniqueOrderId(config)
         };
-        const result = await Order.executeOrder(orderBody, config?.apiKey, config?.apiSecret);
+        const result = await OrderController.ordersService.createTakeProfitOrder({
+          symbol: market,
+          side: orderBody.side,
+          quantity: orderBody.quantity,
+          takeProfitTriggerPrice: orderBody.takeProfitTriggerPrice,
+          takeProfitLimitPrice: orderBody.takeProfitLimitPrice,
+          clientId: orderBody.clientId,
+          apiKey: config?.apiKey,
+          apiSecret: config?.apiSecret,
+          additionalParams: {
+            takeProfitTriggerBy: orderBody.takeProfitTriggerBy,
+            timeInForce: orderBody.timeInForce,
+            selfTradePrevention: orderBody.selfTradePrevention,
+            postOnly: orderBody.postOnly,
+            reduceOnly: orderBody.reduceOnly
+          }
+        });
         if (result && !result.error) {
           Logger.info(`✅ [PRO_MAX] ${market}: Take Profit ${i + 1}/${actualTargets} criado - Preço: ${targetPrice.toFixed(6)}, Quantidade: ${qty}, OrderID: ${result.id || 'N/A'}`);
         } else {
@@ -685,7 +705,21 @@ class OrderController {
           timeInForce: 'GTC',
           clientId: await OrderController.generateUniqueOrderId(config)
         };
-        const stopResult = await Order.executeOrder(stopBody, config?.apiKey, config?.apiSecret);
+        const stopResult = await OrderController.ordersService.createStopLossOrder({
+          symbol: market,
+          side: stopBody.side,
+          quantity: stopBody.quantity,
+          stopLossTriggerPrice: stopBody.price,
+          stopLossLimitPrice: stopBody.price,
+          clientId: stopBody.clientId,
+          apiKey: config?.apiKey,
+          apiSecret: config?.apiSecret,
+          additionalParams: {
+            timeInForce: stopBody.timeInForce,
+            postOnly: stopBody.postOnly,
+            reduceOnly: stopBody.reduceOnly
+          }
+        });
 
         if (stopResult && !stopResult.error) {
           Logger.info(`🛡️ [PRO_MAX] ${market}: Stop loss criado - Preço: ${stop.toFixed(6)}, Quantidade: ${totalQuantity}`);
@@ -746,7 +780,6 @@ class OrderController {
       const timeframe = config?.time || '5m';
       const markets = new Markets();
       const candles = await markets.getKLines(position.symbol, timeframe, 30);
-      const { calculateIndicators } = await import('../Decision/Indicators.js');
       const indicators = await calculateIndicators(candles, timeframe, position.symbol);
       const data = { ...indicators, market: marketInfo, marketPrice: entryPrice };
       const action = isLong ? 'long' : 'short';
@@ -1017,7 +1050,7 @@ class OrderController {
   static async forceClose(position, account = null, config = null) {
     // Se account não foi fornecido, obtém da API
     const AccountController = await import('../Controllers/AccountController.js');
-    const Account = account || await AccountController.default.get(config);
+    const Account = account || await AccountController.get(config);
 
     // Log detalhado para debug
     console.log(`🔍 [FORCE_CLOSE] Procurando market para ${position.symbol}`);
@@ -1061,7 +1094,17 @@ class OrderController {
     };
 
     // Fecha a posição
-    const closeResult = await Order.executeOrder(body, config?.apiKey, config?.apiSecret);
+    const closeResult = await OrderController.ordersService.createMarketOrder({
+      symbol: position.symbol,
+      side: body.side,
+      quantity: body.quantity,
+      clientId: body.clientId,
+      apiKey: config?.apiKey,
+      apiSecret: config?.apiSecret,
+      additionalParams: {
+        reduceOnly: body.reduceOnly
+      }
+    });
     // Log detalhado da taxa de fechamento
     const fee = market.fee || config?.fee || 0.0004;
     // Tente obter o preço de execução real
@@ -1138,7 +1181,17 @@ class OrderController {
       };
 
       // Realiza o take profit parcial
-      const partialResult = await Order.executeOrder(body, config?.apiKey, config?.apiSecret);
+      const partialResult = await OrderController.ordersService.createPartialCloseOrder({
+        symbol: position.symbol,
+        side: body.side,
+        quantity: body.quantity,
+        clientId: body.clientId,
+        apiKey: config?.apiKey,
+        apiSecret: config?.apiSecret,
+        additionalParams: {
+          reduceOnly: body.reduceOnly
+        }
+      });
 
       if (partialResult) {
         // Se o take profit parcial fechou toda a posição, limpa o trailing state
@@ -1179,7 +1232,7 @@ class OrderController {
 
       // Busca ordens abertas para o símbolo
       const Order = await import('../Backpack/Authenticated/Order.js');
-      const openOrders = await Order.default.getOpenOrders(symbol, "PERP", config?.apiKey, config?.apiSecret);
+      const openOrders = await Order.getOpenOrders(symbol, "PERP", config?.apiKey, config?.apiSecret);
 
       if (!openOrders || openOrders.length === 0) {
         return false;
@@ -1274,7 +1327,19 @@ class OrderController {
 
       console.log(`🔄 [TP_LIMIT] ${position.symbol}: Enviando ordem LIMIT para corretora...`);
 
-      const result = await Order.executeOrder(orderBody, config?.apiKey, config?.apiSecret);
+      const result = await OrderController.ordersService.createLimitOrder({
+        symbol: position.symbol,
+        side: orderBody.side,
+        quantity: orderBody.quantity,
+        price: orderBody.price,
+        clientId: orderBody.clientId,
+        apiKey: config?.apiKey,
+        apiSecret: config?.apiSecret,
+        additionalParams: {
+          timeInForce: orderBody.timeInForce,
+          reduceOnly: orderBody.reduceOnly
+        }
+      });
 
       if (result && !result.error) {
         console.log(`✅ [TP_LIMIT] ${position.symbol}: Ordem LIMIT de take profit parcial criada com sucesso!`);
@@ -1588,10 +1653,10 @@ class OrderController {
       Logger.info(`   • Stop Loss: $${stopPrice.toFixed(6)}`);
 
       if (enableTrailingStop) {
-                  Logger.info(`   • Take Profit: Será gerenciado dinamicamente pelo Trailing Stop`);
-        } else {
-          Logger.info(`   • Take Profit: $${targetPrice.toFixed(6)} (fixo na corretora)`);
-        }
+        Logger.info(`   • Take Profit: Será gerenciado dinamicamente pelo Trailing Stop`);
+      } else {
+        Logger.info(`   • Take Profit: $${targetPrice.toFixed(6)} (fixo na corretora)`);
+      }
 
       const body = {
         symbol: market,
@@ -1659,7 +1724,9 @@ class OrderController {
           side === 'Bid' ? 'BUY' : 'SELL',
           parseFloat(quantity),
           parseFloat(finalPrice),
-          'LIMIT'
+          'LIMIT',
+          limitResult.exchangeCreatedAt || null,
+          body.clientId // Passa o clientId gerado
         );
       }
 
@@ -1780,7 +1847,7 @@ class OrderController {
    */
   static async executeMarketFallback({ market, side, quantity, botName, originalSignalData, entryPrice, config = null }) {
     try {
-                              console.log(`⚡ [${botName}] ${market}: Executando fallback a MERCADO para garantir entrada...`);
+      console.log(`⚡ [${botName}] ${market}: Executando fallback a MERCADO para garantir entrada...`);
 
       const marketBody = {
         symbol: market,
@@ -1817,7 +1884,9 @@ class OrderController {
             side === 'Bid' ? 'BUY' : 'SELL',
             parseFloat(quantity),
             executionPrice,
-            'MARKET'
+            'MARKET',
+            marketResult.exchangeCreatedAt || null,
+            marketBody.clientId // Passa o clientId gerado
           );
         }
 
@@ -2479,7 +2548,7 @@ class OrderController {
 
       // Busca informações do mercado
       const AccountController = await import('../Controllers/AccountController.js');
-      const Account = await AccountController.default.get({
+      const Account = await AccountController.get({
         apiKey,
         apiSecret,
         strategy: config?.strategyName || 'DEFAULT'
@@ -2733,7 +2802,7 @@ class OrderController {
       // Salva o nome do bot no estado da posição se disponível
       if (orderResult && orderResult.botName) {
         const TrailingStop = await import('../TrailingStop/TrailingStop.js');
-        const trailingState = TrailingStop.default.trailingState.get(market);
+        const trailingState = TrailingStop.trailingState.get(market);
 
         if (trailingState) {
           trailingState.botName = orderResult.botName;
@@ -2747,7 +2816,7 @@ class OrderController {
           }
 
           // Salva o estado atualizado
-          await TrailingStop.default.saveStateToFile();
+          await TrailingStop.saveStateToFile();
         }
       }
 
@@ -3766,8 +3835,7 @@ class OrderController {
       // Obtém posições atuais da Backpack PRIMEIRO
       let currentPositions;
       try {
-        const Futures = await import('../Backpack/Authenticated/Futures.js');
-        currentPositions = await Futures.default.getOpenPositions(config.apiKey, config.apiSecret);
+        currentPositions = await Futures.getOpenPositions(config.apiKey, config.apiSecret);
       } catch (error) {
         console.error(`❌ [TP_CREATE] ${symbol}: Erro ao obter posições:`, error.message);
         return;
@@ -3885,7 +3953,7 @@ class OrderController {
       // Verificar ordens abertas para evitar duplicidade de TPs (parciais ou totais)
       try {
         const Order = await import('../Backpack/Authenticated/Order.js');
-        const openOrders = await Order.default.getOpenOrders(symbol, 'PERP', config.apiKey, config.apiSecret);
+        const openOrders = await Order.getOpenOrders(symbol, 'PERP', config.apiKey, config.apiSecret);
         if (Array.isArray(openOrders)) {
           const closeSide = currentIsLong ? 'Ask' : 'Bid';
           const existingReduceOnly = openOrders.filter(o =>
@@ -3999,7 +4067,7 @@ class OrderController {
       console.log(`📊 [TP_CREATE] ${symbol}: Enviando ordem TP - Side: ${takeProfitOrder.side}, Qty: ${takeProfitOrder.quantity}, Price: ${takeProfitOrder.price}, Current Position: ${currentNetQuantity}`);
 
       const Order = await import('../Backpack/Authenticated/Order.js');
-      const result = await Order.default.executeOrder(
+      const result = await Order.executeOrder(
         takeProfitOrder,
         config.apiKey,
         config.apiSecret
@@ -4016,7 +4084,9 @@ class OrderController {
           currentIsLong ? 'SELL' : 'BUY',
           takeProfitQuantity,
           takeProfitPrice,
-          'TAKE_PROFIT'
+          'TAKE_PROFIT',
+          result.exchangeCreatedAt || null,
+          takeProfitOrder.clientId // Passa o clientId gerado
         );
       } else {
         console.error(`❌ [TP_CREATE] ${symbol}: Falha ao criar Take Profit - Result:`, result);
@@ -4037,7 +4107,7 @@ class OrderController {
   static async hasTakeProfitOrder(symbol, position, config) {
     try {
       const Order = await import('../Backpack/Authenticated/Order.js');
-      const orders = await Order.default.getOpenOrders(symbol, "PERP", config.apiKey, config.apiSecret);
+      const orders = await Order.getOpenOrders(symbol, "PERP", config.apiKey, config.apiSecret);
       const netQuantity = parseFloat(position.netQuantity || 0);
       const isLong = netQuantity > 0;
 
@@ -4134,7 +4204,7 @@ class OrderController {
 
       // Busca histórico de fills (ordens executadas) para este símbolo
       const History = await import('../Backpack/Authenticated/History.js');
-      const fills = await History.default.getFillHistory(symbol, null, null, null, 100, 0, null, "PERP", null, config.apiKey, config.apiSecret);
+      const fills = await History.getFillHistory(symbol, null, null, null, 100, 0, null, "PERP", null, config.apiKey, config.apiSecret);
 
       if (!fills || fills.length === 0) {
         console.log(`position: ${JSON.stringify(position)} | fills: ${JSON.stringify(fills)}`);

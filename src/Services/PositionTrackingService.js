@@ -1,819 +1,673 @@
-import OrdersService from './OrdersService.js';
-import History from '../Backpack/Authenticated/History.js';
 import Logger from '../Utils/Logger.js';
-import OrderController from '../Controllers/OrderController.js';
 
 /**
- * PositionTrackingService - Novo sistema de rastreamento de posições
+ * PositionTrackingService - Gerencia o ciclo de vida das posições de trading
  *
- * Este serviço implementa a nova lógica de identificação de posições:
- * 1. Identifica posições abertas baseado nas ordens salvas no nosso banco
- * 2. Calcula mudanças de posição baseado nos fills da corretora (sem depender do clientId)
- * 3. Reconstrói o histórico completo de posições para cálculo correto de performance
+ * Este serviço mantém o estado das posições sincronizado com as execuções
+ * reais da exchange, calculando P&L em tempo real baseado nos eventos de fill.
  */
 class PositionTrackingService {
-  static dbService = null;
-
   /**
-   * Inicializa o serviço com o DatabaseService
    * @param {DatabaseService} dbService - Instância do DatabaseService
    */
-  static init(dbService) {
-    PositionTrackingService.dbService = dbService;
-    Logger.info('🔧 [POSITION_TRACKING] PositionTrackingService inicializado');
+  constructor(dbService) {
+    this.dbService = dbService;
+
+    if (!dbService) {
+      throw new Error('DatabaseService é obrigatório para o PositionTrackingService');
+    }
   }
 
   /**
-   * Rastreia posições de um bot específico
-   * @param {number} botId - ID do bot
-   * @param {object} config - Configuração do bot
-   * @returns {Promise<object>} Dados das posições rastreadas
+   * Método central para atualizar posições baseado em eventos de fill
+   * @param {Object} fillEvent - Evento de fill da exchange
+   * @param {string} fillEvent.symbol - Símbolo do mercado
+   * @param {string} fillEvent.side - Lado da ordem ('Bid' ou 'Ask')
+   * @param {number} fillEvent.quantity - Quantidade executada
+   * @param {number} fillEvent.price - Preço de execução
+   * @param {string} fillEvent.orderId - ID da ordem
+   * @param {string} fillEvent.clientId - Client ID da ordem
+   * @param {string} fillEvent.timestamp - Timestamp da execução
+   * @param {number} fillEvent.botId - ID do bot (opcional)
+   * @returns {Promise<void>}
    */
-  static async trackBotPositions(botId, config) {
+  async updatePositionOnFill(fillEvent) {
     try {
-      Logger.info(`🔍 [POSITION_TRACKING] Iniciando rastreamento para bot ${botId}`);
+      if (!fillEvent || !fillEvent.symbol || !fillEvent.side || !fillEvent.quantity || !fillEvent.price) {
+        Logger.warn('📊 [POSITION_TRACKING] Fill event inválido:', fillEvent);
+        return;
+      }
 
-      // 1. Busca ordens abertas do nosso banco
-      const ourOpenOrders = await this.getOurOpenOrders(botId);
-      Logger.info(`📊 [POSITION_TRACKING] Encontradas ${ourOpenOrders.length} ordens abertas no banco`);
+      const { symbol, side, quantity, price, orderId, clientId, timestamp, botId } = fillEvent;
+      const fillQuantity = Math.abs(parseFloat(quantity));
+      const fillPrice = parseFloat(price);
 
-      // 2. Busca fills recentes da corretora
-      const recentFills = await this.getRecentFills(config);
-      Logger.info(`📊 [POSITION_TRACKING] Encontrados ${recentFills.length} fills recentes da corretora`);
+      Logger.debug(`📊 [POSITION_TRACKING] Processando fill: ${symbol} ${side} ${fillQuantity} @ ${fillPrice}`);
 
-      // 3. Reconstrói posições baseado nos fills
-      const reconstructedPositions = await this.reconstructPositionsFromFills(recentFills, ourOpenOrders, config);
-      Logger.info(`📊 [POSITION_TRACKING] Reconstruídas ${reconstructedPositions.length} posições`);
+      // Atualiza o status da ordem correspondente na tabela bot_orders
+      await this.updateOrderStatusOnFill(fillEvent);
 
-      // 4. Calcula métricas de performance
-      const performanceMetrics = this.calculatePerformanceMetrics(reconstructedPositions);
+      // Busca posição aberta ou parcialmente fechada para o símbolo
+      const existingPosition = await this.getOpenPosition(symbol, botId);
 
-      // 5. Atualiza estatísticas no banco
-      await this.updatePositionStatistics(botId, reconstructedPositions);
+      if (!existingPosition) {
+        // Não há posição existente - esta é uma nova posição de entrada
+        await this.createNewPosition(fillEvent);
+        return;
+      }
 
-      return {
-        botId,
-        openPositions: ourOpenOrders,
-        reconstructedPositions,
-        performanceMetrics,
-        lastUpdated: new Date().toISOString()
-      };
+      // Determina se o fill é no sentido oposto à posição (fechamento)
+      const isClosingFill = this.isClosingFill(existingPosition.side, side);
+
+      if (isClosingFill) {
+        // Fill de fechamento - calcula P&L e atualiza posição
+        await this.handleClosingFill(existingPosition, fillEvent);
+      } else {
+        // Fill no mesmo sentido - aumenta a posição (position scaling)
+        await this.handlePositionIncrease(existingPosition, fillEvent);
+      }
 
     } catch (error) {
-      Logger.error(`❌ [POSITION_TRACKING] Erro ao rastrear posições do bot ${botId}:`, error.message);
+      Logger.error('❌ [POSITION_TRACKING] Erro ao processar fill:', error.message);
       throw error;
     }
   }
 
   /**
-   * Busca ordens abertas do nosso banco
-   * @param {number} botId - ID do bot
-   * @returns {Promise<Array>} Array de ordens abertas
+   * Cria uma nova posição baseada no evento de fill
+   * @param {Object} fillEvent - Evento de fill
+   * @returns {Promise<void>}
    */
-  static async getOurOpenOrders(botId) {
+  async createNewPosition(fillEvent) {
     try {
-      if (!OrdersService.dbService || !OrdersService.dbService.isInitialized()) {
-        throw new Error('OrdersService não está inicializado');
-      }
+      const { symbol, side, quantity, price, botId, timestamp } = fillEvent;
+      const fillQuantity = Math.abs(parseFloat(quantity));
+      const fillPrice = parseFloat(price);
 
-      const orders = await OrdersService.getOrdersByBotId(botId);
+      // Determina o lado da posição baseado no lado da ordem
+      const positionSide = this.getPositionSide(side);
 
-      // CORREÇÃO: Busca TODAS as ordens do bot (não apenas "abertas")
-      // porque precisamos do histórico completo para identificar trades
-      const allOrders = orders.filter(order =>
-        // Filtra apenas ordens de abertura (não stop loss, take profit, etc.)
-        ['BUY', 'SELL'].includes(order.side) &&
-        ['MARKET', 'LIMIT'].includes(order.orderType) &&
-        !order.orderType.includes('PROFIT') &&
-        !order.orderType.includes('LOSS')
-      );
-
-      console.log(`📊 [POSITION_TRACKING] Total de ordens do bot: ${orders.length}`);
-      console.log(`📊 [POSITION_TRACKING] Ordens de abertura filtradas: ${allOrders.length}`);
-      return allOrders;
-
-    } catch (error) {
-      Logger.error(`❌ [POSITION_TRACKING] Erro ao buscar ordens abertas:`, error.message);
-      return [];
-    }
-  }
-
-  /**
-   * Busca fills recentes da corretora
-   * @param {object} config - Configuração do bot
-   * @returns {Promise<Array>} Array de fills
-   */
-  static async getRecentFills(config) {
-    try {
-      if (!config?.apiKey || !config?.apiSecret) {
-        throw new Error('API_KEY e API_SECRET são obrigatórios');
-      }
-
-      // Busca fills das últimas 7 dias para ter histórico suficiente
-      const now = Date.now();
-      const sevenDaysAgo = now - (7 * 24 * 60 * 60 * 1000);
-
-      const fills = await History.getFillHistory(
-        null, // symbol - todos os símbolos
-        null, // orderId
-        sevenDaysAgo,
-        now,
-        1000, // limit
-        0, // offset
-        null, // fillType
-        'PERP', // marketType
-        null, // sortDirection
-        config.apiKey,
-        config.apiSecret
-      );
-
-      if (!fills || !Array.isArray(fills)) {
-        Logger.warn(`⚠️ [POSITION_TRACKING] Nenhum fill encontrado ou formato inválido`);
-        return [];
-      }
-
-      Logger.debug(`📊 [POSITION_TRACKING] Fills recebidos da corretora: ${fills.length}`);
-
-      // VALIDAÇÃO CRÍTICA: Filtra fills que pertencem ao bot e foram criados após a criação do bot
-      const validFills = fills.filter(fill => {
-        // Cria um objeto "order" com os dados do fill para usar na validação
-        const orderForValidation = {
-          symbol: fill.symbol,
-          clientId: fill.clientId,
-          createdAt: fill.createdAt || fill.timestamp
-        };
-
-        // Usa a validação centralizada do OrderController
-        const isValid = OrderController.validateOrderForImport(orderForValidation, config);
-
-        if (!isValid) {
-          Logger.debug(`   ⚠️ [POSITION_TRACKING] Fill ignorado: ${fill.symbol} (clientId: ${fill.clientId}) - não pertence ao bot ou é muito antigo`);
-        }
-
-        return isValid;
-      });
-
-      Logger.info(`📊 [POSITION_TRACKING] Fills válidos após validação: ${validFills.length}/${fills.length}`);
-
-      // DEBUG: Log dos primeiros fills para verificar formato
-      if (validFills.length > 0) {
-        Logger.debug(`🔍 [POSITION_TRACKING] Primeiro fill válido:`, JSON.stringify(validFills[0], null, 2));
-      } else {
-        Logger.warn(`⚠️ [POSITION_TRACKING] NENHUM FILL VÁLIDO ENCONTRADO!`);
-      }
-
-      return validFills;
-
-    } catch (error) {
-      Logger.error(`❌ [POSITION_TRACKING] Erro ao buscar fills:`, error.message);
-      return [];
-    }
-  }
-
-  /**
-   * Reconstrói posições baseado nos fills da corretora
-   * @param {Array} fills - Fills da corretora
-   * @param {Array} ourOpenOrders - Nossas ordens abertas
-   * @param {Object} config - Configuração do bot (para validação de tempo)
-   * @returns {Promise<Array>} Array de posições reconstruídas
-   */
-  static async reconstructPositionsFromFills(fills, ourOpenOrders, config) {
-    try {
-      if (fills.length === 0) {
-        Logger.info(`ℹ️ [POSITION_TRACKING] Nenhum fill para reconstruir posições`);
-        return [];
-      }
-
-      // VALIDAÇÃO CRÍTICA: Filtra ordens locais que foram criadas após a criação do bot
-      let validOrders = ourOpenOrders;
-      if (config?.createdAt) {
-        const botCreatedAt = new Date(config.createdAt).getTime();
-        validOrders = ourOpenOrders.filter(order => {
-          const orderTime = new Date(order.timestamp).getTime();
-          const isValid = orderTime >= botCreatedAt;
-
-          if (!isValid) {
-            Logger.debug(`   ⏰ [POSITION_TRACKING] Ordem antiga ignorada: ${order.symbol} (ID: ${order.id}) - Ordem: ${new Date(orderTime).toISOString()}, Bot criado: ${new Date(botCreatedAt).toISOString()}`);
-          }
-
-          return isValid;
-        });
-
-        Logger.info(`📊 [POSITION_TRACKING] Ordens válidas após validação de tempo: ${validOrders.length}/${ourOpenOrders.length}`);
-      } else {
-        Logger.warn(`⚠️ [POSITION_TRACKING] Configuração do bot não possui createdAt - todas as ordens serão consideradas válidas`);
-      }
-
-      // Agrupa fills por símbolo
-      const fillsBySymbol = this.groupFillsBySymbol(fills);
-
-      const ordersBySymbol = this.groupOrdersBySymbol(validOrders);
-
-      const reconstructedPositions = [];
-
-      // Para cada símbolo, reconstrói a posição consolidada
-      for (const [symbol, symbolOrders] of Object.entries(ordersBySymbol)) {
-        const symbolFills = fillsBySymbol[symbol] || [];
-
-        console.log(`🔍 [DEBUG] Processando símbolo ${symbol}: ${symbolOrders.length} ordens, ${symbolFills.length} fills`);
-
-        if (symbolFills.length === 0) {
-          // Sem fills para este símbolo - posição ainda não foi executada
-          const consolidatedOrder = this.consolidateOrdersBySymbol(symbolOrders);
-          reconstructedPositions.push({
-            symbol,
-            side: consolidatedOrder.side,
-            originalOrder: consolidatedOrder,
-            status: 'PENDING',
-            currentQuantity: 0,
-            averageEntryPrice: 0,
-            totalFills: [],
-            isClosed: false,
-            pnl: 0,
-            pnlPct: 0,
-            trades: [] // Adiciona um array vazio para trades
-          });
-          continue;
-        }
-
-        // Reconstrói a posição consolidada para este símbolo
-        const position = this.reconstructPositionFromFills(symbolOrders, symbolFills);
-        if (position) { // Adiciona apenas posições válidas
-          reconstructedPositions.push(position);
-        }
-      }
-
-      Logger.info(`✅ [POSITION_TRACKING] Reconstruídas ${reconstructedPositions.length} posições`);
-      return reconstructedPositions;
-
-    } catch (error) {
-      Logger.error(`❌ [POSITION_TRACKING] Erro ao reconstruir posições:`, error.message);
-      return [];
-    }
-  }
-
-  /**
-   * Reconstrói uma posição específica baseado nos fills
-   * @param {Array} symbolOrders - Array de ordens do mesmo símbolo
-   * @param {Array} symbolFills - Fills do símbolo
-   * @returns {object} Posição reconstruída
-   */
-  static reconstructPositionFromFills(symbolOrders, symbolFills) {
-    try {
-      // Consolida as ordens do símbolo
-      const consolidatedOrder = this.consolidateOrdersBySymbol(symbolOrders);
-      const side = consolidatedOrder.side; // BUY ou SELL
-      const totalOrderQuantity = parseFloat(consolidatedOrder.quantity);
-      const averageOrderPrice = parseFloat(consolidatedOrder.price);
-
-      // Ordena fills por timestamp (mais antigo primeiro)
-      const sortedFills = symbolFills.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-
-      // Identifica trades individuais baseado no padrão de fills
-      const trades = [];
-      let currentTrade = null;
-      let remainingQuantity = totalOrderQuantity;
-      let totalPnl = 0;
-      let isPositionClosed = false;
-
-      for (const fill of sortedFills) {
-        const fillSide = this.normalizeFillSide(fill.side);
-        const fillQuantity = parseFloat(fill.quantity);
-        const fillPrice = parseFloat(fill.price);
-        const fillTimestamp = new Date(fill.timestamp);
-
-        if (fillSide === side) {
-          // Entrada - inicia ou continua um trade
-          if (!currentTrade) {
-            // Inicia um novo trade
-            currentTrade = {
-              entryQuantity: fillQuantity,
-              entryPrice: fillPrice,
-              entryTime: fillTimestamp,
-              side: side
-            };
-          } else {
-            // Continua o trade atual
-            currentTrade.entryQuantity += fillQuantity;
-            // Atualiza preço médio
-            const totalValue = (currentTrade.entryQuantity - fillQuantity) * currentTrade.entryPrice + (fillQuantity * fillPrice);
-            currentTrade.entryPrice = totalValue / currentTrade.entryQuantity;
-          }
-        } else {
-          // Saída - fecha um trade
-          if (currentTrade) {
-            const quantityToClose = Math.min(fillQuantity, currentTrade.entryQuantity);
-
-            if (quantityToClose > 0) {
-              // Fecha o trade atual
-              const tradePnl = side === 'BUY'
-                ? (fillPrice - currentTrade.entryPrice) * quantityToClose
-                : (currentTrade.entryPrice - fillPrice) * quantityToClose;
-
-              trades.push({
-                symbol: symbolOrders[0].symbol,
-                side: currentTrade.side,
-                entryQuantity: quantityToClose,
-                entryPrice: currentTrade.entryPrice,
-                entryTime: currentTrade.entryTime,
-                exitQuantity: quantityToClose,
-                exitPrice: fillPrice,
-                exitTime: fillTimestamp,
-                pnl: tradePnl,
-                isClosed: true
-              });
-
-              totalPnl += tradePnl;
-
-              // Atualiza quantidade restante
-              currentTrade.entryQuantity -= quantityToClose;
-              remainingQuantity -= quantityToClose;
-
-              // Se o trade foi completamente fechado, inicia um novo
-              if (currentTrade.entryQuantity <= 0) {
-                currentTrade = null;
-              }
-            }
-
-            // Se ainda há quantidade no fill, processa como fechamento de outro trade
-            if (fillQuantity > quantityToClose) {
-              const remainingFillQuantity = fillQuantity - quantityToClose;
-              if (remainingFillQuantity > 0 && remainingQuantity > 0) {
-                // Fecha parte da posição restante
-                const closeQuantity = Math.min(remainingFillQuantity, remainingQuantity);
-                const tradePnl = side === 'BUY'
-                  ? (fillPrice - averageOrderPrice) * closeQuantity
-                  : (averageOrderPrice - fillPrice) * closeQuantity;
-
-                trades.push({
-                  symbol: symbolOrders[0].symbol,
-                  side: side,
-                  entryQuantity: closeQuantity,
-                  entryPrice: averageOrderPrice,
-                  entryTime: new Date(consolidatedOrder.timestamp),
-                  exitQuantity: closeQuantity,
-                  exitPrice: fillPrice,
-                  exitTime: fillTimestamp,
-                  pnl: tradePnl,
-                  isClosed: true
-                });
-
-                totalPnl += tradePnl;
-                remainingQuantity -= closeQuantity;
-              }
-            }
-          } else {
-            // Sem trade ativo, fecha parte da posição original
-            const closeQuantity = Math.min(fillQuantity, remainingQuantity);
-            if (closeQuantity > 0) {
-              const tradePnl = side === 'BUY'
-                ? (fillPrice - averageOrderPrice) * closeQuantity
-                : (averageOrderPrice - fillPrice) * closeQuantity;
-
-              trades.push({
-                symbol: symbolOrders[0].symbol,
-                side: side,
-                entryQuantity: closeQuantity,
-                entryPrice: averageOrderPrice,
-                entryTime: new Date(consolidatedOrder.timestamp),
-                exitQuantity: closeQuantity,
-                exitPrice: fillPrice,
-                exitTime: fillTimestamp,
-                pnl: tradePnl,
-                isClosed: true
-              });
-
-              totalPnl += tradePnl;
-              remainingQuantity -= closeQuantity;
-            }
-          }
-        }
-      }
-
-      // Se ainda há um trade ativo, marca como aberto
-      if (currentTrade && currentTrade.entryQuantity > 0) {
-        trades.push({
-          symbol: symbolOrders[0].symbol,
-          side: currentTrade.side,
-          entryQuantity: currentTrade.entryQuantity,
-          entryPrice: currentTrade.entryPrice,
-          entryTime: currentTrade.entryTime,
-          exitQuantity: 0,
-          exitPrice: 0,
-          exitTime: null,
-          pnl: 0,
-          isClosed: false
-        });
-      }
-
-      // Se ainda há quantidade restante da posição original, marca como aberta
-      if (remainingQuantity > 0) {
-        trades.push({
-          symbol: symbolOrders[0].symbol,
-          side: side,
-          entryQuantity: remainingQuantity,
-          entryPrice: averageOrderPrice,
-          entryTime: new Date(consolidatedOrder.timestamp),
-          exitQuantity: 0,
-          exitPrice: 0,
-          exitTime: null,
-          pnl: 0,
-          isClosed: false
-        });
-      }
-
-      // Determina se a posição geral está fechada
-      isPositionClosed = remainingQuantity <= 0;
-
-      console.log(`   - RESULTADO FINAL:`);
-      console.log(`     - Total de trades: ${trades.length}`);
-      console.log(`     - Trades fechados: ${trades.filter(t => t.isClosed).length}`);
-      console.log(`     - Trades abertos: ${trades.filter(t => !t.isClosed).length}`);
-      console.log(`     - PnL total: ${totalPnl}`);
-      console.log(`     - Posição fechada: ${isPositionClosed}`);
-
-      return {
-        symbol: consolidatedOrder.symbol,
-        side,
-        originalOrder: consolidatedOrder,
-        status: isPositionClosed ? 'CLOSED' : 'OPEN',
-        currentQuantity: remainingQuantity,
-        averageEntryPrice: averageOrderPrice,
-        totalFills: sortedFills.map(fill => ({
-          side: this.normalizeFillSide(fill.side),
-          quantity: parseFloat(fill.quantity),
-          price: parseFloat(fill.price),
-          timestamp: new Date(fill.timestamp),
-          value: parseFloat(fill.quantity) * parseFloat(fill.price)
-        })),
-        isClosed: isPositionClosed,
-        closePrice: isPositionClosed ? trades[trades.length - 1]?.exitPrice : null,
-        closeTime: isPositionClosed ? trades[trades.length - 1]?.exitTime : null,
-        closeQuantity: isPositionClosed ? totalOrderQuantity : 0,
-        closeType: isPositionClosed ? 'AUTO' : null,
-        pnl: totalPnl,
-        pnlPct: totalPnl > 0 && (averageOrderPrice * totalOrderQuantity) > 0 ? (totalPnl / (averageOrderPrice * totalOrderQuantity)) * 100 : 0,
-        // Adiciona trades individuais para análise
-        trades: trades
+      const newPosition = {
+        symbol,
+        side: positionSide,
+        entryPrice: fillPrice,
+        initialQuantity: fillQuantity,
+        currentQuantity: fillQuantity,
+        pnl: 0,
+        status: 'OPEN',
+        createdAt: timestamp || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        botId: botId || null
       };
 
+      const result = await this.dbService.run(
+        `INSERT INTO positions (symbol, side, entryPrice, initialQuantity, currentQuantity, pnl, status, createdAt, updatedAt, botId)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          newPosition.symbol,
+          newPosition.side,
+          newPosition.entryPrice,
+          newPosition.initialQuantity,
+          newPosition.currentQuantity,
+          newPosition.pnl,
+          newPosition.status,
+          newPosition.createdAt,
+          newPosition.updatedAt,
+          newPosition.botId
+        ]
+      );
+
+      Logger.info(`✅ [POSITION_TRACKING] Nova posição criada: ${symbol} ${positionSide} ${fillQuantity} @ ${fillPrice} (ID: ${result.lastID})`);
+
     } catch (error) {
-      Logger.error(`❌ [POSITION_TRACKING] Erro ao reconstruir posição:`, error.message);
+      Logger.error('❌ [POSITION_TRACKING] Erro ao criar nova posição:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Processa um fill de fechamento de posição
+   * @param {Object} position - Posição existente
+   * @param {Object} fillEvent - Evento de fill de fechamento
+   * @returns {Promise<void>}
+   */
+  async handleClosingFill(position, fillEvent) {
+    try {
+      const { quantity, price } = fillEvent;
+      const closeQuantity = Math.abs(parseFloat(quantity));
+      const closePrice = parseFloat(price);
+
+      // Calcula a quantidade que será efetivamente fechada
+      const quantityToClose = Math.min(closeQuantity, position.currentQuantity);
+
+      // Calcula o P&L desta parte da posição
+      const pnlFromClose = this.calculatePnL(
+        position.side,
+        position.entryPrice,
+        closePrice,
+        quantityToClose
+      );
+
+      // Atualiza a posição
+      const newCurrentQuantity = position.currentQuantity - quantityToClose;
+      const newTotalPnl = position.pnl + pnlFromClose;
+
+      // Determina o novo status da posição
+      let newStatus = 'OPEN';
+      if (newCurrentQuantity === 0) {
+        newStatus = 'CLOSED';
+      } else if (newCurrentQuantity < position.initialQuantity) {
+        newStatus = 'PARTIALLY_CLOSED';
+      }
+
+      // Atualiza no banco de dados
+      await this.dbService.run(
+        `UPDATE positions 
+         SET currentQuantity = ?, pnl = ?, status = ?, updatedAt = ?
+         WHERE id = ?`,
+        [
+          newCurrentQuantity,
+          newTotalPnl,
+          newStatus,
+          new Date().toISOString(),
+          position.id
+        ]
+      );
+
+      // Se a posição foi totalmente fechada, atualiza a ordem correspondente na bot_orders
+      if (newStatus === 'CLOSED') {
+        await this.updateOrderOnPositionClosed(position, fillEvent, newTotalPnl, pnlFromClose);
+      }
+
+      Logger.debug(`📈 [POSITION_TRACKING] Posição atualizada: ${position.symbol} fechou ${quantityToClose} @ ${closePrice}`);
+      Logger.debug(`📈 [POSITION_TRACKING] P&L: ${pnlFromClose.toFixed(6)}, Total P&L: ${newTotalPnl.toFixed(6)}, Status: ${newStatus}`);
+      Logger.debug(`📈 [POSITION_TRACKING] Quantidade restante: ${newCurrentQuantity}`);
+
+    } catch (error) {
+      Logger.error('❌ [POSITION_TRACKING] Erro ao processar fechamento:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Processa um fill que aumenta a posição existente
+   * @param {Object} position - Posição existente
+   * @param {Object} fillEvent - Evento de fill que aumenta a posição
+   * @returns {Promise<void>}
+   */
+  async handlePositionIncrease(position, fillEvent) {
+    try {
+      const { quantity, price } = fillEvent;
+      const addQuantity = Math.abs(parseFloat(quantity));
+      const addPrice = parseFloat(price);
+
+      // Calcula o novo preço médio de entrada
+      const totalValue = (position.entryPrice * position.currentQuantity) + (addPrice * addQuantity);
+      const totalQuantity = position.currentQuantity + addQuantity;
+      const newEntryPrice = totalValue / totalQuantity;
+
+      // Atualiza a posição
+      await this.dbService.run(
+        `UPDATE positions 
+         SET entryPrice = ?, initialQuantity = initialQuantity + ?, currentQuantity = ?, updatedAt = ?
+         WHERE id = ?`,
+        [
+          newEntryPrice,
+          addQuantity,
+          totalQuantity,
+          new Date().toISOString(),
+          position.id
+        ]
+      );
+
+      Logger.debug(`📈 [POSITION_TRACKING] Posição aumentada: ${position.symbol} +${addQuantity} @ ${addPrice}`);
+      Logger.debug(`📈 [POSITION_TRACKING] Novo preço médio: ${newEntryPrice.toFixed(6)}, Quantidade total: ${totalQuantity}`);
+
+    } catch (error) {
+      Logger.error('❌ [POSITION_TRACKING] Erro ao aumentar posição:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Busca uma posição aberta ou parcialmente fechada para um símbolo
+   * @param {string} symbol - Símbolo do mercado
+   * @param {number} botId - ID do bot (opcional)
+   * @returns {Promise<Object|null>} Posição encontrada ou null
+   */
+  async getOpenPosition(symbol, botId = null) {
+    try {
+      let query = `SELECT * FROM positions WHERE symbol = ? AND status IN ('OPEN', 'PARTIALLY_CLOSED')`;
+      const params = [symbol];
+
+      if (botId) {
+        query += ` AND botId = ?`;
+        params.push(botId);
+      }
+
+      query += ` ORDER BY createdAt DESC LIMIT 1`;
+
+      const position = await this.dbService.get(query, params);
+      return position || null;
+
+    } catch (error) {
+      Logger.error('❌ [POSITION_TRACKING] Erro ao buscar posição:', error.message);
       return null;
     }
   }
 
   /**
-   * Normaliza o lado do fill (Bid/Ask -> BUY/SELL)
-   * @param {string} fillSide - Lado do fill da corretora
-   * @returns {string} Lado normalizado
+   * Verifica se um fill é um fechamento de posição
+   * @param {string} positionSide - Lado da posição ('LONG' ou 'SHORT')
+   * @param {string} fillSide - Lado do fill ('Bid' ou 'Ask')
+   * @returns {boolean} True se é um fechamento
    */
-  static normalizeFillSide(fillSide) {
-    if (fillSide === 'Bid') return 'BUY';
-    if (fillSide === 'Ask') return 'SELL';
-    return fillSide; // Mantém como está se já for BUY/SELL
-  }
-
-  /**
-   * Agrupa fills por símbolo
-   * @param {Array} fills - Fills da corretora
-   * @returns {object} Fills agrupados por símbolo
-   */
-  static groupFillsBySymbol(fills) {
-    const grouped = {};
-
-    for (const fill of fills) {
-      const symbol = fill.symbol;
-      if (!grouped[symbol]) {
-        grouped[symbol] = [];
-      }
-      grouped[symbol].push(fill);
+  isClosingFill(positionSide, fillSide) {
+    if (positionSide === 'LONG' && fillSide === 'Ask') {
+      return true; // Venda fecha posição LONG
     }
-
-    return grouped;
-  }
-
-  /**
-   * Agrupa ordens por símbolo
-   * @param {Array} orders - Array de ordens
-   * @returns {Object} Ordens agrupadas por símbolo
-   */
-  static groupOrdersBySymbol(orders) {
-    const grouped = {};
-
-    for (const order of orders) {
-      const symbol = order.symbol;
-      if (!grouped[symbol]) {
-        grouped[symbol] = [];
-      }
-      grouped[symbol].push(order);
+    if (positionSide === 'SHORT' && fillSide === 'Bid') {
+      return true; // Compra fecha posição SHORT
     }
-
-    return grouped;
+    return false;
   }
 
   /**
-   * Consolida múltiplas ordens do mesmo símbolo em uma única ordem
-   * @param {Array} symbolOrders - Ordens do mesmo símbolo
-   * @returns {Object} Ordem consolidada
+   * Determina o lado da posição baseado no lado da ordem
+   * @param {string} orderSide - Lado da ordem ('Bid' ou 'Ask')
+   * @returns {string} Lado da posição ('LONG' ou 'SHORT')
    */
-  static consolidateOrdersBySymbol(symbolOrders) {
-    if (symbolOrders.length === 1) {
-      return symbolOrders[0];
+  getPositionSide(orderSide) {
+    return orderSide === 'Bid' ? 'LONG' : 'SHORT';
+  }
+
+  /**
+   * Calcula o P&L de uma quantidade fechada
+   * @param {string} positionSide - Lado da posição ('LONG' ou 'SHORT')
+   * @param {number} entryPrice - Preço de entrada
+   * @param {number} exitPrice - Preço de saída
+   * @param {number} quantity - Quantidade fechada
+   * @returns {number} P&L calculado
+   */
+  calculatePnL(positionSide, entryPrice, exitPrice, quantity) {
+    if (positionSide === 'LONG') {
+      // Para LONG: lucro quando exit > entry
+      return (exitPrice - entryPrice) * quantity;
+    } else {
+      // Para SHORT: lucro quando entry > exit
+      return (entryPrice - exitPrice) * quantity;
     }
-
-    // Se múltiplas ordens, consolida em uma
-    const firstOrder = symbolOrders[0];
-    const totalQuantity = symbolOrders.reduce((sum, order) => sum + parseFloat(order.quantity), 0);
-    const totalValue = symbolOrders.reduce((sum, order) => sum + (parseFloat(order.quantity) * parseFloat(order.price)), 0);
-    const averagePrice = totalValue / totalQuantity;
-
-    return {
-      ...firstOrder,
-      quantity: totalQuantity,
-      price: averagePrice
-    };
   }
 
   /**
-   * Calcula métricas de performance das posições
-   * @param {Array} positions - Array de posições
-   * @returns {object} Métricas de performance
+   * Obtém estatísticas de P&L para um bot
+   * @param {number} botId - ID do bot
+   * @returns {Promise<Object>} Estatísticas de P&L
    */
-  static calculatePerformanceMetrics(positions) {
+  async getBotPnLStats(botId) {
     try {
-      // Extrai todos os trades individuais de todas as posições
-      const allTrades = [];
-
-      for (const position of positions) {
-        if (position.trades && Array.isArray(position.trades)) {
-          allTrades.push(...position.trades);
-        }
-      }
-
-      console.log(`🔍 [DEBUG] calculatePerformanceMetrics:`);
-      console.log(`   - Total de posições: ${positions.length}`);
-      console.log(`   - Total de trades extraídos: ${allTrades.length}`);
-
-      // Filtra apenas trades válidos
-      const validTrades = allTrades.filter(trade =>
-        trade &&
-        trade.symbol &&
-        trade.entryQuantity > 0
+      const result = await this.dbService.get(
+        `SELECT 
+           COUNT(*) as totalTrades,
+           SUM(CASE WHEN status = 'CLOSED' THEN 1 ELSE 0 END) as closedTrades,
+           SUM(CASE WHEN status = 'CLOSED' AND pnl > 0 THEN 1 ELSE 0 END) as winTrades,
+           SUM(CASE WHEN status = 'CLOSED' AND pnl < 0 THEN 1 ELSE 0 END) as lossTrades,
+           SUM(CASE WHEN status = 'CLOSED' THEN pnl ELSE 0 END) as totalPnl,
+           AVG(CASE WHEN status = 'CLOSED' THEN pnl ELSE NULL END) as avgPnl,
+           MAX(CASE WHEN status = 'CLOSED' THEN pnl ELSE NULL END) as maxWin,
+           MIN(CASE WHEN status = 'CLOSED' THEN pnl ELSE NULL END) as maxLoss
+         FROM positions 
+         WHERE botId = ?`,
+        [botId]
       );
 
-      const closedTrades = validTrades.filter(trade => trade.isClosed);
-      const openTrades = validTrades.filter(trade => !trade.isClosed);
-
-      console.log(`   - Trades válidos: ${validTrades.length}`);
-      console.log(`   - Trades fechados: ${closedTrades.length}`);
-      console.log(`   - Trades abertos: ${openTrades.length}`);
-
-      if (validTrades.length === 0) {
-        return {
-          totalTrades: 0,
-          totalPositions: positions.length,
-          closedTrades: 0,
-          closedPositions: 0,
-          openTrades: 0,
-          openPositions: openTrades.length,
-          winningTrades: 0,
-          losingTrades: 0,
-          winRate: 0,
-          profitFactor: 0,
-          totalPnl: 0,
-          averagePnl: 0,
-          maxDrawdown: 0,
-          totalVolume: 0,
-          averageHoldingTime: 0
-        };
-      }
-
-      const winningTrades = closedTrades.filter(trade => trade.pnl > 0);
-      const losingTrades = closedTrades.filter(trade => trade.pnl < 0);
-
-      const totalPnl = closedTrades.reduce((sum, trade) => sum + trade.pnl, 0);
-      const totalWinningPnl = winningTrades.reduce((sum, trade) => sum + trade.pnl, 0);
-      const totalLosingPnl = Math.abs(losingTrades.reduce((sum, trade) => sum + trade.pnl, 0));
-
-      const winRate = closedTrades.length > 0 ? (winningTrades.length / closedTrades.length) * 100 : 0;
-      const profitFactor = totalLosingPnl > 0 ? totalWinningPnl / totalLosingPnl : 0;
-      const averagePnl = closedTrades.length > 0 ? totalPnl / closedTrades.length : 0;
-
-      // Calcula drawdown
-      let maxDrawdown = 0;
-      let peak = 0;
-      let runningPnl = 0;
-
-      for (const trade of closedTrades) {
-        runningPnl += trade.pnl;
-        if (runningPnl > peak) {
-          peak = runningPnl;
-        }
-        const drawdown = peak - runningPnl;
-        if (drawdown > maxDrawdown) {
-          maxDrawdown = drawdown;
-        }
-      }
-
-      // Calcula volume total
-      const totalVolume = closedTrades.reduce((sum, trade) => {
-        return sum + (trade.entryQuantity * trade.entryPrice);
-      }, 0);
-
-      // Calcula tempo médio de holding
-      let totalHoldingTime = 0;
-      let validHoldingTimes = 0;
-
-      for (const trade of closedTrades) {
-        if (trade.exitTime && trade.entryTime) {
-          const entryTime = new Date(trade.entryTime);
-          const exitTime = new Date(trade.exitTime);
-          const holdingTime = exitTime - entryTime;
-
-          if (holdingTime > 0) {
-            totalHoldingTime += holdingTime;
-            validHoldingTimes++;
-          }
-        }
-      }
-
-      const averageHoldingTime = validHoldingTimes > 0 ? totalHoldingTime / validHoldingTimes : 0;
-
-      const totalTrades = winningTrades.length + losingTrades.length + openTrades.length;
-
-      const result = {
-        totalTrades: totalTrades,
-        totalPositions: positions.length,
-        closedTrades: closedTrades.length,
-        closedPositions: closedTrades.length,
-        openTrades: openTrades.length,
-        openPositions: openTrades.length,
-        winningTrades: winningTrades.length,
-        losingTrades: losingTrades.length,
-        winRate,
-        profitFactor,
-        totalPnl,
-        averagePnl,
-        maxDrawdown,
-        totalVolume,
-        averageHoldingTime,
-        totalWinningPnl,
-        totalLosingPnl
+      const stats = {
+        totalTrades: result?.totalTrades || 0,
+        closedTrades: result?.closedTrades || 0,
+        winTrades: result?.winTrades || 0,
+        lossTrades: result?.lossTrades || 0,
+        totalPnl: result?.totalPnl || 0,
+        avgPnl: result?.avgPnl || 0,
+        maxWin: result?.maxWin || 0,
+        maxLoss: result?.maxLoss || 0,
+        winRate: result?.closedTrades > 0 ? (result.winTrades / result.closedTrades) * 100 : 0
       };
 
-      console.log(`   - RESULTADO FINAL:`);
-      console.log(`     - totalTrades: ${result.totalTrades}`);
-      console.log(`     - closedTrades: ${result.closedTrades}`);
-      console.log(`     - openTrades: ${result.openTrades}`);
-      console.log(`     - totalPnl: ${result.totalPnl}`);
-
-      return result;
+      return stats;
 
     } catch (error) {
-      Logger.error(`❌ [POSITION_TRACKING] Erro ao calcular métricas de performance:`, error.message);
+      Logger.error('❌ [POSITION_TRACKING] Erro ao calcular estatísticas:', error.message);
       return {
         totalTrades: 0,
-        totalPositions: 0,
         closedTrades: 0,
-        closedPositions: 0,
-        openTrades: 0,
-        openPositions: 0,
-        winningTrades: 0,
-        losingTrades: 0,
-        winRate: 0,
-        profitFactor: 0,
+        winTrades: 0,
+        lossTrades: 0,
         totalPnl: 0,
-        averagePnl: 0,
-        maxDrawdown: 0,
-        totalVolume: 0,
-        averageHoldingTime: 0,
-        error: error.message
+        avgPnl: 0,
+        maxWin: 0,
+        maxLoss: 0,
+        winRate: 0
       };
     }
   }
 
   /**
-   * Atualiza estatísticas de posição no banco
-   * @param {number} botId - ID do bot
-   * @param {Array} positions - Array de posições
+   * Atualiza a ordem na bot_orders quando uma posição é totalmente fechada
+   * @param {Object} position - Posição que foi fechada
+   * @param {Object} fillEvent - Fill de fechamento
+   * @param {number} totalPnl - PnL total da posição
+   * @param {number} pnlFromClose - PnL do fechamento atual
    */
-  static async updatePositionStatistics(botId, positions) {
+  async updateOrderOnPositionClosed(position, fillEvent, totalPnl, pnlFromClose) {
     try {
-      // TODO: Implementar tabela de estatísticas de posição no banco
-      // Por enquanto, apenas loga as estatísticas
-      Logger.info(`📊 [POSITION_TRACKING] Estatísticas atualizadas para bot ${botId}:`);
-      Logger.info(`   • Total de posições: ${positions.length}`);
-      Logger.info(`   • Posições fechadas: ${positions.filter(p => p.isClosed).length}`);
-      Logger.info(`   • Posições abertas: ${positions.filter(p => !p.isClosed).length}`);
-
-    } catch (error) {
-      Logger.error(`❌ [POSITION_TRACKING] Erro ao atualizar estatísticas:`, error.message);
-    }
-  }
-
-  /**
-   * Busca histórico de posições de um bot
-   * @param {number} botId - ID do bot
-   * @param {object} config - Configuração do bot
-   * @param {object} options - Opções de busca
-   * @returns {Promise<object>} Histórico de posições
-   */
-  static async getBotPositionHistory(botId, config, options = {}) {
-    try {
-      const { days = 30, includeOpen = true } = options;
-
-      Logger.info(`🔍 [POSITION_TRACKING] Buscando histórico de posições para bot ${botId} (últimos ${days} dias)`);
-
-      // Busca fills do período
-      const now = Date.now();
-      const startTime = now - (days * 24 * 60 * 60 * 1000);
-
-      const fills = await History.getFillHistory(
-        null, // symbol
-        null, // orderId
-        startTime,
-        now,
-        1000, // limit
-        0, // offset
-        null, // fillType
-        'PERP', // marketType
-        null, // sortDirection
-        config.apiKey,
-        config.apiSecret
+      // Busca a ordem original que abriu esta posição na bot_orders
+      const originalOrder = await this.dbService.get(
+        `SELECT * FROM bot_orders 
+         WHERE botId = ? AND symbol = ? AND status IN ('FILLED', 'PENDING')
+         ORDER BY timestamp ASC LIMIT 1`,
+        [position.botId, position.symbol]
       );
 
-      if (!fills || !Array.isArray(fills)) {
-        return {
-          botId,
-          period: { start: new Date(startTime), end: new Date(now) },
-          positions: [],
-          summary: {
-            totalPositions: 0,
-            closedPositions: 0,
-            openPositions: 0
-          }
-        };
+      if (!originalOrder) {
+        Logger.warn(`⚠️ [POSITION_TRACKING] Ordem original não encontrada para posição ${position.symbol}`);
+        return;
       }
 
-      // Busca nossas ordens do período
-      const ourOrders = await this.getOurOrdersInPeriod(botId, startTime, now);
+      // Calcula P&L percentual
+      const pnlPct = originalOrder.price > 0 ? (totalPnl / (originalOrder.quantity * originalOrder.price)) * 100 : 0;
 
-      // Reconstrói posições
-      const positions = await this.reconstructPositionsFromFills(fills, ourOrders, config);
+      // Atualiza a ordem para status CLOSED com P&L
+      await this.dbService.run(
+        `UPDATE bot_orders SET 
+         status = 'CLOSED',
+         closePrice = ?,
+         closeTime = ?,
+         closeQuantity = ?,
+         closeType = ?,
+         pnl = ?,
+         pnlPct = ?
+         WHERE id = ?`,
+        [
+          fillEvent.price,
+          fillEvent.timestamp || new Date().toISOString(),
+          position.initialQuantity, // Quantidade total da posição
+          fillEvent.clientId ? 'MANUAL' : 'AUTO', // Se tem clientId é manual, senão automático
+          totalPnl,
+          pnlPct,
+          originalOrder.id
+        ]
+      );
 
-      // Filtra posições baseado nas opções
-      const filteredPositions = includeOpen
-        ? positions
-        : positions.filter(pos => pos.isClosed);
-
-      // Calcula métricas
-      const performanceMetrics = this.calculatePerformanceMetrics(filteredPositions);
-
-      return {
-        botId,
-        period: { start: new Date(startTime), end: new Date(now) },
-        positions: filteredPositions,
-        summary: {
-          totalPositions: filteredPositions.length,
-          closedPositions: filteredPositions.filter(p => p.isClosed).length,
-          openPositions: filteredPositions.filter(p => !p.isClosed).length,
-          performance: performanceMetrics
-        }
-      };
+      Logger.info(`✅ [POSITION_TRACKING] Ordem ${originalOrder.externalOrderId} marcada como CLOSED com P&L: ${totalPnl.toFixed(6)} (${pnlPct.toFixed(2)}%)`);
 
     } catch (error) {
-      Logger.error(`❌ [POSITION_TRACKING] Erro ao buscar histórico de posições:`, error.message);
-      throw error;
+      Logger.error('❌ [POSITION_TRACKING] Erro ao atualizar ordem na posição fechada:', error.message);
     }
   }
 
   /**
-   * Busca ordens do nosso banco em um período específico
-   * @param {number} botId - ID do bot
-   * @param {number} startTime - Timestamp de início
-   * @param {number} endTime - Timestamp de fim
-   * @returns {Promise<Array>} Array de ordens
+   * Atualiza o status da ordem na tabela bot_orders quando um fill é processado
+   * @param {Object} fillEvent - Evento de fill
    */
-  static async getOurOrdersInPeriod(botId, startTime, endTime) {
+  async updateOrderStatusOnFill(fillEvent) {
     try {
-      if (!OrdersService.dbService || !OrdersService.dbService.isInitialized()) {
-        return [];
+      const { orderId, clientId, quantity, price, symbol, botId } = fillEvent;
+
+      if (!orderId && !clientId) {
+        Logger.warn('⚠️ [POSITION_TRACKING] Sem orderId ou clientId para atualizar ordem');
+        return;
       }
 
-      const orders = await OrdersService.getOrdersByBotId(botId);
+      // Busca a ordem por externalOrderId ou clientId
+      let whereClause, params;
+      if (orderId) {
+        whereClause = 'externalOrderId = ?';
+        params = [orderId];
+      } else {
+        whereClause = 'clientId = ?';
+        params = [clientId];
+      }
 
-      // Filtra ordens do período
-      const periodOrders = orders.filter(order => {
-        const orderTime = new Date(order.timestamp).getTime();
-        return orderTime >= startTime && orderTime <= endTime;
-      });
+      // Se tiver botId, adiciona ao filtro
+      if (botId) {
+        whereClause += ' AND botId = ?';
+        params.push(botId);
+      }
 
-      return periodOrders;
+      const order = await this.dbService.get(
+        `SELECT * FROM bot_orders WHERE ${whereClause}`,
+        params
+      );
+
+      if (!order) {
+        Logger.warn(`⚠️ [POSITION_TRACKING] Ordem não encontrada para fill: ${orderId || clientId}`);
+        return;
+      }
+
+      // Atualiza o status da ordem para FILLED (se estava PENDING)
+      if (order.status === 'PENDING') {
+        await this.dbService.run(
+          `UPDATE bot_orders SET 
+           status = 'FILLED',
+           exchangeCreatedAt = COALESCE(exchangeCreatedAt, ?)
+           WHERE id = ?`,
+          [new Date().toISOString(), order.id]
+        );
+
+        Logger.debug(`✅ [POSITION_TRACKING] Ordem ${orderId || clientId} atualizada para FILLED`);
+      }
 
     } catch (error) {
-      Logger.error(`❌ [POSITION_TRACKING] Erro ao buscar ordens do período:`, error.message);
+      Logger.error('❌ [POSITION_TRACKING] Erro ao atualizar status da ordem:', error.message);
+    }
+  }
+
+  /**
+   * Busca apenas posições abertas do bot específico
+   * @param {number} botId - ID do bot
+   * @returns {Promise<Array>} Array de posições abertas apenas deste bot
+   */
+  async getBotOpenPositions(botId) {
+    try {
+      // Busca ordens que representam posições abertas:
+      // - PENDING: Ordens ainda não executadas
+      // - FILLED: Ordens executadas mas ainda não fechadas
+      const query = `
+        SELECT * FROM bot_orders 
+        WHERE botId = ? AND (
+          status = 'PENDING' OR 
+          status = 'FILLED' OR
+          (status != 'CLOSED' AND closePrice IS NULL)
+        )
+        ORDER BY timestamp DESC
+      `;
+
+      const openOrders = await this.dbService.getAll(query, [botId]);
+
+      // Agrupa por símbolo para simular posições
+      const positionsBySymbol = new Map();
+
+      for (const order of openOrders) {
+        const symbol = order.symbol;
+
+        if (!positionsBySymbol.has(symbol)) {
+          positionsBySymbol.set(symbol, {
+            symbol: symbol,
+            side: order.side === 'BUY' ? 'LONG' : 'SHORT',
+            quantity: 0,
+            entryPrice: 0,
+            totalValue: 0,
+            pnl: order.pnl || 0,
+            status: order.status,
+            orders: []
+          });
+        }
+
+        const position = positionsBySymbol.get(symbol);
+        position.orders.push(order);
+
+        // Calcula quantidade e preço médio
+        const orderQuantity = Math.abs(order.quantity);
+        const orderValue = orderQuantity * order.price;
+
+        position.quantity += orderQuantity;
+        position.totalValue += orderValue;
+        position.entryPrice = position.totalValue / position.quantity;
+      }
+
+      // Converte para formato compatível com Futures.getOpenPositions
+      const positions = Array.from(positionsBySymbol.values()).map(position => ({
+        symbol: position.symbol,
+        side: position.side,
+        quantity: position.quantity,
+        entryPrice: position.entryPrice,
+        pnl: position.pnl,
+        status: position.status,
+        // Adiciona flag para identificar que é posição do bot
+        _isBotPosition: true,
+        _botId: botId,
+        _orderCount: position.orders.length
+      }));
+
+      Logger.debug(`📊 [POSITION_TRACKING] Encontradas ${positions.length} posições abertas para bot ${botId} (baseado em ${openOrders.length} ordens)`);
+      return positions;
+
+    } catch (error) {
+      Logger.error('❌ [POSITION_TRACKING] Erro ao buscar posições abertas do bot:', error.message);
       return [];
+    }
+  }
+
+  /**
+   * Busca todas as ordens de um bot
+   * @param {number} botId - ID do bot
+   * @returns {Promise<Array>} Array com todas as ordens
+   */
+  async getAllBotOrders(botId) {
+    try {
+      const query = 'SELECT * FROM bot_orders WHERE botId = ? ORDER BY timestamp DESC';
+      const orders = await this.dbService.getAll(query, [botId]);
+      return orders || [];
+    } catch (error) {
+      Logger.error('❌ [POSITION_TRACKING] Erro ao buscar ordens do bot:', error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Calcula estatísticas baseado nas ordens do bot
+   * @param {number} botId - ID do bot
+   * @returns {Promise<Object>} Estatísticas das ordens
+   */
+  async getBotOrderStats(botId) {
+    try {
+      const result = await this.dbService.get(
+        `SELECT 
+           COUNT(*) as totalTrades,
+           SUM(CASE WHEN status IN ('CLOSED', 'FILLED') THEN 1 ELSE 0 END) as executedTrades,
+           SUM(CASE WHEN status = 'CLOSED' THEN 1 ELSE 0 END) as closedTrades,
+           SUM(CASE WHEN status = 'CLOSED' AND pnl > 0 THEN 1 ELSE 0 END) as winTrades,
+           SUM(CASE WHEN status = 'CLOSED' AND pnl < 0 THEN 1 ELSE 0 END) as lossTrades,
+           SUM(CASE WHEN status = 'CLOSED' THEN pnl ELSE 0 END) as totalPnl,
+           AVG(CASE WHEN status = 'CLOSED' THEN pnl ELSE NULL END) as avgPnl,
+           MAX(CASE WHEN status = 'CLOSED' THEN pnl ELSE NULL END) as maxWin,
+           MIN(CASE WHEN status = 'CLOSED' THEN pnl ELSE NULL END) as maxLoss
+         FROM bot_orders 
+         WHERE botId = ?`,
+        [botId]
+      );
+
+      const stats = {
+        totalTrades: result?.totalTrades || 0,
+        closedTrades: result?.closedTrades || 0,
+        winTrades: result?.winTrades || 0,
+        lossTrades: result?.lossTrades || 0,
+        totalPnl: result?.totalPnl || 0,
+        avgPnl: result?.avgPnl || 0,
+        maxWin: result?.maxWin || 0,
+        maxLoss: result?.maxLoss || 0,
+        winRate: result?.closedTrades > 0 ? (result.winTrades / result.closedTrades) * 100 : 0
+      };
+
+      return stats;
+
+    } catch (error) {
+      Logger.error('❌ [POSITION_TRACKING] Erro ao calcular estatísticas:', error.message);
+      return {
+        totalTrades: 0,
+        closedTrades: 0,
+        winTrades: 0,
+        lossTrades: 0,
+        totalPnl: 0,
+        avgPnl: 0,
+        maxWin: 0,
+        maxLoss: 0,
+        winRate: 0
+      };
+    }
+  }
+
+  /**
+   * Rastreia posições de um bot e retorna métricas de performance
+   * @param {number} botId - ID do bot
+   * @param {object} config - Configuração do bot
+   * @returns {Promise<Object>} Resultado do rastreamento com métricas e posições
+   */
+  async trackBotPositions(botId, config) {
+    try {
+      Logger.debug(`📊 [POSITION_TRACKING] Rastreando posições do bot ${botId}`);
+
+      // Busca estatísticas do bot usando bot_orders
+      const stats = await this.getBotOrderStats(botId);
+
+      // Busca todas as ordens do bot
+      const allOrders = await this.getAllBotOrders(botId);
+
+      // Busca apenas posições abertas
+      const openPositions = await this.getBotOpenPositions(botId);
+
+      // Calcula métricas de performance
+      const performanceMetrics = {
+        totalTrades: stats.totalTrades,
+        totalPositions: allOrders.length,
+        openPositions: openPositions.length,
+        closedPositions: stats.closedTrades,
+        winningTrades: stats.winTrades,
+        losingTrades: stats.lossTrades,
+        winRate: stats.winRate,
+        totalPnl: stats.totalPnl,
+        avgPnl: stats.avgPnl,
+        maxWin: stats.maxWin,
+        maxLoss: stats.maxLoss,
+        profitFactor: stats.lossTrades > 0 && stats.maxLoss < 0 ?
+          Math.abs(stats.winTrades * stats.maxWin / (stats.lossTrades * stats.maxLoss)) :
+          stats.winTrades > 0 ? 999 : 0
+      };
+
+      // Reconstrói posições para o formato esperado (usando ordens)
+      const reconstructedPositions = allOrders.map(order => ({
+        symbol: order.symbol,
+        side: order.side === 'BUY' ? 'LONG' : 'SHORT',
+        entryPrice: order.price,
+        quantity: Math.abs(order.quantity),
+        pnl: order.pnl || 0,
+        status: order.status,
+        createdAt: order.timestamp,
+        updatedAt: order.closeTime || order.timestamp
+      }));
+
+      Logger.debug(`✅ [POSITION_TRACKING] Rastreamento concluído para bot ${botId}: ${allOrders.length} ordens, PnL total: ${stats.totalPnl.toFixed(6)}`);
+
+      return {
+        performanceMetrics,
+        reconstructedPositions,
+        botId,
+        timestamp: new Date().toISOString()
+      };
+
+    } catch (error) {
+      Logger.error('❌ [POSITION_TRACKING] Erro ao rastrear posições do bot:', error.message);
+      throw error;
     }
   }
 }

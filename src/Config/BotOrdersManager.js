@@ -172,7 +172,7 @@ class BotOrdersManager {
    * @param {number} price - Preço
    * @param {string} orderType - Tipo da ordem (MARKET/LIMIT)
    */
-  async addOrder(botId, externalOrderId, symbol, side, quantity, price, orderType, exchangeCreatedAt = null) {
+  async addOrder(botId, externalOrderId, symbol, side, quantity, price, orderType, exchangeCreatedAt = null, clientId = null) {
     const order = {
       botId,
       externalOrderId,
@@ -183,6 +183,7 @@ class BotOrdersManager {
       orderType,
       timestamp: new Date().toISOString(),
       status: 'PENDING', // Status inicial da ordem
+      clientId: clientId, // Client Order ID da exchange
       exchangeCreatedAt: exchangeCreatedAt, // Timestamp de criação na exchange
       fills: [], // Array para armazenar fills da ordem
       totalFilledQuantity: 0, // Quantidade total preenchida

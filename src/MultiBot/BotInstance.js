@@ -3,6 +3,9 @@ import AccountConfig from '../Config/AccountConfig.js';
 import Decision from '../Decision/Decision.js';
 import AccountController from '../Controllers/AccountController.js';
 import OrderController from '../Controllers/OrderController.js';
+import PositionTrackingService from '../Services/PositionTrackingService.js';
+import DatabaseService from '../Services/DatabaseService.js';
+import History from '../Backpack/Authenticated/History.js';
 
 /**
  * Instância individual do bot para cada conta
@@ -16,6 +19,11 @@ class BotInstance {
     this.isRunning = false;
     this.analysisInterval = null;
     this.monitoringInterval = null;
+    this.fillMonitoringInterval = null;
+    this.lastFillCheck = null;
+    
+    // Inicializa PositionTrackingService
+    this.positionTracker = null;
     
     // Configurações específicas da conta
     this.capitalPercentage = accountConfig.capitalPercentage;
@@ -54,6 +62,8 @@ class BotInstance {
       
       this.logger.success('Conexão estabelecida com sucesso');
       
+      // Inicializa PositionTrackingService
+      await this.initializePositionTracking();
 
       
       // Inicia análise
@@ -158,13 +168,208 @@ class BotInstance {
     }
   }
 
+  /**
+   * Inicializa o PositionTrackingService e o monitoramento de fills
+   */
+  async initializePositionTracking() {
+    try {
+      this.logger.debug('Inicializando sistema de rastreamento de posições...');
+      
+      // Inicializa DatabaseService se ainda não foi inicializado
+      const dbService = new DatabaseService();
+      if (!dbService.isInitialized()) {
+        await dbService.init();
+      }
+      
+      // Cria instância do PositionTrackingService
+      this.positionTracker = new PositionTrackingService(dbService);
+      
+      // Inicia monitoramento de fills
+      this.startFillMonitoring();
+      
+      this.logger.success('Sistema de rastreamento de posições inicializado');
+      
+    } catch (error) {
+      this.logger.error('Erro ao inicializar rastreamento de posições:', error.message);
+      throw error;
+    }
+  }
 
+  /**
+   * Inicia o monitoramento de fills via polling
+   */
+  startFillMonitoring() {
+    this.logger.debug('Iniciando monitoramento de fills...');
+    
+    // Define timestamp inicial para buscar apenas fills novos
+    this.lastFillCheck = Date.now() - (5 * 60 * 1000); // 5 minutos atrás
+    
+    // Primeira verificação imediata
+    this.checkForNewFills();
+    
+    // Configura verificação periódica a cada 30 segundos
+    this.fillMonitoringInterval = setInterval(() => {
+      this.checkForNewFills();
+    }, 30000); // 30 segundos
+  }
+
+  /**
+   * Verifica por novos fills e processa com o PositionTrackingService
+   */
+  async checkForNewFills() {
+    try {
+      if (!this.positionTracker) {
+        return;
+      }
+
+      const now = Date.now();
+      const history = new History();
+      
+      // Busca fills desde a última verificação
+      const fills = await history.getFillHistory(
+        null, // symbol - todos os símbolos
+        null, // orderId
+        this.lastFillCheck,
+        now,
+        100, // limit - máximo 100 fills
+        0, // offset
+        null, // fillType - TODOS os fills (incluindo fechamentos automáticos da exchange)
+        'PERP', // marketType
+        'desc', // sortDirection - mais recentes primeiro
+        this.config.apiKey,
+        this.config.apiSecret
+      );
+
+      if (!fills || !Array.isArray(fills) || fills.length === 0) {
+        // Sem novos fills
+        this.lastFillCheck = now;
+        return;
+      }
+
+      this.logger.debug(`📊 [FILL_MONITOR] Encontrados ${fills.length} fills para processar`);
+
+      // Processa cada fill
+      for (const fill of fills) {
+        try {
+          // Valida se o fill pertence a este bot (baseado no clientId ou posições abertas)
+          if (!(await this.isOurFill(fill))) {
+            continue;
+          }
+
+          // Converte fill da API para o formato esperado pelo PositionTrackingService
+          const fillEvent = this.convertFillToEvent(fill);
+          
+          // Processa o fill
+          await this.positionTracker.updatePositionOnFill(fillEvent);
+          
+          this.logger.debug(`✅ [FILL_MONITOR] Fill processado: ${fill.symbol} ${fill.side} ${fill.quantity} @ ${fill.price}`);
+          
+        } catch (error) {
+          this.logger.error(`❌ [FILL_MONITOR] Erro ao processar fill:`, error.message);
+        }
+      }
+
+      // Atualiza timestamp da última verificação
+      this.lastFillCheck = now;
+      
+    } catch (error) {
+      this.logger.error('❌ [FILL_MONITOR] Erro ao verificar fills:', error.message);
+    }
+  }
+
+  /**
+   * Verifica se um fill pertence a este bot
+   * @param {Object} fill - Fill da API
+   * @returns {boolean} True se pertence a este bot
+   */
+  async isOurFill(fill) {
+    try {
+      if (!fill || !fill.symbol) {
+        return false;
+      }
+
+      // CASO 1: Fill tem clientId do bot (ordem de abertura)
+      if (fill.clientId) {
+        const hasValidClientId = OrderController.validateOrderForImport(
+          {
+            symbol: fill.symbol,
+            clientId: fill.clientId,
+            createdAt: fill.createdAt || fill.timestamp
+          },
+          this.config
+        );
+        
+        if (hasValidClientId) {
+          this.logger.debug(`✅ [FILL_MONITOR] Fill de abertura detectado: ${fill.symbol} (clientId: ${fill.clientId})`);
+          return true;
+        }
+      }
+
+      // CASO 2: Fill SEM clientId - pode ser fechamento automático de posição nossa
+      if (!fill.clientId) {
+        // Verifica se temos posição aberta neste símbolo
+        const hasOpenPosition = await this.hasOpenPositionForSymbol(fill.symbol);
+        
+        if (hasOpenPosition) {
+          this.logger.debug(`🔄 [FILL_MONITOR] Fill de fechamento automático detectado: ${fill.symbol}`);
+          return true;
+        }
+      }
+
+      return false;
+      
+    } catch (error) {
+      this.logger.debug(`⚠️ [FILL_MONITOR] Erro na validação do fill: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Verifica se temos posição aberta para um símbolo específico
+   * @param {string} symbol - Símbolo do mercado
+   * @returns {Promise<boolean>} True se temos posição aberta
+   */
+  async hasOpenPositionForSymbol(symbol) {
+    try {
+      if (!this.positionTracker) {
+        return false;
+      }
+
+      // Busca posições abertas do bot para este símbolo
+      const openPositions = await this.positionTracker.getBotOpenPositions(this.config.botId);
+      const symbolPosition = openPositions.find(pos => pos.symbol === symbol);
+      
+      return !!symbolPosition;
+      
+    } catch (error) {
+      this.logger.debug(`⚠️ [FILL_MONITOR] Erro ao verificar posição para ${symbol}: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Converte fill da API para o formato do PositionTrackingService
+   * @param {Object} fill - Fill da API
+   * @returns {Object} Evento de fill formatado
+   */
+  convertFillToEvent(fill) {
+    return {
+      symbol: fill.symbol,
+      side: fill.side, // 'Bid' ou 'Ask'
+      quantity: parseFloat(fill.quantity),
+      price: parseFloat(fill.price),
+      orderId: fill.orderId,
+      clientId: fill.clientId,
+      timestamp: fill.timestamp || fill.createdAt || new Date().toISOString(),
+      botId: this.config.botId || null
+    };
+  }
 
   /**
    * Inicia o ciclo de análise
    */
   startAnalysis() {
-    this.logger.info(`Iniciando análise - Timeframe: ${this.time}`);
+    this.logger.verbose(`Iniciando análise - Timeframe: ${this.time}`);
     
     // Primeira análise imediata
     this.runAnalysis();
@@ -227,7 +432,11 @@ class BotInstance {
         initialStopAtrMultiplier: this.config.initialStopAtrMultiplier,
         partialTakeProfitAtrMultiplier: this.config.partialTakeProfitAtrMultiplier,
         partialProfitPercentage: this.config.partialProfitPercentage,
-        enableHybridStopStrategy: this.config.enableHybridStopStrategy
+        enableHybridStopStrategy: this.config.enableHybridStopStrategy,
+        
+        // ID do bot para rastreamento de posições próprias
+        botId: this.config.botId,
+        botName: this.botName
       };
       
       // Cria uma instância do Decision com a estratégia específica desta conta
@@ -245,7 +454,7 @@ class BotInstance {
    * Inicia monitoramento (para estratégia PRO_MAX)
    */
   startMonitoring() {
-    this.logger.info('Iniciando monitoramento de take profits...');
+    this.logger.verbose('Iniciando monitoramento de take profits...');
     
     this.monitoringInterval = setInterval(async () => {
       try {
@@ -270,6 +479,41 @@ class BotInstance {
       capitalPercentage: this.capitalPercentage,
       time: this.time
     };
+  }
+
+  /**
+   * Para a instância do bot
+   */
+  async stop() {
+    try {
+      this.logger.info('Parando bot...');
+      
+      this.isRunning = false;
+      
+      // Para intervalos de análise
+      if (this.analysisInterval) {
+        clearInterval(this.analysisInterval);
+        this.analysisInterval = null;
+      }
+      
+      // Para intervalos de monitoramento
+      if (this.monitoringInterval) {
+        clearInterval(this.monitoringInterval);
+        this.monitoringInterval = null;
+      }
+      
+      // Para monitoramento de fills
+      if (this.fillMonitoringInterval) {
+        clearInterval(this.fillMonitoringInterval);
+        this.fillMonitoringInterval = null;
+      }
+      
+      this.logger.success('Bot parado com sucesso');
+      
+    } catch (error) {
+      this.logger.error('Erro ao parar bot:', error.message);
+      throw error;
+    }
   }
 
   /**

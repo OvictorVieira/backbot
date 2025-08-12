@@ -8,7 +8,8 @@ import PositionTrackingService from './PositionTrackingService.js';
  * Serviço para sincronizar posições e detectar fechamentos automáticos
  */
 class PositionSyncService {
-  constructor() {
+  constructor(dbService) {
+    this.dbService = dbService;
     this.syncIntervals = new Map(); // botId -> intervalId
     this.lastSyncTimes = new Map(); // botId -> lastSyncTime
   }
@@ -77,10 +78,12 @@ class PositionSyncService {
       Logger.info(`🔄 [POSITION_SYNC] Usando novo sistema de rastreamento de posições`);
       
       // 1. Rastreia posições usando o novo sistema
-      const trackingResult = await PositionTrackingService.trackBotPositions(botId, config);
+      const positionTracker = new PositionTrackingService(this.dbService);
+      const trackingResult = await positionTracker.trackBotPositions(botId, config);
       
-      // 2. Busca posições abertas da corretora para comparação
-      const openPositions = await this.getOpenPositions(config);
+      // 2. Busca posições abertas APENAS do bot (não da exchange)
+      // Usando apenas posições rastreadas pelo próprio bot para evitar interferir com trading manual
+      const botOpenPositions = trackingResult.reconstructedPositions.filter(pos => pos.status === 'OPEN');
       
       // 3. Detecta fechamentos automáticos baseado no novo sistema
       const closedPositions = await this.detectClosedPositionsNew(botId, config, trackingResult);
@@ -141,10 +144,21 @@ class PositionSyncService {
   }
 
   /**
-   * Busca posições abertas da corretora
+   * [DESABILITADO] Busca posições abertas da corretora
+   * 
+   * MOTIVO: Este método busca TODAS as posições da conta, incluindo posições manuais.
+   * Isso pode causar interferência entre o bot e trading manual.
+   * 
+   * NOVA ABORDAGEM: Usar apenas posições da tabela 'positions' (criadas pelos fills do próprio bot)
+   * 
    * @param {object} config - Configuração do bot
    */
   async getOpenPositions(config) {
+    Logger.warn('⚠️ [POSITION_SYNC] getOpenPositions foi desabilitado - usando apenas posições do bot');
+    return [];
+    
+    // Código original comentado:
+    /*
     try {
       const positions = await Futures.getOpenPositions(config.apiKey, config.apiSecret);
       return positions || [];
@@ -153,6 +167,7 @@ class PositionSyncService {
       Logger.error(`❌ [POSITION_SYNC] Erro ao buscar posições abertas:`, error.message);
       return [];
     }
+    */
   }
 
   /**
@@ -414,7 +429,8 @@ class PositionSyncService {
   async updateBotStatistics(botId, config) {
     try {
       // Usa o novo sistema para obter estatísticas atualizadas
-      const trackingResult = await PositionTrackingService.trackBotPositions(botId, config);
+      const positionTracker = new PositionTrackingService(this.dbService);
+      const trackingResult = await positionTracker.trackBotPositions(botId, config);
       const { performanceMetrics } = trackingResult;
       
       Logger.info(`📊 [POSITION_SYNC] Estatísticas atualizadas para bot ${botId}:`);
@@ -500,4 +516,4 @@ class PositionSyncService {
   }
 }
 
-export default new PositionSyncService();
+export default PositionSyncService;

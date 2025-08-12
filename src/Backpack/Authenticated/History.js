@@ -276,36 +276,36 @@ class History {
     try {
       const { days = 90, limit = 1000 } = options;
       
-      console.log(`🔍 [ANALYZE] Iniciando análise para botClientOrderId: ${botClientOrderId}`);
-      console.log(`🔍 [ANALYZE] Opções:`, { days, limit });
+      Logger.debug(`🔍 [ANALYZE] Iniciando análise para botClientOrderId: ${botClientOrderId}`);
+      Logger.debug(`🔍 [ANALYZE] Opções:`, { days, limit });
       
       // Buscar fills da Backpack (fonte única de dados)
       let fills = [];
       if (apiKey && apiSecret) {
         try {
-          console.log(`🔍 [ANALYZE] Buscando fills da Backpack...`);
+          Logger.debug(`🔍 [ANALYZE] Buscando fills da Backpack...`);
           const fillsData = await this.getFillHistory(null, null, null, null, limit, null, null, null, null, apiKey, apiSecret);
           
-          console.log(`🔍 [ANALYZE] Fills brutos recebidos da Backpack:`, {
+          Logger.debug(`🔍 [ANALYZE] Fills brutos recebidos da Backpack:`, {
             total: fillsData ? fillsData.length : 0,
             sample: fillsData && fillsData.length > 0 ? fillsData[0] : null
           });
           
           if (fillsData && Array.isArray(fillsData)) {
             // Filtrar fills que pertencem ao bot usando clientId
-            console.log(`🔍 [ANALYZE] Filtrando fills para botClientOrderId: ${botClientOrderId}`);
+            Logger.debug(`🔍 [ANALYZE] Filtrando fills para botClientOrderId: ${botClientOrderId}`);
             fills = this.filterBotFillsByClientId(fillsData, botClientOrderId);
-            console.log(`🔍 [ANALYZE] Fills filtrados para o bot:`, {
+            Logger.debug(`🔍 [ANALYZE] Fills filtrados para o bot:`, {
               total: fills.length,
               sample: fills.length > 0 ? fills[0] : null
             });
           }
         } catch (error) {
-          console.log(`⚠️ [ANALYZE] Erro ao buscar fills da Backpack: ${error.message}`);
+          Logger.debug(`⚠️ [ANALYZE] Erro ao buscar fills da Backpack: ${error.message}`);
           fills = [];
         }
       } else {
-        console.log(`ℹ️ [ANALYZE] Sem credenciais da API, não é possível buscar dados da Backpack`);
+        Logger.debug(`ℹ️ [ANALYZE] Sem credenciais da API, não é possível buscar dados da Backpack`);
         fills = [];
       }
       
@@ -318,9 +318,9 @@ class History {
         try {
           const positionsData = await Futures.getOpenPositions(apiKey, apiSecret);
           activePositions = positionsData || [];
-          console.log(`📊 [ANALYZE] Posições ativas da Backpack: ${activePositions.length}`);
+          Logger.debug(`📊 [ANALYZE] Posições ativas da Backpack: ${activePositions.length}`);
         } catch (error) {
-          console.log(`⚠️ [ANALYZE] Erro ao buscar posições ativas: ${error.message}`);
+          Logger.debug(`⚠️ [ANALYZE] Erro ao buscar posições ativas: ${error.message}`);
         }
       }
       
@@ -331,10 +331,10 @@ class History {
       const closedPositions = positions.filter(pos => pos.isClosed);
       const openPositions = positions.filter(pos => !pos.isClosed);
       
-      console.log(`✅ Posições fechadas: ${closedPositions.length}, Abertas: ${openPositions.length}`);
-      console.log(`📊 [ANALYSIS] Total de posições: ${positions.length}`);
-      console.log(`📊 [ANALYSIS] Posições fechadas: ${closedPositions.length}`);
-      console.log(`📊 [ANALYSIS] Posições abertas: ${openPositions.length}`);
+      Logger.debug(`✅ Posições fechadas: ${closedPositions.length}, Abertas: ${openPositions.length}`);
+      Logger.debug(`📊 [ANALYSIS] Total de posições: ${positions.length}`);
+      Logger.debug(`📊 [ANALYSIS] Posições fechadas: ${closedPositions.length}`);
+      Logger.debug(`📊 [ANALYSIS] Posições abertas: ${openPositions.length}`);
       
       return {
         botClientOrderId,
@@ -375,8 +375,8 @@ class History {
     const filteredFills = [];
     const botClientOrderIdStr = botClientOrderId ? botClientOrderId.toString() : '';
     
-    console.log(`🔍 [FILTER] Filtrando fills para botClientOrderId: ${botClientOrderId}`);
-    console.log(`🔍 [FILTER] Total de fills para filtrar: ${fills.length}`);
+    Logger.debug(`🔍 [FILTER] Filtrando fills para botClientOrderId: ${botClientOrderId}`);
+    Logger.debug(`🔍 [FILTER] Total de fills para filtrar: ${fills.length}`);
     
     let fillsWithClientId = 0;
     let fillsWithoutClientId = 0;
@@ -400,7 +400,7 @@ class History {
       if (matches) {
         fillsMatched++;
         filteredFills.push(fill);
-        console.log(`✅ [FILTER] Fill encontrado:`, {
+        Logger.debug(`✅ [FILTER] Fill encontrado:`, {
           symbol: fill.symbol,
           side: fill.side,
           quantity: fill.quantity,
@@ -411,7 +411,7 @@ class History {
       }
     }
     
-    console.log(`🔍 [FILTER] Resumo da filtragem:`, {
+    Logger.debug(`🔍 [FILTER] Resumo da filtragem:`, {
       totalFills: fills.length,
       fillsWithClientId,
       fillsWithoutClientId,
@@ -433,10 +433,10 @@ class History {
    * Cria posições abertas baseadas nas ordens importadas
    */
   async createOpenPositionsFromImportedOrders(botId) {
-    console.log(`🔍 [CREATE_POSITIONS] INICIANDO - Bot ${botId}`);
+    Logger.debug(`🔍 [CREATE_POSITIONS] INICIANDO - Bot ${botId}`);
     const orders = await BotOrdersManager.getBotOrders(botId);
-    console.log(`🔍 [CREATE_POSITIONS] Encontradas ${orders.length} ordens para Bot ${botId}`);
-    console.log(`🔍 [CREATE_POSITIONS] Primeira ordem:`, orders[0]);
+    Logger.debug(`🔍 [CREATE_POSITIONS] Encontradas ${orders.length} ordens para Bot ${botId}`);
+    Logger.debug(`🔍 [CREATE_POSITIONS] Primeira ordem:`, orders[0]);
     
     const openPositions = [];
     
@@ -445,11 +445,11 @@ class History {
     
     // Primeiro, vamos listar todas as ordens POSITION_IMPORT
     const positionImportOrders = orders.filter(order => order.orderType === 'POSITION_IMPORT' && order.quantity > 0);
-    console.log(`📊 [CREATE_POSITIONS] Ordens POSITION_IMPORT encontradas:`, positionImportOrders.map(o => ({ symbol: o.symbol, quantity: o.quantity, side: o.side })));
-    console.log(`📊 [CREATE_POSITIONS] Todas as ordens:`, orders.map(o => ({ orderType: o.orderType, symbol: o.symbol, quantity: o.quantity, side: o.side })));
+    Logger.debug(`📊 [CREATE_POSITIONS] Ordens POSITION_IMPORT encontradas:`, positionImportOrders.map(o => ({ symbol: o.symbol, quantity: o.quantity, side: o.side })));
+    Logger.debug(`📊 [CREATE_POSITIONS] Todas as ordens:`, orders.map(o => ({ orderType: o.orderType, symbol: o.symbol, quantity: o.quantity, side: o.side })));
     
     for (const order of orders) {
-      console.log(`🔍 [CREATE_POSITIONS] Processando ordem:`, {
+      Logger.debug(`🔍 [CREATE_POSITIONS] Processando ordem:`, {
         orderType: order.orderType,
         symbol: order.symbol,
         quantity: order.quantity,
@@ -458,7 +458,7 @@ class History {
       
       if (order.orderType === 'POSITION_IMPORT' && order.quantity > 0) {
         positionImportCount++;
-        console.log(`✅ [CREATE_POSITIONS] Encontrada ordem POSITION_IMPORT #${positionImportCount}: ${order.symbol}`);
+        Logger.debug(`✅ [CREATE_POSITIONS] Encontrada ordem POSITION_IMPORT #${positionImportCount}: ${order.symbol}`);
         
         // Cria uma posição separada para cada ordem
         const position = {
@@ -480,14 +480,14 @@ class History {
         };
         
         openPositions.push(position);
-        console.log(`✅ [CREATE_POSITIONS] Posição criada: ${order.symbol} - ${order.quantity} @ ${order.price}`);
+        Logger.debug(`✅ [CREATE_POSITIONS] Posição criada: ${order.symbol} - ${order.quantity} @ ${order.price}`);
       }
     }
     
-    console.log(`📊 [CREATE_POSITIONS] Total de ordens POSITION_IMPORT processadas: ${positionImportCount}`);
+    Logger.debug(`📊 [CREATE_POSITIONS] Total de ordens POSITION_IMPORT processadas: ${positionImportCount}`);
     
-    console.log(`📊 [CREATE_POSITIONS] Total de posições criadas: ${openPositions.length}`);
-    console.log(`📊 [CREATE_POSITIONS] Símbolos das posições:`, openPositions.map(p => p.symbol));
+    Logger.debug(`📊 [CREATE_POSITIONS] Total de posições criadas: ${openPositions.length}`);
+    Logger.debug(`📊 [CREATE_POSITIONS] Símbolos das posições:`, openPositions.map(p => p.symbol));
     
     return openPositions;
   }

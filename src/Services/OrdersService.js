@@ -1,6 +1,431 @@
+import Order from '../Backpack/Authenticated/Order.js';
 import DatabaseService from './DatabaseService.js';
+import Logger from '../Utils/Logger.js';
 
+/**
+ * OrdersService - Centralizador de toda lógica de criação de ordens
+ * 
+ * Este serviço encapsula toda a complexidade da criação de diferentes tipos de ordem,
+ * sendo o único ponto no sistema responsável por interagir com a API da exchange.
+ */
 class OrdersService {
+  /**
+   * @param {Object} backpackOrderClient - Cliente da API da Backpack (Order)
+   * @param {DatabaseService} dbService - Instância do DatabaseService
+   */
+  constructor(backpackOrderClient = null, dbService = null) {
+    this.orderClient = backpackOrderClient || Order;
+    this.dbService = dbService;
+  }
+
+  /**
+   * Cria uma ordem de mercado
+   * @param {Object} params - Parâmetros da ordem
+   * @param {string} params.symbol - Símbolo do mercado (ex: 'SOL_USDC')
+   * @param {string} params.side - Lado da ordem ('Bid' ou 'Ask')
+   * @param {string} params.quantity - Quantidade da ordem
+   * @param {number} params.clientId - ID único da ordem
+   * @param {string} params.apiKey - API Key da conta
+   * @param {string} params.apiSecret - API Secret da conta
+   * @param {Object} params.additionalParams - Parâmetros adicionais opcionais
+   * @returns {Promise<Object>} Resultado da criação da ordem
+   */
+  async createMarketOrder(params) {
+    try {
+      const {
+        symbol,
+        side,
+        quantity,
+        clientId,
+        apiKey,
+        apiSecret,
+        additionalParams = {}
+      } = params;
+
+      if (!symbol || !side || !quantity || !clientId) {
+        throw new Error('Parâmetros obrigatórios faltando: symbol, side, quantity, clientId');
+      }
+
+      const orderBody = {
+        symbol,
+        side,
+        quantity: quantity.toString(),
+        orderType: 'Market',
+        clientId,
+        timeInForce: 'IOC', // Immediate or Cancel para market orders
+        selfTradePrevention: 'RejectTaker',
+        ...additionalParams
+      };
+
+      Logger.info(`📦 [ORDERS_SERVICE] Criando ordem MARKET: ${symbol} ${side} ${quantity}`);
+      
+      const result = await this.orderClient.executeOrder(orderBody, apiKey, apiSecret);
+      
+      if (result && !result.error) {
+        Logger.info(`✅ [ORDERS_SERVICE] Ordem MARKET criada com sucesso: ${result.id || result.orderId}`);
+        
+        // Persiste a ordem no banco se dbService estiver disponível
+        await this._persistOrder({
+          externalOrderId: result.id || result.orderId,
+          symbol,
+          side,
+          quantity,
+          orderType: 'MARKET',
+          status: 'EXECUTED',
+          clientId
+        });
+      } else {
+        Logger.error(`❌ [ORDERS_SERVICE] Falha ao criar ordem MARKET: ${result?.error}`);
+      }
+
+      return result;
+    } catch (error) {
+      Logger.error(`❌ [ORDERS_SERVICE] Erro ao criar ordem MARKET:`, error.message);
+      return { error: error.message };
+    }
+  }
+
+  /**
+   * Cria uma ordem limite
+   * @param {Object} params - Parâmetros da ordem
+   * @param {string} params.symbol - Símbolo do mercado
+   * @param {string} params.side - Lado da ordem
+   * @param {string} params.quantity - Quantidade da ordem
+   * @param {string} params.price - Preço limite da ordem
+   * @param {number} params.clientId - ID único da ordem
+   * @param {string} params.apiKey - API Key da conta
+   * @param {string} params.apiSecret - API Secret da conta
+   * @param {Object} params.additionalParams - Parâmetros adicionais opcionais
+   * @returns {Promise<Object>} Resultado da criação da ordem
+   */
+  async createLimitOrder(params) {
+    try {
+      const {
+        symbol,
+        side,
+        quantity,
+        price,
+        clientId,
+        apiKey,
+        apiSecret,
+        additionalParams = {}
+      } = params;
+
+      if (!symbol || !side || !quantity || !price || !clientId) {
+        throw new Error('Parâmetros obrigatórios faltando: symbol, side, quantity, price, clientId');
+      }
+
+      const orderBody = {
+        symbol,
+        side,
+        quantity: quantity.toString(),
+        price: price.toString(),
+        orderType: 'Limit',
+        clientId,
+        timeInForce: 'GTC',
+        postOnly: true, // Para minimizar taxas
+        selfTradePrevention: 'RejectTaker',
+        ...additionalParams
+      };
+
+      Logger.info(`📦 [ORDERS_SERVICE] Criando ordem LIMIT: ${symbol} ${side} ${quantity} @ ${price}`);
+      
+      const result = await this.orderClient.executeOrder(orderBody, apiKey, apiSecret);
+      
+      if (result && !result.error) {
+        Logger.info(`✅ [ORDERS_SERVICE] Ordem LIMIT criada com sucesso: ${result.id || result.orderId}`);
+        
+        // Persiste a ordem no banco se dbService estiver disponível
+        await this._persistOrder({
+          externalOrderId: result.id || result.orderId,
+          symbol,
+          side,
+          quantity,
+          price,
+          orderType: 'LIMIT',
+          status: 'PENDING',
+          clientId
+        });
+      } else {
+        Logger.error(`❌ [ORDERS_SERVICE] Falha ao criar ordem LIMIT: ${result?.error}`);
+      }
+
+      return result;
+    } catch (error) {
+      Logger.error(`❌ [ORDERS_SERVICE] Erro ao criar ordem LIMIT:`, error.message);
+      return { error: error.message };
+    }
+  }
+
+  /**
+   * Cria uma ordem de Take Profit
+   * @param {Object} params - Parâmetros da ordem
+   * @param {string} params.symbol - Símbolo do mercado
+   * @param {string} params.side - Lado da ordem (oposto à posição)
+   * @param {string} params.quantity - Quantidade da ordem
+   * @param {string} params.takeProfitTriggerPrice - Preço de trigger do take profit
+   * @param {string} params.takeProfitLimitPrice - Preço limite do take profit
+   * @param {number} params.clientId - ID único da ordem
+   * @param {string} params.apiKey - API Key da conta
+   * @param {string} params.apiSecret - API Secret da conta
+   * @param {Object} params.additionalParams - Parâmetros adicionais opcionais
+   * @returns {Promise<Object>} Resultado da criação da ordem
+   */
+  async createTakeProfitOrder(params) {
+    try {
+      const {
+        symbol,
+        side,
+        quantity,
+        takeProfitTriggerPrice,
+        takeProfitLimitPrice,
+        clientId,
+        apiKey,
+        apiSecret,
+        additionalParams = {}
+      } = params;
+
+      if (!symbol || !side || !quantity || !takeProfitTriggerPrice || !takeProfitLimitPrice || !clientId) {
+        throw new Error('Parâmetros obrigatórios faltando: symbol, side, quantity, takeProfitTriggerPrice, takeProfitLimitPrice, clientId');
+      }
+
+      const orderBody = {
+        symbol,
+        side,
+        quantity: quantity.toString(),
+        orderType: 'Limit',
+        clientId,
+        timeInForce: 'GTC',
+        reduceOnly: true,
+        selfTradePrevention: 'RejectTaker',
+        takeProfitTriggerPrice: takeProfitTriggerPrice.toString(),
+        takeProfitLimitPrice: takeProfitLimitPrice.toString(),
+        takeProfitTriggerBy: 'MarkPrice',
+        ...additionalParams
+      };
+
+      Logger.info(`📦 [ORDERS_SERVICE] Criando ordem TAKE PROFIT: ${symbol} ${side} ${quantity} @ trigger: ${takeProfitTriggerPrice}, limit: ${takeProfitLimitPrice}`);
+      
+      const result = await this.orderClient.executeOrder(orderBody, apiKey, apiSecret);
+      
+      if (result && !result.error) {
+        Logger.info(`✅ [ORDERS_SERVICE] Ordem TAKE PROFIT criada com sucesso: ${result.id || result.orderId}`);
+        
+        // Persiste a ordem no banco se dbService estiver disponível
+        await this._persistOrder({
+          externalOrderId: result.id || result.orderId,
+          symbol,
+          side,
+          quantity,
+          price: takeProfitLimitPrice,
+          orderType: 'TAKE_PROFIT',
+          status: 'PENDING',
+          clientId
+        });
+      } else {
+        Logger.error(`❌ [ORDERS_SERVICE] Falha ao criar ordem TAKE PROFIT: ${result?.error}`);
+      }
+
+      return result;
+    } catch (error) {
+      Logger.error(`❌ [ORDERS_SERVICE] Erro ao criar ordem TAKE PROFIT:`, error.message);
+      return { error: error.message };
+    }
+  }
+
+  /**
+   * Cria uma ordem de Stop Loss
+   * @param {Object} params - Parâmetros da ordem
+   * @param {string} params.symbol - Símbolo do mercado
+   * @param {string} params.side - Lado da ordem (oposto à posição)
+   * @param {string} params.quantity - Quantidade da ordem
+   * @param {string} params.stopLossTriggerPrice - Preço de trigger do stop loss
+   * @param {string} params.stopLossLimitPrice - Preço limite do stop loss (opcional, usa Market se não fornecido)
+   * @param {number} params.clientId - ID único da ordem
+   * @param {string} params.apiKey - API Key da conta
+   * @param {string} params.apiSecret - API Secret da conta
+   * @param {Object} params.additionalParams - Parâmetros adicionais opcionais
+   * @returns {Promise<Object>} Resultado da criação da ordem
+   */
+  async createStopLossOrder(params) {
+    try {
+      const {
+        symbol,
+        side,
+        quantity,
+        stopLossTriggerPrice,
+        stopLossLimitPrice = null,
+        clientId,
+        apiKey,
+        apiSecret,
+        additionalParams = {}
+      } = params;
+
+      if (!symbol || !side || !quantity || !stopLossTriggerPrice || !clientId) {
+        throw new Error('Parâmetros obrigatórios faltando: symbol, side, quantity, stopLossTriggerPrice, clientId');
+      }
+
+      const orderBody = {
+        symbol,
+        side,
+        quantity: quantity.toString(),
+        orderType: stopLossLimitPrice ? 'Limit' : 'Market',
+        clientId,
+        timeInForce: 'GTC',
+        reduceOnly: true,
+        selfTradePrevention: 'RejectTaker',
+        stopLossTriggerPrice: stopLossTriggerPrice.toString(),
+        stopLossTriggerBy: 'MarkPrice',
+        ...additionalParams
+      };
+
+      // Adiciona limite apenas se fornecido
+      if (stopLossLimitPrice) {
+        orderBody.stopLossLimitPrice = stopLossLimitPrice.toString();
+      }
+
+      Logger.info(`📦 [ORDERS_SERVICE] Criando ordem STOP LOSS: ${symbol} ${side} ${quantity} @ trigger: ${stopLossTriggerPrice}${stopLossLimitPrice ? `, limit: ${stopLossLimitPrice}` : ' (MARKET)'}`);
+      
+      const result = await this.orderClient.executeOrder(orderBody, apiKey, apiSecret);
+      
+      if (result && !result.error) {
+        Logger.info(`✅ [ORDERS_SERVICE] Ordem STOP LOSS criada com sucesso: ${result.id || result.orderId}`);
+        
+        // Persiste a ordem no banco se dbService estiver disponível
+        await this._persistOrder({
+          externalOrderId: result.id || result.orderId,
+          symbol,
+          side,
+          quantity,
+          price: stopLossLimitPrice || stopLossTriggerPrice,
+          orderType: 'STOP_LOSS',
+          status: 'PENDING',
+          clientId
+        });
+      } else {
+        Logger.error(`❌ [ORDERS_SERVICE] Falha ao criar ordem STOP LOSS: ${result?.error}`);
+      }
+
+      return result;
+    } catch (error) {
+      Logger.error(`❌ [ORDERS_SERVICE] Erro ao criar ordem STOP LOSS:`, error.message);
+      return { error: error.message };
+    }
+  }
+
+  /**
+   * Cria uma ordem de fechamento parcial de posição
+   * @param {Object} params - Parâmetros da ordem
+   * @param {string} params.symbol - Símbolo do mercado
+   * @param {string} params.side - Lado da ordem (oposto à posição)
+   * @param {string} params.quantity - Quantidade da ordem
+   * @param {string} params.price - Preço da ordem (opcional, usa Market se não fornecido)
+   * @param {number} params.clientId - ID único da ordem
+   * @param {string} params.apiKey - API Key da conta
+   * @param {string} params.apiSecret - API Secret da conta
+   * @param {Object} params.additionalParams - Parâmetros adicionais opcionais
+   * @returns {Promise<Object>} Resultado da criação da ordem
+   */
+  async createPartialCloseOrder(params) {
+    try {
+      const {
+        symbol,
+        side,
+        quantity,
+        price = null,
+        clientId,
+        apiKey,
+        apiSecret,
+        additionalParams = {}
+      } = params;
+
+      if (!symbol || !side || !quantity || !clientId) {
+        throw new Error('Parâmetros obrigatórios faltando: symbol, side, quantity, clientId');
+      }
+
+      const orderBody = {
+        symbol,
+        side,
+        quantity: quantity.toString(),
+        orderType: price ? 'Limit' : 'Market',
+        clientId,
+        timeInForce: price ? 'GTC' : 'IOC',
+        reduceOnly: true,
+        selfTradePrevention: 'RejectTaker',
+        ...additionalParams
+      };
+
+      // Adiciona preço apenas se fornecido
+      if (price) {
+        orderBody.price = price.toString();
+        orderBody.postOnly = true; // Para minimizar taxas em ordens limit
+      }
+
+      Logger.info(`📦 [ORDERS_SERVICE] Criando ordem FECHAMENTO PARCIAL: ${symbol} ${side} ${quantity}${price ? ` @ ${price}` : ' (MARKET)'}`);
+      
+      const result = await this.orderClient.executeOrder(orderBody, apiKey, apiSecret);
+      
+      if (result && !result.error) {
+        Logger.info(`✅ [ORDERS_SERVICE] Ordem FECHAMENTO PARCIAL criada com sucesso: ${result.id || result.orderId}`);
+        
+        // Persiste a ordem no banco se dbService estiver disponível
+        await this._persistOrder({
+          externalOrderId: result.id || result.orderId,
+          symbol,
+          side,
+          quantity,
+          price: price,
+          orderType: 'PARTIAL_CLOSE',
+          status: price ? 'PENDING' : 'EXECUTED',
+          clientId
+        });
+      } else {
+        Logger.error(`❌ [ORDERS_SERVICE] Falha ao criar ordem FECHAMENTO PARCIAL: ${result?.error}`);
+      }
+
+      return result;
+    } catch (error) {
+      Logger.error(`❌ [ORDERS_SERVICE] Erro ao criar ordem FECHAMENTO PARCIAL:`, error.message);
+      return { error: error.message };
+    }
+  }
+
+  /**
+   * Método privado para persistir ordem no banco de dados
+   * @param {Object} orderData - Dados da ordem para persistir
+   * @private
+   */
+  async _persistOrder(orderData) {
+    if (!this.dbService) {
+      Logger.debug('💾 [ORDERS_SERVICE] DatabaseService não disponível, ordem não persistida');
+      return;
+    }
+
+    try {
+      const orderToSave = {
+        externalOrderId: orderData.externalOrderId,
+        symbol: orderData.symbol,
+        side: orderData.side,
+        quantity: orderData.quantity,
+        price: orderData.price,
+        orderType: orderData.orderType,
+        status: orderData.status,
+        clientId: orderData.clientId,
+        timestamp: new Date().toISOString(),
+        exchangeCreatedAt: new Date().toISOString()
+      };
+
+      await this.addOrder(orderToSave);
+      Logger.debug(`💾 [ORDERS_SERVICE] Ordem persistida no banco: ${orderData.externalOrderId}`);
+    } catch (error) {
+      Logger.warn(`⚠️ [ORDERS_SERVICE] Falha ao persistir ordem no banco: ${error.message}`);
+    }
+  }
+
+  // ============================================================================
+  // MÉTODOS DE PERSISTÊNCIA (compatibilidade com o OrdersService original)
+  // ============================================================================
+
   static dbService = null;
 
   /**
@@ -23,8 +448,8 @@ class OrdersService {
       }
 
       const result = await OrdersService.dbService.run(
-        `INSERT INTO bot_orders (botId, externalOrderId, symbol, side, quantity, price, orderType, timestamp, status, exchangeCreatedAt, closePrice, closeTime, closeQuantity, closeType, pnl, pnlPct) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO bot_orders (botId, externalOrderId, symbol, side, quantity, price, orderType, timestamp, status, clientId, exchangeCreatedAt, closePrice, closeTime, closeQuantity, closeType, pnl, pnlPct) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           order.botId,
           order.externalOrderId,
@@ -35,6 +460,7 @@ class OrdersService {
           order.orderType,
           order.timestamp || new Date().toISOString(),
           order.status || 'PENDING',
+          order.clientId || null,
           order.exchangeCreatedAt || null,
           order.closePrice || null,
           order.closeTime || null,
@@ -52,6 +478,17 @@ class OrdersService {
       throw error;
     }
   }
+
+  /**
+   * Método de instância para adicionar ordem (compatibilidade)
+   */
+  async addOrder(order) {
+    return OrdersService.addOrder(order);
+  }
+
+  // ============================================================================
+  // OUTROS MÉTODOS ESTÁTICOS (mantidos para compatibilidade)
+  // ============================================================================
 
   /**
    * Obtém ordens de um bot específico
@@ -77,287 +514,6 @@ class OrdersService {
   }
 
   /**
-   * Obtém ordens de um símbolo específico
-   * @param {string} symbol - Símbolo do mercado
-   * @returns {Array} Array de ordens do símbolo
-   */
-  static async getOrdersBySymbol(symbol) {
-    try {
-      if (!OrdersService.dbService || !OrdersService.dbService.isInitialized()) {
-        throw new Error('Database service not initialized');
-      }
-
-      const orders = await OrdersService.dbService.getAll(
-        'SELECT * FROM bot_orders WHERE symbol = ? ORDER BY timestamp DESC',
-        [symbol]
-      );
-
-      return orders;
-    } catch (error) {
-      console.error(`❌ [ORDERS_SERVICE] Erro ao obter ordens do símbolo ${symbol}:`, error.message);
-      return [];
-    }
-  }
-
-  /**
-   * Obtém ordens por período
-   * @param {Date} startDate - Data de início
-   * @param {Date} endDate - Data de fim
-   * @returns {Array} Array de ordens no período
-   */
-  static async getOrdersByPeriod(startDate, endDate) {
-    try {
-      if (!OrdersService.dbService || !OrdersService.dbService.isInitialized()) {
-        throw new Error('Database service not initialized');
-      }
-
-      const orders = await OrdersService.dbService.getAll(
-        'SELECT * FROM bot_orders WHERE timestamp BETWEEN ? AND ? ORDER BY timestamp DESC',
-        [startDate.toISOString(), endDate.toISOString()]
-      );
-
-      return orders;
-    } catch (error) {
-      console.error(`❌ [ORDERS_SERVICE] Erro ao obter ordens por período:`, error.message);
-      return [];
-    }
-  }
-
-  /**
-   * Obtém estatísticas das ordens
-   * @returns {Object} Estatísticas das ordens
-   */
-  static async getStats() {
-    try {
-      if (!OrdersService.dbService || !OrdersService.dbService.isInitialized()) {
-        throw new Error('Database service not initialized');
-      }
-
-      const orders = await OrdersService.dbService.getAll('SELECT * FROM bot_orders');
-      
-      if (orders.length === 0) {
-        return {
-          total: 0,
-          byBot: {},
-          bySymbol: {},
-          byType: {},
-          bySide: {}
-        };
-      }
-
-      // Estatísticas por bot
-      const byBot = {};
-      const bySymbol = {};
-      const byType = {};
-      const bySide = {};
-      
-      orders.forEach(order => {
-        // Por bot
-        byBot[order.botId] = (byBot[order.botId] || 0) + 1;
-        
-        // Por símbolo
-        bySymbol[order.symbol] = (bySymbol[order.symbol] || 0) + 1;
-        
-        // Por tipo
-        byType[order.orderType] = (byType[order.orderType] || 0) + 1;
-        
-        // Por lado
-        bySide[order.side] = (bySide[order.side] || 0) + 1;
-      });
-      
-      return {
-        total: orders.length,
-        byBot,
-        bySymbol,
-        byType,
-        bySide,
-        oldestOrder: orders.reduce((oldest, order) => 
-          new Date(order.timestamp) < new Date(oldest.timestamp) ? order : oldest
-        ),
-        newestOrder: orders.reduce((newest, order) => 
-          new Date(order.timestamp) > new Date(newest.timestamp) ? order : newest
-        )
-      };
-    } catch (error) {
-      console.error(`❌ [ORDERS_SERVICE] Erro ao obter estatísticas:`, error.message);
-      return {
-        total: 0,
-        byBot: {},
-        bySymbol: {},
-        byType: {},
-        bySide: {}
-      };
-    }
-  }
-
-  /**
-   * Remove ordens antigas (mais de X dias)
-   * @param {number} daysToKeep - Número de dias para manter
-   * @returns {number} Número de ordens removidas
-   */
-  static async cleanupOldOrders(daysToKeep = 30) {
-    try {
-      if (!OrdersService.dbService || !OrdersService.dbService.isInitialized()) {
-        throw new Error('Database service not initialized');
-      }
-
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
-
-      const result = await OrdersService.dbService.run(
-        'DELETE FROM bot_orders WHERE exchangeCreatedAt < ? OR (exchangeCreatedAt IS NULL AND timestamp < ?)',
-        [cutoffDate.toISOString(), cutoffDate.toISOString()]
-      );
-
-      if (result.changes > 0) {
-        console.log(`🧹 [ORDERS_SERVICE] ${result.changes} ordens antigas removidas`);
-      }
-
-      return result.changes;
-    } catch (error) {
-      console.error(`❌ [ORDERS_SERVICE] Erro ao limpar ordens antigas:`, error.message);
-      return 0;
-    }
-  }
-
-  /**
-   * Remove todas as ordens
-   * @returns {number} Número de ordens removidas
-   */
-  static async clearAllOrders() {
-    try {
-      if (!OrdersService.dbService || !OrdersService.dbService.isInitialized()) {
-        throw new Error('Database service not initialized');
-      }
-
-      const result = await OrdersService.dbService.run('DELETE FROM bot_orders');
-      
-      console.log(`🧹 [ORDERS_SERVICE] Todas as ${result.changes} ordens removidas`);
-      return result.changes;
-    } catch (error) {
-      console.error(`❌ [ORDERS_SERVICE] Erro ao limpar todas as ordens:`, error.message);
-      return 0;
-    }
-  }
-
-  /**
-   * Remove ordens de um bot específico
-   * @param {number} botId - ID do bot
-   * @returns {number} Número de ordens removidas
-   */
-  static async clearOrdersByBotId(botId) {
-    try {
-      if (!OrdersService.dbService || !OrdersService.dbService.isInitialized()) {
-        throw new Error('Database service not initialized');
-      }
-
-      const result = await OrdersService.dbService.run(
-        'DELETE FROM bot_orders WHERE botId = ?',
-        [botId]
-      );
-
-      if (result.changes > 0) {
-        console.log(`🧹 [ORDERS_SERVICE] ${result.changes} ordens do bot ${botId} removidas`);
-      }
-
-      return result.changes;
-    } catch (error) {
-      console.error(`❌ [ORDERS_SERVICE] Erro ao limpar ordens do bot ${botId}:`, error.message);
-      return 0;
-    }
-  }
-
-  /**
-   * Obtém a última ordem de um bot
-   * @param {number} botId - ID do bot
-   * @returns {Object|null} Última ordem ou null
-   */
-  static async getLastOrderByBotId(botId) {
-    try {
-      if (!OrdersService.dbService || !OrdersService.dbService.isInitialized()) {
-        throw new Error('Database service not initialized');
-      }
-
-      const order = await OrdersService.dbService.get(
-        'SELECT * FROM bot_orders WHERE botId = ? ORDER BY timestamp DESC LIMIT 1',
-        [botId]
-      );
-
-      return order || null;
-    } catch (error) {
-      console.error(`❌ [ORDERS_SERVICE] Erro ao obter última ordem do bot ${botId}:`, error.message);
-      return null;
-    }
-  }
-
-  /**
-   * Obtém ordens por tipo
-   * @param {string} orderType - Tipo da ordem (LIMIT, MARKET, etc.)
-   * @returns {Array} Array de ordens do tipo
-   */
-  static async getOrdersByType(orderType) {
-    try {
-      if (!OrdersService.dbService || !OrdersService.dbService.isInitialized()) {
-        throw new Error('Database service not initialized');
-      }
-
-      const orders = await OrdersService.dbService.getAll(
-        'SELECT * FROM bot_orders WHERE orderType = ? ORDER BY timestamp DESC',
-        [orderType]
-      );
-
-      return orders;
-    } catch (error) {
-      console.error(`❌ [ORDERS_SERVICE] Erro ao obter ordens por tipo ${orderType}:`, error.message);
-      return [];
-    }
-  }
-
-  /**
-   * Obtém ordens por lado
-   * @param {string} side - Lado da ordem (BUY, SELL)
-   * @returns {Array} Array de ordens do lado
-   */
-  static async getOrdersBySide(side) {
-    try {
-      if (!OrdersService.dbService || !OrdersService.dbService.isInitialized()) {
-        throw new Error('Database service not initialized');
-      }
-
-      const orders = await OrdersService.dbService.getAll(
-        'SELECT * FROM bot_orders WHERE side = ? ORDER BY timestamp DESC',
-        [side]
-      );
-
-      return orders;
-    } catch (error) {
-      console.error(`❌ [ORDERS_SERVICE] Erro ao obter ordens por lado ${side}:`, error.message);
-      return [];
-    }
-  }
-
-  /**
-   * Obtém todas as ordens
-   * @returns {Array} Array com todas as ordens
-   */
-  static async getAllOrders() {
-    try {
-      if (!OrdersService.dbService || !OrdersService.dbService.isInitialized()) {
-        throw new Error('Database service not initialized');
-      }
-
-      const orders = await OrdersService.dbService.getAll(
-        'SELECT * FROM bot_orders ORDER BY timestamp DESC'
-      );
-
-      return orders || [];
-    } catch (error) {
-      console.error(`❌ [ORDERS_SERVICE] Erro ao obter todas as ordens:`, error.message);
-      return [];
-    }
-  }
-
-  /**
    * Obtém uma ordem pelo externalOrderId
    * @param {string} externalOrderId - ID externo da ordem
    * @returns {Object|null} Ordem encontrada ou null
@@ -377,33 +533,6 @@ class OrdersService {
     } catch (error) {
       console.error(`❌ [ORDERS_SERVICE] Erro ao obter ordem por externalOrderId ${externalOrderId}:`, error.message);
       return null;
-    }
-  }
-
-  /**
-   * Remove uma ordem pelo externalOrderId
-   * @param {string} externalOrderId - ID externo da ordem
-   * @returns {number} Número de ordens removidas
-   */
-  static async removeOrderByExternalId(externalOrderId) {
-    try {
-      if (!OrdersService.dbService || !OrdersService.dbService.isInitialized()) {
-        throw new Error('Database service not initialized');
-      }
-
-      const result = await OrdersService.dbService.run(
-        'DELETE FROM bot_orders WHERE externalOrderId = ?',
-        [externalOrderId]
-      );
-
-      if (result.changes > 0) {
-        console.log(`🗑️ [ORDERS_SERVICE] Ordem ${externalOrderId} removida`);
-      }
-
-      return result.changes;
-    } catch (error) {
-      console.error(`❌ [ORDERS_SERVICE] Erro ao remover ordem ${externalOrderId}:`, error.message);
-      return 0;
     }
   }
 
@@ -447,6 +576,58 @@ class OrdersService {
       return result.changes;
     } catch (error) {
       console.error(`❌ [ORDERS_SERVICE] Erro ao atualizar ordem ${externalOrderId}:`, error.message);
+      return 0;
+    }
+  }
+
+  // Outros métodos estáticos mantidos para compatibilidade...
+  static async getOrdersBySymbol(symbol) {
+    try {
+      if (!OrdersService.dbService || !OrdersService.dbService.isInitialized()) {
+        throw new Error('Database service not initialized');
+      }
+
+      const orders = await OrdersService.dbService.getAll(
+        'SELECT * FROM bot_orders WHERE symbol = ? ORDER BY timestamp DESC',
+        [symbol]
+      );
+
+      return orders;
+    } catch (error) {
+      console.error(`❌ [ORDERS_SERVICE] Erro ao obter ordens do símbolo ${symbol}:`, error.message);
+      return [];
+    }
+  }
+
+  static async getAllOrders() {
+    try {
+      if (!OrdersService.dbService || !OrdersService.dbService.isInitialized()) {
+        throw new Error('Database service not initialized');
+      }
+
+      const orders = await OrdersService.dbService.getAll(
+        'SELECT * FROM bot_orders ORDER BY timestamp DESC'
+      );
+
+      return orders || [];
+    } catch (error) {
+      console.error(`❌ [ORDERS_SERVICE] Erro ao obter todas as ordens:`, error.message);
+      return [];
+    }
+  }
+
+  static async clearAllOrders() {
+    try {
+      if (!OrdersService.dbService || !OrdersService.dbService.isInitialized()) {
+        throw new Error('Database service not initialized');
+      }
+
+      const result = await OrdersService.dbService.run('DELETE FROM bot_orders');
+      
+      console.log(`🧹 [ORDERS_SERVICE] Todas as ${result.changes} ordens removidas`);
+      return result.changes;
+    } catch (error) {
+      console.error(`❌ [ORDERS_SERVICE] Erro ao limpar todas as ordens:`, error.message);
       return 0;
     }
   }

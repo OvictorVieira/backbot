@@ -85,6 +85,37 @@ class DatabaseService {
         );
       `);
 
+      // Create positions table for position tracking
+      await this.db.exec(`
+        CREATE TABLE IF NOT EXISTS positions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          symbol TEXT NOT NULL,
+          side TEXT NOT NULL,
+          entryPrice REAL NOT NULL,
+          initialQuantity REAL NOT NULL,
+          currentQuantity REAL NOT NULL,
+          pnl REAL DEFAULT 0,
+          status TEXT NOT NULL DEFAULT 'OPEN',
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          botId INTEGER,
+          FOREIGN KEY (botId) REFERENCES bot_configs(id)
+        );
+      `);
+
+      // Create index for better query performance
+      await this.db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_positions_symbol ON positions(symbol);
+      `);
+
+      await this.db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_positions_status ON positions(status);
+      `);
+
+      await this.db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_positions_botId ON positions(botId);
+      `);
+
       // Migra tabela existente se necessário
       await this.migrateBotOrdersTable();
 
