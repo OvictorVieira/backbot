@@ -4212,7 +4212,7 @@ class OrderController {
       }
 
       // Busca histórico de fills (ordens executadas) para este símbolo
-      const History = await import('../Backpack/Authenticated/History.js');
+      const { default: History } = await import('../Backpack/Authenticated/History.js');
       const fills = await History.getFillHistory(symbol, null, null, null, 100, 0, null, "PERP", null, config.apiKey, config.apiSecret);
 
       if (!fills || fills.length === 0) {

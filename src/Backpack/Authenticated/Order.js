@@ -4,7 +4,7 @@ import Logger from '../../Utils/Logger.js';
 
 class Order {
 
-  async getOpenOrder(symbol, orderId, clientId) {
+  async getOpenOrder(symbol, orderId, clientId, apiKey = null, apiSecret = null) {
     const timestamp = Date.now();
 
      if (!symbol) {
@@ -26,7 +26,9 @@ class Order {
     const headers = auth({
       instruction: 'orderQuery',
       timestamp,
-      params
+      params,
+      apiKey,
+      apiSecret
     });
 
     try {

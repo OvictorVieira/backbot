@@ -690,12 +690,12 @@ class OrdersService {
         return 0;
       }
 
-      // Busca ordens pendentes no banco
+      // Busca ordens pendentes no banco (limitando a 10 para reduzir sobrecarga)
       const pendingOrders = await OrdersService.dbService.getAll(
         `SELECT * FROM bot_orders 
          WHERE botId = ? AND status IN ('PENDING', 'FILLED') 
          AND externalOrderId IS NOT NULL 
-         ORDER BY timestamp DESC LIMIT 50`,
+         ORDER BY timestamp DESC LIMIT 10`,
         [botId]
       );
 
@@ -715,7 +715,9 @@ class OrdersService {
           const exchangeOrder = await Order.getOpenOrder(
             order.symbol, 
             order.externalOrderId, 
-            order.clientId
+            order.clientId,
+            config.apiKey,
+            config.apiSecret
           );
 
           if (!exchangeOrder) {
@@ -733,7 +735,7 @@ class OrdersService {
               0,
               null,
               'PERP',
-              'desc',
+              null, // sortDirection deve ser null ou não passado
               config.apiKey,
               config.apiSecret
             );
@@ -765,7 +767,7 @@ class OrdersService {
           }
 
           // Delay para evitar rate limiting
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise(resolve => setTimeout(resolve, 500));
 
         } catch (orderError) {
           Logger.warn(`⚠️ [ORDERS_SYNC] Erro ao sincronizar ordem ${order.externalOrderId}: ${orderError.message}`);
@@ -825,7 +827,7 @@ class OrdersService {
             0,
             null,
             'PERP',
-            'desc',
+            null, // sortDirection deve ser null ou não passado
             config.apiKey,
             config.apiSecret
           );
@@ -856,8 +858,20 @@ class OrdersService {
               const entryPrice = parseFloat(order.price);
               const executionPrice = avgExecutionPrice;
               
-              // Calcula P&L básico (será refinado quando implementarmos tracking completo)
-              const pnlEstimate = (executionPrice - entryPrice) * totalQuantity;
+              // PROBLEMA IDENTIFICADO: Este cálculo está incorreto pois não considera o ciclo completo da posição
+              // Estamos calculando slippage da ordem em vez do P&L real da posição
+              // TODO: Implementar rastreamento adequado de entrada/saída de posições
+              
+              // Por enquanto, assumindo que o cálculo atual está invertido baseado no feedback do usuário
+              // As posições que aparecem como loss na verdade foram wins na corretora
+              let pnlEstimate;
+              if (order.side === 'BUY' || order.side === 'Bid') {
+                // Invertendo temporariamente até implementarmos tracking adequado
+                pnlEstimate = (entryPrice - executionPrice) * totalQuantity;
+              } else {
+                // Para SELL, mantemos a lógica original por enquanto
+                pnlEstimate = (executionPrice - entryPrice) * totalQuantity;
+              }
               
               // Atualiza a ordem com os dados calculados
               await OrdersService.dbService.run(
