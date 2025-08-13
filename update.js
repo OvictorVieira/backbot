@@ -14,7 +14,7 @@ const __dirname = dirname(__filename);
 // Configurações
 const GITHUB_REPO = 'ovictorvieira/backbot';
 const ZIP_URL = `https://github.com/${GITHUB_REPO}/archive/refs/heads/main.zip`;
-const PRESERVE_ITEMS = ['.env', 'persistence/', 'node_modules/'];
+const PRESERVE_ITEMS = ['.env', 'src/Persistence/', 'node_modules/'];
 const BACKUP_DIR = 'backup_temp';
 const TEMP_DIR = 'temp_update';
 

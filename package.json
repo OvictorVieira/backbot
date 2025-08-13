@@ -8,7 +8,7 @@
     "start:bot": "cross-env NODE_TLS_REJECT_UNAUTHORIZED=0 TRADING_STRATEGY=DEFAULT nodemon bootstrap-app.js",
     "alphaflow": "cross-env NODE_TLS_REJECT_UNAUTHORIZED=0 TRADING_STRATEGY=ALPHA_FLOW nodemon bootstrap-app.js",
     "api": "cross-env NODE_TLS_REJECT_UNAUTHORIZED=0 nodemon app-api.js",
-    "dashboard": "cd dashboard-ui && npm run dev",
+    "dashboard": "cd dashboard-ui && npm install && npm run dev",
     "dashboard:build": "cd dashboard-ui && npm run build",
     "dashboard:install": "cd dashboard-ui && npm install",
     "test:api": "node test-dashboard-api.js",
