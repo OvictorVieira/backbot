@@ -45,9 +45,13 @@ class DatabaseService {
       // Create trailing_state table
       await this.db.exec(`
         CREATE TABLE IF NOT EXISTS trailing_state (
-          symbol TEXT PRIMARY KEY,
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          botId INTEGER NOT NULL,
+          symbol TEXT NOT NULL,
           state TEXT NOT NULL,
-          updatedAt TEXT NOT NULL
+          updatedAt TEXT NOT NULL,
+          UNIQUE(botId, symbol),
+          FOREIGN KEY (botId) REFERENCES bot_configs(botId) ON DELETE CASCADE
         );
       `);
 
@@ -118,6 +122,7 @@ class DatabaseService {
 
       // Migra tabela existente se necessário
       await this.migrateBotOrdersTable();
+      await this.migrateTrailingStateTable();
 
       console.log(`📋 [DATABASE] Tables created successfully`);
     } catch (error) {
@@ -155,6 +160,54 @@ class DatabaseService {
       console.log(`✅ [DATABASE] Migração da tabela bot_orders concluída`);
     } catch (error) {
       console.error(`❌ [DATABASE] Erro na migração da tabela bot_orders:`, error.message);
+    }
+  }
+
+  /**
+   * Migra a tabela trailing_state para incluir botId se necessário
+   */
+  async migrateTrailingStateTable() {
+    try {
+      // Verifica se a tabela tem a estrutura antiga (só com symbol, state, updatedAt)
+      const tableInfo = await this.getAll("PRAGMA table_info(trailing_state)");
+      const columnNames = tableInfo.map(col => col.name);
+      
+      // Se não tem botId, precisa migrar
+      if (!columnNames.includes('botId')) {
+        console.log(`🔄 [DATABASE] Migrando trailing_state para incluir botId`);
+        
+        // Busca dados existentes
+        const existingData = await this.getAll('SELECT symbol, state, updatedAt FROM trailing_state');
+        
+        // Remove a tabela antiga
+        await this.db.exec('DROP TABLE IF EXISTS trailing_state');
+        
+        // Recria a tabela com a nova estrutura
+        await this.db.exec(`
+          CREATE TABLE trailing_state (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            botId INTEGER NOT NULL,
+            symbol TEXT NOT NULL,
+            state TEXT NOT NULL,
+            updatedAt TEXT NOT NULL,
+            UNIQUE(botId, symbol),
+            FOREIGN KEY (botId) REFERENCES bot_configs(botId) ON DELETE CASCADE
+          );
+        `);
+        
+        // Migra dados existentes, assumindo botId = 1 para dados órfãos
+        for (const row of existingData) {
+          await this.db.run(
+            'INSERT INTO trailing_state (botId, symbol, state, updatedAt) VALUES (?, ?, ?, ?)',
+            [1, row.symbol, row.state, row.updatedAt]
+          );
+        }
+        
+        console.log(`✅ [DATABASE] Migração da trailing_state concluída - ${existingData.length} registros migrados para botId=1`);
+      }
+      
+    } catch (error) {
+      console.error(`❌ [DATABASE] Erro na migração da tabela trailing_state:`, error.message);
     }
   }
 

@@ -49,11 +49,7 @@ let pendingOrdersMaxInterval = 120000; // máximo 2min
 let pendingOrdersMinInterval = 15000;  // mínimo 15s
 let pendingOrdersLastErrorTime = null;
 
-let orphanOrdersInterval = 20000; // começa em 20s
-let orphanOrdersErrorCount = 0;
-let orphanOrdersMaxInterval = 180000; // máximo 3min
-let orphanOrdersMinInterval = 20000;  // mínimo 20s
-let orphanOrdersLastErrorTime = null;
+// Ordens órfãs agora são gerenciadas pelo sistema multi-bot do app-api.js
 
 // Inicializa o TrailingStop com a estratégia correta
 function initializeTrailingStop() {
@@ -354,36 +350,7 @@ function initializeDecisionStrategy(strategyType) {
   }
 }
 
-// Função para iniciar o monitor de ordens órfãs
-async function startOrphanOrderMonitor() {
-  try {
-    // Verifica se há configuração do bot ativo
-    if (!activeBotConfig || !activeBotConfig.apiSecret) {
-      console.warn(`⚠️ [${activeBotConfig.botName}][ORPHAN_MONITOR] Configuração do bot não encontrada ou credenciais ausentes`);
-      return;
-    }
-    
-    await OrderController.monitorAndCleanupOrphanedStopLoss(activeBotConfig.botName, activeBotConfig);
-    
-    // Se sucesso, reduz gradualmente o intervalo até o mínimo
-    if (orphanOrdersInterval > orphanOrdersMinInterval) {
-      orphanOrdersInterval = Math.max(orphanOrdersMinInterval, orphanOrdersInterval - 1000);
-    }
-    orphanOrdersErrorCount = 0;
-  } catch (error) {
-    // Detecta erro de rate limit (HTTP 429 ou mensagem)
-    if (error?.response?.status === 429 || String(error).includes('rate limit') || String(error).includes('429')) {
-      orphanOrdersErrorCount++;
-      orphanOrdersLastErrorTime = Date.now();
-      // Aumenta o intervalo exponencialmente até o máximo
-      orphanOrdersInterval = Math.min(orphanOrdersMaxInterval, orphanOrdersInterval * 2);
-      console.warn(`⚠️ [${activeBotConfig.botName}][ORPHAN_MONITOR] Rate limit detectado! Aumentando intervalo para ${Math.floor(orphanOrdersInterval / 1000)}s`);
-    } else {
-      console.error(`❌ [${activeBotConfig.botName}][ORPHAN_MONITOR] Erro inesperado no monitoramento de ordens órfãs:`, error.message || error);
-    }
-  }
-  setTimeout(startOrphanOrderMonitor, orphanOrdersInterval);
-}
+// Monitor de ordens órfãs removido - agora é gerenciado pelo sistema multi-bot
 
 async function startBot() {
   try {
@@ -497,7 +464,7 @@ async function startBot() {
     console.log('🚀 Iniciando serviços...');
     startStops();
     startPendingOrdersMonitor();
-    startOrphanOrderMonitor();
+    // Monitor de ordens órfãs agora é gerenciado pelo sistema multi-bot do app-api.js
 
     // Verifica se deve fazer análise imediatamente ou aguardar
     const timeframeConfig = new TimeframeConfig(activeBotConfig);

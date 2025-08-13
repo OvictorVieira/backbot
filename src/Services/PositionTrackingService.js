@@ -323,17 +323,20 @@ class PositionTrackingService {
         [botId]
       );
 
+      // Total Trades = apenas trades fechados com PnL (wins + losses)
+      const totalTrades = (result?.winTrades || 0) + (result?.lossTrades || 0);
+
       const stats = {
         closedTrades: result?.closedTrades || 0,
         openTrades: result?.openTrades || 0,
-        totalTrades: (result?.closedTrades || 0) + (result?.openTrades || 0), // Total = Fechados + Abertos
+        totalTrades: totalTrades, // CORRIGIDO: apenas trades com PnL
         winTrades: result?.winTrades || 0,
         lossTrades: result?.lossTrades || 0,
         totalPnl: result?.totalPnl || 0,
         avgPnl: result?.avgPnl || 0,
         maxWin: result?.maxWin || 0,
         maxLoss: result?.maxLoss || 0,
-        winRate: result?.closedTrades > 0 ? (result.winTrades / result.closedTrades) * 100 : 0
+        winRate: totalTrades > 0 ? (result.winTrades / totalTrades) * 100 : 0 // CORRIGIDO: usa totalTrades
       };
 
       return stats;
@@ -528,23 +531,37 @@ class PositionTrackingService {
            -- Maior ganho
            MAX(CASE WHEN orderType IN ('MARKET', 'LIMIT') AND status = 'CLOSED' AND pnl > 0 THEN pnl ELSE NULL END) as maxWin,
            -- Maior perda
-           MIN(CASE WHEN orderType IN ('MARKET', 'LIMIT') AND status = 'CLOSED' AND pnl < 0 THEN pnl ELSE NULL END) as maxLoss
+           MIN(CASE WHEN orderType IN ('MARKET', 'LIMIT') AND status = 'CLOSED' AND pnl < 0 THEN pnl ELSE NULL END) as maxLoss,
+           
+           COUNT(CASE WHEN orderType IN ('MARKET', 'LIMIT') AND status = 'CLOSED' AND pnl > 0 THEN 1 END) as winTrades,
+           
+           COUNT(CASE WHEN orderType IN ('MARKET', 'LIMIT') AND status = 'CLOSED' AND pnl < 0 THEN 1 END) as lossTrades,
+           -- Soma total de todos os PnLs positivos (lucros)
+           SUM(CASE WHEN orderType IN ('MARKET', 'LIMIT') AND status = 'CLOSED' AND pnl > 0 THEN pnl ELSE 0 END) as grossProfit,
+           -- Soma total de todos os PnLs negativos (perdas)
+           SUM(CASE WHEN orderType IN ('MARKET', 'LIMIT') AND status = 'CLOSED' AND pnl < 0 THEN pnl ELSE 0 END) as grossLoss
+
          FROM bot_orders 
          WHERE botId = ?`,
         [botId]
       );
 
+      // Total Trades = apenas trades fechados com PnL (wins + losses)
+      const totalTrades = (result?.winTrades || 0) + (result?.lossTrades || 0);
+
       return {
         closedTrades: result?.closedTrades || 0,
         openTrades: result?.openTrades || 0,
-        totalTrades: (result?.closedTrades || 0) + (result?.openTrades || 0), // Total = Fechados + Abertos
+        totalTrades: totalTrades, // CORRIGIDO: apenas trades com PnL
         winTrades: result?.winTrades || 0,
         lossTrades: result?.lossTrades || 0,
         totalPnl: result?.totalPnl || 0,
         avgPnl: result?.avgPnl || 0,
         maxWin: result?.maxWin || 0,
         maxLoss: result?.maxLoss || 0,
-        winRate: result?.closedTrades > 0 ? (result?.winTrades / result?.closedTrades) * 100 : 0
+        winRate: totalTrades > 0 ? (result?.winTrades / totalTrades) * 100 : 0,
+        grossProfit: result?.grossProfit,
+        grossLoss: result?.grossLoss
       };
 
     } catch (error) {
@@ -582,25 +599,40 @@ class PositionTrackingService {
       // Busca apenas posições abertas
       const openPositions = await this.getBotOpenPositions(botId);
 
+      const grossProfit = stats.grossProfit;
+
+      // Soma total das perdas (ex: -15.20). Usamos Math.abs para torná-lo positivo.
+      const grossLoss = Math.abs(stats.grossLoss);
+
+      let profitFactor;
+
+      // Lógica de segurança para evitar divisão por zero
+      if (grossLoss > 0) {
+        profitFactor = grossProfit / grossLoss;
+      } else if (grossProfit > 0 && grossLoss === 0) {
+        // Se há lucros e nenhuma perda, o Profit Factor é infinito (um número muito alto)
+        profitFactor = 999;
+      } else {
+        // Se não há nem lucros nem perdas, o Profit Factor é 0
+        profitFactor = 0;
+      }
+
       // Calcula métricas de performance baseadas em trades (não ordens individuais)
       const performanceMetrics = {
-        totalTrades: stats.totalTrades,                    // Fechados + Abertos
-        totalPositions: stats.totalTrades,                 // Mesmo que totalTrades
-        openPositions: stats.openTrades,                   // Trades ainda em aberto (da query)
-        closedPositions: stats.closedTrades,               // Trades com P&L calculado
-        winningTrades: stats.winTrades,                    // Trades fechados com lucro
-        losingTrades: stats.lossTrades,                    // Trades fechados com prejuízo
-        winRate: stats.closedTrades > 0 ? (stats.winTrades / stats.closedTrades) * 100 : 0,
+        totalTrades: stats.totalTrades,
+        totalPositions: stats.totalTrades,
+        openPositions: stats.openTrades,
+        closedPositions: stats.closedTrades,
+        winningTrades: stats.winTrades,
+        losingTrades: stats.lossTrades,
+        winRate: stats.totalTrades > 0 ? (stats.winTrades / stats.totalTrades) * 100 : 0,
         totalPnl: stats.totalPnl,
         avgPnl: stats.avgPnl,
         maxWin: stats.maxWin,
         maxLoss: stats.maxLoss,
-        profitFactor: stats.lossTrades > 0 && stats.maxLoss < 0 ?
-          Math.abs(stats.winTrades * stats.maxWin / (stats.lossTrades * stats.maxLoss)) :
-          stats.winTrades > 0 ? 999 : 0
+        profitFactor: profitFactor
       };
 
-      // Reconstrói posições para o formato esperado (usando ordens)
       const reconstructedPositions = allOrders.map(order => ({
         symbol: order.symbol,
         side: order.side === 'BUY' ? 'LONG' : 'SHORT',

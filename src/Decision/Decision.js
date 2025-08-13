@@ -271,11 +271,6 @@ class Decision {
       Logger.debug(maxTradesValidation.message);
     }
 
-    if(positions.length >= Number(Account.maxOpenOrders)){
-      Logger.warn(`Máximo de ordens atingido: ${positions.length}`);
-      return
-    }
-
     // Verificação adicional: também verifica ordens abertas para evitar duplicatas
     const openOrders = await Order.getOpenOrders(null, "PERP", apiKey, apiSecret)
     const marketsWithOpenOrders = openOrders ? openOrders.map(order => order.symbol) : []
@@ -469,6 +464,13 @@ class Decision {
         if (row.orders && Array.isArray(row.orders) && row.orders.length > 0) {
           Logger.debug(`   🔄 ${marketSymbol}: Processando ${row.orders.length} ordens escalonadas (${row.conviction})`);
 
+          // VALIDAÇÃO CRÍTICA: Re-verifica maxOpenTrades antes de executar cada ordem
+          const maxTradesRecheck = await OrderController.validateMaxOpenTrades(config?.botName || 'DEFAULT', apiKey, apiSecret, config);
+          if (!maxTradesRecheck.isValid) {
+            Logger.warn(`   🚫 ${marketSymbol}: ${maxTradesRecheck.message} - Pulando ordem`);
+            return { index, market: marketSymbol, result: { error: maxTradesRecheck.message } };
+          }
+
           // Verifica se já há muitas ordens abertas (limite de 5 por token)
           const existingOrders = await OrderController.getRecentOpenOrders(marketSymbol, config);
           if (existingOrders.length >= 5) {
@@ -551,6 +553,13 @@ class Decision {
           return { index, market: marketSymbol, result: { orders: orderResults, conviction: row.conviction } };
         } else {
           // Processa ordem única (estratégias tradicionais)
+          // VALIDAÇÃO CRÍTICA: Re-verifica maxOpenTrades antes de executar ordem tradicional
+          const maxTradesRecheck = await OrderController.validateMaxOpenTrades(config?.botName || 'DEFAULT', apiKey, apiSecret, config);
+          if (!maxTradesRecheck.isValid) {
+            Logger.warn(`   🚫 ${marketSymbol}: ${maxTradesRecheck.message} - Pulando ordem`);
+            return { index, market: marketSymbol, result: { error: maxTradesRecheck.message } };
+          }
+
           // Usa os dados fornecidos pela estratégia ou fallback para os padrões
           row.volume = row.volume || investmentUSD;
           row.decimal_quantity = row.decimal_quantity || marketInfo.decimal_quantity;

@@ -6,17 +6,17 @@ class BotOrdersManager {
   constructor() {
     this.ordersFile = path.join(process.cwd(), 'persistence', 'bot_orders.json');
     console.log(`🔍 [BOT_ORDERS] Inicializando com SQLite: ${this.ordersFile}`);
-    
+
     try {
       // Inicializa com JSON como fallback
       this.orders = this.loadOrdersFromJson();
-      
+
       // Garante que sempre temos a estrutura correta
       if (!this.orders || !this.orders.orders || !Array.isArray(this.orders.orders)) {
         console.log(`⚠️ [BOT_ORDERS] Estrutura inválida detectada, criando estrutura vazia`);
         this.orders = { orders: [] };
       }
-      
+
       console.log(`🔍 [BOT_ORDERS] Ordens carregadas: ${this.orders.orders.length}`);
     } catch (error) {
       console.error('❌ [BOT_ORDERS] Erro no construtor:', error.message);
@@ -82,49 +82,7 @@ class BotOrdersManager {
   /**
    * Carrega as ordens do arquivo JSON (fallback)
    */
-  loadOrdersFromJson() {
-    try {
-      console.log(`🔍 [LOAD_ORDERS] Verificando arquivo JSON: ${this.ordersFile}`);
-      if (fs.existsSync(this.ordersFile)) {
-        console.log(`✅ [LOAD_ORDERS] Arquivo JSON existe`);
-        const data = fs.readFileSync(this.ordersFile, 'utf8');
-        console.log(`📄 [LOAD_ORDERS] Dados lidos: ${data.length} caracteres`);
-        
-        if (!data || data.trim() === '') {
-          console.log(`⚠️ [LOAD_ORDERS] Arquivo JSON vazio, criando estrutura vazia`);
-          return { orders: [] };
-        }
-        
-        let parsed;
-        try {
-          parsed = JSON.parse(data);
-        } catch (parseError) {
-          console.error(`❌ [LOAD_ORDERS] Erro ao fazer parse do JSON:`, parseError.message);
-          return { orders: [] };
-        }
-        
-        // Verifica se a estrutura está correta
-        if (!parsed || typeof parsed !== 'object') {
-          console.log(`⚠️ [LOAD_ORDERS] Estrutura JSON inválida, criando estrutura vazia`);
-          return { orders: [] };
-        }
-        
-        // Se não tem a propriedade orders, cria
-        if (!parsed.orders || !Array.isArray(parsed.orders)) {
-          console.log(`⚠️ [LOAD_ORDERS] Propriedade 'orders' não encontrada ou não é array, criando`);
-          return { orders: [] };
-        }
-        
-        console.log(`📊 [LOAD_ORDERS] Ordens parseadas: ${parsed.orders.length}`);
-        return parsed;
-      }
-      console.log(`⚠️ [LOAD_ORDERS] Arquivo JSON não existe, criando estrutura vazia`);
-      return { orders: [] };
-    } catch (error) {
-      console.error('❌ Erro ao carregar ordens do JSON:', error.message);
-      return { orders: [] };
-    }
-  }
+  loadOrdersFromJson() {}
 
   /**
    * Salva as ordens no SQLite (com fallback para JSON)
@@ -349,27 +307,31 @@ class BotOrdersManager {
   async getBotOrderStats(botId) {
     try {
       const botOrders = await this.getBotOrders(botId);
-      
+
       // Separa ordens por status
-      const openOrders = botOrders.filter(order => 
+      const openOrders = botOrders.filter(order =>
         !order.status || order.status === 'PENDING' || order.status === 'OPEN'
       );
-      const closedOrders = botOrders.filter(order => 
+      const closedOrders = botOrders.filter(order =>
         order.status === 'CLOSED' || order.status === 'FILLED'
       );
-      
+
       // Calcula PnL total
       const totalPnl = closedOrders.reduce((sum, order) => {
         return sum + (order.pnl || 0);
       }, 0);
-      
+
       // Calcula win rate
       const winningTrades = closedOrders.filter(order => (order.pnl || 0) > 0).length;
       const losingTrades = closedOrders.filter(order => (order.pnl || 0) < 0).length;
       const winRate = closedOrders.length > 0 ? (winningTrades / closedOrders.length) * 100 : 0;
-      
+
+      // Total Trades = apenas trades fechados com PnL (wins + losses)
+      const totalTrades = winningTrades + losingTrades;
+
       return {
         totalOrders: botOrders.length,
+        totalTrades: totalTrades, // CORRIGIDO: apenas trades com PnL
         openOrders: openOrders.length,
         closedOrders: closedOrders.length,
         buyOrders: botOrders.filter(order => order.side === 'BUY').length,
@@ -380,13 +342,14 @@ class BotOrdersManager {
         totalPnl: totalPnl,
         winningTrades: winningTrades,
         losingTrades: losingTrades,
-        winRate: winRate,
-        averagePnl: closedOrders.length > 0 ? totalPnl / closedOrders.length : 0
+        winRate: totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0, // CORRIGIDO: usa totalTrades
+        averagePnl: totalTrades > 0 ? totalPnl / totalTrades : 0 // CORRIGIDO: usa totalTrades
       };
     } catch (error) {
       console.error('❌ Erro ao obter estatísticas:', error.message);
       return {
         totalOrders: 0,
+        totalTrades: 0, // ADICIONADO: campo totalTrades no fallback
         openOrders: 0,
         closedOrders: 0,
         buyOrders: 0,
@@ -418,12 +381,12 @@ class BotOrdersManager {
         // Fallback para JSON
         const cutoffDate = new Date();
         cutoffDate.setDate(cutoffDate.getDate() - daysOld);
-        
+
         const initialCount = this.orders.orders.length;
         this.orders.orders = this.orders.orders.filter(order => {
           return new Date(order.timestamp) > cutoffDate;
         });
-        
+
         const removedCount = initialCount - this.orders.orders.length;
         if (removedCount > 0) {
           this.saveOrdersToJson();

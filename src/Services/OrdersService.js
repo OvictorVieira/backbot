@@ -1,10 +1,12 @@
 import Order from '../Backpack/Authenticated/Order.js';
+import Futures from '../Backpack/Authenticated/Futures.js';
+import History from '../Backpack/Authenticated/History.js';
 import DatabaseService from './DatabaseService.js';
 import Logger from '../Utils/Logger.js';
 
 /**
  * OrdersService - Centralizador de toda lógica de criação de ordens
- * 
+ *
  * Este serviço encapsula toda a complexidade da criação de diferentes tipos de ordem,
  * sendo o único ponto no sistema responsável por interagir com a API da exchange.
  */
@@ -58,12 +60,12 @@ class OrdersService {
       };
 
       Logger.info(`📦 [ORDERS_SERVICE] Criando ordem MARKET: ${symbol} ${side} ${quantity}`);
-      
+
       const result = await this.orderClient.executeOrder(orderBody, apiKey, apiSecret);
-      
+
       if (result && !result.error) {
         Logger.info(`✅ [ORDERS_SERVICE] Ordem MARKET criada com sucesso: ${result.id || result.orderId}`);
-        
+
         // Persiste a ordem no banco se dbService estiver disponível
         await this._persistOrder({
           externalOrderId: result.id || result.orderId,
@@ -129,12 +131,12 @@ class OrdersService {
       };
 
       Logger.info(`📦 [ORDERS_SERVICE] Criando ordem LIMIT: ${symbol} ${side} ${quantity} @ ${price}`);
-      
+
       const result = await this.orderClient.executeOrder(orderBody, apiKey, apiSecret);
-      
+
       if (result && !result.error) {
         Logger.info(`✅ [ORDERS_SERVICE] Ordem LIMIT criada com sucesso: ${result.id || result.orderId}`);
-        
+
         // Persiste a ordem no banco se dbService estiver disponível
         await this._persistOrder({
           externalOrderId: result.id || result.orderId,
@@ -205,12 +207,12 @@ class OrdersService {
       };
 
       Logger.info(`📦 [ORDERS_SERVICE] Criando ordem TAKE PROFIT: ${symbol} ${side} ${quantity} @ trigger: ${takeProfitTriggerPrice}, limit: ${takeProfitLimitPrice}`);
-      
+
       const result = await this.orderClient.executeOrder(orderBody, apiKey, apiSecret);
-      
+
       if (result && !result.error) {
         Logger.info(`✅ [ORDERS_SERVICE] Ordem TAKE PROFIT criada com sucesso: ${result.id || result.orderId}`);
-        
+
         // Persiste a ordem no banco se dbService estiver disponível
         await this._persistOrder({
           externalOrderId: result.id || result.orderId,
@@ -285,12 +287,12 @@ class OrdersService {
       }
 
       Logger.info(`📦 [ORDERS_SERVICE] Criando ordem STOP LOSS: ${symbol} ${side} ${quantity} @ trigger: ${stopLossTriggerPrice}${stopLossLimitPrice ? `, limit: ${stopLossLimitPrice}` : ' (MARKET)'}`);
-      
+
       const result = await this.orderClient.executeOrder(orderBody, apiKey, apiSecret);
-      
+
       if (result && !result.error) {
         Logger.info(`✅ [ORDERS_SERVICE] Ordem STOP LOSS criada com sucesso: ${result.id || result.orderId}`);
-        
+
         // Persiste a ordem no banco se dbService estiver disponível
         await this._persistOrder({
           externalOrderId: result.id || result.orderId,
@@ -362,12 +364,12 @@ class OrdersService {
       }
 
       Logger.info(`📦 [ORDERS_SERVICE] Criando ordem FECHAMENTO PARCIAL: ${symbol} ${side} ${quantity}${price ? ` @ ${price}` : ' (MARKET)'}`);
-      
+
       const result = await this.orderClient.executeOrder(orderBody, apiKey, apiSecret);
-      
+
       if (result && !result.error) {
         Logger.info(`✅ [ORDERS_SERVICE] Ordem FECHAMENTO PARCIAL criada com sucesso: ${result.id || result.orderId}`);
-        
+
         // Persiste a ordem no banco se dbService estiver disponível
         await this._persistOrder({
           externalOrderId: result.id || result.orderId,
@@ -623,11 +625,35 @@ class OrdersService {
       }
 
       const result = await OrdersService.dbService.run('DELETE FROM bot_orders');
-      
+
       console.log(`🧹 [ORDERS_SERVICE] Todas as ${result.changes} ordens removidas`);
       return result.changes;
     } catch (error) {
       console.error(`❌ [ORDERS_SERVICE] Erro ao limpar todas as ordens:`, error.message);
+      return 0;
+    }
+  }
+
+  /**
+   * Remove todas as ordens de um bot específico
+   * @param {number} botId - ID do bot
+   * @returns {Promise<number>} Número de ordens removidas
+   */
+  static async removeOrdersByBotId(botId) {
+    try {
+      if (!OrdersService.dbService || !OrdersService.dbService.isInitialized()) {
+        throw new Error('Database service not initialized');
+      }
+
+      const result = await OrdersService.dbService.run(
+        'DELETE FROM bot_orders WHERE botId = ?',
+        [botId]
+      );
+
+      console.log(`🧹 [ORDERS_SERVICE] ${result.changes} ordens do bot ${botId} removidas`);
+      return result.changes;
+    } catch (error) {
+      console.error(`❌ [ORDERS_SERVICE] Erro ao remover ordens do bot ${botId}:`, error.message);
       return 0;
     }
   }
@@ -695,7 +721,7 @@ class OrdersService {
       // ETAPA 1: Buscar TODAS as ordens ativas na corretora (fonte da verdade)
       const { default: Order } = await import('../Backpack/Authenticated/Order.js');
       const exchangeOrders = await Order.getOpenOrders(null, "PERP", config.apiKey, config.apiSecret);
-      
+
       if (!exchangeOrders) {
         Logger.warn(`⚠️ [ORDERS_SYNC] Não foi possível buscar ordens da corretora para bot ${botId}`);
         return 0;
@@ -709,7 +735,7 @@ class OrdersService {
       });
 
       Logger.info(`📊 [ORDERS_SYNC] Encontradas ${botExchangeOrders.length} ordens ativas na corretora para bot ${botId}`);
-      
+
       // Log das ordens encontradas na corretora para debug
       botExchangeOrders.forEach(order => {
         Logger.debug(`🔍 [EXCHANGE] Ordem: ${order.id}, ClientId: ${order.clientId}, Symbol: ${order.symbol}, Status: ${order.status}`);
@@ -724,7 +750,7 @@ class OrdersService {
       );
 
       Logger.info(`📊 [ORDERS_SYNC] Encontradas ${ourOrders.length} ordens não-CLOSED no nosso banco para bot ${botId}`);
-      
+
       // Log das ordens do nosso banco para debug
       ourOrders.forEach(order => {
         Logger.debug(`🔍 [OUR_DB] Ordem: ${order.externalOrderId}, ClientId: ${order.clientId}, Symbol: ${order.symbol}, Status: ${order.status}`);
@@ -735,7 +761,7 @@ class OrdersService {
       // ETAPA 3: Criar mapa das ordens da corretora por ID e clientId
       const exchangeOrdersMapById = new Map();
       const exchangeOrdersMapByClientId = new Map();
-      
+
       botExchangeOrders.forEach(order => {
         if (order.id) {
           exchangeOrdersMapById.set(order.id, order);
@@ -752,18 +778,18 @@ class OrdersService {
         try {
           // Tentar encontrar a ordem na corretora por externalOrderId primeiro, depois por clientId
           let exchangeOrder = exchangeOrdersMapById.get(ourOrder.externalOrderId);
-          
+
           if (!exchangeOrder && ourOrder.clientId) {
             exchangeOrder = exchangeOrdersMapByClientId.get(ourOrder.clientId.toString());
           }
 
           Logger.debug(`🔍 [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId} (clientId: ${ourOrder.clientId}): ${exchangeOrder ? 'Encontrada' : 'Não encontrada'} na corretora`);
-          
+
           if (exchangeOrder) {
             // Ordem existe na corretora - sincronizar status
             const exchangeStatus = exchangeOrder.status;
             let ourStatus = 'PENDING'; // Default
-            
+
             // Mapear status da corretora para nosso formato
             switch (exchangeStatus) {
               case 'Open':
@@ -788,61 +814,65 @@ class OrdersService {
               Logger.info(`🔄 [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId}: ${ourOrder.status} → ${ourStatus}`);
               syncedCount++;
             }
-            
+
           } else {
             // Ordem NÃO existe na corretora - pode ter sido executada ou cancelada
             Logger.debug(`❌ [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId} não encontrada nas ordens abertas da corretora`);
-            
+
             // NOVA LÓGICA: Se a ordem já está FILLED, não alterar (posição já aberta)
             if (ourOrder.status === 'FILLED') {
               Logger.debug(`ℹ️ [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId} já está FILLED - mantendo status (posição aberta)`);
               continue;
             }
-            
-            // Verificar no histórico de fills se foi executada (apenas para ordens PENDING)
-            if (ourOrder.status === 'PENDING') {
-              const { default: History } = await import('../Backpack/Authenticated/History.js');
-              const fills = await History.getFillHistory(
-                ourOrder.symbol,
-                ourOrder.externalOrderId,
-                Date.now() - (48 * 60 * 60 * 1000), // últimas 48h
-                Date.now(),
-                10,
-                0,
-                null,
-                'PERP',
-                null,
-                config.apiKey,
-                config.apiSecret
-              );
 
-              if (fills && fills.length > 0) {
-                // Ordem foi executada
-                await OrdersService.updateOrderStatus(ourOrder.externalOrderId, 'FILLED', 'EXCHANGE_EXECUTED');
-                Logger.info(`✅ [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId} marcada como FILLED (histórico)`);
-                syncedCount++;
-              } else if (fills === null) {
-                // Erro ao buscar histórico (rate limit, etc) - não alterar status
-                Logger.warn(`⚠️ [ORDERS_SYNC] Não foi possível verificar histórico da ordem ${ourOrder.externalOrderId} - mantendo status atual`);
+            // Buscar status real da ordem na corretora (sabemos que está PENDING no nosso lado)
+            const { default: History } = await import('../Backpack/Authenticated/History.js');
+            const orderHistory = await History.getOrderHistory(
+              ourOrder.externalOrderId, // orderId - ID da ordem específica
+              ourOrder.symbol, // symbol - símbolo do par
+              10, // limit
+              0, // offset
+              'PERP', // marketType
+              null, // sortDirection
+              config.apiKey,
+              config.apiSecret
+            );
+
+            if (orderHistory && Array.isArray(orderHistory) && orderHistory.length > 0) {
+              const orderRecord = orderHistory.find(order => order.id === ourOrder.externalOrderId);
+
+              if (orderRecord) {
+                Logger.debug(`🔍 [ORDERS_SYNC] Status real da ordem ${ourOrder.externalOrderId} na corretora: ${orderRecord.status}`);
+
+                // Sincronizar nosso status com o da corretora
+                if (orderRecord.status === 'Filled' || orderRecord.status === 'PartiallyFilled') {
+                  await OrdersService.updateOrderStatus(ourOrder.externalOrderId, 'FILLED', 'EXCHANGE_EXECUTED');
+                  Logger.info(`✅ [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId}: PENDING → FILLED`);
+                  syncedCount++;
+                } else if (orderRecord.status === 'Cancelled' || orderRecord.status === 'Rejected') {
+                  await OrdersService.updateOrderStatus(ourOrder.externalOrderId, 'CANCELLED', 'EXCHANGE_CANCELLED');
+                  Logger.info(`❌ [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId}: PENDING → CANCELLED`);
+                  syncedCount++;
+                }
+                // Se for 'Open' ou 'New', mantém PENDING (está correto)
               } else {
-                // Histórico vazio - ordem possivelmente cancelada, mas ser mais conservador
-                Logger.warn(`⚠️ [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId} não encontrada em ordens abertas nem no histórico - possível cancelamento (mantendo status para verificação manual)`);
-                // Removido: não marcar automaticamente como CANCELLED
-                // await OrdersService.updateOrderStatus(ourOrder.externalOrderId, 'CANCELLED', 'EXCHANGE_CANCELLED');
+                Logger.warn(`⚠️ [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId} não encontrada no histórico da corretora`);
               }
+            } else if (orderHistory === null) {
+              Logger.warn(`⚠️ [ORDERS_SYNC] Erro ao buscar histórico da ordem ${ourOrder.externalOrderId} - mantendo PENDING`);
+            } else {
+              Logger.warn(`⚠️ [ORDERS_SYNC] Histórico vazio para ordem ${ourOrder.externalOrderId}`);
             }
           }
-
-          // Rate limiting
-          await new Promise(resolve => setTimeout(resolve, 200));
-
         } catch (orderError) {
           Logger.warn(`⚠️ [ORDERS_SYNC] Erro ao sincronizar ordem ${ourOrder.externalOrderId}: ${orderError.message}`);
         }
       }
 
-      Logger.info(`📊 [ORDERS_SYNC] Bot ${botId}: ${syncedCount} ordens sincronizadas com a corretora`);
-      return syncedCount;
+      const closedPositionsCount = await OrdersService.syncPositionsFromExchangeFills(botId, config);
+
+      Logger.info(`📊 [ORDERS_SYNC] Bot ${botId}: ${syncedCount} ordens sincronizadas, ${closedPositionsCount} posições fechadas`);
+      return syncedCount + closedPositionsCount;
 
     } catch (error) {
       Logger.error(`❌ [ORDERS_SYNC] Erro na sincronização do bot ${botId}:`, error.message);
@@ -855,9 +885,290 @@ class OrdersService {
    * P&L será calculado apenas quando a posição for realmente fechada na corretora
    * @deprecated
    */
-  static async calculatePnLForFilledOrders(botId, config) {
-    Logger.warn(`⚠️ [PNL_CALC] Função calculatePnLForFilledOrders foi desativada - marcava ordens FILLED como CLOSED incorretamente`);
-    return 0;
+  static async detectAndCloseCompletedPositions(botId, config) {
+    try {
+      Logger.debug(`🔍 [POSITION_CLOSE] Iniciando detecção de posições fechadas para bot ${botId}`);
+
+      const openPositionsFromExchange = await Futures.getOpenPositions(config.apiKey, config.apiSecret);
+      if (!openPositionsFromExchange) {
+        Logger.warn(`⚠️ [POSITION_CLOSE] Não foi possível buscar posições abertas da corretora para bot ${botId}`);
+        return 0;
+      }
+
+      Logger.debug(`📊 [POSITION_CLOSE] Posições abertas na corretora: ${openPositionsFromExchange.length}`);
+      openPositionsFromExchange.forEach(pos => {
+        Logger.debug(`🔍 [EXCHANGE_POS] ${pos.symbol}: ${pos.size} @ ${pos.averageEntryPrice}`);
+      });
+
+      const exchangeSymbolsWithPositions = new Set(
+        openPositionsFromExchange.map(pos => pos.symbol)
+      );
+
+      const filledOrders = await OrdersService.dbService.getAll(
+        `SELECT * FROM bot_orders 
+         WHERE botId = ? AND status = 'FILLED' 
+         ORDER BY symbol, timestamp`,
+        [botId]
+      );
+
+      Logger.debug(`📊 [POSITION_CLOSE] Ordens FILLED no banco: ${filledOrders.length}`);
+
+      const positionGroups = new Map();
+      filledOrders.forEach(order => {
+        if (!positionGroups.has(order.symbol)) {
+          positionGroups.set(order.symbol, []);
+        }
+        positionGroups.get(order.symbol).push(order);
+      });
+
+      Logger.debug(`📊 [POSITION_CLOSE] Símbolos com ordens FILLED: ${Array.from(positionGroups.keys()).join(', ')}`);
+      Logger.debug(`📊 [POSITION_CLOSE] Símbolos com posições abertas: ${Array.from(exchangeSymbolsWithPositions).join(', ')}`);
+
+      let closedCount = 0;
+
+      for (const [symbol, orders] of positionGroups.entries()) {
+        Logger.debug(`🔍 [POSITION_CLOSE] Analisando ${symbol}: ${orders.length} ordens`);
+
+        if (exchangeSymbolsWithPositions.has(symbol)) {
+          Logger.debug(`ℹ️ [POSITION_CLOSE] ${symbol} tem posição aberta na corretora - pulando`);
+          continue;
+        }
+
+        Logger.debug(`🔍 [POSITION_CLOSE] ${symbol} NÃO tem posição aberta - verificando se pode fechar`);
+
+        const position = OrdersService.calculatePositionPnL(orders);
+        Logger.debug(`📊 [POSITION_CLOSE] ${symbol} - Quantidade: ${position.totalQuantity}, P&L: ${position.totalPnL}, Fechada: ${position.isClosed}`);
+
+        if (position.isClosed) {
+          Logger.info(`✅ [POSITION_CLOSE] Fechando posição ${symbol} - P&L: ${position.totalPnL.toFixed(4)} USDC`);
+
+          for (const order of orders) {
+            const pnlForOrder = orders.length > 1 ? (position.totalPnL * parseFloat(order.quantity)) / Math.abs(position.totalQuantity) : position.totalPnL;
+
+            await OrdersService.dbService.run(
+              `UPDATE bot_orders 
+               SET status = 'CLOSED', pnl = ?, closeTime = ?, closeType = 'POSITION_CLOSED'
+               WHERE externalOrderId = ?`,
+              [pnlForOrder, new Date().toISOString(), order.externalOrderId]
+            );
+
+            Logger.debug(`📊 [POSITION_CLOSE] Ordem ${order.externalOrderId} marcada como CLOSED com P&L: ${pnlForOrder}`);
+          }
+
+          closedCount++;
+        } else {
+          Logger.debug(`ℹ️ [POSITION_CLOSE] ${symbol} não está fechada (quantidade: ${position.totalQuantity})`);
+        }
+      }
+
+      Logger.info(`📊 [POSITION_CLOSE] Bot ${botId}: ${closedCount} posições fechadas`);
+      return closedCount;
+
+    } catch (error) {
+      Logger.error(`❌ [POSITION_CLOSE] Erro ao detectar posições fechadas:`, error.message);
+      return 0;
+    }
+  }
+
+  static calculatePositionPnL(orders) {
+    let netQuantity = 0;
+    let totalCost = 0;
+    let totalPnL = 0;
+
+    orders.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+    Logger.debug(`🔢 [PNL_CALC] Calculando P&L para ${orders.length} ordens:`);
+    orders.forEach(order => {
+      Logger.debug(`  ${order.side} ${order.quantity} @ ${order.price} (${order.timestamp})`);
+    });
+
+    for (const order of orders) {
+      const quantity = parseFloat(order.quantity);
+      const price = parseFloat(order.price);
+      const orderValue = quantity * price;
+
+      if (order.side === 'BUY') {
+        netQuantity += quantity;
+        totalCost += orderValue;
+        Logger.debug(`  BUY: +${quantity}, netQty: ${netQuantity}, totalCost: ${totalCost}`);
+      } else {
+        const avgCostPrice = netQuantity > 0 ? totalCost / netQuantity : 0;
+        const pnlFromSell = (price - avgCostPrice) * quantity;
+        totalPnL += pnlFromSell;
+
+        netQuantity -= quantity;
+        if (netQuantity > 0) {
+          totalCost = (totalCost / (netQuantity + quantity)) * netQuantity;
+        } else {
+          totalCost = 0;
+        }
+        Logger.debug(`  SELL: -${quantity}, avgCost: ${avgCostPrice}, sellPrice: ${price}, pnl: ${pnlFromSell}, netQty: ${netQuantity}`);
+      }
+    }
+
+    const result = {
+      totalQuantity: netQuantity,
+      totalPnL,
+      isClosed: Math.abs(netQuantity) < 0.01
+    };
+
+    Logger.debug(`🔢 [PNL_CALC] Resultado: netQty: ${result.totalQuantity}, P&L: ${result.totalPnL}, fechada: ${result.isClosed}`);
+    return result;
+  }
+  static async syncPositionsFromExchangeFills(botId, config) {
+    try {
+      Logger.info(`📊 [FILLS_SYNC] Iniciando sincronização baseada em fills da corretora para bot ${botId}`);
+      
+      const botClientOrderId = config.botClientOrderId?.toString() || '';
+      const botCreationDate = config.createdAt || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const fromTimestamp = new Date(botCreationDate).getTime();
+
+      const allFills = await History.getFillHistory(
+        null,
+        null,
+        fromTimestamp,
+        Date.now(),
+        1000,
+        0,
+        null,
+        'PERP',
+        null,
+        config.apiKey,
+        config.apiSecret
+      );
+
+      if (!allFills || !Array.isArray(allFills)) {
+        Logger.warn(`⚠️ [FILLS_SYNC] Não foi possível buscar fills da corretora para bot ${botId}`);
+        return 0;
+      }
+
+      const botFills = allFills.filter(fill => {
+        const fillClientId = fill.clientId?.toString() || '';
+        return fillClientId.startsWith(botClientOrderId);
+      });
+
+      Logger.info(`📊 [FILLS_SYNC] Encontrados ${botFills.length} fills do bot na corretora (de ${allFills.length} totais)`);
+
+      const symbolPositions = new Map();
+      
+      botFills.forEach(fill => {
+        const symbol = fill.symbol;
+        if (!symbolPositions.has(symbol)) {
+          symbolPositions.set(symbol, []);
+        }
+        symbolPositions.get(symbol).push({
+          side: fill.side === 'Bid' ? 'BUY' : 'SELL',
+          quantity: parseFloat(fill.quantity),
+          price: parseFloat(fill.price),
+          timestamp: fill.timestamp,
+          orderId: fill.orderId
+        });
+      });
+
+      let closedCount = 0;
+
+      for (const [symbol, fills] of symbolPositions.entries()) {
+        Logger.debug(`🔍 [FILLS_SYNC] Analisando ${symbol} com ${fills.length} fills`);
+        
+        const position = OrdersService.calculatePositionFromFills(fills);
+        
+        if (position.isClosed) {
+          Logger.info(`✅ [FILLS_SYNC] Posição ${symbol} fechada baseada em fills - P&L: ${position.totalPnL.toFixed(4)} USDC`);
+          
+          const ourOrders = await OrdersService.dbService.getAll(
+            `SELECT * FROM bot_orders WHERE botId = ? AND symbol = ? AND status = 'FILLED'`,
+            [botId, symbol]
+          );
+
+          for (const order of ourOrders) {
+            const pnlForOrder = ourOrders.length > 1 ? 
+              (position.totalPnL * parseFloat(order.quantity)) / Math.abs(position.totalQuantityProcessed) : 
+              position.totalPnL;
+              
+            await OrdersService.dbService.run(
+              `UPDATE bot_orders 
+               SET status = 'CLOSED', pnl = ?, closeTime = ?, closeType = 'FILLS_BASED_CLOSE'
+               WHERE externalOrderId = ?`,
+              [pnlForOrder, new Date().toISOString(), order.externalOrderId]
+            );
+            
+            Logger.debug(`📊 [FILLS_SYNC] Ordem ${order.externalOrderId} marcada como CLOSED com P&L: ${pnlForOrder}`);
+          }
+          
+          closedCount++;
+        } else {
+          Logger.debug(`ℹ️ [FILLS_SYNC] ${symbol} ainda tem posição aberta (quantidade: ${position.totalQuantity})`);
+        }
+      }
+
+      Logger.info(`📊 [FILLS_SYNC] Bot ${botId}: ${closedCount} posições fechadas baseado em fills`);
+      return closedCount;
+
+    } catch (error) {
+      Logger.error(`❌ [FILLS_SYNC] Erro na sincronização baseada em fills:`, error.message);
+      return 0;
+    }
+  }
+
+  static calculatePositionFromFills(fills) {
+    let netQuantity = 0;
+    let totalCost = 0;
+    let totalPnL = 0;
+    let totalQuantityProcessed = 0;
+
+    fills.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+    Logger.debug(`🔢 [FILLS_CALC] Calculando posição para ${fills.length} fills:`);
+    fills.forEach(fill => {
+      Logger.debug(`  ${fill.side} ${fill.quantity} @ ${fill.price} (${fill.timestamp})`);
+    });
+
+    for (const fill of fills) {
+      const quantity = fill.quantity;
+      const price = fill.price;
+      totalQuantityProcessed += quantity;
+
+      if (fill.side === 'BUY') {
+        netQuantity += quantity;
+        totalCost += (quantity * price);
+        Logger.debug(`  BUY: +${quantity}, netQty: ${netQuantity}, totalCost: ${totalCost}`);
+      } else {
+        const avgCostPrice = netQuantity > 0 ? totalCost / netQuantity : 0;
+        const pnlFromSell = (price - avgCostPrice) * quantity;
+        totalPnL += pnlFromSell;
+        
+        netQuantity -= quantity;
+        if (netQuantity > 0) {
+          totalCost = (totalCost / (netQuantity + quantity)) * netQuantity;
+        } else {
+          totalCost = 0;
+        }
+        Logger.debug(`  SELL: -${quantity}, avgCost: ${avgCostPrice}, sellPrice: ${price}, pnl: ${pnlFromSell}, netQty: ${netQuantity}`);
+      }
+    }
+
+    // VALIDAÇÃO CRÍTICA: Só marca como fechada se tiver quantidade zero E PnL consistente
+    const isQuantityClosed = Math.abs(netQuantity) < 0.01;
+    const isPnLSuspicious = Math.abs(totalPnL) < 0.01;
+    
+    // Se quantidade é zero mas PnL é suspeito, não marca como fechada
+    let isClosed = isQuantityClosed;
+    if (isQuantityClosed && isPnLSuspicious && fills.length > 0) {
+      Logger.warn(`⚠️ [FILLS_CALC] PnL suspeito detectado: ${totalPnL.toFixed(4)} com ${fills.length} fills`);
+      Logger.warn(`⚠️ [FILLS_CALC] Fills: ${fills.map(f => `${f.side} ${f.quantity}@${f.price}`).join(', ')}`);
+      Logger.warn(`🚫 [FILLS_CALC] TEMPORÁRIO: Não marcando como fechada para investigação`);
+      isClosed = false;
+    }
+
+    const result = {
+      totalQuantity: netQuantity,
+      totalPnL,
+      totalQuantityProcessed,
+      isClosed: isClosed
+    };
+
+    Logger.debug(`🔢 [FILLS_CALC] Resultado: netQty: ${result.totalQuantity}, P&L: ${result.totalPnL}, fechada: ${result.isClosed}, PnL suspeito: ${isPnLSuspicious}`);
+    return result;
   }
 }
 
