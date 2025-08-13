@@ -135,7 +135,20 @@ class History {
 
     return response.data;
   } catch (error) {
-    Logger.error('getFillHistory - ERROR!', error.response?.data || error.message);
+    const errorData = error.response?.data;
+    
+    // Verifica se é erro de rate limit
+    if (errorData?.code === 'TOO_MANY_REQUESTS' || error.response?.status === 429) {
+      Logger.warn('⚠️ [RATE_LIMIT] Rate limit atingido em getFillHistory - aguardando 5 segundos');
+      
+      // Aguarda 5 segundos antes de retornar
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      
+      // Retorna null para evitar reprocessamento imediato
+      return null;
+    }
+    
+    Logger.error('getFillHistory - ERROR!', errorData || error.message);
     return null;
   }
   }

@@ -678,7 +678,7 @@ class OrdersService {
   }
 
   /**
-   * Sincroniza status de ordens pendentes com a corretora
+   * Sincroniza todas as ordens do bot com a corretora (fonte da verdade)
    * @param {number} botId - ID do bot
    * @param {object} config - Configuração do bot com API keys
    * @returns {Promise<number>} - Número de ordens sincronizadas
@@ -690,91 +690,155 @@ class OrdersService {
         return 0;
       }
 
-      // Busca ordens pendentes no banco (limitando a 10 para reduzir sobrecarga)
-      const pendingOrders = await OrdersService.dbService.getAll(
-        `SELECT * FROM bot_orders 
-         WHERE botId = ? AND status IN ('PENDING', 'FILLED') 
-         AND externalOrderId IS NOT NULL 
-         ORDER BY timestamp DESC LIMIT 10`,
-        [botId]
-      );
+      Logger.info(`🔄 [ORDERS_SYNC] Iniciando sincronização completa com corretora para bot ${botId}`);
 
-      if (!pendingOrders || pendingOrders.length === 0) {
-        Logger.debug(`📊 [ORDERS_SYNC] Nenhuma ordem pendente para bot ${botId}`);
+      // ETAPA 1: Buscar TODAS as ordens ativas na corretora (fonte da verdade)
+      const { default: Order } = await import('../Backpack/Authenticated/Order.js');
+      const exchangeOrders = await Order.getOpenOrders(null, "PERP", config.apiKey, config.apiSecret);
+      
+      if (!exchangeOrders) {
+        Logger.warn(`⚠️ [ORDERS_SYNC] Não foi possível buscar ordens da corretora para bot ${botId}`);
         return 0;
       }
 
-      Logger.debug(`🔄 [ORDERS_SYNC] Sincronizando ${pendingOrders.length} ordens para bot ${botId}`);
+      // Filtra apenas ordens do bot usando clientId
+      const botClientOrderId = config.botClientOrderId?.toString() || '';
+      const botExchangeOrders = exchangeOrders.filter(order => {
+        const clientId = order.clientId?.toString() || '';
+        return clientId.startsWith(botClientOrderId);
+      });
 
-      const { default: Order } = await import('../Backpack/Authenticated/Order.js');
+      Logger.info(`📊 [ORDERS_SYNC] Encontradas ${botExchangeOrders.length} ordens ativas na corretora para bot ${botId}`);
+      
+      // Log das ordens encontradas na corretora para debug
+      botExchangeOrders.forEach(order => {
+        Logger.debug(`🔍 [EXCHANGE] Ordem: ${order.id}, ClientId: ${order.clientId}, Symbol: ${order.symbol}, Status: ${order.status}`);
+      });
+
+      // ETAPA 2: Buscar todas as ordens do bot no nosso banco que não estão CLOSED
+      const ourOrders = await OrdersService.dbService.getAll(
+        `SELECT * FROM bot_orders 
+         WHERE botId = ? AND status != 'CLOSED' 
+         AND externalOrderId IS NOT NULL`,
+        [botId]
+      );
+
+      Logger.info(`📊 [ORDERS_SYNC] Encontradas ${ourOrders.length} ordens não-CLOSED no nosso banco para bot ${botId}`);
+      
+      // Log das ordens do nosso banco para debug
+      ourOrders.forEach(order => {
+        Logger.debug(`🔍 [OUR_DB] Ordem: ${order.externalOrderId}, ClientId: ${order.clientId}, Symbol: ${order.symbol}, Status: ${order.status}`);
+      });
+
       let syncedCount = 0;
 
-      for (const order of pendingOrders) {
+      // ETAPA 3: Criar mapa das ordens da corretora por ID e clientId
+      const exchangeOrdersMapById = new Map();
+      const exchangeOrdersMapByClientId = new Map();
+      
+      botExchangeOrders.forEach(order => {
+        if (order.id) {
+          exchangeOrdersMapById.set(order.id, order);
+        }
+        if (order.clientId) {
+          exchangeOrdersMapByClientId.set(order.clientId.toString(), order);
+        }
+      });
+
+      Logger.debug(`🔍 [ORDERS_SYNC] Mapeadas ${exchangeOrdersMapById.size} ordens por ID e ${exchangeOrdersMapByClientId.size} por clientId`);
+
+      // ETAPA 4: Sincronizar ordens do nosso banco com a corretora
+      for (const ourOrder of ourOrders) {
         try {
-          // Consulta status real na corretora
-          const exchangeOrder = await Order.getOpenOrder(
-            order.symbol, 
-            order.externalOrderId, 
-            order.clientId,
-            config.apiKey,
-            config.apiSecret
-          );
+          // Tentar encontrar a ordem na corretora por externalOrderId primeiro, depois por clientId
+          let exchangeOrder = exchangeOrdersMapById.get(ourOrder.externalOrderId);
+          
+          if (!exchangeOrder && ourOrder.clientId) {
+            exchangeOrder = exchangeOrdersMapByClientId.get(ourOrder.clientId.toString());
+          }
 
-          if (!exchangeOrder) {
-            // Ordem não encontrada na corretora - pode ter sido executada ou cancelada
-            Logger.debug(`🔍 [ORDERS_SYNC] Ordem ${order.externalOrderId} não encontrada na corretora`);
+          Logger.debug(`🔍 [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId} (clientId: ${ourOrder.clientId}): ${exchangeOrder ? 'Encontrada' : 'Não encontrada'} na corretora`);
+          
+          if (exchangeOrder) {
+            // Ordem existe na corretora - sincronizar status
+            const exchangeStatus = exchangeOrder.status;
+            let ourStatus = 'PENDING'; // Default
             
-            // Verifica no histórico de fills se foi executada
-            const { default: History } = await import('../Backpack/Authenticated/History.js');
-            const fills = await History.getFillHistory(
-              order.symbol,
-              order.externalOrderId,
-              Date.now() - (24 * 60 * 60 * 1000), // últimas 24h
-              Date.now(),
-              10,
-              0,
-              null,
-              'PERP',
-              null, // sortDirection deve ser null ou não passado
-              config.apiKey,
-              config.apiSecret
-            );
+            // Mapear status da corretora para nosso formato
+            switch (exchangeStatus) {
+              case 'Open':
+              case 'New':
+                ourStatus = 'PENDING';
+                break;
+              case 'Filled':
+                ourStatus = 'FILLED';
+                break;
+              case 'Cancelled':
+              case 'Rejected':
+                ourStatus = 'CANCELLED';
+                break;
+              case 'PartiallyFilled':
+                ourStatus = 'FILLED'; // Consideramos como preenchida
+                break;
+            }
 
-            if (fills && fills.length > 0) {
-              // Ordem foi executada
-              await OrdersService.updateOrderStatus(order.externalOrderId, 'FILLED', 'EXCHANGE_EXECUTED');
-              Logger.info(`✅ [ORDERS_SYNC] Ordem ${order.externalOrderId} marcada como FILLED`);
-              syncedCount++;
-            } else {
-              // Ordem foi cancelada
-              await OrdersService.updateOrderStatus(order.externalOrderId, 'CANCELLED', 'EXCHANGE_CANCELLED');
-              Logger.info(`❌ [ORDERS_SYNC] Ordem ${order.externalOrderId} marcada como CANCELLED`);
+            // Atualizar se houver diferença
+            if (ourOrder.status !== ourStatus) {
+              await OrdersService.updateOrderStatus(ourOrder.externalOrderId, ourStatus, 'EXCHANGE_SYNC');
+              Logger.info(`🔄 [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId}: ${ourOrder.status} → ${ourStatus}`);
               syncedCount++;
             }
-          } else {
-            // Ordem ainda está ativa na corretora
-            const exchangeStatus = exchangeOrder.status;
             
-            if (exchangeStatus === 'Filled' && order.status !== 'FILLED') {
-              await OrdersService.updateOrderStatus(order.externalOrderId, 'FILLED', 'EXCHANGE_EXECUTED');
-              Logger.info(`✅ [ORDERS_SYNC] Ordem ${order.externalOrderId} atualizada para FILLED`);
-              syncedCount++;
-            } else if (['Cancelled', 'Rejected'].includes(exchangeStatus) && order.status !== 'CANCELLED') {
-              await OrdersService.updateOrderStatus(order.externalOrderId, 'CANCELLED', 'EXCHANGE_CANCELLED');
-              Logger.info(`❌ [ORDERS_SYNC] Ordem ${order.externalOrderId} atualizada para CANCELLED`);
-              syncedCount++;
+          } else {
+            // Ordem NÃO existe na corretora - pode ter sido executada ou cancelada
+            Logger.debug(`❌ [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId} não encontrada nas ordens abertas da corretora`);
+            
+            // NOVA LÓGICA: Se a ordem já está FILLED, não alterar (posição já aberta)
+            if (ourOrder.status === 'FILLED') {
+              Logger.debug(`ℹ️ [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId} já está FILLED - mantendo status (posição aberta)`);
+              continue;
+            }
+            
+            // Verificar no histórico de fills se foi executada (apenas para ordens PENDING)
+            if (ourOrder.status === 'PENDING') {
+              const { default: History } = await import('../Backpack/Authenticated/History.js');
+              const fills = await History.getFillHistory(
+                ourOrder.symbol,
+                ourOrder.externalOrderId,
+                Date.now() - (48 * 60 * 60 * 1000), // últimas 48h
+                Date.now(),
+                10,
+                0,
+                null,
+                'PERP',
+                null,
+                config.apiKey,
+                config.apiSecret
+              );
+
+              if (fills && fills.length > 0) {
+                // Ordem foi executada
+                await OrdersService.updateOrderStatus(ourOrder.externalOrderId, 'FILLED', 'EXCHANGE_EXECUTED');
+                Logger.info(`✅ [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId} marcada como FILLED (histórico)`);
+                syncedCount++;
+              } else {
+                // Ordem foi cancelada
+                await OrdersService.updateOrderStatus(ourOrder.externalOrderId, 'CANCELLED', 'EXCHANGE_CANCELLED');
+                Logger.info(`❌ [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId} marcada como CANCELLED (não encontrada)`);
+                syncedCount++;
+              }
             }
           }
 
-          // Delay para evitar rate limiting
-          await new Promise(resolve => setTimeout(resolve, 500));
+          // Rate limiting
+          await new Promise(resolve => setTimeout(resolve, 200));
 
         } catch (orderError) {
-          Logger.warn(`⚠️ [ORDERS_SYNC] Erro ao sincronizar ordem ${order.externalOrderId}: ${orderError.message}`);
+          Logger.warn(`⚠️ [ORDERS_SYNC] Erro ao sincronizar ordem ${ourOrder.externalOrderId}: ${orderError.message}`);
         }
       }
 
-      Logger.info(`📊 [ORDERS_SYNC] Bot ${botId}: ${syncedCount} ordens sincronizadas`);
+      Logger.info(`📊 [ORDERS_SYNC] Bot ${botId}: ${syncedCount} ordens sincronizadas com a corretora`);
       return syncedCount;
 
     } catch (error) {
@@ -784,135 +848,13 @@ class OrdersService {
   }
 
   /**
-   * Calcula P&L para ordens FILLED que ainda não têm P&L calculado
-   * @param {number} botId - ID do bot
-   * @param {object} config - Configuração do bot
-   * @returns {Promise<number>} - Número de ordens processadas
+   * FUNÇÃO REMOVIDA - estava marcando incorretamente ordens FILLED como CLOSED
+   * P&L será calculado apenas quando a posição for realmente fechada na corretora
+   * @deprecated
    */
   static async calculatePnLForFilledOrders(botId, config) {
-    try {
-      if (!config?.apiKey || !config?.apiSecret) {
-        Logger.warn(`⚠️ [PNL_CALC] Credenciais não disponíveis para bot ${botId}`);
-        return 0;
-      }
-
-      // Busca ordens FILLED sem P&L calculado
-      const filledOrders = await OrdersService.dbService.getAll(
-        `SELECT * FROM bot_orders 
-         WHERE botId = ? AND status = 'FILLED' 
-         AND (pnl IS NULL OR closePrice IS NULL)
-         ORDER BY timestamp ASC`,
-        [botId]
-      );
-
-      if (!filledOrders || filledOrders.length === 0) {
-        Logger.debug(`📊 [PNL_CALC] Nenhuma ordem FILLED sem P&L para bot ${botId}`);
-        return 0;
-      }
-
-      Logger.debug(`🧮 [PNL_CALC] Calculando P&L para ${filledOrders.length} ordens do bot ${botId}`);
-
-      const { default: History } = await import('../Backpack/Authenticated/History.js');
-      let processedCount = 0;
-
-      for (const order of filledOrders) {
-        try {
-          // Busca fills desta ordem específica
-          const fills = await History.getFillHistory(
-            order.symbol,
-            order.externalOrderId,
-            Date.now() - (7 * 24 * 60 * 60 * 1000), // últimos 7 dias
-            Date.now(),
-            100,
-            0,
-            null,
-            'PERP',
-            null, // sortDirection deve ser null ou não passado
-            config.apiKey,
-            config.apiSecret
-          );
-
-          if (fills && fills.length > 0) {
-            // Calcula P&L baseado nos fills
-            let totalPnl = 0;
-            let totalQuantity = 0;
-            let weightedPrice = 0;
-            let lastFillPrice = 0;
-
-            for (const fill of fills) {
-              if (fill.orderId === order.externalOrderId) {
-                const fillQuantity = Math.abs(parseFloat(fill.quantity));
-                const fillPrice = parseFloat(fill.price);
-                
-                totalQuantity += fillQuantity;
-                weightedPrice += fillPrice * fillQuantity;
-                lastFillPrice = fillPrice;
-              }
-            }
-
-            if (totalQuantity > 0) {
-              const avgExecutionPrice = weightedPrice / totalQuantity;
-              
-              // Para cálculo simplificado, usa-se a diferença entre preço de entrada e atual
-              // Em um sistema mais sofisticado, seria necessário rastrear pares de entrada/saída
-              const entryPrice = parseFloat(order.price);
-              const executionPrice = avgExecutionPrice;
-              
-              // PROBLEMA IDENTIFICADO: Este cálculo está incorreto pois não considera o ciclo completo da posição
-              // Estamos calculando slippage da ordem em vez do P&L real da posição
-              // TODO: Implementar rastreamento adequado de entrada/saída de posições
-              
-              // Por enquanto, assumindo que o cálculo atual está invertido baseado no feedback do usuário
-              // As posições que aparecem como loss na verdade foram wins na corretora
-              let pnlEstimate;
-              if (order.side === 'BUY' || order.side === 'Bid') {
-                // Invertendo temporariamente até implementarmos tracking adequado
-                pnlEstimate = (entryPrice - executionPrice) * totalQuantity;
-              } else {
-                // Para SELL, mantemos a lógica original por enquanto
-                pnlEstimate = (executionPrice - entryPrice) * totalQuantity;
-              }
-              
-              // Atualiza a ordem com os dados calculados
-              await OrdersService.dbService.run(
-                `UPDATE bot_orders SET 
-                 closePrice = ?, 
-                 closeTime = ?, 
-                 closeQuantity = ?,
-                 pnl = ?,
-                 pnlPct = ?,
-                 status = 'CLOSED'
-                 WHERE id = ?`,
-                [
-                  avgExecutionPrice,
-                  new Date().toISOString(),
-                  totalQuantity,
-                  pnlEstimate,
-                  entryPrice > 0 ? (pnlEstimate / (entryPrice * totalQuantity)) * 100 : 0,
-                  order.id
-                ]
-              );
-
-              Logger.info(`✅ [PNL_CALC] Ordem ${order.externalOrderId} atualizada com P&L: ${pnlEstimate.toFixed(4)}`);
-              processedCount++;
-            }
-          }
-
-          // Delay para evitar rate limiting
-          await new Promise(resolve => setTimeout(resolve, 200));
-
-        } catch (orderError) {
-          Logger.warn(`⚠️ [PNL_CALC] Erro ao processar ordem ${order.externalOrderId}: ${orderError.message}`);
-        }
-      }
-
-      Logger.info(`📊 [PNL_CALC] Bot ${botId}: ${processedCount} ordens processadas com P&L`);
-      return processedCount;
-
-    } catch (error) {
-      Logger.error(`❌ [PNL_CALC] Erro no cálculo de P&L do bot ${botId}:`, error.message);
-      return 0;
-    }
+    Logger.warn(`⚠️ [PNL_CALC] Função calculatePnLForFilledOrders foi desativada - marcava ordens FILLED como CLOSED incorretamente`);
+    return 0;
   }
 }
 

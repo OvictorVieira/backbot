@@ -174,9 +174,11 @@ class PositionTrackingService {
         ]
       );
 
-      // Se a posição foi totalmente fechada, atualiza a ordem correspondente na bot_orders
+      // DESATIVADO: Se a posição foi totalmente fechada, atualiza a ordem correspondente na bot_orders
+      // P&L será calculado apenas quando confirmado fechamento na corretora via sync
       if (newStatus === 'CLOSED') {
-        await this.updateOrderOnPositionClosed(position, fillEvent, newTotalPnl, pnlFromClose);
+        Logger.debug(`ℹ️ [POSITION_TRACKING] Posição ${position.symbol} fechada - aguardando sync da corretora para marcar ordem como CLOSED`);
+        // await this.updateOrderOnPositionClosed(position, fillEvent, newTotalPnl, pnlFromClose);
       }
 
       Logger.debug(`📈 [POSITION_TRACKING] Posição atualizada: ${position.symbol} fechou ${quantityToClose} @ ${closePrice}`);
@@ -322,8 +324,9 @@ class PositionTrackingService {
       );
 
       const stats = {
-        totalTrades: result?.totalTrades || 0,
         closedTrades: result?.closedTrades || 0,
+        openTrades: result?.openTrades || 0,
+        totalTrades: (result?.closedTrades || 0) + (result?.openTrades || 0), // Total = Fechados + Abertos
         winTrades: result?.winTrades || 0,
         lossTrades: result?.lossTrades || 0,
         totalPnl: result?.totalPnl || 0,
@@ -469,15 +472,16 @@ class PositionTrackingService {
    */
   async getBotOpenPositions(botId) {
     try {
-      // Busca ordens que representam posições abertas:
-      // - PENDING: Ordens ainda não executadas
-      // - FILLED: Ordens executadas mas ainda não fechadas
+      // Busca apenas ordens de entrada (MARKET/LIMIT) que representam posições abertas:
+      // - FILLED: Ordens de entrada executadas mas ainda não fechadas (sem P&L)
+      // - PENDING: Ordens de entrada ainda não executadas
       const query = `
         SELECT * FROM bot_orders 
-        WHERE botId = ? AND (
-          status = 'PENDING' OR 
-          status = 'FILLED' OR
-          (status != 'CLOSED' AND closePrice IS NULL)
+        WHERE botId = ? 
+        AND orderType IN ('MARKET', 'LIMIT')
+        AND (
+          (status = 'FILLED' AND (pnl IS NULL OR closePrice IS NULL)) OR
+          status = 'PENDING'
         )
         ORDER BY timestamp DESC
       `;
@@ -563,33 +567,39 @@ class PositionTrackingService {
     try {
       const result = await this.dbService.get(
         `SELECT 
-           COUNT(*) as totalTrades,
-           SUM(CASE WHEN status IN ('CLOSED', 'FILLED') THEN 1 ELSE 0 END) as executedTrades,
-           SUM(CASE WHEN status IN ('CLOSED', 'FILLED') AND closePrice IS NOT NULL THEN 1 ELSE 0 END) as closedTrades,
-           SUM(CASE WHEN status IN ('CLOSED', 'FILLED') AND pnl > 0 THEN 1 ELSE 0 END) as winTrades,
-           SUM(CASE WHEN status IN ('CLOSED', 'FILLED') AND pnl < 0 THEN 1 ELSE 0 END) as lossTrades,
-           SUM(CASE WHEN status IN ('CLOSED', 'FILLED') THEN COALESCE(pnl, 0) ELSE 0 END) as totalPnl,
-           AVG(CASE WHEN status IN ('CLOSED', 'FILLED') AND pnl IS NOT NULL THEN pnl ELSE NULL END) as avgPnl,
-           MAX(CASE WHEN status IN ('CLOSED', 'FILLED') THEN pnl ELSE NULL END) as maxWin,
-           MIN(CASE WHEN status IN ('CLOSED', 'FILLED') THEN pnl ELSE NULL END) as maxLoss
+           -- Trades fechados = ordens de entrada que têm P&L calculado (ciclo completo)
+           COUNT(CASE WHEN orderType IN ('MARKET', 'LIMIT') AND status = 'CLOSED' AND pnl IS NOT NULL THEN 1 END) as closedTrades,
+           -- Trades abertos = ordens de entrada executadas mas sem P&L (posições em aberto)
+           COUNT(CASE WHEN orderType IN ('MARKET', 'LIMIT') AND status = 'FILLED' AND (pnl IS NULL OR closePrice IS NULL) THEN 1 END) as openTrades,
+           -- Trades vencedores = trades fechados com P&L positivo
+           COUNT(CASE WHEN orderType IN ('MARKET', 'LIMIT') AND status = 'CLOSED' AND pnl > 0 THEN 1 END) as winTrades,
+           -- Trades perdedores = trades fechados com P&L negativo
+           COUNT(CASE WHEN orderType IN ('MARKET', 'LIMIT') AND status = 'CLOSED' AND pnl < 0 THEN 1 END) as lossTrades,
+           -- P&L total apenas de trades fechados
+           SUM(CASE WHEN orderType IN ('MARKET', 'LIMIT') AND status = 'CLOSED' THEN COALESCE(pnl, 0) ELSE 0 END) as totalPnl,
+           -- P&L médio de trades fechados
+           AVG(CASE WHEN orderType IN ('MARKET', 'LIMIT') AND status = 'CLOSED' AND pnl IS NOT NULL THEN pnl ELSE NULL END) as avgPnl,
+           -- Maior ganho
+           MAX(CASE WHEN orderType IN ('MARKET', 'LIMIT') AND status = 'CLOSED' AND pnl > 0 THEN pnl ELSE NULL END) as maxWin,
+           -- Maior perda
+           MIN(CASE WHEN orderType IN ('MARKET', 'LIMIT') AND status = 'CLOSED' AND pnl < 0 THEN pnl ELSE NULL END) as maxLoss
          FROM bot_orders 
          WHERE botId = ?`,
         [botId]
       );
 
-      const stats = {
-        totalTrades: result?.totalTrades || 0,
+      return {
         closedTrades: result?.closedTrades || 0,
+        openTrades: result?.openTrades || 0,
+        totalTrades: (result?.closedTrades || 0) + (result?.openTrades || 0), // Total = Fechados + Abertos
         winTrades: result?.winTrades || 0,
         lossTrades: result?.lossTrades || 0,
         totalPnl: result?.totalPnl || 0,
         avgPnl: result?.avgPnl || 0,
         maxWin: result?.maxWin || 0,
         maxLoss: result?.maxLoss || 0,
-        winRate: result?.closedTrades > 0 ? (result.winTrades / result.closedTrades) * 100 : 0
+        winRate: result?.closedTrades > 0 ? (result?.winTrades / result?.closedTrades) * 100 : 0
       };
-
-      return stats;
 
     } catch (error) {
       Logger.error('❌ [POSITION_TRACKING] Erro ao calcular estatísticas:', error.message);
@@ -626,15 +636,15 @@ class PositionTrackingService {
       // Busca apenas posições abertas
       const openPositions = await this.getBotOpenPositions(botId);
 
-      // Calcula métricas de performance
+      // Calcula métricas de performance baseadas em trades (não ordens individuais)
       const performanceMetrics = {
-        totalTrades: stats.totalTrades,
-        totalPositions: allOrders.length,
-        openPositions: openPositions.length,
-        closedPositions: stats.closedTrades,
-        winningTrades: stats.winTrades,
-        losingTrades: stats.lossTrades,
-        winRate: stats.winRate,
+        totalTrades: stats.totalTrades,                    // Fechados + Abertos
+        totalPositions: stats.totalTrades,                 // Mesmo que totalTrades
+        openPositions: stats.openTrades,                   // Trades ainda em aberto (da query)
+        closedPositions: stats.closedTrades,               // Trades com P&L calculado
+        winningTrades: stats.winTrades,                    // Trades fechados com lucro
+        losingTrades: stats.lossTrades,                    // Trades fechados com prejuízo
+        winRate: stats.closedTrades > 0 ? (stats.winTrades / stats.closedTrades) * 100 : 0,
         totalPnl: stats.totalPnl,
         avgPnl: stats.avgPnl,
         maxWin: stats.maxWin,
