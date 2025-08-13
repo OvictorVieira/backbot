@@ -78,7 +78,7 @@ const TradingStatsSkeleton = () => (
       <div className="h-4 w-4 bg-blue-500 rounded animate-pulse" />
       <div className="h-4 w-32 bg-muted rounded animate-pulse" />
     </div>
-    
+
     <div className="grid grid-cols-2 gap-2 text-xs">
       <div className="bg-blue-50 dark:bg-blue-950/20 p-2 rounded">
         <div className="flex items-center gap-1 mb-1">
@@ -87,7 +87,7 @@ const TradingStatsSkeleton = () => (
         </div>
         <div className="h-4 w-8 bg-green-600 rounded animate-pulse" />
       </div>
-      
+
       <div className="bg-red-50 dark:bg-red-950/20 p-2 rounded">
         <div className="flex items-center gap-1 mb-1">
           <div className="h-3 w-3 bg-red-600 rounded animate-pulse" />
@@ -95,7 +95,7 @@ const TradingStatsSkeleton = () => (
         </div>
         <div className="h-4 w-8 bg-red-600 rounded animate-pulse" />
       </div>
-      
+
       <div className="bg-purple-50 dark:bg-purple-950/20 p-2 rounded">
         <div className="flex items-center gap-1 mb-1">
           <div className="h-3 w-3 bg-purple-600 rounded animate-pulse" />
@@ -103,7 +103,7 @@ const TradingStatsSkeleton = () => (
         </div>
         <div className="h-4 w-12 bg-purple-600 rounded animate-pulse" />
       </div>
-      
+
       <div className="bg-orange-50 dark:bg-orange-950/20 p-2 rounded">
         <div className="flex items-center gap-1 mb-1">
           <div className="h-3 w-3 bg-orange-600 rounded animate-pulse" />
@@ -112,7 +112,7 @@ const TradingStatsSkeleton = () => (
         <div className="h-4 w-16 bg-orange-600 rounded animate-pulse" />
       </div>
     </div>
-    
+
     <div className="grid grid-cols-2 gap-3 text-xs">
       <div>
         <div className="h-3 w-20 bg-muted rounded animate-pulse mb-1" />
@@ -123,7 +123,7 @@ const TradingStatsSkeleton = () => (
         <div className="h-3 w-4 bg-muted rounded animate-pulse" />
       </div>
     </div>
-    
+
     <div className="h-3 w-32 bg-muted rounded animate-pulse" />
   </div>
 );
@@ -154,7 +154,7 @@ export const BotCard: React.FC<BotCardProps> = ({
   useEffect(() => {
     const fetchTradingStats = async () => {
       if (!config.id) return;
-      
+
       setLoadingStats(true);
       try {
         const response = await axios.get(`http://localhost:3001/api/bot/summary?botId=${config.id}`);
@@ -180,7 +180,7 @@ export const BotCard: React.FC<BotCardProps> = ({
     };
 
     fetchTradingStats();
-    
+
     // Atualizar a cada 30 segundos
     const interval = setInterval(fetchTradingStats, 30000);
     return () => clearInterval(interval);
@@ -192,20 +192,20 @@ export const BotCard: React.FC<BotCardProps> = ({
       setNextExecution(null);
       return;
     }
-    
+
     // Usa o nextValidationAt do status do bot
     // O backend agora salva em UTC corretamente
     const nextValidationDate = new Date(botStatus.config.nextValidationAt);
-    
+
     const now = Date.now();
     const diff = nextValidationDate.getTime() - now;
-    
+
     // Se já passou do tempo, não mostra countdown
     if (diff <= 0) {
       setNextExecution(null);
       return;
     }
-    
+
     // Cria objeto nextExecution baseado no nextValidationAt
     const nextExec = {
       botId: config.id || 0,
@@ -221,7 +221,7 @@ export const BotCard: React.FC<BotCardProps> = ({
         hour12: false
       })
     };
-    
+
     setNextExecution(nextExec);
   }, [config.id, isRunning, botStatus?.config?.nextValidationAt]);
 
@@ -307,7 +307,7 @@ export const BotCard: React.FC<BotCardProps> = ({
     if (profitRatio === "∞" || profitRatio === "Infinity") {
       return 'text-green-600';
     }
-    
+
     if (typeof profitRatio === 'number') {
       if (profitRatio >= 2.0) {
         return 'text-green-600';
@@ -317,7 +317,7 @@ export const BotCard: React.FC<BotCardProps> = ({
         return 'text-red-600';
       }
     }
-    
+
     // Se for string, tentar converter para número
     const numValue = parseFloat(profitRatio.toString());
     if (!isNaN(numValue)) {
@@ -329,7 +329,7 @@ export const BotCard: React.FC<BotCardProps> = ({
         return 'text-red-600';
       }
     }
-    
+
     return 'text-red-600'; // Fallback
   };
 
@@ -349,9 +349,9 @@ export const BotCard: React.FC<BotCardProps> = ({
     // Se está reiniciando, mostrar botão "Reiniciando..."
     if (isRestarting) {
       return (
-        <Button 
-          variant="default" 
-          size="sm" 
+        <Button
+          variant="default"
+          size="sm"
           disabled={true}
           className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white"
         >
@@ -363,9 +363,9 @@ export const BotCard: React.FC<BotCardProps> = ({
 
     if (isRunning) {
       return (
-        <Button 
-          variant="destructive" 
-          size="sm" 
+        <Button
+          variant="destructive"
+          size="sm"
           onClick={() => onStop(config.strategyName)}
           disabled={isLoading}
           className="flex items-center gap-2"
@@ -387,9 +387,9 @@ export const BotCard: React.FC<BotCardProps> = ({
 
     // Se não está rodando, mostrar botão "Iniciar"
     return (
-      <Button 
-        variant="default" 
-        size="sm" 
+      <Button
+        variant="default"
+        size="sm"
         onClick={() => onStart(config.strategyName)}
         disabled={isLoading}
         className="flex items-center gap-2"
@@ -422,7 +422,7 @@ export const BotCard: React.FC<BotCardProps> = ({
           </div>
         </div>
       </CardHeader>
-      
+
       <CardContent className="space-y-3">
         {/* Status de Reinicialização */}
         {isRestarting && (
@@ -436,7 +436,7 @@ export const BotCard: React.FC<BotCardProps> = ({
             </p>
           </div>
         )}
-        
+
         {/* Configurações Básicas */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs sm:text-sm">
           <div>
@@ -478,7 +478,7 @@ export const BotCard: React.FC<BotCardProps> = ({
               <Activity className="h-4 w-4 text-blue-500" />
               <span className="font-medium text-sm">Estatísticas de Trading</span>
             </div>
-            
+
             <div className="grid grid-cols-2 gap-1 sm:gap-2 text-xs">
               <div className="bg-blue-50 dark:bg-blue-950/20 p-2 rounded">
                 <div className="flex items-center gap-1 mb-1">
@@ -493,7 +493,7 @@ export const BotCard: React.FC<BotCardProps> = ({
                 </div>
                 <p className="text-green-600 font-bold">{tradingStats.winningTrades}</p>
               </div>
-              
+
               <div className="bg-red-50 dark:bg-red-950/20 p-2 rounded">
                 <div className="flex items-center gap-1 mb-1">
                   <TrendingDown className="h-3 w-3 text-red-600" />
@@ -507,7 +507,7 @@ export const BotCard: React.FC<BotCardProps> = ({
                 </div>
                 <p className="text-red-600 font-bold">{tradingStats.losingTrades}</p>
               </div>
-              
+
               <div className="bg-purple-50 dark:bg-purple-950/20 p-2 rounded">
                 <div className="flex items-center gap-1 mb-1">
                   <DollarSign className="h-3 w-3 text-purple-600" />
@@ -521,7 +521,7 @@ export const BotCard: React.FC<BotCardProps> = ({
                 </div>
                 <p className={`font-bold ${getWinRateColor(tradingStats.winRate)}`}>{formatWinRate(tradingStats.winRate)}%</p>
               </div>
-              
+
               <div className="bg-orange-50 dark:bg-orange-950/20 p-2 rounded">
                 <div className="flex items-center gap-1 mb-1">
                   <DollarSign className="h-3 w-3 text-orange-600" />
@@ -538,7 +538,7 @@ export const BotCard: React.FC<BotCardProps> = ({
                 </p>
               </div>
             </div>
-            
+
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div>
                 <div className="flex items-center gap-1">
@@ -565,7 +565,7 @@ export const BotCard: React.FC<BotCardProps> = ({
                 <p className="text-muted-foreground">{tradingStats.openPositions}</p>
               </div>
             </div>
-            
+
             <div className="text-xs text-muted-foreground">
               {(() => {
                 if (isRunning && countdown && countdown !== '') {
@@ -592,8 +592,6 @@ export const BotCard: React.FC<BotCardProps> = ({
           </div>
         ) : null}
 
-
-
         {/* Status das Funcionalidades */}
         <div className="grid grid-cols-2 gap-1 text-xs">
           <div className="flex items-center gap-1">
@@ -602,15 +600,15 @@ export const BotCard: React.FC<BotCardProps> = ({
           </div>
           <div className="flex items-center gap-1">
             <div className={`w-2 h-2 rounded-full ${config.enablePostOnly ? 'bg-green-500' : 'bg-gray-300'}`} />
-            <span className="truncate">Post Only</span>
+            <span className="truncate">Post Only Limit Orders</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className={`w-2 h-2 rounded-full ${config.enableHybridStopStrategy ? 'bg-green-500' : 'bg-gray-300'}`} />
+            <span className="truncate">Stop Loss Híbrdo</span>
           </div>
           <div className="flex items-center gap-1">
             <div className={`w-2 h-2 rounded-full ${config.enableMarketFallback ? 'bg-green-500' : 'bg-gray-300'}`} />
-            <span className="truncate">Market Fallback</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <div className={`w-2 h-2 rounded-full ${config.enableOrphanOrderMonitor ? 'bg-green-500' : 'bg-gray-300'}`} />
-            <span className="truncate">Orphan Monitor</span>
+            <span className="truncate">Market Orders Fallback</span>
           </div>
         </div>
       </CardContent>
@@ -618,18 +616,18 @@ export const BotCard: React.FC<BotCardProps> = ({
       <CardFooter className="pt-2">
         <div className="flex gap-2 w-full">
           {getActionButton()}
-          <Button 
-            variant="outline" 
-            size="sm" 
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => onEdit(config.strategyName)}
             className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm"
           >
             <Edit className="h-3 w-3 sm:h-4 sm:w-4" />
             <span className="hidden sm:inline">Editar</span>
           </Button>
-          <Button 
-            variant="outline" 
-            size="sm" 
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => setShowDeleteModal(true)}
             className="flex items-center gap-1 sm:gap-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 text-xs sm:text-sm"
           >
@@ -648,4 +646,4 @@ export const BotCard: React.FC<BotCardProps> = ({
       />
     </Card>
   );
-}; 
+};

@@ -1795,7 +1795,7 @@ class OrderController {
       try {
         await Order.cancelOpenOrder(market, limitResult.id, null, config?.apiKey, config?.apiSecret);
         Logger.info(`✅ [${botName}] ${market}: Ordem LIMIT cancelada com sucesso.`);
-        
+
         // IMPORTANTE: Atualizar status da ordem no banco para CANCELLED
         try {
           const { default: OrdersService } = await import('../Services/OrdersService.js');
@@ -2808,24 +2808,32 @@ class OrderController {
 
       console.log(`🎯 [FAILSAFE] ${market}: Posição detectada, criando ordens de segurança...`);
 
-      // Salva o nome do bot no estado da posição se disponível
       if (orderResult && orderResult.botName) {
-        const TrailingStop = await import('../TrailingStop/TrailingStop.js');
-        const trailingState = TrailingStop.trailingState.get(market);
-
-        if (trailingState) {
-          trailingState.botName = orderResult.botName;
-
-          // Para Alpha Flow Strategy, salva também o preço do alvo
-          if (orderResult.botName === 'AlphaFlowStrategy' && orderResult.target) {
-            trailingState.takeProfitPrice = orderResult.target;
-            console.log(`📋 [STRATEGY_TAG] ${market}: Bot marcado como "${orderResult.botName}" com alvo $${orderResult.target}`);
-          } else {
-            console.log(`📋 [STRATEGY_TAG] ${market}: Bot marcado como "${orderResult.botName}"`);
+        try {
+          const trailingStateMap = TrailingStop.trailingStateByBot;
+          let trailingState = null;
+          
+          for (const [botKey, stateMap] of trailingStateMap.entries()) {
+            if (stateMap.has(market)) {
+              trailingState = stateMap.get(market);
+              break;
+            }
           }
 
-          // Salva o estado atualizado
-          await TrailingStop.saveStateToFile();
+          if (trailingState) {
+            trailingState.botName = orderResult.botName;
+
+            if (orderResult.botName === 'AlphaFlowStrategy' && orderResult.target) {
+              trailingState.takeProfitPrice = orderResult.target;
+              console.log(`📋 [STRATEGY_TAG] ${market}: Bot marcado como "${orderResult.botName}" com alvo $${orderResult.target}`);
+            } else {
+              console.log(`📋 [STRATEGY_TAG] ${market}: Bot marcado como "${orderResult.botName}"`);
+            }
+
+            await TrailingStop.saveStateToDB(market, trailingState);
+          }
+        } catch (trailingError) {
+          console.warn(`⚠️ [FAILSAFE] ${market}: Erro ao atualizar estado do trailing stop:`, trailingError.message);
         }
       }
 
@@ -3869,13 +3877,6 @@ class OrderController {
         unrealizedPnl: currentPosition.unrealizedPnl
       });
 
-      // Verifica se a posição é grande o suficiente para criar TP
-      const minPositionSize = 0.001; // Posição mínima para criar TP
-      if (Math.abs(parseFloat(currentPosition.netQuantity || 0)) < minPositionSize) {
-        console.warn(`⚠️ [TP_CREATE] ${symbol}: Posição muito pequena (${currentPosition.netQuantity}) para criar TP`);
-        return;
-      }
-
       const currentNetQuantity = parseFloat(currentPosition.netQuantity || 0);
       const currentIsLong = currentNetQuantity > 0;
       const entryPrice = parseFloat(currentPosition.entryPrice || 0);
@@ -3915,8 +3916,10 @@ class OrderController {
             strategy: config?.strategyName || 'DEFAULT'
           });
           if (Account && Account.leverage) {
-            leverage = parseFloat(Account.leverage);
-            console.log(`🔧 [TP_TRADITIONAL] ${symbol}: Alavancagem ${leverage}x`);
+            const rawLeverage = parseFloat(Account.leverage);
+            // Aplica validação de alavancagem por símbolo (50x para BTC/ETH/SOL, 10x para outros)
+            leverage = validateLeverageForSymbol(symbol, rawLeverage);
+            console.log(`🔧 [TP_TRADITIONAL] ${symbol}: Alavancagem ${leverage}x (validada, original: ${rawLeverage}x)`);
           }
         } catch (error) {
           console.warn(`⚠️ [TP_TRADITIONAL] ${symbol}: Erro ao obter alavancagem, usando 1x: ${error.message}`);

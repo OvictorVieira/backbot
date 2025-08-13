@@ -96,11 +96,7 @@ class PositionSyncService {
           Logger.info(`🔄 [POSITION_SYNC] Bot ${botId}: ${syncedOrders} ordens sincronizadas com a corretora`);
         }
 
-        // 4.1. Calcula P&L para ordens FILLED
-        const processedPnL = await OrdersService.calculatePnLForFilledOrders(botId, config);
-        if (processedPnL > 0) {
-          Logger.info(`🧮 [POSITION_SYNC] Bot ${botId}: ${processedPnL} ordens processadas com P&L`);
-        }
+        // 4.1. P&L calculado apenas quando posição é fechada na corretora (via sync)
       } catch (syncError) {
         Logger.warn(`⚠️ [POSITION_SYNC] Erro na sincronização de ordens do bot ${botId}: ${syncError.message}`);
       }

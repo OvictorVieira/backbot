@@ -821,11 +821,14 @@ class OrdersService {
                 await OrdersService.updateOrderStatus(ourOrder.externalOrderId, 'FILLED', 'EXCHANGE_EXECUTED');
                 Logger.info(`✅ [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId} marcada como FILLED (histórico)`);
                 syncedCount++;
+              } else if (fills === null) {
+                // Erro ao buscar histórico (rate limit, etc) - não alterar status
+                Logger.warn(`⚠️ [ORDERS_SYNC] Não foi possível verificar histórico da ordem ${ourOrder.externalOrderId} - mantendo status atual`);
               } else {
-                // Ordem foi cancelada
-                await OrdersService.updateOrderStatus(ourOrder.externalOrderId, 'CANCELLED', 'EXCHANGE_CANCELLED');
-                Logger.info(`❌ [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId} marcada como CANCELLED (não encontrada)`);
-                syncedCount++;
+                // Histórico vazio - ordem possivelmente cancelada, mas ser mais conservador
+                Logger.warn(`⚠️ [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId} não encontrada em ordens abertas nem no histórico - possível cancelamento (mantendo status para verificação manual)`);
+                // Removido: não marcar automaticamente como CANCELLED
+                // await OrdersService.updateOrderStatus(ourOrder.externalOrderId, 'CANCELLED', 'EXCHANGE_CANCELLED');
               }
             }
           }

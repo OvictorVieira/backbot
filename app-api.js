@@ -2634,7 +2634,7 @@ app.get('/api/bot/summary', async (req, res) => {
     }
 
     // Usa botClientOrderId do bot
-    const botClientOrderId = botConfig.botClientOrderId || botConfig.botName;
+    const botClientOrderId = botConfig.botClientOrderId;
 
     console.log(`🔍 [SUMMARY] Gerando resumo para bot ${botId} (${botClientOrderId})`);
 
@@ -2646,7 +2646,7 @@ app.get('/api/bot/summary', async (req, res) => {
       // Instancia o PositionTrackingService com o DatabaseService
       const positionTracker = new PositionTrackingService(ConfigManagerSQLite.dbService);
       const trackingResult = await positionTracker.trackBotPositions(botIdNum, botConfig);
-      const { performanceMetrics, reconstructedPositions } = trackingResult;
+      const { performanceMetrics } = trackingResult;
 
       // Converte para o formato esperado pelo endpoint
       performanceData = {
