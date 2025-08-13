@@ -1251,8 +1251,6 @@ class OrderController {
 
       return !!partialOrder;
 
-      return !!partialOrder;
-
     } catch (error) {
       console.error(`❌ [TP_CHECK] Erro ao verificar ordem de take profit parcial para ${symbol}:`, error.message);
       return false;
@@ -2431,8 +2429,15 @@ class OrderController {
 
       if (takeProfitResult && !takeProfitResult.error) {
         console.log(`✅ [${botName}] ${position.symbol}: Take profit criado com sucesso!`);
-        OrderController.clearTakeProfitCheckCache(position.symbol);
-        console.log(`🧹 [${botName}] ${position.symbol}: Cache de take profit limpo após criação`);
+        
+        // Atualiza o cache para refletir que agora EXISTE take profit
+        const cacheKey = `${position.symbol}_TP_${position.netQuantity > 0 ? 'LONG' : 'SHORT'}`;
+        OrderController.takeProfitCheckCache.set(cacheKey, {
+          lastCheck: Date.now(),
+          hasTakeProfit: true
+        });
+        
+        console.log(`🧹 [${botName}] ${position.symbol}: Cache de take profit atualizado para TRUE após criação`);
         return true;
       } else {
         const errorMsg = takeProfitResult && takeProfitResult.error ? takeProfitResult.error : 'desconhecido';
@@ -3801,21 +3806,21 @@ class OrderController {
       const netQuantity = parseFloat(position.netQuantity || 0);
 
       if (Math.abs(netQuantity) === 0) {
-        return; // Posição fechada
+        return { success: false, message: 'Posição fechada' }; // Posição fechada
       }
 
       const enableTrailingStop = config?.enableTrailingStop === true;
       if (enableTrailingStop) {
         Logger.debug(`⏭️ [TP_CREATE] ${symbol}: Trailing Stop ativo - NÃO criando Take Profit fixo`);
         Logger.debug(`ℹ️ [TP_CREATE] ${symbol}: Take Profit será gerenciado dinamicamente pelo Trailing Stop`);
-        return; // Não cria TP fixo quando trailing stop está ativo
+        return { success: false, message: 'Trailing Stop ativo' }; // Não cria TP fixo quando trailing stop está ativo
       }
 
       // Verifica se já existe ordem de Take Profit
       const hasTakeProfit = await OrderController.hasTakeProfitOrder(symbol, position, config);
       if (hasTakeProfit) {
         Logger.debug(`ℹ️ [TP_CREATE] ${symbol}: Take Profit já existe, pulando criação`);
-        return; // Já existe TP
+        return { success: false, message: 'Take Profit já existe' }; // Já existe TP
       }
 
       Logger.info(`🎯 [TP_CREATE] ${symbol}: Criando Take Profit...`);
@@ -3830,18 +3835,18 @@ class OrderController {
         });
       } catch (error) {
         Logger.error(`❌ [TP_CREATE] ${symbol}: Erro ao obter Account:`, error.message);
-        return;
+        return { error: `Erro ao obter Account: ${error.message}` };
       }
 
       if (!Account || !Account.markets) {
         Logger.error(`❌ [TP_CREATE] ${symbol}: Account inválido ou sem markets:`, Account);
-        return;
+        return { error: 'Account inválido ou sem markets' };
       }
 
       const marketInfo = Account.markets.find(m => m.symbol === symbol);
       if (!marketInfo) {
         Logger.error(`❌ [TP_CREATE] ${symbol}: Market info não encontrada`);
-        return;
+        return { error: 'Market info não encontrada' };
       }
 
       const decimal_quantity = marketInfo.decimal_quantity || 6;
@@ -4100,12 +4105,15 @@ class OrderController {
           result.exchangeCreatedAt || null,
           takeProfitOrder.clientId // Passa o clientId gerado
         );
+        return { success: true, orderId: result.id };
       } else {
         console.error(`❌ [TP_CREATE] ${symbol}: Falha ao criar Take Profit - Result:`, result);
+        return { error: result?.error || 'Resposta inválida da API', result };
       }
 
     } catch (error) {
       console.error(`❌ [TP_CREATE] Erro ao criar Take Profit para ${position.symbol}:`, error.message);
+      return { error: error.message };
     }
   }
 
@@ -4118,6 +4126,16 @@ class OrderController {
    */
   static async hasTakeProfitOrder(symbol, position, config) {
     try {
+      // Verifica cache primeiro
+      const cacheKey = `${symbol}_TP_${position.netQuantity > 0 ? 'LONG' : 'SHORT'}`;
+      const cached = OrderController.takeProfitCheckCache.get(cacheKey);
+      const now = Date.now();
+
+      if (cached && (now - cached.lastCheck) < OrderController.takeProfitCheckCacheTimeout) {
+        Logger.debug(`🔍 [TP_CHECK] ${symbol}: Cache hit - HasTakeProfit: ${cached.hasTakeProfit}`);
+        return cached.hasTakeProfit;
+      }
+
       const OrderModule = await import('../Backpack/Authenticated/Order.js');
       const orders = await OrderModule.default.getOpenOrders(symbol, "PERP", config.apiKey, config.apiSecret);
       const netQuantity = parseFloat(position.netQuantity || 0);
@@ -4126,14 +4144,17 @@ class OrderController {
       Logger.debug(`🔍 [TP_CHECK] ${symbol}: Verificando TP existente - Posição: ${netQuantity} (${isLong ? 'LONG' : 'SHORT'})`);
       Logger.debug(`🔍 [TP_CHECK] ${symbol}: Ordens encontradas: ${orders?.length || 0}`);
 
+      let hasTakeProfit = false;
+
       if (orders && orders.length > 0) {
         const relevantOrders = orders.filter(order =>
           order.symbol === symbol &&
           order.orderType === 'Limit' &&
-          order.reduceOnly === true
+          order.reduceOnly === true &&
+          (order.status === 'Pending' || order.status === 'New' || order.status === 'TriggerPending')
         );
 
-        Logger.debug(`🔍 [TP_CHECK] ${symbol}: Ordens relevantes (Limit + reduceOnly): ${relevantOrders.length}`);
+        Logger.debug(`🔍 [TP_CHECK] ${symbol}: Ordens relevantes (Limit + reduceOnly + ativas): ${relevantOrders.length}`);
 
         for (const order of relevantOrders) {
           const orderSide = order.side;
@@ -4141,17 +4162,28 @@ class OrderController {
           const orderQty = parseFloat(order.quantity || 0);
           const positionQty = Math.abs(netQuantity);
 
-          Logger.debug(`🔍 [TP_CHECK] ${symbol}: Ordem ${order.id} - Side: ${orderSide} (esperado: ${expectedSide}), Qty: ${orderQty} (posição: ${positionQty})`);
+          // Aceita qualquer ordem reduce-only no lado correto (seja TP parcial ou total)
+          const isCorrectSide = orderSide === expectedSide;
+          const hasValidQuantity = orderQty > 0 && orderQty <= positionQty * 1.01; // 1% tolerância
 
-          if (orderSide === expectedSide && orderQty === positionQty) {
+          Logger.debug(`🔍 [TP_CHECK] ${symbol}: Ordem ${order.id} - Side: ${orderSide} (esperado: ${expectedSide}), Qty: ${orderQty} (posição: ${positionQty}), Válida: ${isCorrectSide && hasValidQuantity}`);
+
+          if (isCorrectSide && hasValidQuantity) {
             Logger.debug(`✅ [TP_CHECK] ${symbol}: TP encontrado - Ordem ${order.id}`);
-            return true;
+            hasTakeProfit = true;
+            break;
           }
         }
       }
 
-      Logger.debug(`❌ [TP_CHECK] ${symbol}: Nenhum TP encontrado`);
-      return false;
+      // Atualiza cache
+      OrderController.takeProfitCheckCache.set(cacheKey, {
+        lastCheck: now,
+        hasTakeProfit: hasTakeProfit
+      });
+
+      Logger.debug(`${hasTakeProfit ? '✅' : '❌'} [TP_CHECK] ${symbol}: ${hasTakeProfit ? 'TP encontrado' : 'Nenhum TP encontrado'}, cache atualizado`);
+      return hasTakeProfit;
     } catch (error) {
       Logger.error(`❌ [TP_CHECK] Erro ao verificar TP para ${symbol}:`, error.message);
       return false;

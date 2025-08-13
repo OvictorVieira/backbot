@@ -355,60 +355,6 @@ class PositionTrackingService {
   }
 
   /**
-   * Atualiza a ordem na bot_orders quando uma posição é totalmente fechada
-   * @param {Object} position - Posição que foi fechada
-   * @param {Object} fillEvent - Fill de fechamento
-   * @param {number} totalPnl - PnL total da posição
-   * @param {number} pnlFromClose - PnL do fechamento atual
-   */
-  async updateOrderOnPositionClosed(position, fillEvent, totalPnl, pnlFromClose) {
-    try {
-      // Busca a ordem original que abriu esta posição na bot_orders
-      const originalOrder = await this.dbService.get(
-        `SELECT * FROM bot_orders 
-         WHERE botId = ? AND symbol = ? AND status IN ('FILLED', 'PENDING')
-         ORDER BY timestamp ASC LIMIT 1`,
-        [position.botId, position.symbol]
-      );
-
-      if (!originalOrder) {
-        Logger.warn(`⚠️ [POSITION_TRACKING] Ordem original não encontrada para posição ${position.symbol}`);
-        return;
-      }
-
-      // Calcula P&L percentual
-      const pnlPct = originalOrder.price > 0 ? (totalPnl / (originalOrder.quantity * originalOrder.price)) * 100 : 0;
-
-      // Atualiza a ordem para status CLOSED com P&L
-      await this.dbService.run(
-        `UPDATE bot_orders SET 
-         status = 'CLOSED',
-         closePrice = ?,
-         closeTime = ?,
-         closeQuantity = ?,
-         closeType = ?,
-         pnl = ?,
-         pnlPct = ?
-         WHERE id = ?`,
-        [
-          fillEvent.price,
-          fillEvent.timestamp || new Date().toISOString(),
-          position.initialQuantity, // Quantidade total da posição
-          fillEvent.clientId ? 'MANUAL' : 'AUTO', // Se tem clientId é manual, senão automático
-          totalPnl,
-          pnlPct,
-          originalOrder.id
-        ]
-      );
-
-      Logger.info(`✅ [POSITION_TRACKING] Ordem ${originalOrder.externalOrderId} marcada como CLOSED com P&L: ${totalPnl.toFixed(6)} (${pnlPct.toFixed(2)}%)`);
-
-    } catch (error) {
-      Logger.error('❌ [POSITION_TRACKING] Erro ao atualizar ordem na posição fechada:', error.message);
-    }
-  }
-
-  /**
    * Atualiza o status da ordem na tabela bot_orders quando um fill é processado
    * @param {Object} fillEvent - Evento de fill
    */

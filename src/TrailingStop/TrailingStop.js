@@ -884,9 +884,55 @@ class TrailingStop {
           const hasPartialOrder = await OrderController.hasPartialTakeProfitOrder(position.symbol, position, account, this.config);
           
           if (!hasPartialOrder) {
-            // Apenas loga - não recria a ordem (evita duplicação)
-            console.log(`⚠️ [TP_LIMIT_MONITOR] ${position.symbol}: Ordem de TP parcial não encontrada, mas não recriando para evitar duplicação`);
-            console.log(`ℹ️ [TP_LIMIT_MONITOR] ${position.symbol}: A ordem será criada pelo sistema principal quando necessário`);
+            console.log(`⚠️ [TP_LIMIT_MONITOR] ${position.symbol}: Ordem de TP parcial não encontrada, criando automaticamente...`);
+            
+            try {
+              // Calcula preço de TP parcial baseado em ATR
+              const partialPercentage = Number(this.config?.partialTakeProfitPercentage || 50);
+              const atrMultiplier = Number(this.config?.takeProfitPartialAtrMultiplier || 1.5);
+              
+              // Calcula preço de TP usando ATR
+              let takeProfitPrice = null;
+              if (trailingState.atr && trailingState.atr > 0) {
+                const atrDistance = trailingState.atr * atrMultiplier;
+                takeProfitPrice = trailingState.isLong 
+                  ? entryPrice + atrDistance 
+                  : entryPrice - atrDistance;
+                
+                console.log(`📊 [TP_LIMIT_MONITOR] ${position.symbol}: TP calculado via ATR - Preço: $${takeProfitPrice.toFixed(6)} (ATR: ${trailingState.atr.toFixed(6)}, Mult: ${atrMultiplier})`);
+              } else {
+                // Fallback: usa porcentagem mínima de lucro ajustada por alavancagem
+                const minProfitPercentage = Number(this.config?.minProfitPercentage || 10);
+                const leverage = parseFloat(account?.leverage || 1);
+                const actualProfitPct = minProfitPercentage / leverage;
+                
+                takeProfitPrice = trailingState.isLong
+                  ? entryPrice * (1 + (actualProfitPct / 100))
+                  : entryPrice * (1 - (actualProfitPct / 100));
+                
+                console.log(`📊 [TP_LIMIT_MONITOR] ${position.symbol}: TP calculado via % - Preço: $${takeProfitPrice.toFixed(6)} (${minProfitPercentage}% / ${leverage}x = ${actualProfitPct.toFixed(2)}%)`);
+              }
+              
+              if (takeProfitPrice && takeProfitPrice > 0) {
+                const result = await OrderController.createPartialTakeProfitOrder(
+                  position,
+                  takeProfitPrice,
+                  partialPercentage,
+                  account,
+                  this.config
+                );
+                
+                if (result) {
+                  console.log(`✅ [TP_LIMIT_MONITOR] ${position.symbol}: Ordem de TP parcial criada automaticamente! Preço: $${takeProfitPrice.toFixed(6)} (${partialPercentage}%)`);
+                } else {
+                  console.log(`❌ [TP_LIMIT_MONITOR] ${position.symbol}: Falha ao criar ordem de TP parcial automaticamente`);
+                }
+              } else {
+                console.log(`❌ [TP_LIMIT_MONITOR] ${position.symbol}: Preço de TP inválido calculado: ${takeProfitPrice}`);
+              }
+            } catch (error) {
+              console.error(`❌ [TP_LIMIT_MONITOR] ${position.symbol}: Erro ao criar TP parcial:`, error.message);
+            }
           } else {
             console.log(`✅ [TP_LIMIT_MONITOR] ${position.symbol}: Ordem de TP parcial encontrada e sendo monitorada`);
           }
