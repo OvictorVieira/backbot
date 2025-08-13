@@ -4,6 +4,7 @@ import BotOrdersManager, { initializeBotOrdersManager } from '../../Config/BotOr
 import ConfigManager from '../../Config/ConfigManager.js';
 import Futures from './Futures.js';
 import Logger from '../../Utils/Logger.js';
+import RateLimiter from '../../Utils/RateLimiter.js';
 
 class History {
 
@@ -106,51 +107,55 @@ class History {
   }
 
   async getFillHistory(symbol, orderId, from, to, limit, offset, fillType, marketType, sortDirection, apiKey = null, apiSecret = null) {
-  const timestamp = Date.now();
+    // Rate limiting dinâmico
+    await RateLimiter.wait('getFillHistory');
 
-  const params = {};
-  if (orderId) params.orderId = orderId;
-  if (from) params.from = from;
-  if (to) params.to = to;
-  if (symbol) params.symbol = symbol;
-  if (limit) params.limit = limit;
-  if (offset) params.offset = offset;
-  if (fillType) params.fillType = fillType;
-  if (marketType) params.marketType = marketType; // array if multi values
-  if (sortDirection) params.sortDirection = sortDirection;
+    const timestamp = Date.now();
 
-  const headers = auth({
-    instruction: 'fillHistoryQueryAll',
-    timestamp,
-    params,
-    apiKey,
-    apiSecret
-  });
+    const params = {};
+    if (orderId) params.orderId = orderId;
+    if (from) params.from = from;
+    if (to) params.to = to;
+    if (symbol) params.symbol = symbol;
+    if (limit) params.limit = limit;
+    if (offset) params.offset = offset;
+    if (fillType) params.fillType = fillType;
+    if (marketType) params.marketType = marketType; // array if multi values
+    if (sortDirection) params.sortDirection = sortDirection;
 
-  try {
-    const response = await axios.get(`${process.env.API_URL}/wapi/v1/history/fills`, {
-      headers,
+    const headers = auth({
+      instruction: 'fillHistoryQueryAll',
+      timestamp,
       params,
+      apiKey,
+      apiSecret
     });
 
-    return response.data;
-  } catch (error) {
-    const errorData = error.response?.data;
-    
-    // Verifica se é erro de rate limit
-    if (errorData?.code === 'TOO_MANY_REQUESTS' || error.response?.status === 429) {
-      Logger.warn('⚠️ [RATE_LIMIT] Rate limit atingido em getFillHistory - aguardando 5 segundos');
-      
-      // Aguarda 5 segundos antes de retornar
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      
-      // Retorna null para evitar reprocessamento imediato
+    try {
+      const response = await axios.get(`${process.env.API_URL}/wapi/v1/history/fills`, {
+        headers,
+        params,
+      });
+
+      // Sucesso - informa o rate limiter
+      RateLimiter.onSuccess();
+      return response.data;
+    } catch (error) {
+      const errorData = error.response?.data;
+
+      // Verifica se é erro de rate limit
+      if (errorData?.code === 'TOO_MANY_REQUESTS' || error.response?.status === 429) {
+        // Informa o rate limiter sobre o rate limit
+        RateLimiter.onRateLimit();
+        Logger.warn(`⚠️ [RATE_LIMIT] Rate limit em getFillHistory - delay aumentado para ${RateLimiter.getStatus().currentDelay}ms`);
+        return null;
+      }
+
+      // Erro que não é rate limit
+      RateLimiter.onError();
+      Logger.error('getFillHistory - ERROR!', errorData || error.message);
       return null;
     }
-    
-    Logger.error('getFillHistory - ERROR!', errorData || error.message);
-    return null;
-  }
   }
 
   async getFundingPayments(symbol, limit, offset, sortDirection, apiKey = null, apiSecret = null) {
@@ -184,6 +189,9 @@ class History {
   }
 
   async getOrderHistory(orderId, symbol, limit, offset, marketType, sortDirection, apiKey = null, apiSecret = null) {
+    // Rate limiting dinâmico
+    await RateLimiter.wait('getOrderHistory');
+
     const timestamp = Date.now();
 
     const params = {};
@@ -208,9 +216,22 @@ class History {
         params,
       });
 
+      // Sucesso - informa o rate limiter
+      RateLimiter.onSuccess();
       return response.data;
     } catch (error) {
-      Logger.error('getOrderHistory - ERROR!', error.response?.data || error.message);
+      const errorData = error.response?.data;
+      // Verifica se é erro de rate limit
+      if (errorData?.code === 'TOO_MANY_REQUESTS' || error.response?.status === 429) {
+        // Informa o rate limiter sobre o rate limit
+        RateLimiter.onRateLimit();
+        Logger.warn(`⚠️ [RATE_LIMIT] Rate limit em getOrderHistory - delay aumentado para ${RateLimiter.getStatus().currentDelay}ms`);
+        return null;
+      }
+
+      // Erro que não é rate limit
+      RateLimiter.onError();
+      Logger.error('getOrderHistory - ERROR!', errorData || error.message);
       return null;
     }
   }
@@ -288,22 +309,22 @@ class History {
   async analyzeBotPerformance(botClientOrderId, options = {}, apiKey = null, apiSecret = null) {
     try {
       const { days = 90, limit = 1000 } = options;
-      
+
       Logger.debug(`🔍 [ANALYZE] Iniciando análise para botClientOrderId: ${botClientOrderId}`);
       Logger.debug(`🔍 [ANALYZE] Opções:`, { days, limit });
-      
+
       // Buscar fills da Backpack (fonte única de dados)
       let fills = [];
       if (apiKey && apiSecret) {
         try {
           Logger.debug(`🔍 [ANALYZE] Buscando fills da Backpack...`);
           const fillsData = await this.getFillHistory(null, null, null, null, limit, null, null, null, null, apiKey, apiSecret);
-          
+
           Logger.debug(`🔍 [ANALYZE] Fills brutos recebidos da Backpack:`, {
             total: fillsData ? fillsData.length : 0,
             sample: fillsData && fillsData.length > 0 ? fillsData[0] : null
           });
-          
+
           if (fillsData && Array.isArray(fillsData)) {
             // Filtrar fills que pertencem ao bot usando clientId
             Logger.debug(`🔍 [ANALYZE] Filtrando fills para botClientOrderId: ${botClientOrderId}`);
@@ -321,10 +342,10 @@ class History {
         Logger.debug(`ℹ️ [ANALYZE] Sem credenciais da API, não é possível buscar dados da Backpack`);
         fills = [];
       }
-      
+
       // Reconstruir posições a partir dos fills
       const positions = this.reconstructPositions(fills);
-      
+
       // Buscar posições ativas da Backpack
       let activePositions = [];
       if (apiKey && apiSecret) {
@@ -336,23 +357,26 @@ class History {
           Logger.debug(`⚠️ [ANALYZE] Erro ao buscar posições ativas: ${error.message}`);
         }
       }
-      
+
       // Calcular métricas de performance usando apenas posições fechadas
       const performance = this.calculatePerformanceMetrics(positions);
-      
+
       // Separar posições fechadas e abertas
       const closedPositions = positions.filter(pos => pos.isClosed);
       const openPositions = positions.filter(pos => !pos.isClosed);
-      
+
       Logger.debug(`✅ Posições fechadas: ${closedPositions.length}, Abertas: ${openPositions.length}`);
       Logger.debug(`📊 [ANALYSIS] Total de posições: ${positions.length}`);
       Logger.debug(`📊 [ANALYSIS] Posições fechadas: ${closedPositions.length}`);
       Logger.debug(`📊 [ANALYSIS] Posições abertas: ${openPositions.length}`);
+
+      // Total Trades = apenas posições fechadas com PnL (wins + losses)
+      const totalTrades = performance.winningTrades + performance.losingTrades;
       
       return {
         botClientOrderId,
         performance: {
-          totalTrades: positions.length,
+          totalTrades: totalTrades, // CORRIGIDO: apenas trades com PnL
           winningTrades: performance.winningTrades,
           losingTrades: performance.losingTrades,
           winRate: performance.winRate,
@@ -374,7 +398,7 @@ class History {
           endDate: fills.length > 0 ? this.getLatestFillDate(fills) : null
         }
       };
-      
+
     } catch (error) {
       console.error(`❌ Erro na análise de performance: ${error.message}`);
       throw error;
@@ -387,29 +411,29 @@ class History {
   filterBotFillsByClientId(fills, botClientOrderId) {
     const filteredFills = [];
     const botClientOrderIdStr = botClientOrderId ? botClientOrderId.toString() : '';
-    
+
     Logger.debug(`🔍 [FILTER] Filtrando fills para botClientOrderId: ${botClientOrderId}`);
     Logger.debug(`🔍 [FILTER] Total de fills para filtrar: ${fills.length}`);
-    
+
     let fillsWithClientId = 0;
     let fillsWithoutClientId = 0;
     let fillsMatched = 0;
-    
+
     for (const fill of fills) {
       // Verifica clientId (método principal)
       const clientId = fill.clientId || fill.clientOrderId || fill.client_order_id;
-      
+
       if (!clientId) {
         fillsWithoutClientId++;
         continue; // Pula fills sem clientId
       }
-      
+
       fillsWithClientId++;
       const clientIdStr = clientId.toString();
-      
+
       // Verifica se o clientId começa com o botClientOrderId
       const matches = clientIdStr.startsWith(botClientOrderIdStr);
-      
+
       if (matches) {
         fillsMatched++;
         filteredFills.push(fill);
@@ -423,7 +447,7 @@ class History {
         });
       }
     }
-    
+
     Logger.debug(`🔍 [FILTER] Resumo da filtragem:`, {
       totalFills: fills.length,
       fillsWithClientId,
@@ -431,7 +455,7 @@ class History {
       fillsMatched,
       filteredFills: filteredFills.length
     });
-    
+
     return filteredFills;
   }
 
@@ -450,17 +474,17 @@ class History {
     const orders = await BotOrdersManager.getBotOrders(botId);
     Logger.debug(`🔍 [CREATE_POSITIONS] Encontradas ${orders.length} ordens para Bot ${botId}`);
     Logger.debug(`🔍 [CREATE_POSITIONS] Primeira ordem:`, orders[0]);
-    
+
     const openPositions = [];
-    
+
     // Cria uma posição separada para cada ordem POSITION_IMPORT
     let positionImportCount = 0;
-    
+
     // Primeiro, vamos listar todas as ordens POSITION_IMPORT
     const positionImportOrders = orders.filter(order => order.orderType === 'POSITION_IMPORT' && order.quantity > 0);
     Logger.debug(`📊 [CREATE_POSITIONS] Ordens POSITION_IMPORT encontradas:`, positionImportOrders.map(o => ({ symbol: o.symbol, quantity: o.quantity, side: o.side })));
     Logger.debug(`📊 [CREATE_POSITIONS] Todas as ordens:`, orders.map(o => ({ orderType: o.orderType, symbol: o.symbol, quantity: o.quantity, side: o.side })));
-    
+
     for (const order of orders) {
       Logger.debug(`🔍 [CREATE_POSITIONS] Processando ordem:`, {
         orderType: order.orderType,
@@ -468,11 +492,11 @@ class History {
         quantity: order.quantity,
         side: order.side
       });
-      
+
       if (order.orderType === 'POSITION_IMPORT' && order.quantity > 0) {
         positionImportCount++;
         Logger.debug(`✅ [CREATE_POSITIONS] Encontrada ordem POSITION_IMPORT #${positionImportCount}: ${order.symbol}`);
-        
+
         // Cria uma posição separada para cada ordem
         const position = {
           symbol: order.symbol,
@@ -491,17 +515,17 @@ class History {
           lastUpdateTime: new Date(order.timestamp),
           isClosed: false
         };
-        
+
         openPositions.push(position);
         Logger.debug(`✅ [CREATE_POSITIONS] Posição criada: ${order.symbol} - ${order.quantity} @ ${order.price}`);
       }
     }
-    
+
     Logger.debug(`📊 [CREATE_POSITIONS] Total de ordens POSITION_IMPORT processadas: ${positionImportCount}`);
-    
+
     Logger.debug(`📊 [CREATE_POSITIONS] Total de posições criadas: ${openPositions.length}`);
     Logger.debug(`📊 [CREATE_POSITIONS] Símbolos das posições:`, openPositions.map(p => p.symbol));
-    
+
     return openPositions;
   }
 
@@ -510,13 +534,13 @@ class History {
    */
   reconstructPositions(fills) {
     if (fills.length === 0) return [];
-    
+
     // Ordena fills por timestamp
     const sortedFills = fills.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-    
+
     const positions = [];
     const openPositions = new Map(); // symbol -> position
-    
+
     for (const fill of sortedFills) {
       const symbol = fill.symbol;
       // Converte Ask/Bid para BUY/SELL
@@ -524,7 +548,7 @@ class History {
       const quantity = parseFloat(fill.quantity);
       const price = parseFloat(fill.price);
       const timestamp = new Date(fill.timestamp);
-      
+
       // Se não há posição aberta para este símbolo, cria uma nova
       if (!openPositions.has(symbol)) {
         openPositions.set(symbol, {
@@ -539,7 +563,7 @@ class History {
           isClosed: false
         });
       }
-      
+
       const position = openPositions.get(symbol);
       position.fills.push({
         side,
@@ -548,7 +572,7 @@ class History {
         timestamp,
         value: quantity * price
       });
-      
+
       // Se é a mesma direção, soma à posição
       if (position.side === side) {
         position.totalQuantity += quantity;
@@ -557,27 +581,54 @@ class History {
       } else {
         // Direção oposta - fecha ou reduz a posição
         if (quantity >= position.totalQuantity) {
-          // Fecha completamente a posição
+          // VALIDAÇÃO CRÍTICA: Só fecha se realmente for uma ordem de fechamento
           const closeQuantity = position.totalQuantity;
           const closeValue = closeQuantity * price;
-          const pnl = (side === 'SELL' ? closeValue - (closeQuantity * position.averagePrice) : 
+          const pnl = (side === 'SELL' ? closeValue - (closeQuantity * position.averagePrice) :
                                       (closeQuantity * position.averagePrice) - closeValue);
-          
+
+          // NOVA VALIDAÇÃO: Só marca como fechada se o PnL faz sentido
+          // PnL zerado pode indicar erro de cálculo ou fill incorreto
+          if (Math.abs(pnl) < 0.01) {
+            Logger.warn(`⚠️ [POSITION_CLOSE] PnL zerado detectado para ${symbol}: $${pnl.toFixed(4)} - Possível erro de fechamento`);
+            Logger.warn(`⚠️ [POSITION_CLOSE] Detalhes: closePrice=$${price}, averagePrice=$${position.averagePrice}, quantity=${closeQuantity}`);
+            Logger.warn(`⚠️ [POSITION_CLOSE] Fill suspeito:`, {
+              symbol,
+              side,
+              quantity,
+              price,
+              timestamp: timestamp.toISOString(),
+              positionSide: position.side,
+              positionQuantity: position.totalQuantity,
+              positionAvgPrice: position.averagePrice
+            });
+            // TEMPORÁRIO: Não marca como fechada se PnL suspeito
+            Logger.warn(`🚫 [POSITION_CLOSE] TEMPORÁRIO: Pulando fechamento com PnL suspeito para análise`);
+            // Reduz parcialmente a posição em vez de fechar completamente
+            position.totalQuantity -= quantity;
+            position.totalValue -= (quantity * position.averagePrice);
+            if (position.totalQuantity > 0) {
+              position.averagePrice = position.totalValue / position.totalQuantity;
+            }
+            position.lastUpdateTime = timestamp;
+            continue;
+          }
+
           position.pnl = pnl;
           position.closePrice = price;
           position.closeTime = timestamp;
           position.closeQuantity = closeQuantity;
           position.isClosed = true;
-          
+
           // Adiciona à lista de posições fechadas
           positions.push({
             ...position,
             closeType: 'FULL'
           });
-          
+
           // Remove da lista de posições abertas
           openPositions.delete(symbol);
-          
+
           // Se sobrou quantidade, cria nova posição na direção oposta
           const remainingQuantity = quantity - closeQuantity;
           if (remainingQuantity > 0) {
@@ -602,27 +653,27 @@ class History {
         } else {
           // Reduz parcialmente a posição
           const closeValue = quantity * price;
-          const pnl = (side === 'SELL' ? closeValue - (quantity * position.averagePrice) : 
+          const pnl = (side === 'SELL' ? closeValue - (quantity * position.averagePrice) :
                                       (quantity * position.averagePrice) - closeValue);
-          
+
           position.totalQuantity -= quantity;
           position.totalValue -= (quantity * position.averagePrice);
-          
+
           // Atualiza preço médio se ainda há quantidade
           if (position.totalQuantity > 0) {
             position.averagePrice = position.totalValue / position.totalQuantity;
           }
-          
+
           position.lastUpdateTime = timestamp;
         }
       }
     }
-    
+
     // Adiciona posições ainda abertas
     for (const [symbol, position] of openPositions) {
       positions.push(position);
     }
-    
+
     return positions;
   }
 
@@ -631,7 +682,7 @@ class History {
    */
   calculatePerformanceMetrics(positions) {
     const closedPositions = positions.filter(pos => pos.isClosed);
-    
+
     if (closedPositions.length === 0) {
       return {
         winningTrades: 0,
@@ -644,23 +695,23 @@ class History {
         totalVolume: 0
       };
     }
-    
+
     const winningTrades = closedPositions.filter(pos => pos.pnl > 0);
     const losingTrades = closedPositions.filter(pos => pos.pnl < 0);
-    
+
     const totalPnl = closedPositions.reduce((sum, pos) => sum + pos.pnl, 0);
     const totalWinningPnl = winningTrades.reduce((sum, pos) => sum + pos.pnl, 0);
     const totalLosingPnl = Math.abs(losingTrades.reduce((sum, pos) => sum + pos.pnl, 0));
-    
+
     const winRate = (winningTrades.length / closedPositions.length) * 100;
     const profitFactor = totalLosingPnl > 0 ? totalWinningPnl / totalLosingPnl : 0;
     const averagePnl = totalPnl / closedPositions.length;
-    
+
     // Calcula drawdown
     let maxDrawdown = 0;
     let peak = 0;
     let runningPnl = 0;
-    
+
     for (const pos of closedPositions) {
       runningPnl += pos.pnl;
       if (runningPnl > peak) {
@@ -671,12 +722,12 @@ class History {
         maxDrawdown = drawdown;
       }
     }
-    
+
     // Calcula volume total
     const totalVolume = closedPositions.reduce((sum, pos) => {
       return sum + pos.fills.reduce((fillSum, fill) => fillSum + fill.value, 0);
     }, 0);
-    
+
     return {
       winningTrades: winningTrades.length,
       losingTrades: losingTrades.length,
@@ -696,7 +747,7 @@ class History {
     return {
       botClientOrderId,
       performance: {
-        totalTrades: 0,
+        totalTrades: 0, // Já correto: 0 trades com PnL
         winningTrades: 0,
         losingTrades: 0,
         winRate: 0,
@@ -744,10 +795,10 @@ class History {
   async getBotPerformanceDetails(botClientOrderId, options = {}, apiKey = null, apiSecret = null) {
     try {
       const { includeOpen = false } = options;
-      
+
       // Buscar fills
       const fillsData = await this.getFillHistory(null, null, null, null, 1000, null, null, null, null, apiKey, apiSecret);
-      
+
       // A API retorna diretamente um array de fills, não um objeto com propriedade fills
       if (!fillsData || !Array.isArray(fillsData)) {
         return {
@@ -763,16 +814,16 @@ class History {
           lastAnalyzed: new Date().toISOString()
         };
       }
-      
+
       const fills = fillsData;
       const botFills = this.filterBotFills(fills, botClientOrderId);
       const positions = this.reconstructPositions(botFills);
-      
+
       // Filtrar posições baseado no parâmetro includeOpen
-      const filteredPositions = includeOpen 
-        ? positions 
+      const filteredPositions = includeOpen
+        ? positions
         : positions.filter(pos => pos.isClosed);
-      
+
       // Formatar posições para resposta
       const formattedPositions = filteredPositions.map(pos => ({
         symbol: pos.symbol,
@@ -795,7 +846,7 @@ class History {
           timestamp: fill.timestamp
         }))
       }));
-      
+
       return {
         botClientOrderId,
         totalPositions: filteredPositions.length,
@@ -808,7 +859,7 @@ class History {
         },
         lastAnalyzed: new Date().toISOString()
       };
-      
+
     } catch (error) {
       console.error(`❌ Erro ao buscar detalhes de performance: ${error.message}`);
       throw error;

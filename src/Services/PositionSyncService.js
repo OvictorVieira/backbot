@@ -33,14 +33,14 @@ class PositionSyncService {
       // Primeira sincronização imediata
       await this.syncBotPositions(botId, config);
 
-      // Configura sincronização periódica (a cada 30 segundos)
+      // Configura sincronização periódica (a cada 5 minutos)
       const intervalId = setInterval(async () => {
         try {
           await this.syncBotPositions(botId, config);
         } catch (error) {
           Logger.error(`❌ [POSITION_SYNC] Erro na sincronização do bot ${botId}:`, error.message);
         }
-      }, 30000); // 30 segundos
+      }, 300000); // 5 minutos
 
       this.syncIntervals.set(botId, intervalId);
       Logger.info(`✅ [POSITION_SYNC] Sincronização iniciada para bot ${botId} (30s)`);
@@ -76,18 +76,18 @@ class PositionSyncService {
 
       // NOVO SISTEMA: Usa PositionTrackingService para rastreamento baseado em fills
       Logger.info(`🔄 [POSITION_SYNC] Usando novo sistema de rastreamento de posições`);
-      
+
       // 1. Rastreia posições usando o novo sistema
       const positionTracker = new PositionTrackingService(this.dbService);
       const trackingResult = await positionTracker.trackBotPositions(botId, config);
-      
+
       // 2. Busca posições abertas APENAS do bot (não da exchange)
       // Usando apenas posições rastreadas pelo próprio bot para evitar interferir com trading manual
       const botOpenPositions = trackingResult.reconstructedPositions.filter(pos => pos.status === 'OPEN');
-      
+
       // 3. Detecta fechamentos automáticos baseado no novo sistema
       const closedPositions = await this.detectClosedPositionsNew(botId, config, trackingResult);
-      
+
       // 4. Sincroniza status das ordens com a corretora
       try {
         const { default: OrdersService } = await import('./OrdersService.js');
@@ -106,7 +106,7 @@ class PositionSyncService {
 
       const duration = Date.now() - startTime;
       Logger.debug(`✅ [POSITION_SYNC] Sincronização concluída para bot ${botId} (${duration}ms)`);
-      
+
       this.lastSyncTimes.set(botId, new Date());
 
     } catch (error) {
@@ -145,9 +145,9 @@ class PositionSyncService {
 
       // Filtra fills do bot específico
       const botFills = this.filterBotFills(fills, config.botClientOrderId);
-      
+
       Logger.debug(`📊 [POSITION_SYNC] Encontrados ${botFills.length} fills recentes para bot ${botId}`);
-      
+
       return botFills;
 
     } catch (error) {
@@ -158,18 +158,18 @@ class PositionSyncService {
 
   /**
    * [DESABILITADO] Busca posições abertas da corretora
-   * 
+   *
    * MOTIVO: Este método busca TODAS as posições da conta, incluindo posições manuais.
    * Isso pode causar interferência entre o bot e trading manual.
-   * 
+   *
    * NOVA ABORDAGEM: Usar apenas posições da tabela 'positions' (criadas pelos fills do próprio bot)
-   * 
+   *
    * @param {object} config - Configuração do bot
    */
   async getOpenPositions(config) {
     Logger.warn('⚠️ [POSITION_SYNC] getOpenPositions foi desabilitado - usando apenas posições do bot');
     return [];
-    
+
     // Código original comentado:
     /*
     try {
@@ -190,7 +190,7 @@ class PositionSyncService {
   async getOurOpenOrders(botId) {
     try {
       const orders = await BotOrdersManager.getBotOrders(botId);
-      
+
       // Filtra apenas ordens que não foram fechadas
       const openOrders = orders.filter(order => {
         // Verifica se a ordem foi fechada baseado no status ou se há ordem contrária
@@ -216,17 +216,17 @@ class PositionSyncService {
 
     try {
       const { reconstructedPositions } = trackingResult;
-      
+
       // Filtra posições que foram fechadas
       const closedPositionsData = reconstructedPositions.filter(pos => pos.isClosed);
-      
+
       Logger.info(`🔍 [POSITION_SYNC] Novo sistema detectou ${closedPositionsData.length} posições fechadas para bot ${botId}`);
 
       // Para cada posição fechada, atualiza o banco
       for (const position of closedPositionsData) {
         try {
           await this.handleClosedPositionNew(botId, position);
-          
+
           closedPositions.push({
             symbol: position.symbol,
             side: position.side,
@@ -238,7 +238,7 @@ class PositionSyncService {
             pnl: position.pnl,
             pnlPct: position.pnlPct
           });
-          
+
         } catch (error) {
           Logger.error(`❌ [POSITION_SYNC] Erro ao processar posição fechada ${position.symbol}:`, error.message);
         }
@@ -266,17 +266,17 @@ class PositionSyncService {
     try {
       // Agrupa fills por símbolo
       const fillsBySymbol = this.groupFillsBySymbol(recentFills);
-      
+
       // Para cada ordem aberta do nosso lado
       for (const order of ourOpenOrders) {
         const symbol = order.symbol;
         const symbolFills = fillsBySymbol[symbol] || [];
-        
+
         if (symbolFills.length === 0) continue;
 
         // Calcula se a posição foi fechada
         const positionStatus = this.calculatePositionStatus(order, symbolFills);
-        
+
         if (positionStatus.isClosed) {
           // Posição foi fechada automaticamente
           await this.handleClosedPosition(botId, order, positionStatus);
@@ -308,7 +308,7 @@ class PositionSyncService {
     const side = order.side; // BUY ou SELL
     const orderQuantity = parseFloat(order.quantity);
     const orderPrice = parseFloat(order.price);
-    
+
     let totalFilledQuantity = 0;
     let totalFilledValue = 0;
     let closePrice = null;
@@ -361,7 +361,7 @@ class PositionSyncService {
   async handleClosedPositionNew(botId, position) {
     try {
       const { symbol, side, originalOrder, closePrice, closeTime, closeQuantity, closeType, pnl, pnlPct } = position;
-      
+
       Logger.info(`🔍 [POSITION_SYNC] NOVO SISTEMA: Posição fechada: ${symbol} ${side} ${closeQuantity}`);
 
       // Atualiza a ordem no banco com status fechado
@@ -403,7 +403,7 @@ class PositionSyncService {
 
       // Calcula PnL
       const pnl = this.calculatePnL(order, positionStatus);
-      
+
       Logger.info(`💰 [POSITION_SYNC] PnL calculado: $${pnl.toFixed(2)} para ${order.symbol}`);
 
     } catch (error) {
@@ -445,16 +445,16 @@ class PositionSyncService {
       const positionTracker = new PositionTrackingService(this.dbService);
       const trackingResult = await positionTracker.trackBotPositions(botId, config);
       const { performanceMetrics } = trackingResult;
-      
+
       Logger.info(`📊 [POSITION_SYNC] Estatísticas atualizadas para bot ${botId}:`);
       Logger.info(`   • Total de posições: ${performanceMetrics.totalPositions}`);
       Logger.info(`   • Posições fechadas: ${performanceMetrics.closedPositions}`);
       Logger.info(`   • Win Rate: ${performanceMetrics.winRate.toFixed(2)}%`);
       Logger.info(`   • Profit Factor: ${performanceMetrics.profitFactor.toFixed(2)}`);
       Logger.info(`   • PnL Total: $${performanceMetrics.totalPnl.toFixed(2)}`);
-      
+
       // TODO: Salvar estatísticas no banco de dados
-      
+
     } catch (error) {
       Logger.error(`❌ [POSITION_SYNC] Erro ao atualizar estatísticas do bot ${botId}:`, error.message);
     }
@@ -467,13 +467,13 @@ class PositionSyncService {
    */
   filterBotFills(fills, botClientOrderId) {
     if (!botClientOrderId) return [];
-    
+
     const botFills = [];
     const botClientOrderIdStr = botClientOrderId.toString();
 
     for (const fill of fills) {
       const clientId = fill.clientId || fill.clientOrderId || fill.client_order_id;
-      
+
       if (clientId && clientId.toString().startsWith(botClientOrderIdStr)) {
         botFills.push(fill);
       }
@@ -488,7 +488,7 @@ class PositionSyncService {
    */
   groupFillsBySymbol(fills) {
     const grouped = {};
-    
+
     for (const fill of fills) {
       const symbol = fill.symbol;
       if (!grouped[symbol]) {
@@ -517,7 +517,7 @@ class PositionSyncService {
    */
   getSyncStatus() {
     const status = {};
-    
+
     for (const [botId, intervalId] of this.syncIntervals.entries()) {
       status[botId] = {
         isActive: true,

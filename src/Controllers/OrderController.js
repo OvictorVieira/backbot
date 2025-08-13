@@ -2429,14 +2429,14 @@ class OrderController {
 
       if (takeProfitResult && !takeProfitResult.error) {
         console.log(`✅ [${botName}] ${position.symbol}: Take profit criado com sucesso!`);
-        
+
         // Atualiza o cache para refletir que agora EXISTE take profit
         const cacheKey = `${position.symbol}_TP_${position.netQuantity > 0 ? 'LONG' : 'SHORT'}`;
         OrderController.takeProfitCheckCache.set(cacheKey, {
           lastCheck: Date.now(),
           hasTakeProfit: true
         });
-        
+
         console.log(`🧹 [${botName}] ${position.symbol}: Cache de take profit atualizado para TRUE após criação`);
         return true;
       } else {
@@ -2795,6 +2795,7 @@ class OrderController {
    * @param {string} market - Símbolo do mercado
    * @param {string} botName - Nome do bot
    * @param {object} orderResult - Resultado da ordem de entrada
+   * @param config
    * @returns {object} - Resultado da criação das ordens de segurança
    */
   static async detectPositionOpenedAndCreateFailsafe(market, botName, orderResult, config = null) {
@@ -2817,7 +2818,7 @@ class OrderController {
         try {
           const trailingStateMap = TrailingStop.trailingStateByBot;
           let trailingState = null;
-          
+
           for (const [botKey, stateMap] of trailingStateMap.entries()) {
             if (stateMap.has(market)) {
               trailingState = stateMap.get(market);
@@ -2835,7 +2836,7 @@ class OrderController {
               console.log(`📋 [STRATEGY_TAG] ${market}: Bot marcado como "${orderResult.botName}"`);
             }
 
-            await TrailingStop.saveStateToDB(market, trailingState);
+            await TrailingStop.saveStateToDB(market, trailingState, config?.id);
           }
         } catch (trailingError) {
           console.warn(`⚠️ [FAILSAFE] ${market}: Erro ao atualizar estado do trailing stop:`, trailingError.message);
@@ -3323,10 +3324,15 @@ class OrderController {
   }
 
   /**
-   * Monitora e limpa ordens de stop loss órfãs
+   * 🧹 ÚNICO MÉTODO para monitorar e limpar ordens órfãs
+   * 
+   * Detecta e cancela ordens de stop loss/take profit que ficaram órfãs
+   * após posições serem fechadas. Consolidado em um único método para
+   * evitar duplicação de lógica entre sistemas single-bot e multi-bot.
+   * 
    * @param {string} botName - Nome do bot para monitorar
    * @param {object} config - Configurações específicas do bot (apiKey, apiSecret, etc.)
-   * @returns {object} Resultado da operação
+   * @returns {object} Resultado da operação: { orphaned, cancelled, errors }
    */
   static async monitorAndCleanupOrphanedStopLoss(botName, config = null) {
     try {
@@ -3443,15 +3449,7 @@ class OrderController {
     }
   }
 
-  /**
-   * Alias para monitorAndCleanupOrphanedStopLoss - Monitora e limpa ordens condicionais órfãs
-   * @param {string} botName - Nome único do bot para monitorar
-   * @param {object} config - Configurações específicas do bot (apiKey, apiSecret, etc.)
-   * @returns {object} Resultado da operação
-   */
-  static async cleanupOrphanedConditionalOrders(botName = 'DEFAULT', config = null) {
-    return await OrderController.monitorAndCleanupOrphanedStopLoss(botName, config);
-  }
+  // Alias removido - use monitorAndCleanupOrphanedStopLoss() diretamente
 
   /**
    * Cria uma ordem LIMIT com triggers de stop loss e take profit anexados

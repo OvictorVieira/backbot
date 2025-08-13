@@ -1,5 +1,6 @@
 import { BaseStrategy } from './BaseStrategy.js';
 import Logger from '../../Utils/Logger.js';
+import { validateLeverageForSymbol } from '../../Utils/Utils.js';
 
 export class AlphaFlowStrategy extends BaseStrategy {
   /**
@@ -417,7 +418,7 @@ export class AlphaFlowStrategy extends BaseStrategy {
    * @param {object} market - Dados de mercado
    * @returns {Array} - Array com 3 ordens
    */
-  calculateOrders(signal, currentPrice, atr, investmentUSD, symbol, market, config = null) {
+  calculateOrders(signal, currentPrice, atr, investmentUSD, symbol, market, config = null, leverage = 1) {
     const orders = [];
     const conviction = signal.conviction;
     const action = signal.action;
@@ -519,6 +520,10 @@ export class AlphaFlowStrategy extends BaseStrategy {
       const takeProfitAtrMultiplier = Number(config?.partialTakeProfitAtrMultiplier || 3.0);
       const maxStopLossPct = Number(config?.maxNegativePnlStopPct || -10);
       
+      // Valida a alavancagem para o símbolo específico
+      const validatedLeverage = validateLeverageForSymbol(symbol, leverage);
+      Logger.debug(`🔧 [LEVERAGE_VALIDATION] ${symbol}: Leverage ${leverage}x → validado: ${validatedLeverage}x`);
+      
       // Cálculo do stop loss baseado em ATR
       const atrStopDistance = atr * initialStopAtrMultiplier;
       let stopLoss = action === 'long'
@@ -532,9 +537,11 @@ export class AlphaFlowStrategy extends BaseStrategy {
         : entryPrice - atrTakeProfitDistance;
       
       // Rede de segurança: verifica se o stop loss baseado em ATR não é excessivamente largo
+      // CORREÇÃO: Agora considera alavancagem validada para o símbolo
+      const adjustedStopLossPct = Math.abs(maxStopLossPct) / validatedLeverage;
       const maxStopLossPrice = action === 'long'
-        ? entryPrice * (1 + maxStopLossPct / 100)
-        : entryPrice * (1 - maxStopLossPct / 100);
+        ? entryPrice * (1 - adjustedStopLossPct / 100)
+        : entryPrice * (1 + adjustedStopLossPct / 100);
       
       // Usa o stop loss mais apertado (mais seguro) entre ATR e percentual máximo
       if (action === 'long') {

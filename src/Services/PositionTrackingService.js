@@ -323,17 +323,20 @@ class PositionTrackingService {
         [botId]
       );
 
+      // Total Trades = apenas trades fechados com PnL (wins + losses)
+      const totalTrades = (result?.winTrades || 0) + (result?.lossTrades || 0);
+      
       const stats = {
         closedTrades: result?.closedTrades || 0,
         openTrades: result?.openTrades || 0,
-        totalTrades: (result?.closedTrades || 0) + (result?.openTrades || 0), // Total = Fechados + Abertos
+        totalTrades: totalTrades, // CORRIGIDO: apenas trades com PnL
         winTrades: result?.winTrades || 0,
         lossTrades: result?.lossTrades || 0,
         totalPnl: result?.totalPnl || 0,
         avgPnl: result?.avgPnl || 0,
         maxWin: result?.maxWin || 0,
         maxLoss: result?.maxLoss || 0,
-        winRate: result?.closedTrades > 0 ? (result.winTrades / result.closedTrades) * 100 : 0
+        winRate: totalTrades > 0 ? (result.winTrades / totalTrades) * 100 : 0 // CORRIGIDO: usa totalTrades
       };
 
       return stats;
@@ -534,17 +537,20 @@ class PositionTrackingService {
         [botId]
       );
 
+      // Total Trades = apenas trades fechados com PnL (wins + losses)
+      const totalTrades = (result?.winTrades || 0) + (result?.lossTrades || 0);
+      
       return {
         closedTrades: result?.closedTrades || 0,
         openTrades: result?.openTrades || 0,
-        totalTrades: (result?.closedTrades || 0) + (result?.openTrades || 0), // Total = Fechados + Abertos
+        totalTrades: totalTrades, // CORRIGIDO: apenas trades com PnL
         winTrades: result?.winTrades || 0,
         lossTrades: result?.lossTrades || 0,
         totalPnl: result?.totalPnl || 0,
         avgPnl: result?.avgPnl || 0,
         maxWin: result?.maxWin || 0,
         maxLoss: result?.maxLoss || 0,
-        winRate: result?.closedTrades > 0 ? (result?.winTrades / result?.closedTrades) * 100 : 0
+        winRate: totalTrades > 0 ? (result?.winTrades / totalTrades) * 100 : 0 // CORRIGIDO: usa totalTrades
       };
 
     } catch (error) {
@@ -584,13 +590,13 @@ class PositionTrackingService {
 
       // Calcula métricas de performance baseadas em trades (não ordens individuais)
       const performanceMetrics = {
-        totalTrades: stats.totalTrades,                    // Fechados + Abertos
+        totalTrades: stats.totalTrades,                    // CORRIGIDO: apenas trades com PnL
         totalPositions: stats.totalTrades,                 // Mesmo que totalTrades
         openPositions: stats.openTrades,                   // Trades ainda em aberto (da query)
         closedPositions: stats.closedTrades,               // Trades com P&L calculado
         winningTrades: stats.winTrades,                    // Trades fechados com lucro
         losingTrades: stats.lossTrades,                    // Trades fechados com prejuízo
-        winRate: stats.closedTrades > 0 ? (stats.winTrades / stats.closedTrades) * 100 : 0,
+        winRate: stats.totalTrades > 0 ? (stats.winTrades / stats.totalTrades) * 100 : 0, // CORRIGIDO: usa totalTrades
         totalPnl: stats.totalPnl,
         avgPnl: stats.avgPnl,
         maxWin: stats.maxWin,

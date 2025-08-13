@@ -130,13 +130,13 @@ export function DashboardPage() {
   const handleStartBot = async (botId: string) => {
     try {
       setLoadingBots(prev => ({ ...prev, [botId]: true }))
-      
+
       await axios.post(`${API_BASE_URL}/api/bot/start`, { botId: parseInt(botId) })
-      
+
       // Recarregar status após iniciar
       const response = await axios.get(`${API_BASE_URL}/api/bot/status`)
       setBotStatuses(response.data.data)
-      
+
     } catch (error: any) {
       let errorMessage = 'Erro ao iniciar o bot. Tente novamente.';
       if (error.response?.data?.error) {
@@ -144,7 +144,7 @@ export function DashboardPage() {
       } else if (error.message) {
         errorMessage = `Erro: ${error.message}`;
       }
-      
+
       setErrorModal({
         isOpen: true,
         title: 'Erro ao iniciar bot',
@@ -158,13 +158,13 @@ export function DashboardPage() {
   const handleStopBot = async (botId: string) => {
     try {
       setLoadingBots(prev => ({ ...prev, [botId]: true }))
-      
+
       await axios.post(`${API_BASE_URL}/api/bot/stop`, { botId: parseInt(botId) })
-      
+
       // Recarregar status após parar
       const response = await axios.get(`${API_BASE_URL}/api/bot/status`)
       setBotStatuses(response.data.data)
-      
+
     } catch (error: any) {
       let errorMessage = 'Erro ao parar o bot. Tente novamente.';
       if (error.response?.data?.error) {
@@ -172,7 +172,7 @@ export function DashboardPage() {
       } else if (error.message) {
         errorMessage = `Erro: ${error.message}`;
       }
-      
+
       setErrorModal({
         isOpen: true,
         title: 'Erro ao parar bot',
@@ -188,36 +188,36 @@ export function DashboardPage() {
       // Verificar se o bot estava rodando antes da atualização
       const currentStatus = botStatuses.find(s => s.strategyName === config.strategyName);
       const wasRunning = currentStatus?.isRunning || false;
-      
+
       if (wasRunning) {
         setRestartingBots(prev => ({ ...prev, [config.strategyName]: true }));
       }
-      
+
       // Salvar configuração na API
       const saveResponse = await axios.post(`${API_BASE_URL}/api/configs`, {
         strategyName: config.strategyName,
         config: config
       })
-      
+
       // Se o bot estava rodando, aguardar mais tempo para garantir que reiniciou
       if (wasRunning) {
         await new Promise(resolve => setTimeout(resolve, 5000)); // Aguarda 5 segundos
       }
-      
+
       // Recarregar configurações após salvar
       const response = await axios.get(`${API_BASE_URL}/api/configs`)
       setConfigs(response.data.data)
-      
+
       // Recarregar status dos bots
       const statusResponse = await axios.get(`${API_BASE_URL}/api/bot/status`)
       setBotStatuses(statusResponse.data.data)
-      
+
       // Se o bot estiver rodando, recalcular nextValidationAt
       const updatedStatus = statusResponse.data.data.find((s: any) => s.strategyName === config.strategyName);
       if (updatedStatus?.isRunning) {
         try {
           await axios.get(`${API_BASE_URL}/api/bot/${updatedStatus.id}/next-execution`);
-          
+
           // Recarregar status novamente para pegar o novo nextValidationAt
           const finalStatusResponse = await axios.get(`${API_BASE_URL}/api/bot/status`);
           setBotStatuses(finalStatusResponse.data.data);
@@ -225,27 +225,27 @@ export function DashboardPage() {
           // Error handling without console logs
         }
       }
-      
+
       // Limpar estado de reinicialização
       setRestartingBots(prev => ({ ...prev, [config.strategyName]: false }));
-      
+
       setShowConfigForm(false)
       setSelectedStrategy('')
-      
+
     } catch (error: any) {
       console.error('❌ Erro ao salvar configuração:', error);
       console.error('Detalhes do erro:', error.response?.data || error.message);
-      
+
       // Limpar estado de reinicialização em caso de erro
       setRestartingBots(prev => ({ ...prev, [config.strategyName]: false }));
-      
+
       let errorMessage = 'Erro ao salvar as configurações do bot. Tente novamente.';
       if (error.response?.data?.error) {
         errorMessage = error.response.data.error;
       } else if (error.message) {
         errorMessage = `Erro: ${error.message}`;
       }
-      
+
       setErrorModal({
         isOpen: true,
         title: 'Erro ao salvar configuração',
@@ -281,7 +281,7 @@ export function DashboardPage() {
         strategyName: config.strategyName,
         config: config
       })
-      
+
       // Recarregar configurações após salvar
       const response = await axios.get(`${API_BASE_URL}/api/configs`)
       setConfigs(response.data.data)
@@ -291,7 +291,7 @@ export function DashboardPage() {
       if (error.response?.data?.error) {
         errorMessage = error.response.data.error
       }
-      
+
       setErrorModal({
         isOpen: true,
         title: 'Erro ao criar bot',
@@ -373,28 +373,8 @@ export function DashboardPage() {
           <div>
             <h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">Aviso sobre Recursos</h3>
             <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
-              Cada bot ativo consome recursos do seu computador. Quanto mais bots rodando simultaneamente, 
+              Cada bot ativo consome recursos do seu computador. Quanto mais bots rodando simultaneamente,
               maior será o uso de CPU e memória. Recomendamos não exceder 3-4 bots por vez para melhor performance.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Manual Trading Warning */}
-      <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg dark:bg-blue-900/20 dark:border-blue-800">
-        <div className="flex items-start gap-3">
-          <div className="flex-shrink-0">
-            <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-            </svg>
-          </div>
-          <div>
-            <h3 className="text-sm font-medium text-blue-800 dark:text-blue-200">Importante: Operações Fechadas Manualmente</h3>
-            <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-              Se você fechar uma operação manualmente na corretora, o sistema não contabilizará 
-              essa operação nas estatísticas do bot. No entanto, a corretora continuará registrando normalmente o volume, 
-              lucro ou perda da operação. Para manter a precisão das estatísticas, recomendamos deixar o bot gerenciar 
-              completamente as operações.
             </p>
           </div>
         </div>
@@ -402,7 +382,7 @@ export function DashboardPage() {
 
       {/* Configuração Form */}
       {showConfigForm && selectedStrategy && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4"
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
         >
@@ -454,7 +434,7 @@ export function DashboardPage() {
 
       {/* Criar Bot Form */}
       {showCreateBot && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4"
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
         >
@@ -498,9 +478,9 @@ export function DashboardPage() {
       {/* Botões de Ação */}
       <div className="mb-6 flex justify-end gap-4">
         {/* Botão Operações temporariamente removido para primeira versão
-        <Button 
-          onClick={() => navigate('/operations')} 
-          variant="outline" 
+        <Button
+          onClick={() => navigate('/operations')}
+          variant="outline"
           size="lg"
           className="flex items-center gap-2"
         >
@@ -508,7 +488,7 @@ export function DashboardPage() {
           Operações
         </Button>
         */}
-        <Button 
+        <Button
           onClick={handleCreateBot}
           className="flex items-center gap-2"
           size="lg"
@@ -536,7 +516,7 @@ export function DashboardPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 3xl:grid-cols-6 gap-4 gap-y-6">
             {configs.map((config) => {
               const status = getBotStatus(config.id || 0)
-              
+
               return (
                 <BotCard
                   key={config.id || config.strategyName}
@@ -566,4 +546,4 @@ export function DashboardPage() {
       />
     </div>
   )
-} 
+}

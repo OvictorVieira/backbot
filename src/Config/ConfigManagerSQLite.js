@@ -235,20 +235,25 @@ class ConfigManagerSQLite {
   }
 
   /**
-   * Remove configuração de um bot por ID
+   * Remove configuração de um bot por ID e todas suas ordens
    * @param {number} botId - ID único do bot
    */
   static async removeBotConfigById(botId) {
     try {
+      // Primeiro remove todas as ordens do bot
+      const { default: OrdersService } = await import('../Services/OrdersService.js');
+      const removedOrdersCount = await OrdersService.removeOrdersByBotId(botId);
+      
+      // Depois remove a configuração do bot
       const result = await ConfigManagerSQLite.dbService.run(
         'DELETE FROM bot_configs WHERE botId = ?',
         [botId]
       );
       
       if (result.changes > 0) {
-        console.log(`✅ [CONFIG_SQLITE] Bot ${botId} removido com sucesso`);
+        console.log(`✅ [CONFIG_SQLITE] Bot ${botId} removido com sucesso (${removedOrdersCount} ordens removidas)`);
       } else {
-        console.log(`ℹ️ [CONFIG_SQLITE] Bot ${botId} não encontrado para remoção`);
+        console.log(`ℹ️ [CONFIG_SQLITE] Bot ${botId} não encontrado para remoção (${removedOrdersCount} ordens removidas)`);
       }
     } catch (error) {
       console.error(`❌ [CONFIG_SQLITE] Erro ao remover bot ${botId}:`, error.message);

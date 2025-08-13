@@ -7,6 +7,7 @@ import AccountController from '../Controllers/AccountController.js';
 import { validateLeverageForSymbol, clearLeverageAdjustLog } from '../Utils/Utils.js';
 import ColorLogger from '../Utils/ColorLogger.js';
 import Logger from '../Utils/Logger.js';
+import ConfigManagerSQLite from '../Config/ConfigManagerSQLite.js';
 import { promises as fs } from 'fs';
 import path from 'path';
 
@@ -21,7 +22,7 @@ class TrailingStop {
     this.lastVolumeCheck = 0;
     this.cachedVolume = null;
     this.volumeCacheTimeout = 24 * 60 * 60 * 1000; // 24 horas em ms
-    
+
     // Loga a configuração do trailing stop
     TrailingStop.logTrailingStopConfig(config);
   }
@@ -92,37 +93,37 @@ class TrailingStop {
       TrailingStop.dbService = dbService;
 
       // Load all trailing states from database
-      const results = await dbService.getAll('SELECT symbol, state FROM trailing_state');
-      
+      const results = await dbService.getAll('SELECT botId, symbol, state FROM trailing_state');
+
       // Clear existing state
       TrailingStop.trailingStateByBot.clear();
-      
+
       let totalStates = 0;
-      
+
       for (const row of results) {
         try {
           const state = JSON.parse(row.state);
           const symbol = row.symbol;
-          
-          // For now, we'll store all states in a single bot context
-          // This can be enhanced later to support multiple bots
-          const botKey = 'bot_default';
+          const botId = row.botId;
+
+          // Use actual botId instead of default key
+          const botKey = `bot_${botId}`;
           if (!TrailingStop.trailingStateByBot.has(botKey)) {
             TrailingStop.trailingStateByBot.set(botKey, new Map());
           }
-          
+
           const trailingStateMap = TrailingStop.trailingStateByBot.get(botKey);
           trailingStateMap.set(symbol, state);
           totalStates++;
-          
+
           console.log(`📊 [PERSISTENCE] ${botKey} - ${symbol}: Trailing Stop: $${state.trailingStopPrice?.toFixed(4) || 'N/A'}, Ativo: ${state.activated}`);
         } catch (error) {
           console.error(`❌ [PERSISTENCE] Error parsing state for ${row.symbol}:`, error.message);
         }
       }
-      
+
       console.log(`📂 [PERSISTENCE] Estado do trailing stop carregado: ${totalStates} posições da base de dados`);
-      
+
     } catch (error) {
       console.error(`❌ [PERSISTENCE] Erro ao carregar estado do trailing stop:`, error.message);
       console.log(`🔄 [PERSISTENCE] Iniciando com estado vazio devido ao erro`);
@@ -133,19 +134,31 @@ class TrailingStop {
   /**
    * Salva o estado do trailing stop na base de dados
    */
-  static async saveStateToDB(symbol, state) {
+  static async saveStateToDB(symbol, state, botId) {
     try {
       if (!TrailingStop.dbService || !TrailingStop.dbService.isInitialized()) {
         console.error(`❌ [PERSISTENCE] Database service not initialized, cannot save state`);
         return;
       }
 
-      await TrailingStop.dbService.run(
-        'INSERT OR REPLACE INTO trailing_state (symbol, state, updatedAt) VALUES (?, ?, ?)',
-        [symbol, JSON.stringify(state), new Date().toISOString()]
-      );
-      
-      TrailingStop.debug(`💾 [PERSISTENCE] Estado do trailing stop salvo para ${symbol}`);
+      const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
+
+      if (!botConfig) {
+        console.error(`❌ [PERSISTENCE] Bot config not found for bot ${botId}, cannot save state`);
+        return;
+      }
+
+      if (botConfig.enableTrailingStop === true) {
+        await TrailingStop.dbService.run(
+          'INSERT OR REPLACE INTO trailing_state (botId, symbol, state, updatedAt) VALUES (?, ?, ?, ?)',
+          [botId, symbol, JSON.stringify(state), new Date().toISOString()]
+        );
+
+        TrailingStop.debug(`💾 [PERSISTENCE] Estado do trailing stop salvo para bot ${botId}, símbolo ${symbol}`);
+      } else {
+        console.log(`💾 [PERSISTENCE] Trailing Stop desativado para bot ${botId}, símbolo ${symbol}`);
+      }
+
     } catch (error) {
       console.error(`❌ [PERSISTENCE] Erro ao salvar estado do trailing stop para ${symbol}:`, error.message);
     }
@@ -165,7 +178,7 @@ class TrailingStop {
         'DELETE FROM trailing_state WHERE symbol = ?',
         [symbol]
       );
-      
+
       TrailingStop.debug(`🗑️ [PERSISTENCE] Estado do trailing stop removido para ${symbol}`);
     } catch (error) {
       console.error(`❌ [PERSISTENCE] Erro ao limpar estado do trailing stop para ${symbol}:`, error.message);
@@ -178,20 +191,20 @@ class TrailingStop {
   static async cleanupObsoleteStates(config = null) {
     try {
       console.log(`🧹 [CLEANUP] Verificando estados obsoletos do Trailing Stop...`);
-      
+
       // SEMPRE usa credenciais do config - lança exceção se não disponível
       if (!config?.apiKey || !config?.apiSecret) {
         throw new Error('API_KEY e API_SECRET são obrigatórios - deve ser passado da config do bot');
       }
       const apiKey = config.apiKey;
       const apiSecret = config.apiSecret;
-      
+
       const positions = await Futures.getOpenPositions(apiKey, apiSecret);
       const openSymbols = positions ? positions.map(p => p.symbol) : [];
-      
+
       let cleanedStates = 0;
       const statesToRemove = [];
-      
+
       // Itera sobre todos os bots
       for (const [botKey, trailingStateMap] of TrailingStop.trailingStateByBot.entries()) {
         for (const [symbol, state] of trailingStateMap.entries()) {
@@ -201,7 +214,7 @@ class TrailingStop {
           }
         }
       }
-      
+
       for (const { botKey, symbol } of statesToRemove) {
         const trailingStateMap = TrailingStop.trailingStateByBot.get(botKey);
         if (trailingStateMap) {
@@ -209,20 +222,21 @@ class TrailingStop {
           cleanedStates++;
         }
       }
-      
+
       if (cleanedStates > 0) {
         console.log(`💾 [CLEANUP] Salvando estado limpo com ${cleanedStates} estados removidos...`);
         // Save all remaining states to database
         for (const [botKey, trailingStateMap] of TrailingStop.trailingStateByBot.entries()) {
+          const botId = parseInt(botKey.replace('bot_', '')) || 1;
           for (const [symbol, state] of trailingStateMap.entries()) {
-            await TrailingStop.saveStateToDB(symbol, state);
+            await TrailingStop.saveStateToDB(symbol, state, botId);
           }
         }
         console.log(`✅ [CLEANUP] Limpeza concluída: ${cleanedStates} estados obsoletos removidos`);
       } else {
         console.log(`ℹ️ [CLEANUP] Nenhum estado obsoleto encontrado`);
       }
-      
+
     } catch (error) {
       console.error(`❌ [CLEANUP] Erro durante limpeza:`, error.message);
     }
@@ -237,19 +251,19 @@ class TrailingStop {
   static async backfillStateForOpenPositions(config = null, dbService = null) {
     try {
       console.log(`🔄 [MIGRATION] Iniciando migração do Trailing Stop...`);
-      
+
       console.log(`🧹 [MIGRATION] Limpando arquivo de persistência para dados frescos...`);
       await TrailingStop.forceCleanupAllStates();
-      
+
       console.log(`📋 [MIGRATION] Obtendo posições abertas atuais...`);
-      
+
       // SEMPRE usa credenciais do config - lança exceção se não disponível
       if (!config?.apiKey || !config?.apiSecret) {
         throw new Error('API_KEY e API_SECRET são obrigatórios - deve ser passado da config do bot');
       }
       const apiKey = config.apiKey;
       const apiSecret = config.apiSecret;
-      
+
       const positions = await Futures.getOpenPositions(apiKey, apiSecret);
       if (!positions || positions.length === 0) {
         console.log(`ℹ️ [MIGRATION] Nenhuma posição aberta encontrada para migração`);
@@ -257,11 +271,11 @@ class TrailingStop {
       }
 
       console.log(`📋 [MIGRATION] Encontradas ${positions.length} posições abertas para verificação`);
-      
+
       let newStatesCreated = 0;
-      
-      const Account = await AccountController.get({ 
-        apiKey, 
+
+      const Account = await AccountController.get({
+        apiKey,
         apiSecret,
         strategy: config?.strategyType || 'DEFAULT'
       });
@@ -286,7 +300,7 @@ class TrailingStop {
 
         const entryPrice = parseFloat(position.entryPrice || position.markPrice || 0);
         const currentPrice = parseFloat(position.markPrice || position.lastPrice || 0);
-        
+
         const netQuantity = parseFloat(position.netQuantity || 0);
         const isLong = netQuantity > 0;
         const isShort = netQuantity < 0;
@@ -298,20 +312,20 @@ class TrailingStop {
 
         const { pnl, pnlPct } = TrailingStop.calculatePnL(position, Account);
         const shouldActivate = pnl > 0;
-        
+
         // Verifica se deve usar estratégia híbrida ATR
         const enableHybridStrategy = config?.enableHybridStopStrategy || false;
         let initialState;
-        
+
         if (enableHybridStrategy) {
           // Recupera ou calcula ATR para estratégia híbrida
           const atrValue = await TrailingStop.getAtrValue(position.symbol);
           const initialStopAtrMultiplier = Number(config?.initialStopAtrMultiplier || 2.0);
           const takeProfitAtrMultiplier = Number(config?.takeProfitPartialAtrMultiplier || 1.5);
-          
+
           const initialAtrStopPrice = TrailingStop.calculateAtrStopLossPrice(position, Account, atrValue, initialStopAtrMultiplier);
           const partialTakeProfitPrice = TrailingStop.calculateAtrTakeProfitPrice(position, atrValue, takeProfitAtrMultiplier);
-          
+
           initialState = {
             symbol: position.symbol,
             entryPrice: entryPrice,
@@ -332,12 +346,12 @@ class TrailingStop {
             initialized: shouldActivate,
             createdAt: new Date().toISOString()
           };
-          
+
           console.log(`🎯 [MIGRATION] ${position.symbol}: Stop Loss Inteligente configurado - Volatilidade: ${atrValue.toFixed(6)}, Stop Loss: $${initialAtrStopPrice.toFixed(4)}, Take Profit Parcial: $${partialTakeProfitPrice.toFixed(4)}`);
         } else {
           // Estratégia tradicional
           const initialStopLossPrice = TrailingStop.calculateInitialStopLossPrice(position, Account);
-          
+
           initialState = {
             symbol: position.symbol,
             entryPrice: entryPrice,
@@ -382,7 +396,7 @@ class TrailingStop {
           // Fallback to the static method
           for (const [botKey, trailingStateMap] of TrailingStop.trailingStateByBot.entries()) {
             for (const [symbol, state] of trailingStateMap.entries()) {
-              await TrailingStop.saveStateToDB(symbol, state);
+              await TrailingStop.saveStateToDB(symbol, state, config?.id);
             }
           }
         }
@@ -403,29 +417,27 @@ class TrailingStop {
    * @param {object} account - Dados da conta
    * @returns {object|null} - Estado ATR recuperado ou null
    */
-  static async recoverAtrState(symbol, position, account) {
+  static async recoverAtrState(symbol, position, account, config) {
     try {
       // Procura o estado em todos os bots
       for (const [botKey, trailingStateMap] of TrailingStop.trailingStateByBot.entries()) {
         const existingState = trailingStateMap.get(symbol);
-        
+
         if (existingState && existingState.strategyType === 'HYBRID_ATR') {
           console.log(`🔄 [ATR_RECOVERY] ${botKey} - ${symbol}: Recuperando estado ATR existente - ATR: ${existingState.atrValue?.toFixed(6) || 'N/A'}, Stop: $${existingState.initialAtrStopPrice?.toFixed(4) || 'N/A'}, Fase: ${existingState.phase || 'N/A'}`);
           return existingState;
         }
       }
-      
-      // Se não existe estado ATR, cria um novo
-      // Nota: Este método estático não tem acesso à config, então usa valores padrão
+
       const enableHybridStrategy = true; // Assume que está habilitado
       if (enableHybridStrategy) {
         const atrValue = await TrailingStop.getAtrValue(symbol);
         const initialStopAtrMultiplier = 2.0; // Valor padrão
         const takeProfitAtrMultiplier = 1.5; // Valor padrão
-        
+
         const initialAtrStopPrice = TrailingStop.calculateAtrStopLossPrice(position, account, atrValue, initialStopAtrMultiplier);
         const partialTakeProfitPrice = TrailingStop.calculateAtrTakeProfitPrice(position, atrValue, takeProfitAtrMultiplier);
-        
+
         const recoveredState = {
           symbol: symbol,
           entryPrice: parseFloat(position.entryPrice || position.markPrice || 0),
@@ -446,19 +458,19 @@ class TrailingStop {
           initialized: true,
           createdAt: new Date().toISOString()
         };
-        
+
         // Salva o estado no bot atual (assumindo que é o primeiro bot encontrado)
         const firstBotKey = Array.from(TrailingStop.trailingStateByBot.keys())[0];
         if (firstBotKey) {
           const trailingStateMap = TrailingStop.trailingStateByBot.get(firstBotKey);
           trailingStateMap.set(symbol, recoveredState);
-          await TrailingStop.saveStateToDB(symbol, recoveredState);
+          await TrailingStop.saveStateToDB(symbol, recoveredState, config?.id);
         }
-        
+
         console.log(`🎯 [ATR_RECOVERY] ${symbol}: Stop Loss Inteligente configurado - Volatilidade: ${atrValue.toFixed(6)}, Stop Loss: $${initialAtrStopPrice.toFixed(4)}, Take Profit Parcial: $${partialTakeProfitPrice.toFixed(4)}`);
         return recoveredState;
       }
-      
+
       return null;
     } catch (error) {
       console.error(`❌ [ATR_RECOVERY] Erro ao recuperar estado ATR para ${symbol}:`, error.message);
@@ -482,18 +494,18 @@ class TrailingStop {
    * @returns {object} - Objeto com pnl e pnlPct
    */
   static calculatePnL(position, account) {
-    try { 
+    try {
       // Usa pnlRealized + pnlUnrealized para obter o PnL total correto
       const pnlRealized = parseFloat(position.pnlRealized ?? '0');
       const pnlUnrealized = parseFloat(position.pnlUnrealized ?? '0');
       const pnl = pnlRealized + pnlUnrealized;
 
       const notionalValue = Math.abs(parseFloat(position.netCost ?? '0'));
-      
+
       const rawLeverage = Number(account?.leverage);
-      
+
       const leverage = validateLeverageForSymbol(position.symbol, rawLeverage);
-      
+
       const costBasis = notionalValue / leverage;
 
       let pnlPct = 0;
@@ -520,26 +532,26 @@ class TrailingStop {
   static calculateInitialStopLossPrice(position, account) {
     try {
       const currentPrice = parseFloat(position.markPrice || position.lastPrice || 0);
-      
+
       if (!account?.leverage) {
         console.error(`❌ [STOP_LOSS_ERROR] ${position.symbol}: Alavancagem não encontrada na Account`);
         return null;
       }
-      
+
       const rawLeverage = Number(account.leverage);
-      
+
       const leverage = validateLeverageForSymbol(position.symbol, rawLeverage);
-      
+
       const baseStopLossPct = Math.abs(Number(-10)); // Valor padrão, será sobrescrito pela config do bot
-      
+
       const actualStopLossPct = baseStopLossPct / leverage;
-      
+
       const isLong = parseFloat(position.netQuantity) > 0;
-      
-      const initialStopLossPrice = isLong 
+
+      const initialStopLossPrice = isLong
         ? currentPrice * (1 - actualStopLossPct / 100)
         : currentPrice * (1 + actualStopLossPct / 100);
-      
+
       return initialStopLossPrice;
     } catch (error) {
       console.error(`[INITIAL_STOP] Erro ao calcular stop loss inicial para ${position.symbol}:`, error.message);
@@ -555,7 +567,7 @@ class TrailingStop {
     if (!strategyType) {
       return;
     }
-    
+
     this.strategyType = strategyType;
     this.stopLossStrategy = await StopLossFactory.createStopLoss(strategyType);
   }
@@ -572,7 +584,7 @@ class TrailingStop {
         const state = trailingStateMap.get(symbol);
         trailingStateMap.delete(symbol);
         TrailingStop.colorLogger.trailingCleanup(`${symbol}: Estado limpo (${reason}) - Trailing Stop: $${state?.trailingStopPrice?.toFixed(4) || 'N/A'}`);
-        
+
         // Remove do cache de logs também
         const trailingModeLogged = TrailingStop.trailingModeLoggedByBot.get(botKey);
         if (trailingModeLogged) {
@@ -580,7 +592,7 @@ class TrailingStop {
         }
       }
     }
-    
+
     await TrailingStop.clearStateFromDB(symbol);
   }
 
@@ -592,7 +604,7 @@ class TrailingStop {
   static async onPositionClosed(position, closeReason) {
     if (position && position.symbol) {
       await TrailingStop.clearTrailingState(position.symbol, `posição fechada: ${closeReason}`);
-      
+
       clearLeverageAdjustLog(position.symbol);
     }
   }
@@ -604,18 +616,18 @@ class TrailingStop {
   static async forceCleanupAllStates() {
     try {
       console.log(`🧹 [FORCE_CLEANUP] Limpeza completa do estado do Trailing Stop...`);
-      
+
       let totalStateCount = 0;
       for (const [botKey, trailingStateMap] of TrailingStop.trailingStateByBot.entries()) {
         totalStateCount += trailingStateMap.size;
         trailingStateMap.clear();
       }
-      
+
       TrailingStop.trailingStateByBot.clear();
       TrailingStop.trailingModeLoggedByBot.clear();
-      
+
       clearLeverageAdjustLog();
-      
+
       // Clear all states from database
       if (TrailingStop.dbService && TrailingStop.dbService.isInitialized()) {
         try {
@@ -625,9 +637,9 @@ class TrailingStop {
           console.error(`❌ [FORCE_CLEANUP] Erro ao limpar base de dados:`, error.message);
         }
       }
-      
+
       console.log(`✅ [FORCE_CLEANUP] Limpeza completa concluída: ${totalStateCount} estados removidos de todos os bots`);
-      
+
     } catch (error) {
       console.error(`❌ [FORCE_CLEANUP] Erro durante limpeza completa:`, error.message);
     }
@@ -699,14 +711,14 @@ class TrailingStop {
     try {
       const markets = new Markets();
       const candles = await markets.getKLines(symbol, timeframe, 30);
-      
+
       if (!candles || candles.length < 14) {
         return null;
       }
 
       const { calculateIndicators } = await import('../Decision/Indicators.js');
               const indicators = await calculateIndicators(candles, timeframe, symbol);
-      
+
       return indicators.atr?.atr || null;
     } catch (error) {
       console.error(`[ATR_GET] Erro ao obter ATR para ${symbol}:`, error.message);
@@ -716,12 +728,12 @@ class TrailingStop {
 
   /**
    * Atualiza o trailing stop para uma posição específica
-   * 
+   *
    * 🛡️ IMPORTANTE: Este método trabalha em PARALELO com o failsafe de segurança.
    * O failsafe (MAX_NEGATIVE_PNL_STOP_PCT) é SEMPRE criado na corretora como rede de segurança.
    * Este monitoramento tático (ATR) é uma camada adicional de inteligência que pode fechar
    * a posição antes que o failsafe seja atingido.
-   * 
+   *
    * @param {object} position - Dados da posição
    * @returns {object|null} - Estado atualizado do trailing stop ou null se não aplicável
    */
@@ -730,7 +742,7 @@ class TrailingStop {
     try {
       const enableTrailingStop = this.config?.enableTrailingStop || false;
       const enableHybridStrategy = this.config?.enableHybridStopStrategy || false;
-      
+
       if (!enableTrailingStop) {
         return null;
       }
@@ -741,22 +753,22 @@ class TrailingStop {
       }
       const apiKey = this.config.apiKey;
       const apiSecret = this.config.apiSecret;
-      
-      const Account = await AccountController.get({ 
-        apiKey, 
+
+      const Account = await AccountController.get({
+        apiKey,
         apiSecret,
-        strategy: this.strategyType 
+        strategy: this.strategyType
       });
-      
+
       if (!Account.leverage) {
         console.error(`❌ [TRAILING_ERROR] ${position.symbol}: Alavancagem não encontrada na Account`);
         return null;
       }
-      
+
       const { pnl, pnlPct } = TrailingStop.calculatePnL(position, Account);
       const currentPrice = parseFloat(position.markPrice || position.lastPrice || 0);
       const entryPrice = parseFloat(position.entryPrice || 0);
-      
+
       if (currentPrice <= 0 || entryPrice <= 0) {
         console.error(`❌ [TRAILING_ERROR] Preços inválidos para ${position.symbol}: Current: ${currentPrice}, Entry: ${entryPrice}`);
         return null;
@@ -776,28 +788,27 @@ class TrailingStop {
       if (enableHybridStrategy) {
         // Se não existe estado, tenta recuperar estado ATR
         if (!trailingState) {
-          trailingState = await TrailingStop.recoverAtrState(position.symbol, position, Account);
+          trailingState = await TrailingStop.recoverAtrState(position.symbol, position, Account, this.config);
         }
         return await this.updateTrailingStopHybrid(position, trailingState, Account, pnl, pnlPct, currentPrice, entryPrice, isLong, isShort);
       }
 
-      // === ESTRATÉGIA TRADICIONAL ===
       return await this.updateTrailingStopTraditional(position, trailingState, Account, pnl, pnlPct, currentPrice, entryPrice, isLong, isShort);
 
     } catch (error) {
       console.error(`[TRAILING_UPDATE] Erro ao atualizar trailing stop para ${position.symbol}:`, error.message);
       return null;
     } finally {
-      // Save state to database if needed
       if (trailingState) {
-        await TrailingStop.saveStateToDB(position.symbol, trailingState);
+        const botId = this.config?.id;
+        await TrailingStop.saveStateToDB(position.symbol, trailingState, botId);
       }
     }
   }
 
   /**
    * Atualiza trailing stop usando a estratégia híbrida (ATR)
-   * 
+   *
    * 🛡️ SEGURANÇA: Este método trabalha em PARALELO com o failsafe.
    * O failsafe (MAX_NEGATIVE_PNL_STOP_PCT) é SEMPRE criado na corretora.
    * Este monitoramento tático pode fechar a posição antes do failsafe.
@@ -810,38 +821,38 @@ class TrailingStop {
         const atrValue = await TrailingStop.getAtrValue(position.symbol);
         const initialStopAtrMultiplier = Number(this.config?.initialStopAtrMultiplier || 2.0);
         const takeProfitAtrMultiplier = Number(this.config?.takeProfitPartialAtrMultiplier || 1.5);
-        
+
         // 1. CALCULAR OS DOIS STOPS
         // a) Stop Tático (ATR)
         const atrStopPrice = TrailingStop.calculateAtrStopLossPrice(position, account, atrValue, initialStopAtrMultiplier);
-        
+
         // b) Stop de Segurança Máxima (PnL)
         const maxPnlStopPrice = TrailingStop.calculateInitialStopLossPrice(position, account);
-        
+
         // 2. LOGAR OS CÁLCULOS PARA TRANSPARÊNCIA
         console.log(`🔍 [STOP_CALC] ${position.symbol}: Stop Tático (ATR) calculado em $${atrStopPrice?.toFixed(4) || 'N/A'}`);
         const maxNegativePnlStopPct = this.config?.maxNegativePnlStopPct || -10;
         console.log(`🔍 [STOP_CALC] ${position.symbol}: Stop de Segurança Máxima (${maxNegativePnlStopPct}%) calculado em $${maxPnlStopPrice?.toFixed(4) || 'N/A'}`);
-        
+
         // 3. TOMAR E LOGAR A DECISÃO
         // Para uma COMPRA (LONG), o stop mais seguro é o mais ALTO.
         // Para uma VENDA (SHORT), o stop mais seguro é o mais BAIXO.
-        const finalStopPrice = isLong 
-          ? Math.max(atrStopPrice || 0, maxPnlStopPrice || 0) 
+        const finalStopPrice = isLong
+          ? Math.max(atrStopPrice || 0, maxPnlStopPrice || 0)
           : Math.min(atrStopPrice || 0, maxPnlStopPrice || 0);
-        
+
         console.log(`✅ [STOP_DECISION] ${position.symbol}: Stop tático ATIVO definido para $${finalStopPrice.toFixed(4)} (o mais seguro dos dois).`);
-        
+
         const partialTakeProfitPrice = TrailingStop.calculateAtrTakeProfitPrice(position, atrValue, takeProfitAtrMultiplier);
-        
+
         // 🎯 MONITORAR ORDEM LIMIT DE TAKE PROFIT PARCIAL (não criar nova)
         const partialPercentage = Number(this.config?.partialProfitPercentage || 50);
         console.log(`🎯 [TP_LIMIT_SETUP] ${position.symbol}: Monitorando ordem LIMIT de take profit parcial existente`);
         console.log(`📊 [TP_LIMIT_SETUP] ${position.symbol}: Preço esperado: $${partialTakeProfitPrice?.toFixed(4) || 'N/A'}, Quantidade: ${partialPercentage}%`);
-        
+
         // NÃO cria nova ordem - apenas monitora a existente
         console.log(`ℹ️ [TP_LIMIT_SETUP] ${position.symbol}: Ordem de TP parcial já foi criada pelo sistema principal. Apenas monitorando.`);
-        
+
         const newState = {
           symbol: position.symbol,
           entryPrice: entryPrice,
@@ -867,10 +878,10 @@ class TrailingStop {
         // Salva o estado no bot atual
         const trailingStateMap = this.getTrailingState();
         trailingStateMap.set(position.symbol, newState);
-        await TrailingStop.saveStateToDB(position.symbol, newState);
-        
+        await TrailingStop.saveStateToDB(position.symbol, newState, this.config?.id);
+
         TrailingStop.colorLogger.trailingActivated(`${position.symbol}: 🎯 Stop Loss Inteligente ATIVADO! Fase: Proteção Inicial - PnL: ${pnlPct.toFixed(2)}%, Entrada: $${entryPrice.toFixed(4)}, Atual: $${currentPrice.toFixed(4)}, Volatilidade: ${atrValue?.toFixed(6) || 'N/A'}, Stop Loss Final: $${finalStopPrice?.toFixed(4) || 'N/A'}, Take Profit: $${partialTakeProfitPrice?.toFixed(4) || 'N/A'}`);
-        
+
         return newState;
       }
 
@@ -878,41 +889,41 @@ class TrailingStop {
       // Verifica se a ordem LIMIT de take profit parcial existe
       if (trailingState.phase === 'INITIAL_RISK') {
         const enableHybridStrategy = this.config?.enableHybridStopStrategy || false;
-        
+
         if (enableHybridStrategy) {
           // Verifica se a ordem LIMIT de take profit parcial existe
           const hasPartialOrder = await OrderController.hasPartialTakeProfitOrder(position.symbol, position, account, this.config);
-          
+
           if (!hasPartialOrder) {
             console.log(`⚠️ [TP_LIMIT_MONITOR] ${position.symbol}: Ordem de TP parcial não encontrada, criando automaticamente...`);
-            
+
             try {
               // Calcula preço de TP parcial baseado em ATR
               const partialPercentage = Number(this.config?.partialTakeProfitPercentage || 50);
               const atrMultiplier = Number(this.config?.takeProfitPartialAtrMultiplier || 1.5);
-              
+
               // Calcula preço de TP usando ATR
               let takeProfitPrice = null;
               if (trailingState.atr && trailingState.atr > 0) {
                 const atrDistance = trailingState.atr * atrMultiplier;
-                takeProfitPrice = trailingState.isLong 
-                  ? entryPrice + atrDistance 
+                takeProfitPrice = trailingState.isLong
+                  ? entryPrice + atrDistance
                   : entryPrice - atrDistance;
-                
+
                 console.log(`📊 [TP_LIMIT_MONITOR] ${position.symbol}: TP calculado via ATR - Preço: $${takeProfitPrice.toFixed(6)} (ATR: ${trailingState.atr.toFixed(6)}, Mult: ${atrMultiplier})`);
               } else {
                 // Fallback: usa porcentagem mínima de lucro ajustada por alavancagem
                 const minProfitPercentage = Number(this.config?.minProfitPercentage || 10);
                 const leverage = parseFloat(account?.leverage || 1);
                 const actualProfitPct = minProfitPercentage / leverage;
-                
+
                 takeProfitPrice = trailingState.isLong
                   ? entryPrice * (1 + (actualProfitPct / 100))
                   : entryPrice * (1 - (actualProfitPct / 100));
-                
+
                 console.log(`📊 [TP_LIMIT_MONITOR] ${position.symbol}: TP calculado via % - Preço: $${takeProfitPrice.toFixed(6)} (${minProfitPercentage}% / ${leverage}x = ${actualProfitPct.toFixed(2)}%)`);
               }
-              
+
               if (takeProfitPrice && takeProfitPrice > 0) {
                 const result = await OrderController.createPartialTakeProfitOrder(
                   position,
@@ -921,7 +932,7 @@ class TrailingStop {
                   account,
                   this.config
                 );
-                
+
                 if (result) {
                   console.log(`✅ [TP_LIMIT_MONITOR] ${position.symbol}: Ordem de TP parcial criada automaticamente! Preço: $${takeProfitPrice.toFixed(6)} (${partialPercentage}%)`);
                 } else {
@@ -937,31 +948,31 @@ class TrailingStop {
             console.log(`✅ [TP_LIMIT_MONITOR] ${position.symbol}: Ordem de TP parcial encontrada e sendo monitorada`);
           }
         }
-        
+
         // Verifica se a ordem LIMIT foi executada (posição reduzida)
         const currentQuantity = Math.abs(parseFloat(position.netQuantity));
         const originalQuantity = Math.abs(parseFloat(trailingState.originalQuantity || position.netQuantity));
         const partialPercentage = Number(this.config?.partialProfitPercentage || 50);
         const expectedRemainingQuantity = originalQuantity * (1 - partialPercentage / 100);
-        
+
         // Se a quantidade foi reduzida, significa que o take profit foi executado
         if (currentQuantity <= expectedRemainingQuantity * 1.01) { // 1% de tolerância
           trailingState.phase = 'PARTIAL_PROFIT_TAKEN';
           trailingState.trailingStopPrice = entryPrice; // Move para breakeven
-          
+
           TrailingStop.colorLogger.trailingUpdate(`${position.symbol}: 🎯 Take Profit Parcial EXECUTADO! (${partialPercentage}% da posição) - Stop movido para breakeven: $${entryPrice.toFixed(4)}`);
-          
+
           // 🛡️ CANCELAR STOP LOSS ANTIGO E CRIAR NOVO NO BREAKEVEN
           console.log(`🔄 [BREAKEVEN] ${position.symbol}: Cancelando stop loss antigo e criando novo no breakeven...`);
-          
+
           try {
             // Cancela ordens de stop loss existentes
             await OrderController.cancelFailsafeOrders(position.symbol, account.botName, this.config);
             console.log(`✅ [BREAKEVEN] ${position.symbol}: Stop loss antigo cancelado`);
-            
+
             // Cria nova ordem de stop loss no breakeven
             const newStopLossResult = await OrderController.validateAndCreateStopLoss(position, account.botName, this.config);
-            
+
             if (newStopLossResult) {
               console.log(`✅ [BREAKEVEN] ${position.symbol}: Nova ordem de stop loss criada no breakeven: $${entryPrice.toFixed(4)}`);
             } else {
@@ -970,15 +981,15 @@ class TrailingStop {
           } catch (error) {
             console.error(`❌ [BREAKEVEN] ${position.symbol}: Erro ao atualizar stop loss para breakeven:`, error.message);
           }
-          
-          await TrailingStop.saveStateToDB(position.symbol, trailingState);
-          
+
+          await TrailingStop.saveStateToDB(position.symbol, trailingState, this.config?.id);
+
           return trailingState;
         }
       }
 
       // Verifica se deve fechar por stop loss inicial
-      const shouldCloseByInitialStop = isLong 
+      const shouldCloseByInitialStop = isLong
         ? currentPrice <= trailingState.initialAtrStopPrice
         : currentPrice >= trailingState.initialAtrStopPrice;
 
@@ -1002,16 +1013,16 @@ class TrailingStop {
 
         // Lógica tradicional de trailing stop
         const trailingStopDistance = Number(this.config?.trailingStopDistance || 1.5);
-        
+
         if (isLong) {
           if (currentPrice > trailingState.highestPrice || trailingState.highestPrice === null) {
             trailingState.highestPrice = currentPrice;
-            
+
             const newTrailingStopPrice = currentPrice * (1 - (trailingStopDistance / 100));
             const currentStopPrice = trailingState.trailingStopPrice;
-            
+
             const finalStopPrice = Math.max(currentStopPrice, newTrailingStopPrice);
-            
+
             if (finalStopPrice > currentStopPrice) {
               trailingState.trailingStopPrice = finalStopPrice;
               TrailingStop.colorLogger.trailingUpdate(`${position.symbol}: 📈 Maximizando Lucros! LONG - Preço: $${currentPrice.toFixed(4)}, Stop Loss Ajustado: $${finalStopPrice.toFixed(4)}`);
@@ -1020,11 +1031,11 @@ class TrailingStop {
         } else if (isShort) {
           if (currentPrice < trailingState.lowestPrice || trailingState.lowestPrice === null) {
             trailingState.lowestPrice = currentPrice;
-            
+
             const newTrailingStopPrice = currentPrice * (1 + (trailingStopDistance / 100));
             const currentStopPrice = trailingState.trailingStopPrice;
             const finalStopPrice = Math.min(currentStopPrice, newTrailingStopPrice);
-            
+
             if (finalStopPrice < currentStopPrice) {
               trailingState.trailingStopPrice = finalStopPrice;
               TrailingStop.colorLogger.trailingUpdate(`${position.symbol}: 📈 Maximizando Lucros! SHORT - Preço: $${currentPrice.toFixed(4)}, Stop Loss Ajustado: $${finalStopPrice.toFixed(4)}`);
@@ -1047,7 +1058,7 @@ class TrailingStop {
   async updateTrailingStopTraditional(position, trailingState, account, pnl, pnlPct, currentPrice, entryPrice, isLong, isShort) {
     try {
       const trailingStopDistance = Number(this.config?.trailingStopDistance || 1.5);
-      
+
       if (isNaN(trailingStopDistance) || trailingStopDistance <= 0) {
         console.error(`❌ [TRAILING_ERROR] TRAILING_STOP_DISTANCE inválido: ${this.config?.trailingStopDistance || 1.5}`);
         return null;
@@ -1055,7 +1066,7 @@ class TrailingStop {
 
       if (!trailingState && pnl > 0) {
         const initialStopLossPrice = TrailingStop.calculateInitialStopLossPrice(position, account);
-        
+
         const newState = {
           symbol: position.symbol,
           entryPrice: entryPrice,
@@ -1073,10 +1084,10 @@ class TrailingStop {
 
         const trailingStateMap = this.getTrailingState();
         trailingStateMap.set(position.symbol, newState);
-        await TrailingStop.saveStateToDB(position.symbol, newState);
-        
+        await TrailingStop.saveStateToDB(position.symbol, newState, this.config?.id);
+
         TrailingStop.colorLogger.trailingActivated(`${position.symbol}: Trailing Stop ATIVADO! Posição lucrativa detectada - PnL: ${pnlPct.toFixed(2)}%, Preço de Entrada: $${entryPrice.toFixed(4)}, Preço Atual: $${currentPrice.toFixed(4)}, Stop Inicial: $${initialStopLossPrice.toFixed(4)}`);
-        
+
         return newState;
       }
 
@@ -1084,18 +1095,18 @@ class TrailingStop {
         trailingState.activated = true;
         trailingState.initialized = true;
         trailingState.phase = 'TRAILING';
-        
+
         if (isLong && currentPrice > trailingState.highestPrice) {
           trailingState.highestPrice = currentPrice;
         }
         if (isShort && currentPrice < trailingState.lowestPrice) {
           trailingState.lowestPrice = currentPrice;
         }
-        
-        await TrailingStop.saveStateToDB(position.symbol, trailingState);
-        
+
+        await TrailingStop.saveStateToDB(position.symbol, trailingState, this.config?.id);
+
         TrailingStop.colorLogger.trailingActivated(`${position.symbol}: Trailing Stop REATIVADO! Estado existente ativado - PnL: ${pnlPct.toFixed(2)}%, Preço Atual: $${currentPrice.toFixed(4)}, Stop: $${trailingState.trailingStopPrice.toFixed(4)}`);
-        
+
         return trailingState;
       }
 
@@ -1104,7 +1115,7 @@ class TrailingStop {
           TrailingStop.colorLogger.trailingHold(`${position.symbol}: Posição em prejuízo mas Trailing Stop mantido ativo para proteção - Trailing Stop: $${trailingState.trailingStopPrice?.toFixed(4) || 'N/A'}`);
           return trailingState;
         }
-        
+
         TrailingStop.clearTrailingState(position.symbol);
         return null;
       }
@@ -1112,12 +1123,12 @@ class TrailingStop {
       if (isLong) {
         if (currentPrice > trailingState.highestPrice || trailingState.highestPrice === null) {
           trailingState.highestPrice = currentPrice;
-      
+
           const newTrailingStopPrice = currentPrice * (1 - (trailingStopDistance / 100));
           const currentStopPrice = trailingState.trailingStopPrice;
-      
+
           const finalStopPrice = Math.max(currentStopPrice, newTrailingStopPrice);
-      
+
           if (finalStopPrice > currentStopPrice) {
               trailingState.trailingStopPrice = finalStopPrice;
               trailingState.activated = true;
@@ -1127,19 +1138,19 @@ class TrailingStop {
       } else if (isShort) {
         if (currentPrice < trailingState.lowestPrice || trailingState.lowestPrice === null) {
           trailingState.lowestPrice = currentPrice;
-          
+
           const newTrailingStopPrice = trailingState.lowestPrice * (1 + (trailingStopDistance / 100));
-          
+
           const currentStopPrice = trailingState.trailingStopPrice;
           const finalStopPrice = Math.min(currentStopPrice, newTrailingStopPrice);
-          
+
           if (finalStopPrice < currentStopPrice) {
             trailingState.trailingStopPrice = finalStopPrice;
             trailingState.activated = true;
             TrailingStop.colorLogger.trailingUpdate(`${position.symbol}: SHORT - Preço melhorou para $${currentPrice.toFixed(4)}, Trailing Stop ajustado para $${finalStopPrice.toFixed(4)} (protegendo lucros)`);
           }
         }
-        
+
         if (pnl > 0 && !trailingState.activated) {
           const newTrailingStopPrice = currentPrice * (1 + (trailingStopDistance / 100));
           const finalStopPrice = Math.min(trailingState.initialStopLossPrice, newTrailingStopPrice);
@@ -1181,7 +1192,7 @@ class TrailingStop {
 
       // === ESTRATÉGIA HÍBRIDA ===
       const enableHybridStrategy = this.config?.enableHybridStopStrategy || false;
-      
+
       if (enableHybridStrategy && trailingState.phase) {
         // Verifica stop loss inicial da estratégia híbrida
         if (trailingState.phase === 'INITIAL_RISK' && trailingState.initialAtrStopPrice) {
@@ -1195,7 +1206,7 @@ class TrailingStop {
             type = 'HYBRID_INITIAL_STOP';
           }
         }
-        
+
         // Verifica trailing stop da fase de maximização
         if ((trailingState.phase === 'TRAILING' || trailingState.phase === 'PARTIAL_PROFIT_TAKEN') && trailingState.trailingStopPrice) {
           if (trailingState.isLong && currentPrice <= trailingState.trailingStopPrice) {
@@ -1286,7 +1297,7 @@ class TrailingStop {
   async getFeeTier() {
     try {
       const now = Date.now();
-      
+
       if (!this.cachedVolume || (now - this.lastVolumeCheck) > this.volumeCacheTimeout) {
         this.cachedVolume = await PnlController.get30DayVolume();
         this.lastVolumeCheck = now;
@@ -1295,7 +1306,7 @@ class TrailingStop {
       const volume30Days = this.cachedVolume || 0;
 
       let tier;
-      
+
       if (volume30Days >= 10000000) {
         tier = { maker: 0.0001, taker: 0.0002, name: 'DIAMOND' };
       } else if (volume30Days >= 5000000) { // $5M+
@@ -1333,18 +1344,18 @@ class TrailingStop {
    * @returns {object} - PnL em USD e porcentagem
    */
   calculatePnL(position, account) {
-    try { 
+    try {
       // Usa pnlRealized + pnlUnrealized para obter o PnL total correto
       const pnlRealized = parseFloat(position.pnlRealized ?? '0');
       const pnlUnrealized = parseFloat(position.pnlUnrealized ?? '0');
       const pnl = pnlRealized + pnlUnrealized;
 
       const notionalValue = Math.abs(parseFloat(position.netCost ?? '0'));
-      
+
       const rawLeverage = Number(account?.leverage);
-      
+
       const leverage = validateLeverageForSymbol(position.symbol, rawLeverage);
-      
+
       const costBasis = notionalValue / leverage;
 
       let pnlPct = 0;
@@ -1371,13 +1382,13 @@ class TrailingStop {
   calculateMinimumProfitForFees(position, fees) {
     try {
       const notional = parseFloat(position.netExposureNotional || position.notional || 0);
-      
+
       if (notional <= 0) {
         return { minProfitUSD: 0, minProfitPct: 0 };
       }
 
       const totalFees = notional * fees.totalFee;
-      
+
       const minProfitUSD = totalFees;
       const minProfitPct = (minProfitUSD / notional) * 100;
 
@@ -1393,73 +1404,72 @@ class TrailingStop {
 
   /**
    * Verifica se deve fechar posição quando o lucro líquido cobre as taxas
-   * 
+   *
    * Esta função SEMPRE verifica se o lucro líquido (após deduzir taxas de entrada + saída)
    * é maior que zero. É a verificação de segurança para garantir que não há prejuízo.
-   * 
+   *
    * Prioridade 1: Esta verificação acontece ANTES da verificação de MIN_PROFIT_PERCENTAGE
-   * 
+   *
    * @param {object} position - Dados da posição
    * @returns {Promise<boolean>} - True se deve fechar por lucro mínimo
    */
   async shouldCloseForMinimumProfit(position) {
     try {
-      // SEMPRE usa credenciais do config - lança exceção se não disponível
       if (!this.config?.apiKey || !this.config?.apiSecret) {
         throw new Error('API_KEY e API_SECRET são obrigatórios - deve ser passado da config do bot');
       }
       const apiKey = this.config.apiKey;
       const apiSecret = this.config.apiSecret;
-      
-      const Account = await AccountController.get({ 
-        apiKey, 
+
+      const Account = await AccountController.get({
+        apiKey,
         apiSecret,
-        strategy: this.strategyType 
+        strategy: this.strategyType
       });
-      
+
       if (!Account.leverage) {
         console.error(`❌ [PROFIT_CHECK] ${position.symbol}: Alavancagem não encontrada na Account`);
         return false;
-      }      
-      
+      }
+
       const { pnl, pnlPct } = TrailingStop.calculatePnL(position, Account);
-      
+
       const MAX_NEGATIVE_PNL_STOP_PCT = this.config?.maxNegativePnlStopPct || -10;
-      
+
       if (MAX_NEGATIVE_PNL_STOP_PCT !== undefined && MAX_NEGATIVE_PNL_STOP_PCT !== null && MAX_NEGATIVE_PNL_STOP_PCT !== '') {
         const maxNegativePnlStopPct = parseFloat(MAX_NEGATIVE_PNL_STOP_PCT);
-        
+
         if (isNaN(maxNegativePnlStopPct) || !isFinite(maxNegativePnlStopPct)) {
           console.error(`❌ [PROFIT_CHECK] Valor inválido para MAX_NEGATIVE_PNL_STOP_PCT: ${MAX_NEGATIVE_PNL_STOP_PCT}`);
           return false;
         }
-        
+
         if (isNaN(pnlPct) || !isFinite(pnlPct)) {
           console.error(`❌ [PROFIT_CHECK] PnL inválido para ${position.symbol}: ${pnlPct}`);
           return false;
         }
-        
+
         if (pnlPct <= maxNegativePnlStopPct) {
           console.log(`🚨 [PROFIT_CHECK] ${position.symbol}: Fechando por stop loss - PnL ${pnlPct.toFixed(3)}% <= limite ${maxNegativePnlStopPct.toFixed(3)}%`);
           return true;
         }
       }
-      
+
       const fees = await this.getFeeTier();
-      
+
       const { minProfitUSD, totalFees } = this.calculateMinimumProfitForFees(position, fees);
-      
+
       const netProfit = pnl - totalFees;
 
       if (netProfit > 0 && netProfit >= minProfitUSD) {
         console.log(`✅ [PROFIT_CHECK] ${position.symbol}: Fechando por lucro $${netProfit.toFixed(4)} >= mínimo $${minProfitUSD.toFixed(4)}`);
         return true;
       }
-      
+
       if (netProfit > 0.01 && netProfit < minProfitUSD) {
         console.log(`⚠️ [PROFIT_CHECK] ${position.symbol}: Lucro $${netProfit.toFixed(4)} < mínimo $${minProfitUSD.toFixed(4)}`);
       }
-      
+
       return false;
     } catch (error) {
       console.error('[PROFIT_CHECK] Erro ao verificar profit mínimo:', error.message);
@@ -1469,13 +1479,13 @@ class TrailingStop {
 
   /**
    * Verifica se deve fechar posição por profit mínimo configurado
-   * 
+   *
    * ⚠️ ATENÇÃO: Configurar MIN_PROFIT_PERCENTAGE=0 fará o sistema fechar trades
    * assim que o lucro líquido cobrir as taxas (entrada + saída). Isso pode resultar
    * em fechamentos muito rápidos com lucro mínimo. Recomenda-se configurar um valor
    * maior (ex: 5-10%) para evitar perdas significativas no stop loss e garantir
    * um lucro real após todas as taxas.
-   * 
+   *
    * @param {object} position - Dados da posição
    * @returns {Promise<boolean>} - True se deve fechar por profit configurado
    */
@@ -1487,60 +1497,60 @@ class TrailingStop {
       }
       const apiKey = this.config.apiKey;
       const apiSecret = this.config.apiSecret;
-      
-      const Account = await AccountController.get({ 
-        apiKey, 
+
+      const Account = await AccountController.get({
+        apiKey,
         apiSecret,
-        strategy: this.strategyType 
+        strategy: this.strategyType
       });
-      
+
       if (!Account.leverage) {
         console.error(`❌ [CONFIG_PROFIT] ${position.symbol}: Alavancagem não encontrada na Account`);
         return false;
       }
-      
+
       const { pnl, pnlPct } = TrailingStop.calculatePnL(position, Account);
-      
+
       const MAX_NEGATIVE_PNL_STOP_PCT = this.config?.maxNegativePnlStopPct || -10;
-      
+
       if (MAX_NEGATIVE_PNL_STOP_PCT !== undefined && MAX_NEGATIVE_PNL_STOP_PCT !== null && MAX_NEGATIVE_PNL_STOP_PCT !== '') {
         const maxNegativePnlStopPct = parseFloat(MAX_NEGATIVE_PNL_STOP_PCT);
-        
+
         if (isNaN(maxNegativePnlStopPct) || !isFinite(maxNegativePnlStopPct)) {
           console.error(`❌ [CONFIG_PROFIT] Valor inválido para MAX_NEGATIVE_PNL_STOP_PCT: ${MAX_NEGATIVE_PNL_STOP_PCT}`);
           return false;
         }
-        
+
         if (isNaN(pnlPct) || !isFinite(pnlPct)) {
           console.error(`❌ [CONFIG_PROFIT] PnL inválido para ${position.symbol}: ${pnlPct}`);
           return false;
         }
-        
+
         if (pnlPct <= maxNegativePnlStopPct) {
           console.log(`🚨 [CONFIG_PROFIT] ${position.symbol}: Fechando por stop loss - PnL ${pnlPct.toFixed(3)}% <= limite ${maxNegativePnlStopPct.toFixed(3)}%`);
           return true;
         }
       }
-      
+
       const minProfitPct = Number(this.config?.minProfitPercentage || 0.5);
-      
+
       const fees = await this.getFeeTier();
-      
+
       const notional = parseFloat(position.netExposureNotional || position.notional || 0);
       const totalFees = notional * fees.totalFee;
-      
+
       const netProfit = pnl - totalFees;
       const netProfitPct = notional > 0 ? (netProfit / notional) * 100 : 0;
-      
+
       if (netProfit > 0 && netProfitPct >= minProfitPct) {
         console.log(`\n✅ [CONFIG_PROFIT] ${position.symbol}: Fechando por lucro ${netProfitPct.toFixed(3)}% >= mínimo ${minProfitPct.toFixed(3)}%`);
         return true;
       }
-      
+
       if (netProfit > 0.01 && netProfitPct < minProfitPct) {
         console.log(`\n⚠️ [CONFIG_PROFIT] ${position.symbol}: Lucro ${netProfitPct.toFixed(3)}% < mínimo ${minProfitPct.toFixed(3)}%`);
       }
-      
+
       return false;
     } catch (error) {
       console.error('[CONFIG_PROFIT] Erro ao verificar profit configurado:', error.message);
@@ -1554,28 +1564,28 @@ class TrailingStop {
       if (!this.config) {
         throw new Error('Configuração do bot é obrigatória - deve ser passada no construtor');
       }
-      
+
       const enableTrailingStop = this.config.enableTrailingStop || false;
-      
+
       // SEMPRE usa credenciais do config - lança exceção se não disponível
       if (!this.config.apiKey || !this.config.apiSecret) {
         throw new Error('API_KEY e API_SECRET são obrigatórios - deve ser passado da config do bot');
       }
       const apiKey = this.config.apiKey;
       const apiSecret = this.config.apiSecret;
-      
+
       const positions = await Futures.getOpenPositions(apiKey, apiSecret);
-      
+
       if (!positions || positions.length === 0) {
         return;
       }
 
       TrailingStop.debug(`🔍 [TRAILING_MONITOR] Verificando ${positions.length} posições abertas...`);
-      
-      const Account = await AccountController.get({ 
-        apiKey, 
+
+      const Account = await AccountController.get({
+        apiKey,
         apiSecret,
-        strategy: this.strategyType 
+        strategy: this.strategyType
       });
 
       for (const position of positions) {
@@ -1603,14 +1613,14 @@ class TrailingStop {
         if (positionState && positionState.strategyName === 'AlphaFlowStrategy') {
           // Modo ALPHA FLOW: Verifica apenas o alvo de TP fixo calculado pela estratégia
           console.log(`📋 [PROFIT_MODE] ${position.symbol}: Modo Alpha Flow ativo. Verificando alvo de TP fixo...`);
-          
+
           // Obtenha o 'targetPrice' que foi salvo quando a ordem foi criada
           const targetPrice = positionState.takeProfitPrice; // Assumindo que salvamos o alvo no estado
-          
+
           if (targetPrice) {
             const isLong = parseFloat(position.netQuantity) > 0;
             const isShort = parseFloat(position.netQuantity) < 0;
-            
+
             if ((isLong && currentPrice >= targetPrice) || (isShort && currentPrice <= targetPrice)) {
               console.log(`🎯 [PROFIT_TARGET] ${position.symbol}: Alvo de preço da Alpha Flow atingido! Fechando posição.`);
               await OrderController.forceClose(position, Account, this.config);
@@ -1620,10 +1630,10 @@ class TrailingStop {
           } else {
             console.log(`⚠️ [PROFIT_MODE] ${position.symbol}: Alvo de TP não encontrado no estado da posição`);
           }
-          
+
           // Para Alpha Flow, pula as verificações de profit mínimo e configurado
           console.log(`📋 [PROFIT_MODE] ${position.symbol}: Alpha Flow - aguardando alvo específico...`);
-          
+
         } else {
           // Modo DEFAULT ou outros: Usa a lógica antiga de PROFIT_CHECK e Trailing Stop
           console.log(`📋 [PROFIT_MODE] ${position.symbol}: Modo ${positionState?.strategyName || 'DEFAULT'} ativo.`);
@@ -1634,32 +1644,32 @@ class TrailingStop {
               console.log(`🎯 [TRAILING_MODE] ${position.symbol}: Modo Trailing Stop ativo`);
               trailingModeLogged.add(position.symbol);
             }
-            
+
             await this.updateTrailingStopForPosition(position);
-            
+
             const trailingState = trailingStateMap.get(position.symbol);
-            
+
             if (trailingState && trailingState.activated) {
               TrailingStop.colorLogger.trailingActiveCheck(`${position.symbol}: Trailing Stop ativo - verificando gatilho`);
-              
+
               const trailingDecision = this.checkTrailingStopTrigger(position, trailingState);
-              
+
               if (trailingDecision && trailingDecision.shouldClose) {
                 TrailingStop.colorLogger.positionClosed(`🚨 [TRAILING_EXECUTION] ${position.symbol}: Executando fechamento por Trailing Stop. Motivo: ${trailingDecision.reason}`);
                 await OrderController.forceClose(position, Account, this.config);
                 await TrailingStop.onPositionClosed(position, 'trailing_stop');
                 continue;
               }
-              
+
               const priceType = position.markPrice ? 'Current Price' : 'Last Price';
-              const distance = trailingState.isLong 
+              const distance = trailingState.isLong
                 ? ((currentPrice - (trailingState.trailingStopPrice || 0)) / currentPrice * 100).toFixed(2)
                 : (((trailingState.trailingStopPrice || 0) - currentPrice) / currentPrice * 100).toFixed(2);
-              
+
               const direction = trailingState.isLong ? 'LONG' : 'SHORT';
               const priceRecordLabel = trailingState.isLong ? 'Preço Máximo' : 'Preço Mínimo';
               const priceRecordValue = trailingState.isLong ? trailingState.highestPrice : trailingState.lowestPrice;
-              
+
               TrailingStop.colorLogger.trailingActive(
                   `${position.symbol} (${direction}): Trailing ativo - ` +
                   `${priceType}: $${currentPrice.toFixed(4)}, ` +
@@ -1671,7 +1681,7 @@ class TrailingStop {
               const priceType = position.markPrice ? 'Current Price' : 'Last Price';
               const pnl = TrailingStop.calculatePnL(position, Account);
               const entryPrice = parseFloat(position.entryPrice || 0);
-              
+
               if (pnl.pnlPct < 0) {
                 TrailingStop.colorLogger.trailingWaitingProfitable(`${position.symbol}: Trailing Stop aguardando posição ficar lucrativa - ${priceType}: $${currentPrice.toFixed(4)}, Preço de Entrada: $${entryPrice.toFixed(4)}, PnL: ${pnl.pnlPct.toFixed(2)}% (prejuízo)\n`);
               } else {
@@ -1680,7 +1690,7 @@ class TrailingStop {
             }
           } else {
             TrailingStop.colorLogger.profitFixed(`${position.symbol}: Modo Take Profit fixo ativo`);
-            
+
             if (await this.shouldCloseForConfiguredProfit(position)) {
               TrailingStop.colorLogger.positionClosed(`💰 [PROFIT_CONFIGURED] ${position.symbol}: Fechando por profit mínimo configurado`);
               await OrderController.forceClose(position, Account, this.config);
@@ -1702,7 +1712,7 @@ class TrailingStop {
               await TrailingStop.onPositionClosed(position, 'adx_crossover');
               continue;
             }
-            
+
             const priceType = position.markPrice ? 'Current Price' : 'Last Price';
             const pnl = TrailingStop.calculatePnL(position, Account);
             const entryPrice = parseFloat(position.entryPrice || 0);
@@ -1712,7 +1722,7 @@ class TrailingStop {
 
         try {
           const marketInfo = Account.markets.find(m => m.symbol === position.symbol);
-          
+
           if (!marketInfo) {
             TrailingStop.debug(`ℹ️ [MANUAL_POSITION] ${position.symbol}: Par não autorizado - pulando criação de stop loss`);
           } else {
@@ -1744,24 +1754,24 @@ class TrailingStop {
       const adxTimeframe = this.config?.time || '5m';
       const markets = new Markets();
       const candles = await markets.getKLines(position.symbol, adxTimeframe, 30);
-      
+
       if (!candles || candles.length < 20) {
         return null;
       }
 
       const { calculateIndicators } = await import('../Decision/Indicators.js');
               const indicators = await calculateIndicators(candles, adxTimeframe, position.symbol);
-      
+
       if (!indicators.adx || !indicators.adx.diPlus || !indicators.adx.diMinus) {
         return null;
       }
 
       const { ProMaxStrategy } = await import('../Decision/Strategies/ProMaxStrategy.js');
       const strategy = new ProMaxStrategy();
-      
+
       const data = { ...indicators, market: { symbol: position.symbol } };
       const crossoverDecision = strategy.shouldClosePositionByADX(position, data);
-      
+
       return crossoverDecision;
 
     } catch (error) {
@@ -1778,7 +1788,7 @@ class TrailingStop {
   static getTrailingStopConfig(config = null) {
     const enableTrailingStop = config?.enableTrailingStop || false;
     const trailingStopDistance = Number(config?.trailingStopDistance || 2.0);
-    
+
     return {
       enabled: enableTrailingStop,
       distance: trailingStopDistance,
@@ -1796,7 +1806,7 @@ class TrailingStop {
    */
   static logTrailingStopConfig(config = null) {
     const configStatus = TrailingStop.getTrailingStopConfig(config);
-    
+
     if (configStatus.isValid) {
       TrailingStop.colorLogger.trailingConfig(`Trailing Stop configurado corretamente:`);
       TrailingStop.colorLogger.trailingConfig(`   - Habilitado: ${configStatus.enabled}`);
