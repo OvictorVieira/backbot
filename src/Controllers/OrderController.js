@@ -1064,9 +1064,8 @@ class OrderController {
   }
 
   static async forceClose(position, account = null, config = null) {
-    // Se account não foi fornecido, obtém da API
-    const accountController = new AccountController();
-    const Account = account || await accountController.get(config);
+    // Se account não foi fornecido, obtém da API  
+    const Account = account || await AccountController.get(config);
 
     // Log detalhado para debug
     console.log(`🔍 [FORCE_CLOSE] Procurando market para ${position.symbol}`);
@@ -1803,23 +1802,62 @@ class OrderController {
         return { success: true, type: 'LIMIT', limitResult };
       }
 
-      // 3. Timeout: cancela ordem LIMIT
+      // 3. Timeout: cancela ordem LIMIT com retry robusto
       console.log(`⏰ [${strategyNameToUse}] ${market}: Ordem LIMIT não executada em ${timeoutSec} segundos. Cancelando...`);
 
-      try {
-        await Order.cancelOpenOrder(market, limitResult.id, null, config?.apiKey, config?.apiSecret);
-        Logger.info(`✅ [${botName}] ${market}: Ordem LIMIT cancelada com sucesso.`);
+      let orderCancelled = false;
+      let cancelAttempts = 0;
+      const maxCancelAttempts = 3;
 
-        // IMPORTANTE: Atualizar status da ordem no banco para CANCELLED
+      // Retry de cancelamento com backoff
+      while (!orderCancelled && cancelAttempts < maxCancelAttempts) {
+        cancelAttempts++;
+        try {
+          console.log(`🔄 [${strategyNameToUse}] ${market}: Tentativa ${cancelAttempts}/${maxCancelAttempts} de cancelamento...`);
+          
+          await Order.cancelOpenOrder(market, limitResult.id, null, config?.apiKey, config?.apiSecret);
+          Logger.info(`✅ [${botName}] ${market}: Ordem LIMIT cancelada com sucesso na tentativa ${cancelAttempts}.`);
+          orderCancelled = true;
+
+          // CRÍTICO: Atualizar status da ordem no banco para CANCELLED
+          try {
+            const { default: OrdersService } = await import('../Services/OrdersService.js');
+            await OrdersService.updateOrderStatus(limitResult.id, 'CANCELLED', 'LIMIT_TIMEOUT');
+            Logger.info(`✅ [${botName}] ${market}: Status da ordem atualizado para CANCELLED no banco`);
+          } catch (updateError) {
+            Logger.error(`❌ [${botName}] ${market}: Erro crítico ao atualizar status no banco: ${updateError.message}`);
+            // Mesmo com erro de update, continuamos o processo
+          }
+
+        } catch (cancelError) {
+          Logger.warn(`⚠️ [${botName}] ${market}: Erro na tentativa ${cancelAttempts} de cancelamento: ${cancelError.message}`);
+          
+          // Se não é a última tentativa, aguarda antes de tentar novamente
+          if (cancelAttempts < maxCancelAttempts) {
+            const waitTime = cancelAttempts * 1000; // 1s, 2s, 3s
+            console.log(`⏳ [${strategyNameToUse}] ${market}: Aguardando ${waitTime}ms antes da próxima tentativa...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+          }
+        }
+      }
+
+      // Se falhou em cancelar após todas as tentativas
+      if (!orderCancelled) {
+        Logger.error(`❌ [${botName}] ${market}: FALHA CRÍTICA - Não foi possível cancelar ordem LIMIT após ${maxCancelAttempts} tentativas!`);
+        
+        // Força atualização no banco para CANCELLED mesmo sem confirmação da corretora
+        // Isso evita ordens fantasma no futuro
         try {
           const { default: OrdersService } = await import('../Services/OrdersService.js');
-          await OrdersService.updateOrderStatus(limitResult.id, 'CANCELLED', 'LIMIT_TIMEOUT');
-          Logger.debug(`✅ [${botName}] ${market}: Status da ordem atualizado para CANCELLED no banco`);
-        } catch (updateError) {
-          Logger.warn(`⚠️ [${botName}] ${market}: Erro ao atualizar status no banco: ${updateError.message}`);
+          await OrdersService.updateOrderStatus(limitResult.id, 'CANCELLED', 'LIMIT_TIMEOUT_FORCE');
+          Logger.warn(`⚠️ [${botName}] ${market}: Ordem marcada como CANCELLED no banco (sem confirmação da corretora)`);
+        } catch (forceUpdateError) {
+          Logger.error(`❌ [${botName}] ${market}: Erro ao forçar atualização no banco: ${forceUpdateError.message}`);
         }
-      } catch (cancelError) {
-        Logger.warn(`⚠️ [${botName}] ${market}: Erro ao cancelar ordem LIMIT: ${cancelError.message}`);
+
+        // OPCIONAL: Pode abortar aqui em vez de continuar com market order
+        console.log(`🚫 [${strategyNameToUse}] ${market}: Abortando entrada devido a falha no cancelamento`);
+        return { error: 'Failed to cancel limit order', limitOrderId: limitResult.id };
       }
 
       // 4. Revalida sinal e slippage
@@ -2577,8 +2615,7 @@ class OrderController {
       }
 
       // Busca informações do mercado
-      const accountController = new AccountController();
-      const Account = await accountController.get({
+      const Account = await AccountController.get({
         apiKey,
         apiSecret,
         strategy: config?.strategyName || 'DEFAULT'

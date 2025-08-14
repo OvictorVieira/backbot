@@ -11,7 +11,7 @@ class AccountController {
   static cacheDuration = 10000; // 10 segundos em milissegundos
   static capitalLoggedByBot = new Map(); // Log por bot
 
-  async get(config = null) {
+  static async get(config = null) {
     
     const now = Date.now();
     
@@ -131,7 +131,7 @@ class AccountController {
 
   }
 
-  async getallMarkets(ignore) {
+  static async getallMarkets(ignore) {
     const marketsInstance = new Markets();
     let markets = await marketsInstance.getMarkets(ignore = [])
 
@@ -166,7 +166,7 @@ class AccountController {
   /**
    * Reseta os logs para permitir nova exibição
    */
-  resetLogs() {
+  static resetLogs() {
     AccountController.capitalLoggedByBot.clear();
   }
 
@@ -220,6 +220,6 @@ class AccountController {
 
 }
 
-export default new AccountController();
+export default AccountController;
 
 

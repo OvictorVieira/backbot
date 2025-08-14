@@ -5,6 +5,45 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.5.46] - 2025-08-14
+
+### 🔧 **BUGFIXES CRÍTICOS: Ordens Fantasma + AccountController + Fills Órfãos**
+
+#### 🚨 **Problema 1: Ordens Fantasma**
+**Problema:** Bot mantinha ordens como PENDING no banco, mas não existiam mais na corretora
+**Solução:**
+- **`cleanGhostOrders()`**: Detecta e limpa ordens fantasma comparando banco vs corretora
+- **Verificação via histórico**: Consulta status real de ordens não encontradas
+- **Integração automática**: Executa limpeza a cada 1 minuto via PositionSyncService
+
+#### 🔧 **Problema 2: AccountController is not a constructor**  
+**Problema:** Erro fatal impedia execução de bots e TrailingStop
+**Solução:**
+- Convertido AccountController para classe com métodos estáticos
+- Corrigidas chamadas `new AccountController()` em OrderController.js
+- Mantida compatibilidade com código existente
+
+#### 🔍 **Problema 3: Fills Órfãos sem ClientId**
+**Problema:** Fills de fechamento sem clientId não fechavam posições (usuário movendo take profit na corretora)
+**Solução:**
+- **`identifyOrphanFills()`**: Identifica fills órfãos baseado na direção oposta das posições
+- **`validateOrphanFills()`**: Valida se fills órfãos realmente fecham posições do bot
+- **Detecção inteligente**: Sistema detecta fills inversos que pertencem às posições abertas
+
+#### ⚡ **Melhorias na Limpeza de Ordens Limit**
+- **Retry robusto**: 3 tentativas de cancelamento com backoff exponencial
+- **Força atualização**: Marca como CANCELLED no banco se falhar em cancelar na corretora
+- **Prevenção de fantasma**: Evita criação de ordens fantasma futuras
+
+#### 🚀 **Nova Funcionalidade: Sincronização Completa**
+- **`performCompleteFillsSync()`**: Executa limpeza fantasma + correções + fills órfãos
+- **Execução automática**: Integrado ao PositionSyncService (1 min)
+- **Logs detalhados**: Estatísticas completas de ações executadas
+
+**Resultado:** Sistema agora detecta e resolve automaticamente ordens fantasma, fills órfãos e problemas de sincronização, garantindo integridade total dos dados.
+
+---
+
 ## [1.5.45] - 2025-08-14
 
 ### 🔧 **BUGFIX CRÍTICO: Correção de Posições com Loss Não Contabilizadas**

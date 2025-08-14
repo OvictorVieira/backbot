@@ -88,17 +88,21 @@ class PositionSyncService {
       // 3. Detecta fechamentos automáticos baseado no novo sistema
       const closedPositions = await this.detectClosedPositionsNew(botId, config, trackingResult);
 
-      // 4. Sincroniza status das ordens com a corretora
+      // 4. NOVA SINCRONIZAÇÃO COMPLETA - Inclui limpeza de ordens fantasma
       try {
         const { default: OrdersService } = await import('./OrdersService.js');
-        const syncedOrders = await OrdersService.syncOrdersWithExchange(botId, config);
-        if (syncedOrders > 0) {
-          Logger.info(`🔄 [POSITION_SYNC] Bot ${botId}: ${syncedOrders} ordens sincronizadas com a corretora`);
-        }
+        
+        // Executa sincronização completa (fills órfãos + correções + limpeza fantasma)
+        const syncResults = await OrdersService.performCompleteFillsSync(botId, config);
+        
+        Logger.info(`🔄 [POSITION_SYNC] Bot ${botId}: Sincronização completa concluída`);
+        Logger.info(`   • Ordens fantasma limpas: ${syncResults.ghostOrdersCleaned}`);
+        Logger.info(`   • Ordens corrigidas: ${syncResults.ordersFixed}`);
+        Logger.info(`   • Posições fechadas: ${syncResults.positionsClosed}`);
+        Logger.info(`   • Total: ${syncResults.total} ações`);
 
-        // 4.1. P&L calculado apenas quando posição é fechada na corretora (via sync)
       } catch (syncError) {
-        Logger.warn(`⚠️ [POSITION_SYNC] Erro na sincronização de ordens do bot ${botId}: ${syncError.message}`);
+        Logger.warn(`⚠️ [POSITION_SYNC] Erro na sincronização completa do bot ${botId}: ${syncError.message}`);
       }
 
       // 5. Atualiza estatísticas
