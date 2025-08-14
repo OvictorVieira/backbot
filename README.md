@@ -1,236 +1,47 @@
-# BackBot - Bot de Trading para Backpack
+# BackBot - Bot de Trading Inteligente para Backpack Exchange
 
-Bot de trading automatizado para a exchange Backpack, focado em volume farming e preservação de capital.
+Bem-vindo ao BackBot, um bot de trading automatizado de nível profissional, projetado para operar futuros perpétuos na Backpack Exchange.
 
-## 🚀 Início Rápido
+O foco principal do bot é o **farming de volume** com uma ênfase rigorosa na **preservação de capital**. A arquitetura foi construída para ser robusta, resiliente e, acima de tudo, segura.
 
-### Opção 1: Dashboard Completo (Recomendado)
+## 🚀 Funcionalidades Principais
+
+* **Estratégia `DEFAULT` Inteligente**: Um sistema robusto com 8 camadas de validação para encontrar sinais de alta confluência, garantindo que apenas as melhores oportunidades sejam consideradas.
+* **Execução Híbrida de Ordens**: O bot otimiza os custos de transação ao tentar sempre executar ordens `LIMIT (post-only)`. Se a ordem não for executada rapidamente, um fallback inteligente para uma ordem a `MERCADO` garante que a oportunidade não seja perdida.
+* **Gestão de Risco Híbrida e Adaptativa**: O coração do bot. Em vez de usar um Stop Loss fixo, o sistema utiliza uma estratégia de múltiplas fases baseada na volatilidade real do mercado (ATR) para gerir cada operação.
+* **Trailing Stop Dinâmico**: Permite maximizar os lucros ao fazer com que operações vencedoras "corram", movendo o stop loss automaticamente para proteger os ganhos.
+* **Sistema de "Failsafe" na Corretora**: Para cada posição aberta, o bot cria uma ordem de Stop Loss de segurança máxima (`STOP_MARKET`) diretamente na exchange, protegendo o seu capital mesmo que o bot pare de funcionar.
+* **Persistência de Estado**: Salva o estado crítico do Trailing Stop num arquivo (`trailing_state.json`), garantindo que o bot sobreviva a reinicializações sem perder a gestão das suas posições ativas.
+* **Monitor de Ordens Órfãs**: Um serviço de limpeza que periodicamente verifica e cancela ordens de stop que possam ter ficado "órfãs" na corretora após o fecho manual de uma posição.
+
+---
+
+## ⚙️ Como o Bot Funciona: A Estratégia Híbrida de Gestão de Risco
+
+A funcionalidade mais importante do BackBot é a sua forma inteligente de gerir o risco. A vida de cada trade segue um ciclo de 3 fases, garantindo que o risco seja minimizado e os lucros maximizados.
+
+### A Jornada de um Trade
+
+| Fase | Nome | Descrição |
+| :--- | :--- | :--- |
+| **1** | **Risco Inicial (Stop Adaptativo)** | Ao abrir uma posição, o Stop Loss não é uma percentagem fixa. Ele é calculado dinamicamente com base na **volatilidade atual do mercado (ATR)**. Em dias voláteis, o stop fica mais largo para evitar "violinadas". Em dias calmos, fica mais justo para proteger o capital. |
+| **2** | **Trava de Segurança (Realização Parcial)** | Quando a operação atinge um primeiro alvo de lucro modesto (também baseado em ATR), o bot **vende uma parte da posição** (ex: 50%). Este lucro inicial serve para "pagar o trade", cobrindo as taxas e garantindo um pequeno ganho. O Stop Loss do restante da posição é então movido para o **ponto de entrada (breakeven)**. |
+| **3** | **Maximização do Lucro (Trailing Stop)** | Com uma **"operação sem risco"** em mãos, o Trailing Stop é ativado para o restante da posição. Ele "persegue" o preço, movendo a rede de segurança para cima (ou para baixo) e travando lucros cada vez maiores, fechando a operação apenas quando a tendência reverte. |
+
+Esta abordagem garante que o bot se adapte a diferentes moedas e condições de mercado, protegendo o seu capital enquanto procura maximizar os ganhos das operações vencedoras.
+
+---
+
+## 🚀 Executando o Bot
+
+Para iniciar o bot com a sua configuração, use o comando:
+
 ```bash
-# Instalar dependências e iniciar backend + frontend
-npm install
 npm start
 ```
 
-Isso irá:
-- ✅ Iniciar a API backend na porta 3001
-- ✅ Iniciar o dashboard frontend na porta 5173
-- ✅ Abrir automaticamente o navegador em http://localhost:5173
+O bot começará a analisar o mercado e a operar de acordo com as suas configurações.
 
-**Acesse:** http://localhost:5173 (abre automaticamente)
+## ⚠️ Disclaimer
 
-### Opção 2: Apenas Backend (Modo Console)
-```bash
-# Executar bot no console (modo tradicional)
-npm run start:bot
-```
-
-## 📊 Dashboard Web
-
-O BackBot agora inclui uma dashboard web completa para:
-
-- **Configurar Bots**: Interface visual para configurar API keys e parâmetros
-- **Controlar Bots**: Iniciar/parar bots por estratégia
-- **Monitorar Status**: Visualizar status em tempo real
-- **Gerenciar Configurações**: Salvar e editar configurações persistentes
-
-### Funcionalidades da Dashboard:
-
-1. **Configuração de Bots**:
-   - API Key e Secret com toggle de visibilidade
-   - Volume da ordem e percentual do capital
-   - Configurações de stop loss e trailing stop
-   - Toggles de funcionalidades (Post Only, Market Fallback, etc.)
-
-2. **Controle de Bots**:
-   - Iniciar/parar bots individualmente
-   - Status visual (Rodando/Parado/Desabilitado)
-   - Atualização automática a cada 5 segundos
-
-3. **Estratégias Suportadas**:
-   - **DEFAULT**: Estratégia original do bot
-   - **ALPHA_FLOW**: Estratégia Alpha Flow
-   - **PRO_MAX**: Estratégia Pro Max
-
-## 🛠️ Comandos Disponíveis
-
-### Dashboard e API
-```bash
-npm start                    # Inicia backend + frontend
-npm run api                  # Apenas backend API
-npm run dashboard            # Apenas frontend
-npm run dashboard:install    # Instalar dependências do dashboard
-npm run dashboard:build      # Build do dashboard para produção
-```
-
-### Bot Tradicional (Console)
-```bash
-npm run start:bot           # Bot DEFAULT no console
-npm run alphaflow           # Bot ALPHA_FLOW no console
-```
-
-### Testes e Desenvolvimento
-```bash
-npm run test:api            # Testar API
-npm run backtest            # Executar backtest
-npm test                    # Executar testes unitários
-npm run test:watch          # Testes em modo watch
-npm run test:coverage       # Testes com cobertura
-```
-
-## 🔧 Configuração
-
-### 1. Configuração via Dashboard (Recomendado)
-1. Acesse http://localhost:5173
-2. Clique em "Adicionar Bot" ou "Configurar Primeiro Bot"
-3. Preencha suas API keys da Backpack
-4. Configure parâmetros de trading
-5. Salve e inicie o bot
-
-### 2. Configuração via Arquivo (Modo Avançado)
-As configurações são salvas em `persistence/bot_configs.json`:
-
-```json
-[
-  {
-    "strategyName": "DEFAULT",
-    "apiKey": "sua-api-key",
-    "apiSecret": "seu-api-secret",
-    "volumeOrder": 10,
-    "capitalPercentage": 10,
-    "time": "5m",
-    "enabled": true,
-    "enableTrailingStop": true,
-    "trailingStopDistance": 1.5
-  }
-]
-```
-
-## 🏗️ Arquitetura
-
-### Backend (API)
-- **Express.js**: Servidor REST API
-- **WebSocket**: Comunicação em tempo real
-- **ConfigManager**: Gerenciamento de configurações persistentes
-- **StrategyFactory**: Sistema de estratégias modulares
-
-### Frontend (Dashboard)
-- **React 18**: Interface moderna
-- **TypeScript**: Tipagem estática
-- **Tailwind CSS**: Estilização responsiva
-- **shadcn/ui**: Componentes de UI
-- **Axios**: Comunicação com API
-
-## 📡 API Endpoints
-
-### Configurações
-- `GET /api/configs` - Listar configurações
-- `POST /api/configs` - Salvar configuração
-- `DELETE /api/configs/:strategyName` - Remover configuração
-
-### Controle de Bots
-- `GET /api/bot/status` - Status dos bots
-- `POST /api/bot/start` - Iniciar bot
-- `POST /api/bot/stop` - Parar bot
-
-### Informações
-- `GET /api/strategies` - Estratégias disponíveis
-- `GET /api/klines` - Dados de mercado
-
-## 🎯 Estratégias
-
-### DEFAULT
-Estratégia original do bot, focada em:
-- Volume farming
-- Preservação de capital
-- Stop loss dinâmico
-- Trailing stop adaptativo
-
-### ALPHA_FLOW
-Estratégia avançada com:
-- Análise de fluxo de capital
-- Indicadores macro
-- Timing de mercado
-- Gestão de risco aprimorada
-
-### PRO_MAX
-Estratégia profissional com:
-- Múltiplos timeframes
-- Análise técnica avançada
-- Machine learning
-- Otimização automática
-
-## 🔄 WebSocket Events
-
-O sistema emite eventos em tempo real:
-
-- `BOT_STARTING` - Bot iniciando
-- `BOT_STARTED` - Bot iniciado
-- `BOT_STOPPED` - Bot parado
-- `DECISION_ANALYSIS` - Análise de decisão
-- `TRAILING_STOP_UPDATE` - Atualização trailing stop
-- `BOT_EXECUTION_SUCCESS` - Execução bem-sucedida
-- `BOT_EXECUTION_ERROR` - Erro na execução
-
-## 🚨 Validações
-
-O sistema valida automaticamente:
-
-- **API Keys**: Comprimento mínimo de 10 caracteres
-- **Volume**: Deve ser maior que zero
-- **Capital**: Deve estar entre 0 e 100%
-- **Stop Loss**: Deve ser maior que zero
-- **Campos Obrigatórios**: API Key, API Secret, Volume, Capital
-
-## 🐛 Troubleshooting
-
-### Erro de Conexão com API
-- Verifique se o backend está rodando: `npm run api`
-- Confirme se a porta 3001 está livre
-
-### Erro de Dashboard
-- Verifique se o frontend está rodando: `npm run dashboard`
-- Confirme se a porta 5173 está livre
-
-### Problemas de Dependências
-```bash
-# Reinstalar dependências do projeto principal
-npm install
-
-# Reinstalar dependências do dashboard
-npm run dashboard:install
-```
-
-### Logs e Debug
-- Backend: Logs no console do terminal
-- Frontend: Logs no console do navegador (F12)
-- WebSocket: Eventos em tempo real
-
-## 📈 Próximos Passos
-
-1. **Gráficos em Tempo Real**: Integração com TradingView
-2. **Histórico de Operações**: Tabela de trades realizados
-3. **Relatórios**: Métricas de performance
-4. **Notificações**: Alertas por email/telegram
-5. **Backtesting**: Interface para backtesting
-6. **Multi-Exchange**: Suporte a outras exchanges
-
-## 📝 Licença
-
-Este projeto é licenciado sob a MIT License.
-
-## 🤝 Contribuição
-
-Contribuições são bem-vindas! Por favor:
-
-1. Fork o projeto
-2. Crie uma branch para sua feature
-3. Commit suas mudanças
-4. Push para a branch
-5. Abra um Pull Request
-
-## 📞 Suporte
-
-Para suporte e dúvidas:
-- Abra uma issue no GitHub
-- Consulte a documentação da API
-- Verifique os logs de erro
+Este software é fornecido para fins educacionais e de pesquisa. O trading de criptomoedas envolve riscos significativos. Os autores não se responsabilizam por quaisquer perdas financeiras. **Use por sua conta e risco.**
