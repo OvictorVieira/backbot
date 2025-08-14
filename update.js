@@ -14,9 +14,10 @@ const __dirname = dirname(__filename);
 // Configurações
 const GITHUB_REPO = 'ovictorvieira/backbot';
 const ZIP_URL = `https://github.com/${GITHUB_REPO}/archive/refs/heads/main.zip`;
-const PRESERVE_ITEMS = ['.env', 'src/Persistence/', 'node_modules/'];
+const PRESERVE_ITEMS = ['.env', 'src/Persistence/', 'node_modules/', '.update_flag'];
 const BACKUP_DIR = 'backup_temp';
 const TEMP_DIR = 'temp_update';
+const UPDATE_FLAG_FILE = '.update_flag';
 
 class AutoUpdater {
   constructor() {
@@ -31,6 +32,15 @@ class AutoUpdater {
     console.log('🛡️ Preservando dados do usuário...');
 
     try {
+      // Verifica se atualização já foi executada recentemente
+      if (await this.checkRecentUpdate()) {
+        console.log('⏸️ Atualização já foi executada recentemente (últimas 24h)');
+        console.log('💡 Para forçar atualização, delete o arquivo .update_flag');
+        return;
+      }
+
+      // Cria flag de atualização
+      await this.createUpdateFlag();
       // 1. Backup dos dados do usuário
       await this.backupUserData();
       console.log('✅ Backup concluído');
@@ -52,9 +62,8 @@ class AutoUpdater {
       console.log('✅ Tarefas pós-atualização concluídas');
 
       console.log('\n🎉 Atualização concluída com sucesso!');
-      console.log('🔄 Reiniciando aplicação...');
       
-      // Reinicia a aplicação
+      // Mostra instruções para o usuário
       this.restartApplication();
 
     } catch (error) {
@@ -244,24 +253,78 @@ class AutoUpdater {
   }
 
   restartApplication() {
-    console.log('🔄 Reiniciando aplicação...');
+    console.log('✅ Atualização concluída!');
+    console.log('');
+    console.log('🎯 Para iniciar o bot, execute:');
+    console.log('   npm start        # Dashboard + API');
+    console.log('   npm run start:bot # Bot individual');
+    console.log('');
+    console.log('📋 Verifique o CHANGELOG.md para ver as novidades');
     
-    // Reinicia o processo atual
-    process.on('exit', () => {
-      spawn(process.argv.shift(), process.argv, {
-        cwd: process.cwd(),
-        detached: true,
-        stdio: 'inherit'
-      });
-    });
+    // NÃO reinicia automaticamente para evitar loops infinitos
+    // O usuário deve iniciar manualmente conforme necessário
+  }
+
+  async checkRecentUpdate() {
+    const flagPath = path.join(__dirname, UPDATE_FLAG_FILE);
     
-    process.exit(0);
+    if (!await fs.pathExists(flagPath)) {
+      return false;
+    }
+
+    try {
+      const flagContent = await fs.readFile(flagPath, 'utf8');
+      const flagData = JSON.parse(flagContent);
+      const lastUpdate = new Date(flagData.timestamp);
+      const now = new Date();
+      const hoursDiff = (now - lastUpdate) / (1000 * 60 * 60);
+      
+      // Considera atualização recente se foi nas últimas 24 horas
+      return hoursDiff < 24;
+    } catch (error) {
+      // Se não conseguir ler o arquivo, assume que não há atualização recente
+      return false;
+    }
+  }
+
+  async createUpdateFlag() {
+    const flagPath = path.join(__dirname, UPDATE_FLAG_FILE);
+    const flagData = {
+      timestamp: new Date().toISOString(),
+      version: process.env.npm_package_version || 'unknown'
+    };
+    
+    await fs.writeFile(flagPath, JSON.stringify(flagData, null, 2));
   }
 }
 
-// Executa a atualização
-const updater = new AutoUpdater();
-updater.main().catch(error => {
-  console.error('❌ Erro fatal:', error.message);
-  process.exit(1);
-});
+// Verifica se o script foi executado diretamente (não importado)
+function isMainModule() {
+  // Verifica se é o módulo principal sendo executado
+  const mainScript = process.argv[1];
+  const currentScript = __filename;
+  
+  return mainScript && (
+    mainScript === currentScript ||
+    mainScript.endsWith('update.js') || 
+    mainScript.includes('update.js') ||
+    process.argv.some(arg => arg.includes('update.js'))
+  );
+}
+
+// Só executa se for chamado diretamente via npm run update ou node update.js
+// E adiciona uma verificação extra para evitar execução acidental
+if (isMainModule() && !process.env.DISABLE_AUTO_UPDATE) {
+  console.log('🔧 Script de atualização iniciado via comando...');
+  console.log('📋 Para interromper future execuções automáticas, defina DISABLE_AUTO_UPDATE=true');
+  
+  const updater = new AutoUpdater();
+  updater.main().catch(error => {
+    console.error('❌ Erro fatal:', error.message);
+    process.exit(1);
+  });
+} else if (process.env.DISABLE_AUTO_UPDATE) {
+  console.log('⏸️ Atualização automática desabilitada via DISABLE_AUTO_UPDATE');
+} else {
+  console.log('ℹ️ Script update.js carregado mas não executado (use: npm run update)');
+}
