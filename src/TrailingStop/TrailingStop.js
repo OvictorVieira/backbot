@@ -1403,15 +1403,16 @@ class TrailingStop {
   }
 
   /**
-   * Verifica se deve fechar posição quando o lucro líquido cobre as taxas
+   * Verifica se deve fechar posição por stop loss (emergência)
    *
-   * Esta função SEMPRE verifica se o lucro líquido (após deduzir taxas de entrada + saída)
-   * é maior que zero. É a verificação de segurança para garantir que não há prejuízo.
+   * Esta função é APENAS uma verificação de segurança para stop loss emergencial.
+   * NÃO deve fechar por lucro mínimo - isso é responsabilidade do shouldCloseForConfiguredProfit.
    *
-   * Prioridade 1: Esta verificação acontece ANTES da verificação de MIN_PROFIT_PERCENTAGE
+   * REMOVIDO: A verificação de lucro mínimo foi movida para shouldCloseForConfiguredProfit
+   * que considera corretamente o minProfitPercentage.
    *
    * @param {object} position - Dados da posição
-   * @returns {Promise<boolean>} - True se deve fechar por lucro mínimo
+   * @returns {Promise<boolean>} - True se deve fechar por stop loss emergencial
    */
   async shouldCloseForMinimumProfit(position) {
     try {
@@ -1428,7 +1429,7 @@ class TrailingStop {
       });
 
       if (!Account.leverage) {
-        console.error(`❌ [PROFIT_CHECK] ${position.symbol}: Alavancagem não encontrada na Account`);
+        console.error(`❌ [STOP_LOSS_CHECK] ${position.symbol}: Alavancagem não encontrada na Account`);
         return false;
       }
 
@@ -1440,39 +1441,27 @@ class TrailingStop {
         const maxNegativePnlStopPct = parseFloat(MAX_NEGATIVE_PNL_STOP_PCT);
 
         if (isNaN(maxNegativePnlStopPct) || !isFinite(maxNegativePnlStopPct)) {
-          console.error(`❌ [PROFIT_CHECK] Valor inválido para MAX_NEGATIVE_PNL_STOP_PCT: ${MAX_NEGATIVE_PNL_STOP_PCT}`);
+          console.error(`❌ [STOP_LOSS_CHECK] Valor inválido para MAX_NEGATIVE_PNL_STOP_PCT: ${MAX_NEGATIVE_PNL_STOP_PCT}`);
           return false;
         }
 
         if (isNaN(pnlPct) || !isFinite(pnlPct)) {
-          console.error(`❌ [PROFIT_CHECK] PnL inválido para ${position.symbol}: ${pnlPct}`);
+          console.error(`❌ [STOP_LOSS_CHECK] PnL inválido para ${position.symbol}: ${pnlPct}`);
           return false;
         }
 
         if (pnlPct <= maxNegativePnlStopPct) {
-          console.log(`🚨 [PROFIT_CHECK] ${position.symbol}: Fechando por stop loss - PnL ${pnlPct.toFixed(3)}% <= limite ${maxNegativePnlStopPct.toFixed(3)}%`);
+          console.log(`🚨 [STOP_LOSS_CHECK] ${position.symbol}: Fechando por stop loss emergencial - PnL ${pnlPct.toFixed(3)}% <= limite ${maxNegativePnlStopPct.toFixed(3)}%`);
           return true;
         }
       }
 
-      const fees = await this.getFeeTier();
-
-      const { minProfitUSD, totalFees } = this.calculateMinimumProfitForFees(position, fees);
-
-      const netProfit = pnl - totalFees;
-
-      if (netProfit > 0 && netProfit >= minProfitUSD) {
-        console.log(`✅ [PROFIT_CHECK] ${position.symbol}: Fechando por lucro $${netProfit.toFixed(4)} >= mínimo $${minProfitUSD.toFixed(4)}`);
-        return true;
-      }
-
-      if (netProfit > 0.01 && netProfit < minProfitUSD) {
-        console.log(`⚠️ [PROFIT_CHECK] ${position.symbol}: Lucro $${netProfit.toFixed(4)} < mínimo $${minProfitUSD.toFixed(4)}`);
-      }
+      // REMOVIDO: A verificação de lucro mínimo foi movida para shouldCloseForConfiguredProfit
+      // Este método agora é APENAS para stop loss emergencial
 
       return false;
     } catch (error) {
-      console.error('[PROFIT_CHECK] Erro ao verificar profit mínimo:', error.message);
+      console.error('[STOP_LOSS_CHECK] Erro ao verificar stop loss emergencial:', error.message);
       return false;
     }
   }
@@ -1542,13 +1531,27 @@ class TrailingStop {
       const netProfit = pnl - totalFees;
       const netProfitPct = notional > 0 ? (netProfit / notional) * 100 : 0;
 
+      // Log detalhado dos cálculos para debug
+      console.log(`📊 [CONFIG_PROFIT] ${position.symbol}: Detalhes do cálculo:`);
+      console.log(`   • PnL bruto: $${pnl.toFixed(4)} (${pnlPct.toFixed(3)}%)`);
+      console.log(`   • Taxas estimadas: $${totalFees.toFixed(4)} (${((totalFees/notional)*100).toFixed(3)}%)`);
+      console.log(`   • PnL líquido: $${netProfit.toFixed(4)} (${netProfitPct.toFixed(3)}%)`);
+      console.log(`   • Min profit configurado: ${minProfitPct.toFixed(3)}%`);
+      console.log(`   • Notional: $${notional.toFixed(2)}`);
+
       if (netProfit > 0 && netProfitPct >= minProfitPct) {
         console.log(`\n✅ [CONFIG_PROFIT] ${position.symbol}: Fechando por lucro ${netProfitPct.toFixed(3)}% >= mínimo ${minProfitPct.toFixed(3)}%`);
+        console.log(`   💰 Lucro líquido após taxas: $${netProfit.toFixed(4)}`);
         return true;
       }
 
-      if (netProfit > 0.01 && netProfitPct < minProfitPct) {
-        console.log(`\n⚠️ [CONFIG_PROFIT] ${position.symbol}: Lucro ${netProfitPct.toFixed(3)}% < mínimo ${minProfitPct.toFixed(3)}%`);
+      if (netProfit > 0.01) {
+        if (netProfitPct < minProfitPct) {
+          console.log(`\n⚠️ [CONFIG_PROFIT] ${position.symbol}: Aguardando lucro mínimo - Atual: ${netProfitPct.toFixed(3)}% < Mínimo: ${minProfitPct.toFixed(3)}%`);
+          console.log(`   📈 Precisa de mais ${(minProfitPct - netProfitPct).toFixed(3)}% para atingir o lucro mínimo`);
+        }
+      } else if (netProfit <= 0) {
+        console.log(`\n🔴 [CONFIG_PROFIT] ${position.symbol}: Posição em prejuízo líquido: $${netProfit.toFixed(4)}`);
       }
 
       return false;
@@ -1699,9 +1702,9 @@ class TrailingStop {
             }
 
             if (await this.shouldCloseForMinimumProfit(position)) {
-              TrailingStop.colorLogger.positionClosed(`💰 [PROFIT_MINIMUM] ${position.symbol}: Fechando por profit mínimo baseado em taxas`);
+              TrailingStop.colorLogger.positionClosed(`🚨 [STOP_LOSS_EMERGENCY] ${position.symbol}: Fechando por stop loss emergencial`);
               await OrderController.forceClose(position, Account, this.config);
-              await TrailingStop.onPositionClosed(position, 'profit_minimum');
+              await TrailingStop.onPositionClosed(position, 'stop_loss_emergency');
               continue;
             }
 

@@ -97,11 +97,12 @@ function getMonitorRateLimit(botId) {
         lastErrorTime: null
       },
       orphanOrders: {
-        interval: 20000, // começa em 20s
+        interval: 60000, // começa em 60s (menos agressivo)
         errorCount: 0,
-        maxInterval: 180000, // máximo 3min
-        minInterval: 20000,  // mínimo 20s
-        lastErrorTime: null
+        maxInterval: 300000, // máximo 5min
+        minInterval: 60000,  // mínimo 60s (menos agressivo)
+        lastErrorTime: null,
+        lastFullScan: 0 // timestamp da última varredura completa
       },
       takeProfit: {
         interval: 30000, // começa em 30s
@@ -270,7 +271,7 @@ async function recoverBot(botId, config, startTime) {
           console.error(`❌ [${config.botName}][ORPHAN_MONITOR] Erro no monitoramento do bot ${botId}:`, error.message);
         });
       }
-    }, 20000); // 20 segundos
+    }, 60000); // 60 segundos (menos agressivo para evitar rate limits)
 
     const takeProfitIntervalId = setInterval(() => {
       if (config.enableTakeProfitMonitor !== false) { // Ativo por padrão
@@ -541,8 +542,22 @@ async function startOrphanOrderMonitor(botId) {
       console.warn(`⚠️ [ORPHAN_ORDERS] Bot ${botId} (${config.botName}) não tem credenciais configuradas`);
     }
 
-    // Passa as configurações do bot para o monitor
-    const result = await OrderController.monitorAndCleanupOrphanedStopLoss(config.botName, config);
+    // Usa o novo método de varredura completa para ser mais eficiente
+    // Alterna entre os métodos baseado em um timestamp para evitar sobrecarregar a API
+    const now = Date.now();
+    const lastFullScan = rateLimit.orphanOrders.lastFullScan || 0;
+    const shouldDoFullScan = (now - lastFullScan) > 300000; // 5 minutos desde última varredura completa
+    
+    let result;
+    if (shouldDoFullScan) {
+      // Varredura completa a cada 5 minutos
+      result = await OrderController.scanAndCleanupAllOrphanedOrders(config.botName, config);
+      rateLimit.orphanOrders.lastFullScan = now;
+      console.log(`🔍 [${config.botName}][ORPHAN_MONITOR] Varredura completa executada: ${result.symbolsScanned} símbolos verificados`);
+    } else {
+      // Limpeza normal baseada na configuração
+      result = await OrderController.monitorAndCleanupOrphanedStopLoss(config.botName, config);
+    }
 
     // Se sucesso, reduz gradualmente o intervalo até o mínimo
     if (rateLimit.orphanOrders.interval > rateLimit.orphanOrders.minInterval) {

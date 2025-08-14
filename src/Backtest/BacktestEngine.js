@@ -1266,39 +1266,21 @@ export class BacktestEngine {
   }
 
   /**
-   * Verifica se deve fechar posição por profit mínimo (estratégia DEFAULT)
+   * Verifica se deve fechar posição por stop loss emergencial
+   * REMOVIDO: A verificação de lucro mínimo, deve usar shouldCloseForConfiguredProfit
    * Implementa a mesma lógica do TrailingStop.js
    */
   shouldCloseForMinimumProfit(position, currentPrice) {
     try {
-      // Calcula PnL atual
-      const entryValue = position.entryPrice * position.totalUnits;
-      const currentValue = currentPrice * position.totalUnits;
+      // NOTA: Este método agora é apenas para stop loss emergencial
+      // A verificação de lucro mínimo foi movida para shouldCloseForConfiguredProfit
       
-      let pnl;
-      if (position.action === 'long') {
-        pnl = currentValue - entryValue;
-      } else {
-        pnl = entryValue - currentValue;
-      }
-      
-      // Calcula taxas totais (entrada + saída)
-      const entryFee = entryValue * this.config.fee;
-      const exitFee = currentValue * this.config.fee;
-      const totalFees = entryFee + exitFee;
-      
-      // Lucro líquido (após taxas)
-      const netProfit = pnl - totalFees;
-      
-      // Só fecha se há lucro líquido (após taxas)
-      if (netProfit > 0) {
-        this.logger.info(`✅ [PROFIT_CHECK] ${position.symbol}: Fechando por lucro $${netProfit.toFixed(4)} > 0 (após taxas)`);
-        return true;
-      }
+      // Por enquanto, retorna false até implementarmos stop loss emergencial no backtest
+      // TODO: Implementar stop loss emergencial baseado em maxNegativePnlStopPct
       
       return false;
     } catch (error) {
-      this.logger.error('[PROFIT_CHECK] Erro ao verificar profit mínimo:', error.message);
+      this.logger.error('[STOP_LOSS_CHECK] Erro ao verificar stop loss emergencial:', error.message);
       return false;
     }
   }

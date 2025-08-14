@@ -531,10 +531,45 @@ function setupInteractiveCommands() {
           });
         });
         break;
+      case 'force-cleanup':
+        console.log('🧹 Iniciando limpeza AGRESSIVA de ordens órfãs...');
+        console.log('⚠️ ATENÇÃO: Este comando cancela TODAS as ordens reduceOnly sem posição ativa!');
+        import('./src/Controllers/OrderController.js').then(({ default: OrderController }) => {
+          OrderController.forceCleanupAllOrphanedOrders(activeBotConfig.botName, activeBotConfig).then(result => {
+            console.log(`🧹 Limpeza agressiva concluída: ${result.orphaned} ordens órfãs detectadas, ${result.cancelled} canceladas`);
+            if (result.errors.length > 0) {
+              console.log(`❌ Erros: ${result.errors.join(', ')}`);
+            }
+          });
+        });
+        break;
+      case 'scan-cleanup':
+        console.log('🔍 Iniciando varredura COMPLETA de ordens órfãs na corretora...');
+        console.log('⚠️ Este comando verifica TODOS os símbolos na corretora!');
+        import('./src/Controllers/OrderController.js').then(({ default: OrderController }) => {
+          OrderController.scanAndCleanupAllOrphanedOrders(activeBotConfig.botName, activeBotConfig).then(result => {
+            console.log(`🔍 Varredura completa concluída:`);
+            console.log(`   • Símbolos verificados: ${result.symbolsScanned}`);
+            console.log(`   • Ordens órfãs detectadas: ${result.orphaned}`);
+            console.log(`   • Ordens canceladas: ${result.cancelled}`);
+            if (result.errors.length > 0) {
+              console.log(`❌ Erros: ${result.errors.join(', ')}`);
+            }
+            if (result.detailedResults && result.detailedResults.length > 0) {
+              console.log('\n📊 Resultados detalhados:');
+              result.detailedResults.forEach(r => {
+                console.log(`   • ${r.symbol}: ${r.orphanedFound} órfãs → ${r.cancelled} canceladas`);
+              });
+            }
+          });
+        });
+        break;
       case 'help':
         console.log('\n💡 Comandos disponíveis:');
         console.log('   • "status" - Ver status do stop loss dinâmico');
         console.log('   • "cleanup" - Limpar ordens de stop loss órfãs');
+        console.log('   • "force-cleanup" - Limpeza agressiva (cancela TODAS as ordens reduceOnly órfãs)');
+        console.log('   • "scan-cleanup" - Varredura completa da corretora (verifica TODOS os símbolos)');
         console.log('   • "exit" - Sair do bot');
         console.log('   • "help" - Ver esta ajuda\n');
         break;

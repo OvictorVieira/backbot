@@ -1027,12 +1027,28 @@ class OrderController {
       });
 
       // Cancela apenas as ordens de entrada pendentes específicas
-      const cancelPromises = pendingEntryOrders.map(order =>
-                  Order.cancelOpenOrder(symbol, order.id, order.clientId, apiKey, apiSecret)
-      );
+      const cancelPromises = pendingEntryOrders.map(async (order) => {
+        const cancelResult = await Order.cancelOpenOrder(symbol, order.id, order.clientId, apiKey, apiSecret);
+        
+        // Se cancelamento foi bem-sucedido, atualiza status no banco
+        if (cancelResult && !cancelResult.error) {
+          try {
+            await BotOrdersManager.updateOrder(order.id, {
+              status: 'CANCELLED',
+              closeTime: new Date().toISOString(),
+              closeType: 'PENDING_ENTRY_CLEANUP'
+            });
+            Logger.debug(`📝 [CANCEL_PENDING] ${symbol}: Status da ordem ${order.id} atualizado no banco para CANCELLED`);
+          } catch (dbError) {
+            Logger.warn(`⚠️ [CANCEL_PENDING] ${symbol}: Erro ao atualizar status da ordem ${order.id} no banco: ${dbError.message}`);
+          }
+        }
+        
+        return cancelResult;
+      });
 
       const cancelResults = await Promise.all(cancelPromises);
-      const successfulCancels = cancelResults.filter(result => result !== null).length;
+      const successfulCancels = cancelResults.filter(result => result !== null && !result.error).length;
 
       if (successfulCancels > 0) {
         console.log(`🗑️ ${symbol}: ${successfulCancels} ordens de entrada pendentes canceladas com sucesso`);
@@ -1049,8 +1065,8 @@ class OrderController {
 
   static async forceClose(position, account = null, config = null) {
     // Se account não foi fornecido, obtém da API
-    const AccountController = await import('../Controllers/AccountController.js');
-    const Account = account || await AccountController.get(config);
+    const accountController = new AccountController();
+    const Account = account || await accountController.get(config);
 
     // Log detalhado para debug
     console.log(`🔍 [FORCE_CLOSE] Procurando market para ${position.symbol}`);
@@ -2561,8 +2577,8 @@ class OrderController {
       }
 
       // Busca informações do mercado
-      const AccountController = await import('../Controllers/AccountController.js');
-      const Account = await AccountController.get({
+      const accountController = new AccountController();
+      const Account = await accountController.get({
         apiKey,
         apiSecret,
         strategy: config?.strategyName || 'DEFAULT'
@@ -2902,12 +2918,28 @@ class OrderController {
       console.log(`🛡️ [FAILSAFE] ${symbol}: Cancelando ${failsafeOrders.length} ordem(ns) de segurança...`);
 
       // Cancela todas as ordens de segurança
-      const cancelPromises = failsafeOrders.map(order =>
-        Order.cancelOpenOrder(symbol, order.id, order.clientId, config?.apiKey, config?.apiSecret)
-      );
+      const cancelPromises = failsafeOrders.map(async (order) => {
+        const cancelResult = await Order.cancelOpenOrder(symbol, order.id, order.clientId, config?.apiKey, config?.apiSecret);
+        
+        // Se cancelamento foi bem-sucedido, atualiza status no banco
+        if (cancelResult && !cancelResult.error) {
+          try {
+            await BotOrdersManager.updateOrder(order.id, {
+              status: 'CANCELLED',
+              closeTime: new Date().toISOString(),
+              closeType: 'FAILSAFE_CLEANUP'
+            });
+            Logger.debug(`📝 [FAILSAFE] ${symbol}: Status da ordem ${order.id} atualizado no banco para CANCELLED`);
+          } catch (dbError) {
+            Logger.warn(`⚠️ [FAILSAFE] ${symbol}: Erro ao atualizar status da ordem ${order.id} no banco: ${dbError.message}`);
+          }
+        }
+        
+        return cancelResult;
+      });
 
       const cancelResults = await Promise.all(cancelPromises);
-      const successfulCancels = cancelResults.filter(result => result !== null).length;
+      const successfulCancels = cancelResults.filter(result => result !== null && !result.error).length;
 
       if (successfulCancels > 0) {
         console.log(`✅ [FAILSAFE] ${symbol}: ${successfulCancels} ordem(ns) de segurança cancelada(s) com sucesso`);
@@ -3343,7 +3375,418 @@ class OrderController {
       const apiKey = config.apiKey;
       const apiSecret = config.apiSecret;
 
+      Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] Iniciando verificação de ordens órfãs`);
+
       const positions = await Futures.getOpenPositions(apiKey, apiSecret) || [];
+      Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] Encontradas ${positions.length} posições abertas`);
+
+      const Account = await AccountController.get({
+        apiKey,
+        apiSecret,
+        strategy: config?.strategyName || 'DEFAULT'
+      });
+      const configuredSymbols = Account.markets.map(m => m.symbol);
+      Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] Verificando ${configuredSymbols.length} símbolos configurados: ${configuredSymbols.join(', ')}`);
+
+      let totalOrphanedOrders = 0;
+      let totalCancelledOrders = 0;
+      const errors = [];
+      let totalOrdersChecked = 0;
+
+      for (const symbol of configuredSymbols) {
+        try {
+          // Adiciona delay entre chamadas para evitar rate limit
+          if (totalOrdersChecked > 0) {
+            await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
+          }
+
+          const openOrders = await Order.getOpenOrders(symbol, "PERP", apiKey, apiSecret);
+          
+          if (!openOrders || openOrders.length === 0) {
+            Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Nenhuma ordem aberta`);
+            continue;
+          }
+
+          totalOrdersChecked += openOrders.length;
+          Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: ${openOrders.length} ordens abertas encontradas`);
+
+          // Identifica ordens de stop loss com detecção melhorada
+          const stopLossOrders = openOrders.filter(order => {
+            // Verifica se é uma ordem de stop loss
+            const isReduceOnly = order.reduceOnly;
+            const hasStopLossTrigger = order.stopLossTriggerPrice || order.stopLossLimitPrice;
+            const hasTakeProfitTrigger = order.takeProfitTriggerPrice || order.takeProfitLimitPrice;
+
+            // Se tem trigger de stop loss, é uma ordem de stop loss
+            if (hasStopLossTrigger) {
+              Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Ordem ${order.id} identificada como stop loss (trigger detectado)`);
+              return true;
+            }
+
+            // Se tem trigger de take profit, não é stop loss
+            if (hasTakeProfitTrigger) {
+              return false;
+            }
+
+            // Se não tem trigger, verifica se está posicionada corretamente como stop loss
+            if (isReduceOnly && order.limitPrice) {
+              const position = positions.find(p => p.symbol === symbol);
+              if (position && Math.abs(Number(position.netQuantity)) > 0) {
+                const isCorrectStopLoss = OrderController.isOrderCorrectlyPositionedAsStopLoss(order, position);
+                if (isCorrectStopLoss) {
+                  Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Ordem ${order.id} identificada como stop loss (posicionamento correto)`);
+                }
+                return isCorrectStopLoss;
+              }
+            }
+
+            return false;
+          });
+
+          if (stopLossOrders.length === 0) {
+            Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Nenhuma ordem de stop loss encontrada`);
+            continue;
+          }
+
+          Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: ${stopLossOrders.length} ordens de stop loss encontradas`);
+
+          const position = positions.find(p => p.symbol === symbol);
+
+          // Verifica se posição está fechada (órfã)
+          if (!position || Math.abs(Number(position.netQuantity)) === 0) {
+            Logger.info(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: POSIÇÃO FECHADA - ${stopLossOrders.length} ordens de stop loss órfãs detectadas`);
+
+            totalOrphanedOrders += stopLossOrders.length;
+
+            // Log detalhado das ordens órfãs
+            for (const order of stopLossOrders) {
+              Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Ordem órfã - ID: ${order.id}, Tipo: ${order.orderType}, Preço: ${order.limitPrice || order.stopLossTriggerPrice}, ReduceOnly: ${order.reduceOnly}`);
+            }
+
+            // Cancela as ordens órfãs
+            for (const order of stopLossOrders) {
+              const orderId = order.id;
+
+              try {
+                // Adiciona delay entre cancelamentos
+                await new Promise(resolve => setTimeout(resolve, 200)); // 200ms delay
+
+                Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Tentando cancelar ordem órfã ${orderId}`);
+                
+                const cancelResult = await Order.cancelOpenOrder(symbol, orderId, null, apiKey, apiSecret);
+
+                if (cancelResult && !cancelResult.error) {
+                  totalCancelledOrders++;
+                  Logger.info(`✅ [${config.botName}][ORPHAN_MONITOR] ${symbol}: Ordem órfã ${orderId} cancelada com sucesso`);
+                  
+                  // Atualiza status no banco de dados
+                  try {
+                    await BotOrdersManager.updateOrder(orderId, {
+                      status: 'CANCELLED',
+                      closeTime: new Date().toISOString(),
+                      closeType: 'ORPHAN_CLEANUP'
+                    });
+                    Logger.debug(`📝 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Status da ordem ${orderId} atualizado no banco para CANCELLED`);
+                  } catch (dbError) {
+                    Logger.warn(`⚠️ [${config.botName}][ORPHAN_MONITOR] ${symbol}: Erro ao atualizar status da ordem ${orderId} no banco: ${dbError.message}`);
+                    // Não propaga o erro pois o cancelamento na exchange foi bem-sucedido
+                  }
+                  
+                  OrderController.clearStopLossCheckCache(symbol);
+                } else {
+                  const errorMsg = cancelResult?.error || 'desconhecido';
+                  Logger.warn(`❌ [${config.botName}][ORPHAN_MONITOR] ${symbol}: Falha ao cancelar ordem órfã - OrderID: ${orderId}, Erro: ${errorMsg}`);
+                  errors.push(`${symbol} (${orderId}): ${errorMsg}`);
+                }
+              } catch (error) {
+                // Verifica se é erro de rate limit
+                if (error?.response?.status === 429 || String(error).includes('rate limit') || String(error).includes('429')) {
+                  Logger.warn(`⚠️ [${config.botName}][ORPHAN_MONITOR] ${symbol}: Rate limit detectado ao cancelar ordem ${orderId}, pulando`);
+                  errors.push(`${symbol} (${orderId}): Rate limit`);
+                  // Para de tentar cancelar mais ordens deste símbolo para evitar mais rate limits
+                  break;
+                } else {
+                  Logger.error(`❌ [${config.botName}][ORPHAN_MONITOR] Erro ao cancelar ordem ${orderId} para ${symbol}:`, error.message);
+                  errors.push(`${symbol} (${orderId}): ${error.message}`);
+                }
+              }
+            }
+          } else {
+            Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Posição ativa (${position.netQuantity}), ordens de stop loss são válidas`);
+          }
+        } catch (error) {
+          // Verifica se é erro de rate limit no nível do símbolo
+          if (error?.response?.status === 429 || String(error).includes('rate limit') || String(error).includes('429')) {
+            Logger.warn(`⚠️ [${config.botName}][ORPHAN_MONITOR] ${symbol}: Rate limit detectado, pulando símbolo`);
+            errors.push(`${symbol}: Rate limit`);
+          } else {
+            Logger.error(`❌ [${config.botName}][ORPHAN_MONITOR] Erro ao verificar ordens para ${symbol}:`, error.message);
+            errors.push(`${symbol}: ${error.message}`);
+          }
+        }
+      }
+
+      // Log do resultado final
+      if (totalOrphanedOrders > 0) {
+        Logger.info(`🧹 [${config.botName}][ORPHAN_MONITOR] Monitoramento concluído:`);
+        Logger.info(`   • Ordens totais verificadas: ${totalOrdersChecked}`);
+        Logger.info(`   • Ordens órfãs detectadas: ${totalOrphanedOrders}`);
+        Logger.info(`   • Ordens canceladas: ${totalCancelledOrders}`);
+        Logger.info(`   • Erros: ${errors.length}`);
+
+        if (errors.length > 0) {
+          Logger.warn(`   • Detalhes dos erros: ${errors.join(', ')}`);
+        }
+      } else {
+        Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] Nenhuma ordem órfã encontrada (${totalOrdersChecked} ordens verificadas)`);
+      }
+
+      return {
+        orphaned: totalOrphanedOrders,
+        cancelled: totalCancelledOrders,
+        errors,
+        totalChecked: totalOrdersChecked
+      };
+
+    } catch (error) {
+      // Verifica se é erro de rate limit no nível global
+      if (error?.response?.status === 429 || String(error).includes('rate limit') || String(error).includes('429')) {
+        Logger.warn(`⚠️ [${config.botName}][ORPHAN_MONITOR] Rate limit detectado no monitoramento global`);
+        return { orphaned: 0, cancelled: 0, errors: ['Rate limit global'], totalChecked: 0 };
+      } else {
+        Logger.error(`❌ [${config.botName}][ORPHAN_MONITOR] Erro no monitoramento de ordens órfãs:`, error.message);
+        return { orphaned: 0, cancelled: 0, errors: [error.message], totalChecked: 0 };
+      }
+    }
+  }
+
+  /**
+   * 🧹 MÉTODO OTIMIZADO para detectar e cancelar ordens órfãs diretamente da corretora
+   * 
+   * Este método busca TODAS as ordens abertas na corretora e cancela qualquer ordem
+   * reduceOnly que não tenha posição ativa correspondente, independente da configuração local.
+   * 
+   * @param {string} botName - Nome do bot para monitorar
+   * @param {object} config - Configurações específicas do bot (apiKey, apiSecret, etc.)
+   * @returns {object} Resultado da operação: { orphaned, cancelled, errors }
+   */
+  static async scanAndCleanupAllOrphanedOrders(botName, config = null) {
+    try {
+      if (!config?.apiKey || !config?.apiSecret) {
+        throw new Error('API_KEY e API_SECRET são obrigatórios');
+      }
+      const apiKey = config.apiKey;
+      const apiSecret = config.apiSecret;
+
+      Logger.info(`🔍 [${config.botName}][SCAN_CLEANUP] Iniciando busca completa de ordens órfãs na corretora`);
+
+      // 1. Busca TODAS as posições abertas na corretora
+      const positions = await Futures.getOpenPositions(apiKey, apiSecret) || [];
+      const activeSymbols = new Set();
+      
+      // Mapa de símbolos com posições ativas (quantidade > 0)
+      for (const position of positions) {
+        if (Math.abs(Number(position.netQuantity)) > 0) {
+          activeSymbols.add(position.symbol);
+        }
+      }
+      
+      Logger.info(`🔍 [${config.botName}][SCAN_CLEANUP] Encontradas ${positions.length} posições, ${activeSymbols.size} com quantidade > 0`);
+      Logger.info(`🔍 [${config.botName}][SCAN_CLEANUP] Símbolos ativos: ${Array.from(activeSymbols).join(', ') || 'nenhum'}`);
+
+      // 2. Busca TODOS os símbolos que têm ordens abertas na corretora
+      // Vamos varrer todos os símbolos possíveis (PERP markets)
+      const allSymbolsWithOrders = new Set();
+      
+      // Primeiro, verifica símbolos configurados
+      try {
+        const Account = await AccountController.get({
+          apiKey,
+          apiSecret,
+          strategy: config?.strategyName || 'DEFAULT'
+        });
+        const configuredSymbols = Account.markets.map(m => m.symbol);
+        
+        for (const symbol of configuredSymbols) {
+          const orders = await Order.getOpenOrders(symbol, "PERP", apiKey, apiSecret);
+          if (orders && orders.length > 0) {
+            allSymbolsWithOrders.add(symbol);
+          }
+          // Delay para evitar rate limit
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      } catch (error) {
+        Logger.warn(`⚠️ [${config.botName}][SCAN_CLEANUP] Erro ao buscar símbolos configurados: ${error.message}`);
+      }
+
+      // 3. Para cada símbolo encontrado, verifica ordens órfãs
+      let totalOrphanedOrders = 0;
+      let totalCancelledOrders = 0;
+      const errors = [];
+      const detailedResults = [];
+
+      for (const symbol of allSymbolsWithOrders) {
+        try {
+          Logger.debug(`🔍 [${config.botName}][SCAN_CLEANUP] Verificando ${symbol}...`);
+          
+          // Delay para evitar rate limit
+          await new Promise(resolve => setTimeout(resolve, 200));
+
+          const openOrders = await Order.getOpenOrders(symbol, "PERP", apiKey, apiSecret);
+          
+          if (!openOrders || openOrders.length === 0) {
+            continue;
+          }
+
+          // Identifica ordens órfãs: reduceOnly sem posição ativa no símbolo
+          const orphanedOrders = [];
+          
+          for (const order of openOrders) {
+            const isReduceOnly = order.reduceOnly === true;
+            const hasActivePosition = activeSymbols.has(symbol);
+            
+            // Se é reduceOnly E não há posição ativa, é órfã
+            if (isReduceOnly && !hasActivePosition) {
+              orphanedOrders.push(order);
+              Logger.debug(`🔍 [${config.botName}][SCAN_CLEANUP] ${symbol}: Ordem órfã detectada - ID: ${order.id}, Tipo: ${order.orderType}, ReduceOnly: ${order.reduceOnly}`);
+            }
+          }
+
+          if (orphanedOrders.length === 0) {
+            Logger.debug(`🔍 [${config.botName}][SCAN_CLEANUP] ${symbol}: Nenhuma ordem órfã encontrada`);
+            continue;
+          }
+
+          Logger.info(`🧹 [${config.botName}][SCAN_CLEANUP] ${symbol}: ${orphanedOrders.length} ordens órfãs detectadas`);
+          totalOrphanedOrders += orphanedOrders.length;
+
+          // 4. Cancela as ordens órfãs encontradas
+          let cancelledInSymbol = 0;
+          const errorsInSymbol = [];
+
+          for (const order of orphanedOrders) {
+            try {
+              await new Promise(resolve => setTimeout(resolve, 150)); // Delay entre cancelamentos
+              
+              Logger.debug(`🧹 [${config.botName}][SCAN_CLEANUP] ${symbol}: Cancelando ordem órfã ${order.id}`);
+              
+              const cancelResult = await Order.cancelOpenOrder(symbol, order.id, null, apiKey, apiSecret);
+
+              if (cancelResult && !cancelResult.error) {
+                cancelledInSymbol++;
+                totalCancelledOrders++;
+                Logger.info(`✅ [${config.botName}][SCAN_CLEANUP] ${symbol}: Ordem órfã ${order.id} cancelada com sucesso`);
+                
+                // Atualiza status no banco de dados
+                try {
+                  await BotOrdersManager.updateOrder(order.id, {
+                    status: 'CANCELLED',
+                    closeTime: new Date().toISOString(),
+                    closeType: 'SCAN_ORPHAN_CLEANUP'
+                  });
+                  Logger.debug(`📝 [${config.botName}][SCAN_CLEANUP] ${symbol}: Status da ordem ${order.id} atualizado no banco para CANCELLED`);
+                } catch (dbError) {
+                  Logger.warn(`⚠️ [${config.botName}][SCAN_CLEANUP] ${symbol}: Erro ao atualizar status da ordem ${order.id} no banco: ${dbError.message}`);
+                }
+              } else {
+                const errorMsg = cancelResult?.error || 'desconhecido';
+                errorsInSymbol.push(`${order.id}: ${errorMsg}`);
+                Logger.warn(`❌ [${config.botName}][SCAN_CLEANUP] ${symbol}: Falha ao cancelar ordem órfã ${order.id}: ${errorMsg}`);
+              }
+            } catch (error) {
+              if (error?.response?.status === 429 || String(error).includes('rate limit')) {
+                Logger.warn(`⚠️ [${config.botName}][SCAN_CLEANUP] ${symbol}: Rate limit detectado, pausando 2s`);
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                errorsInSymbol.push(`${order.id}: Rate limit`);
+                break; // Para de cancelar ordens deste símbolo
+              } else {
+                errorsInSymbol.push(`${order.id}: ${error.message}`);
+                Logger.error(`❌ [${config.botName}][SCAN_CLEANUP] ${symbol}: Erro ao cancelar ordem ${order.id}:`, error.message);
+              }
+            }
+          }
+
+          // Registra resultado detalhado por símbolo
+          detailedResults.push({
+            symbol,
+            orphanedFound: orphanedOrders.length,
+            cancelled: cancelledInSymbol,
+            errors: errorsInSymbol
+          });
+
+          if (errorsInSymbol.length > 0) {
+            errors.push(`${symbol}: ${errorsInSymbol.join(', ')}`);
+          }
+
+        } catch (error) {
+          if (error?.response?.status === 429 || String(error).includes('rate limit')) {
+            Logger.warn(`⚠️ [${config.botName}][SCAN_CLEANUP] ${symbol}: Rate limit no símbolo`);
+            errors.push(`${symbol}: Rate limit`);
+          } else {
+            Logger.error(`❌ [${config.botName}][SCAN_CLEANUP] ${symbol}: Erro ao processar símbolo:`, error.message);
+            errors.push(`${symbol}: ${error.message}`);
+          }
+        }
+      }
+
+      // Log do resultado final
+      Logger.info(`🧹 [${config.botName}][SCAN_CLEANUP] Varredura completa finalizada:`);
+      Logger.info(`   • Símbolos verificados: ${allSymbolsWithOrders.size}`);
+      Logger.info(`   • Ordens órfãs detectadas: ${totalOrphanedOrders}`);
+      Logger.info(`   • Ordens canceladas: ${totalCancelledOrders}`);
+      Logger.info(`   • Erros: ${errors.length}`);
+
+      // Log detalhado por símbolo
+      if (detailedResults.length > 0) {
+        Logger.info(`📊 [${config.botName}][SCAN_CLEANUP] Resultados por símbolo:`);
+        for (const result of detailedResults) {
+          Logger.info(`   • ${result.symbol}: ${result.orphanedFound} órfãs → ${result.cancelled} canceladas`);
+        }
+      }
+
+      if (errors.length > 0) {
+        Logger.warn(`   • Detalhes dos erros: ${errors.join(', ')}`);
+      }
+
+      return {
+        orphaned: totalOrphanedOrders,
+        cancelled: totalCancelledOrders,
+        errors,
+        symbolsScanned: allSymbolsWithOrders.size,
+        detailedResults
+      };
+
+    } catch (error) {
+      Logger.error(`❌ [${config.botName}][SCAN_CLEANUP] Erro na varredura completa:`, error.message);
+      return { orphaned: 0, cancelled: 0, errors: [error.message], symbolsScanned: 0 };
+    }
+  }
+
+  /**
+   * 🧹 MÉTODO UTILITÁRIO para cancelar TODAS as ordens órfãs de forma agressiva
+   * 
+   * Este método é mais agressivo e cancela todas as ordens reduceOnly
+   * quando não há posições abertas. Use quando o método principal
+   * não conseguir limpar todas as ordens órfãs.
+   * 
+   * @param {string} botName - Nome do bot para monitorar
+   * @param {object} config - Configurações específicas do bot (apiKey, apiSecret, etc.)
+   * @returns {object} Resultado da operação: { orphaned, cancelled, errors }
+   */
+  static async forceCleanupAllOrphanedOrders(botName, config = null) {
+    try {
+      if (!config?.apiKey || !config?.apiSecret) {
+        throw new Error('API_KEY e API_SECRET são obrigatórios');
+      }
+      const apiKey = config.apiKey;
+      const apiSecret = config.apiSecret;
+
+      Logger.info(`🧹 [${config.botName}][FORCE_CLEANUP] Iniciando limpeza agressiva de ordens órfãs`);
+
+      const positions = await Futures.getOpenPositions(apiKey, apiSecret) || [];
+      const activeSymbols = positions.filter(p => Math.abs(Number(p.netQuantity)) > 0).map(p => p.symbol);
+      
+      Logger.info(`🧹 [${config.botName}][FORCE_CLEANUP] Posições ativas encontradas: ${activeSymbols.join(', ') || 'nenhuma'}`);
 
       const Account = await AccountController.get({
         apiKey,
@@ -3358,84 +3801,88 @@ class OrderController {
 
       for (const symbol of configuredSymbols) {
         try {
-          const openOrders = await Order.getOpenOrders(symbol, "PERP", apiKey, apiSecret);
-
-          if (!openOrders || openOrders.length === 0) {
-            continue; // Pula símbolos sem ordens
+          // Pula símbolos com posições ativas
+          if (activeSymbols.includes(symbol)) {
+            Logger.debug(`🧹 [${config.botName}][FORCE_CLEANUP] ${symbol}: Posição ativa, pulando`);
+            continue;
           }
 
-          const stopLossOrders = openOrders.filter(order => {
-            // Verifica se é uma ordem de stop loss
-            const isReduceOnly = order.reduceOnly;
-            const hasStopLossTrigger = order.stopLossTriggerPrice || order.stopLossLimitPrice;
+          // Delay para evitar rate limit
+          await new Promise(resolve => setTimeout(resolve, 300));
 
-            // Se tem trigger de stop loss, é uma ordem de stop loss
-            if (hasStopLossTrigger) {
-              return true;
-            }
+          const openOrders = await Order.getOpenOrders(symbol, "PERP", apiKey, apiSecret);
+          
+          if (!openOrders || openOrders.length === 0) {
+            continue;
+          }
 
-            // Se não tem trigger, verifica se está posicionada corretamente
-            if (isReduceOnly && order.limitPrice) {
-              // Busca a posição correspondente para validar
-              const position = positions.find(p => p.symbol === symbol);
-              if (position && Math.abs(Number(position.netQuantity)) > 0) {
-                return OrderController.isOrderCorrectlyPositionedAsStopLoss(order, position);
-              }
-            }
-
-            return false;
+          // Identifica TODAS as ordens reduceOnly como potenciais órfãs
+          const orphanedOrders = openOrders.filter(order => {
+            return order.reduceOnly === true;
           });
 
-          if (stopLossOrders.length === 0) {
-            continue; // Pula se não há ordens de stop loss
+          if (orphanedOrders.length === 0) {
+            continue;
           }
 
-          const position = positions.find(p => p.symbol === symbol);
+          Logger.info(`🧹 [${config.botName}][FORCE_CLEANUP] ${symbol}: ${orphanedOrders.length} ordens reduceOnly órfãs detectadas`);
+          totalOrphanedOrders += orphanedOrders.length;
 
-          if (!position || Math.abs(Number(position.netQuantity)) === 0) {
-            console.log(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: POSIÇÃO FECHADA - ${stopLossOrders.length} ordens de stop loss órfãs detectadas`);
+          // Cancela todas as ordens órfãs
+          for (const order of orphanedOrders) {
+            try {
+              await new Promise(resolve => setTimeout(resolve, 150)); // Delay menor para limpeza rápida
+              
+              const cancelResult = await Order.cancelOpenOrder(symbol, order.id, null, apiKey, apiSecret);
 
-            totalOrphanedOrders += stopLossOrders.length;
-
-            for (const order of stopLossOrders) {
-              const orderId = order.id;
-
-              try {
-                const cancelResult = await Order.cancelOpenOrder(symbol, orderId, null, apiKey, apiSecret);
-
-                if (cancelResult && !cancelResult.error) {
-                  totalCancelledOrders++;
-
-                  OrderController.clearStopLossCheckCache(symbol);
-                } else {
-                  const errorMsg = cancelResult?.error || 'desconhecido';
-                  console.log(`❌ [${config.botName}][ORPHAN_MONITOR] ${symbol}: Falha ao cancelar ordem órfã - OrderID: ${orderId}, Erro: ${errorMsg}`);
-                  errors.push(`${symbol} (${orderId}): ${errorMsg}`);
+              if (cancelResult && !cancelResult.error) {
+                totalCancelledOrders++;
+                Logger.info(`✅ [${config.botName}][FORCE_CLEANUP] ${symbol}: Ordem ${order.id} cancelada`);
+                
+                // Atualiza status no banco de dados
+                try {
+                  await BotOrdersManager.updateOrder(order.id, {
+                    status: 'CANCELLED',
+                    closeTime: new Date().toISOString(),
+                    closeType: 'FORCE_ORPHAN_CLEANUP'
+                  });
+                  Logger.debug(`📝 [${config.botName}][FORCE_CLEANUP] ${symbol}: Status da ordem ${order.id} atualizado no banco para CANCELLED`);
+                } catch (dbError) {
+                  Logger.warn(`⚠️ [${config.botName}][FORCE_CLEANUP] ${symbol}: Erro ao atualizar status da ordem ${order.id} no banco: ${dbError.message}`);
+                  // Não propaga o erro pois o cancelamento na exchange foi bem-sucedido
                 }
-              } catch (error) {
-                console.error(`❌ [${config.botName}][ORPHAN_MONITOR] Erro ao cancelar ordem ${orderId} para ${symbol}:`, error.message);
-                errors.push(`${symbol} (${orderId}): ${error.message}`);
+              } else {
+                const errorMsg = cancelResult?.error || 'desconhecido';
+                Logger.warn(`❌ [${config.botName}][FORCE_CLEANUP] ${symbol}: Falha ao cancelar ${order.id}: ${errorMsg}`);
+                errors.push(`${symbol} (${order.id}): ${errorMsg}`);
+              }
+            } catch (error) {
+              if (error?.response?.status === 429 || String(error).includes('rate limit')) {
+                Logger.warn(`⚠️ [${config.botName}][FORCE_CLEANUP] ${symbol}: Rate limit, pausando 2s`);
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                errors.push(`${symbol} (${order.id}): Rate limit`);
+                break; // Para de cancelar ordens deste símbolo
+              } else {
+                Logger.error(`❌ [${config.botName}][FORCE_CLEANUP] Erro ao cancelar ${order.id}:`, error.message);
+                errors.push(`${symbol} (${order.id}): ${error.message}`);
               }
             }
           }
         } catch (error) {
-          console.error(`❌ [${config.botName}][ORPHAN_MONITOR] Erro ao verificar ordens para ${symbol}:`, error.message);
-          errors.push(`${symbol}: ${error.message}`);
+          if (error?.response?.status === 429 || String(error).includes('rate limit')) {
+            Logger.warn(`⚠️ [${config.botName}][FORCE_CLEANUP] ${symbol}: Rate limit no símbolo`);
+            errors.push(`${symbol}: Rate limit`);
+          } else {
+            Logger.error(`❌ [${config.botName}][FORCE_CLEANUP] Erro no símbolo ${symbol}:`, error.message);
+            errors.push(`${symbol}: ${error.message}`);
+          }
         }
       }
 
-      if (totalOrphanedOrders > 0) {
-        console.log(`🧹 [${config.botName}][ORPHAN_MONITOR] Monitoramento concluído:`);
-        console.log(`   • Ordens órfãs detectadas: ${totalOrphanedOrders}`);
-        console.log(`   • Ordens canceladas: ${totalCancelledOrders}`);
-        console.log(`   • Erros: ${errors.length}`);
-
-        if (errors.length > 0) {
-          console.log(`   • Detalhes dos erros: ${errors.join(', ')}`);
-        }
-      } else {
-        console.log(`🧹 [${config.botName}][ORPHAN_MONITOR] Nenhuma ordem órfã encontrada`);
-      }
+      Logger.info(`🧹 [${config.botName}][FORCE_CLEANUP] Limpeza agressiva concluída:`);
+      Logger.info(`   • Ordens órfãs detectadas: ${totalOrphanedOrders}`);
+      Logger.info(`   • Ordens canceladas: ${totalCancelledOrders}`);
+      Logger.info(`   • Erros: ${errors.length}`);
 
       return {
         orphaned: totalOrphanedOrders,
@@ -3444,12 +3891,10 @@ class OrderController {
       };
 
     } catch (error) {
-      console.error(`❌ [${config.botName}][ORPHAN_MONITOR] Erro no monitoramento de ordens órfãs:`, error.message);
+      Logger.error(`❌ [${config.botName}][FORCE_CLEANUP] Erro na limpeza agressiva:`, error.message);
       return { orphaned: 0, cancelled: 0, errors: [error.message] };
     }
   }
-
-  // Alias removido - use monitorAndCleanupOrphanedStopLoss() diretamente
 
   /**
    * Cria uma ordem LIMIT com triggers de stop loss e take profit anexados
