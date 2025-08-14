@@ -5,6 +5,55 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.5.45] - 2025-08-14
+
+### 🔧 **BUGFIX CRÍTICO: Correção de Posições com Loss Não Contabilizadas**
+
+**Problema Identificado:**
+- Operações com loss pequeno (ex: -$0.16) não estavam sendo marcadas como CLOSED
+- Validações muito restritivas impediam fechamento de posições com PnL válido
+- Rate limiting severo causava "TOO MANY REQUESTS" com delays de até 5 minutos
+
+**Soluções Implementadas:**
+
+#### 🚀 **Global Request Queue para Rate Limiting**
+- **Novo arquivo:** `src/Utils/GlobalRequestQueue.js`
+- **Funcionalidade:** Serializa TODAS as requests da aplicação para evitar rate limiting
+- **Benefícios:**
+  - Elimina competição entre serviços fazendo requests simultâneas  
+  - Sistema adaptativo de delays (2s mínimo, até 60s máximo)
+  - Retry automático com backoff exponencial
+  - Logging detalhado para monitoramento
+
+#### 🎯 **Correção da Lógica de Fechamento de Posições**
+
+**1. History.js - Reconstrução de Posições:**
+- **Antes:** `Math.abs(pnl) < 0.01` bloqueava PnLs pequenos válidos
+- **Agora:** Só bloqueia se PnL exatamente zero E preços idênticos
+- **Resultado:** Posições com loss como -$0.16 são corretamente fechadas
+
+**2. OrdersService.js - Cálculo de Posições via Fills:**
+- **Antes:** `Math.abs(totalPnL) < 0.01` marcava PnLs pequenos como "suspeitos"
+- **Agora:** Só bloqueia PnL exatamente zero COM múltiplos fills (erro real de cálculo)
+- **Resultado:** Validação inteligente que preserva trades válidos
+
+#### 📊 **Integração com Global Request Queue**
+Arquivos modificados para usar a fila global:
+- `src/Backpack/Authenticated/History.js` - getFillHistory e getOrderHistory
+- `src/Backpack/Authenticated/Order.js` - getOpenOrders
+- `src/Services/OrdersService.js` - Removidos delays manuais redundantes
+
+### ✅ **Validação de Funcionamento**
+**Teste realizado:** Bot ID 2 com trade CRV_USDC_PERP
+- **Resultado:** Sistema detectou e fechou posição ONDO_USDC_PERP com loss de -$0.0152
+- **Comprovação:** Operações com loss agora são corretamente contabilizadas
+
+### 🔄 **Compatibilidade**
+- Mantida proteção contra fills realmente suspeitos
+- Logs detalhados para acompanhamento de fechamentos
+- Sistema robusto de rate limiting global
+- Funcionalidade de Force Sync preservada
+
 ## [1.5.44] - 2024-12-19
 
 ### 🎯 Suporte Ilimitado de Ordens por Bot

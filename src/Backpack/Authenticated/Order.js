@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { auth } from './Authentication.js';
 import Logger from '../../Utils/Logger.js';
+import GlobalRequestQueue from '../../Utils/GlobalRequestQueue.js';
 
 class Order {
 
@@ -45,58 +46,30 @@ class Order {
 
   //marketType: "SPOT" "PERP" "IPERP" "DATED" "PREDICTION" "RFQ"
   async getOpenOrders(symbol, marketType = "PERP", apiKey = null, apiSecret = null) {
-    const timestamp = Date.now();
+    // Usa fila global para coordenar todas as requests
+    return await GlobalRequestQueue.enqueue(async () => {
+      const timestamp = Date.now();
 
-    const params = {}
-    if (symbol) params.symbol = symbol;
-    if (marketType) params.marketType = marketType;
+      const params = {}
+      if (symbol) params.symbol = symbol;
+      if (marketType) params.marketType = marketType;
 
-    const headers = auth({
-      instruction: 'orderQueryAll',
-      timestamp,
-      params,
-      apiKey,
-      apiSecret
-    });
+      const headers = auth({
+        instruction: 'orderQueryAll',
+        timestamp,
+        params,
+        apiKey,
+        apiSecret
+      });
 
-    try {
       const response = await axios.get(`${process.env.API_URL}/api/v1/orders`, {
         headers,
         params,
         timeout: 15000 // 15 segundos de timeout
       });
-      return response.data
-    } catch (error) {
-      if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
-        Logger.warn('⚠️ getOpenOrders - Timeout, tentando novamente em 2s...');
-        // Retry após 2 segundos
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        try {
-          const retryHeaders = auth({
-            instruction: 'orderQueryAll',
-            timestamp: Date.now(),
-            params,
-            apiKey,
-            apiSecret
-          });
-          
-          const retryResponse = await axios.get(`${process.env.API_URL}/api/v1/orders`, {
-            headers: retryHeaders,
-            params,
-            timeout: 20000 // Timeout maior na segunda tentativa
-          });
-          
-          Logger.info('✅ getOpenOrders - Retry bem-sucedido');
-          return retryResponse.data;
-        } catch (retryError) {
-          Logger.error('❌ getOpenOrders - Retry falhou:', retryError.response?.data || retryError.message);
-          return null;
-        }
-      } else {
-        Logger.error('getOpenOrders - ERROR!', error.response?.data || error.message);
-        return null
-      }
-    }
+      
+      return response.data;
+    }, `getOpenOrders(symbol=${symbol}, marketType=${marketType})`);
   }
 
   /*

@@ -21,6 +21,14 @@ class OrdersService {
   }
 
   /**
+   * Aguarda um tempo determinado para evitar rate limiting
+   * @param {number} ms - Tempo em milissegundos para aguardar
+   */
+  static async delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
    * Cria uma ordem de mercado
    * @param {Object} params - Parâmetros da ordem
    * @param {string} params.symbol - Símbolo do mercado (ex: 'SOL_USDC')
@@ -774,7 +782,10 @@ class OrdersService {
       Logger.debug(`🔍 [ORDERS_SYNC] Mapeadas ${exchangeOrdersMapById.size} ordens por ID e ${exchangeOrdersMapByClientId.size} por clientId`);
 
       // ETAPA 4: Sincronizar ordens do nosso banco com a corretora
-      for (const ourOrder of ourOrders) {
+      Logger.info(`🔄 [ORDERS_SYNC] Iniciando sincronização de ${ourOrders.length} ordens com delays para evitar rate limiting`);
+      
+      for (let i = 0; i < ourOrders.length; i++) {
+        const ourOrder = ourOrders[i];
         try {
           // Tentar encontrar a ordem na corretora por externalOrderId primeiro, depois por clientId
           let exchangeOrder = exchangeOrdersMapById.get(ourOrder.externalOrderId);
@@ -825,8 +836,11 @@ class OrdersService {
               continue;
             }
 
+            // Fila global agora coordena os delays - não precisa de delay manual aqui
+
             // Buscar status real da ordem na corretora (sabemos que está PENDING no nosso lado)
             const { default: History } = await import('../Backpack/Authenticated/History.js');
+            // Buscar histórico da ordem (fila global coordena rate limiting)
             const orderHistory = await History.getOrderHistory(
               ourOrder.externalOrderId, // orderId - ID da ordem específica
               ourOrder.symbol, // symbol - símbolo do par
@@ -837,6 +851,12 @@ class OrdersService {
               config.apiKey,
               config.apiSecret
             );
+            
+            // Se retornou null, a fila global já lidou com rate limiting
+            if (orderHistory === null) {
+              Logger.warn(`⚠️ [ORDERS_SYNC] Histórico não disponível para ordem ${ourOrder.externalOrderId} - mantendo PENDING`);
+              continue;
+            }
 
             if (orderHistory && Array.isArray(orderHistory) && orderHistory.length > 0) {
               const orderRecord = orderHistory.find(order => order.id === ourOrder.externalOrderId);
@@ -867,6 +887,9 @@ class OrdersService {
         } catch (orderError) {
           Logger.warn(`⚠️ [ORDERS_SYNC] Erro ao sincronizar ordem ${ourOrder.externalOrderId}: ${orderError.message}`);
         }
+
+        // Fila global agora coordena os delays - removemos delays manuais
+        Logger.debug(`🔄 [ORDERS_SYNC] Ordem processada (${i + 1}/${ourOrders.length})`);
       }
 
       const closedPositionsCount = await OrdersService.syncPositionsFromExchangeFills(botId, config);
@@ -1018,7 +1041,7 @@ class OrdersService {
   static async syncPositionsFromExchangeFills(botId, config) {
     try {
       Logger.info(`📊 [FILLS_SYNC] Iniciando sincronização baseada em fills da corretora para bot ${botId}`);
-      
+
       const botClientOrderId = config.botClientOrderId?.toString() || '';
       const botCreationDate = config.createdAt || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
       const fromTimestamp = new Date(botCreationDate).getTime();
@@ -1050,7 +1073,7 @@ class OrdersService {
       Logger.info(`📊 [FILLS_SYNC] Encontrados ${botFills.length} fills do bot na corretora (de ${allFills.length} totais)`);
 
       const symbolPositions = new Map();
-      
+
       botFills.forEach(fill => {
         const symbol = fill.symbol;
         if (!symbolPositions.has(symbol)) {
@@ -1069,32 +1092,32 @@ class OrdersService {
 
       for (const [symbol, fills] of symbolPositions.entries()) {
         Logger.debug(`🔍 [FILLS_SYNC] Analisando ${symbol} com ${fills.length} fills`);
-        
+
         const position = OrdersService.calculatePositionFromFills(fills);
-        
+
         if (position.isClosed) {
           Logger.info(`✅ [FILLS_SYNC] Posição ${symbol} fechada baseada em fills - P&L: ${position.totalPnL.toFixed(4)} USDC`);
-          
+
           const ourOrders = await OrdersService.dbService.getAll(
             `SELECT * FROM bot_orders WHERE botId = ? AND symbol = ? AND status = 'FILLED'`,
             [botId, symbol]
           );
 
           for (const order of ourOrders) {
-            const pnlForOrder = ourOrders.length > 1 ? 
-              (position.totalPnL * parseFloat(order.quantity)) / Math.abs(position.totalQuantityProcessed) : 
+            const pnlForOrder = ourOrders.length > 1 ?
+              (position.totalPnL * parseFloat(order.quantity)) / Math.abs(position.totalQuantityProcessed) :
               position.totalPnL;
-              
+
             await OrdersService.dbService.run(
               `UPDATE bot_orders 
                SET status = 'CLOSED', pnl = ?, closeTime = ?, closeType = 'FILLS_BASED_CLOSE'
                WHERE externalOrderId = ?`,
               [pnlForOrder, new Date().toISOString(), order.externalOrderId]
             );
-            
+
             Logger.debug(`📊 [FILLS_SYNC] Ordem ${order.externalOrderId} marcada como CLOSED com P&L: ${pnlForOrder}`);
           }
-          
+
           closedCount++;
         } else {
           Logger.debug(`ℹ️ [FILLS_SYNC] ${symbol} ainda tem posição aberta (quantidade: ${position.totalQuantity})`);
@@ -1136,7 +1159,7 @@ class OrdersService {
         const avgCostPrice = netQuantity > 0 ? totalCost / netQuantity : 0;
         const pnlFromSell = (price - avgCostPrice) * quantity;
         totalPnL += pnlFromSell;
-        
+
         netQuantity -= quantity;
         if (netQuantity > 0) {
           totalCost = (totalCost / (netQuantity + quantity)) * netQuantity;
@@ -1147,17 +1170,28 @@ class OrdersService {
       }
     }
 
-    // VALIDAÇÃO CRÍTICA: Só marca como fechada se tiver quantidade zero E PnL consistente
+    // VALIDAÇÃO MELHORADA: Só marca como fechada se tiver quantidade zero
     const isQuantityClosed = Math.abs(netQuantity) < 0.01;
-    const isPnLSuspicious = Math.abs(totalPnL) < 0.01;
     
-    // Se quantidade é zero mas PnL é suspeito, não marca como fechada
+    // VALIDAÇÃO APRIMORADA: Só pula fechamentos se for realmente suspeito
+    // (PnL exatamente zero com fills múltiplos, indicando erro de cálculo)
+    const isPnLExactlyZero = Math.abs(totalPnL) < 0.0001;
+    const hasMultipleFills = fills.length > 1;
+    const isReallySuspicious = isPnLExactlyZero && hasMultipleFills;
+
     let isClosed = isQuantityClosed;
-    if (isQuantityClosed && isPnLSuspicious && fills.length > 0) {
-      Logger.warn(`⚠️ [FILLS_CALC] PnL suspeito detectado: ${totalPnL.toFixed(4)} com ${fills.length} fills`);
+    if (isQuantityClosed && isReallySuspicious) {
+      Logger.warn(`⚠️ [FILLS_CALC] Fill realmente suspeito detectado: PnL exatamente zero (${totalPnL.toFixed(4)}) com ${fills.length} fills`);
       Logger.warn(`⚠️ [FILLS_CALC] Fills: ${fills.map(f => `${f.side} ${f.quantity}@${f.price}`).join(', ')}`);
-      Logger.warn(`🚫 [FILLS_CALC] TEMPORÁRIO: Não marcando como fechada para investigação`);
+      Logger.warn(`🚫 [FILLS_CALC] Não marcando como fechada - possível erro de cálculo`);
       isClosed = false;
+    } else if (isQuantityClosed) {
+      // Log detalhado para fechamentos válidos
+      if (Math.abs(totalPnL) < 1) {
+        Logger.debug(`💸 [FILLS_CALC] Posição fechada com PnL pequeno mas válido: $${totalPnL.toFixed(4)} (${totalPnL > 0 ? 'gain' : 'loss'})`);
+      } else {
+        Logger.debug(`💰 [FILLS_CALC] Posição fechada com PnL: $${totalPnL.toFixed(2)} (${totalPnL > 0 ? 'gain' : 'loss'})`);
+      }
     }
 
     const result = {
@@ -1167,7 +1201,7 @@ class OrdersService {
       isClosed: isClosed
     };
 
-    Logger.debug(`🔢 [FILLS_CALC] Resultado: netQty: ${result.totalQuantity}, P&L: ${result.totalPnL}, fechada: ${result.isClosed}, PnL suspeito: ${isPnLSuspicious}`);
+    Logger.debug(`🔢 [FILLS_CALC] Resultado: netQty: ${result.totalQuantity}, P&L: ${result.totalPnL}, fechada: ${result.isClosed}, suspeito: ${isReallySuspicious}`);
     return result;
   }
 }

@@ -5,6 +5,7 @@ import ConfigManager from '../../Config/ConfigManager.js';
 import Futures from './Futures.js';
 import Logger from '../../Utils/Logger.js';
 import RateLimiter from '../../Utils/RateLimiter.js';
+import GlobalRequestQueue from '../../Utils/GlobalRequestQueue.js';
 
 class History {
 
@@ -107,55 +108,36 @@ class History {
   }
 
   async getFillHistory(symbol, orderId, from, to, limit, offset, fillType, marketType, sortDirection, apiKey = null, apiSecret = null) {
-    // Rate limiting dinâmico
-    await RateLimiter.wait('getFillHistory');
+    // Usa fila global para coordenar todas as requests
+    return await GlobalRequestQueue.enqueue(async () => {
+      const timestamp = Date.now();
 
-    const timestamp = Date.now();
+      const params = {};
+      if (orderId) params.orderId = orderId;
+      if (from) params.from = from;
+      if (to) params.to = to;
+      if (symbol) params.symbol = symbol;
+      if (limit) params.limit = limit;
+      if (offset) params.offset = offset;
+      if (fillType) params.fillType = fillType;
+      if (marketType) params.marketType = marketType; // array if multi values
+      if (sortDirection) params.sortDirection = sortDirection;
 
-    const params = {};
-    if (orderId) params.orderId = orderId;
-    if (from) params.from = from;
-    if (to) params.to = to;
-    if (symbol) params.symbol = symbol;
-    if (limit) params.limit = limit;
-    if (offset) params.offset = offset;
-    if (fillType) params.fillType = fillType;
-    if (marketType) params.marketType = marketType; // array if multi values
-    if (sortDirection) params.sortDirection = sortDirection;
+      const headers = auth({
+        instruction: 'fillHistoryQueryAll',
+        timestamp,
+        params,
+        apiKey,
+        apiSecret
+      });
 
-    const headers = auth({
-      instruction: 'fillHistoryQueryAll',
-      timestamp,
-      params,
-      apiKey,
-      apiSecret
-    });
-
-    try {
       const response = await axios.get(`${process.env.API_URL}/wapi/v1/history/fills`, {
         headers,
         params,
       });
 
-      // Sucesso - informa o rate limiter
-      RateLimiter.onSuccess();
       return response.data;
-    } catch (error) {
-      const errorData = error.response?.data;
-
-      // Verifica se é erro de rate limit
-      if (errorData?.code === 'TOO_MANY_REQUESTS' || error.response?.status === 429) {
-        // Informa o rate limiter sobre o rate limit
-        RateLimiter.onRateLimit();
-        Logger.warn(`⚠️ [RATE_LIMIT] Rate limit em getFillHistory - delay aumentado para ${RateLimiter.getStatus().currentDelay}ms`);
-        return null;
-      }
-
-      // Erro que não é rate limit
-      RateLimiter.onError();
-      Logger.error('getFillHistory - ERROR!', errorData || error.message);
-      return null;
-    }
+    }, `getFillHistory(symbol=${symbol}, orderId=${orderId})`);
   }
 
   async getFundingPayments(symbol, limit, offset, sortDirection, apiKey = null, apiSecret = null) {
@@ -189,51 +171,33 @@ class History {
   }
 
   async getOrderHistory(orderId, symbol, limit, offset, marketType, sortDirection, apiKey = null, apiSecret = null) {
-    // Rate limiting dinâmico
-    await RateLimiter.wait('getOrderHistory');
+    // Usa fila global para coordenar todas as requests
+    return await GlobalRequestQueue.enqueue(async () => {
+      const timestamp = Date.now();
 
-    const timestamp = Date.now();
+      const params = {};
+      if (orderId) params.orderId = orderId;
+      if (symbol) params.symbol = symbol;
+      if (limit) params.limit = limit;
+      if (offset) params.offset = offset;
+      if (marketType) params.marketType = marketType;
+      if (sortDirection) params.sortDirection = sortDirection;
 
-    const params = {};
-    if (orderId) params.orderId = orderId;
-    if (symbol) params.symbol = symbol;
-    if (limit) params.limit = limit;
-    if (offset) params.offset = offset;
-    if (marketType) params.marketType = marketType;
-    if (sortDirection) params.sortDirection = sortDirection;
+      const headers = auth({
+        instruction: 'orderHistoryQueryAll',
+        timestamp,
+        params,
+        apiKey,
+        apiSecret
+      });
 
-    const headers = auth({
-      instruction: 'orderHistoryQueryAll',
-      timestamp,
-      params,
-      apiKey,
-      apiSecret
-    });
-
-    try {
       const response = await axios.get(`${process.env.API_URL}/wapi/v1/history/orders`, {
         headers,
         params,
       });
 
-      // Sucesso - informa o rate limiter
-      RateLimiter.onSuccess();
       return response.data;
-    } catch (error) {
-      const errorData = error.response?.data;
-      // Verifica se é erro de rate limit
-      if (errorData?.code === 'TOO_MANY_REQUESTS' || error.response?.status === 429) {
-        // Informa o rate limiter sobre o rate limit
-        RateLimiter.onRateLimit();
-        Logger.warn(`⚠️ [RATE_LIMIT] Rate limit em getOrderHistory - delay aumentado para ${RateLimiter.getStatus().currentDelay}ms`);
-        return null;
-      }
-
-      // Erro que não é rate limit
-      RateLimiter.onError();
-      Logger.error('getOrderHistory - ERROR!', errorData || error.message);
-      return null;
-    }
+    }, `getOrderHistory(orderId=${orderId}, symbol=${symbol})`);
   }
 
   async getProfitAndLossHistory(botName, symbol, limit, offset, sortDirection, apiKey = null, apiSecret = null) {
@@ -372,7 +336,7 @@ class History {
 
       // Total Trades = apenas posições fechadas com PnL (wins + losses)
       const totalTrades = performance.winningTrades + performance.losingTrades;
-      
+
       return {
         botClientOrderId,
         performance: {
@@ -587,23 +551,14 @@ class History {
           const pnl = (side === 'SELL' ? closeValue - (closeQuantity * position.averagePrice) :
                                       (closeQuantity * position.averagePrice) - closeValue);
 
-          // NOVA VALIDAÇÃO: Só marca como fechada se o PnL faz sentido
-          // PnL zerado pode indicar erro de cálculo ou fill incorreto
-          if (Math.abs(pnl) < 0.01) {
-            Logger.warn(`⚠️ [POSITION_CLOSE] PnL zerado detectado para ${symbol}: $${pnl.toFixed(4)} - Possível erro de fechamento`);
+          // VALIDAÇÃO MELHORADA: Só pula fechamentos se PnL for exatamente zero E preços forem iguais
+          // Isso indica realmente um erro de cálculo, não um trade com pequeno loss/gain
+          const isPriceIdentical = Math.abs(price - position.averagePrice) < 0.0001;
+          const isPnlExactlyZero = Math.abs(pnl) < 0.0001;
+
+          if (isPnlExactlyZero && isPriceIdentical) {
+            Logger.warn(`⚠️ [POSITION_CLOSE] Fill suspeito detectado para ${symbol}: PnL=$${pnl.toFixed(4)}, preços idênticos - Possível erro`);
             Logger.warn(`⚠️ [POSITION_CLOSE] Detalhes: closePrice=$${price}, averagePrice=$${position.averagePrice}, quantity=${closeQuantity}`);
-            Logger.warn(`⚠️ [POSITION_CLOSE] Fill suspeito:`, {
-              symbol,
-              side,
-              quantity,
-              price,
-              timestamp: timestamp.toISOString(),
-              positionSide: position.side,
-              positionQuantity: position.totalQuantity,
-              positionAvgPrice: position.averagePrice
-            });
-            // TEMPORÁRIO: Não marca como fechada se PnL suspeito
-            Logger.warn(`🚫 [POSITION_CLOSE] TEMPORÁRIO: Pulando fechamento com PnL suspeito para análise`);
             // Reduz parcialmente a posição em vez de fechar completamente
             position.totalQuantity -= quantity;
             position.totalValue -= (quantity * position.averagePrice);
@@ -612,6 +567,11 @@ class History {
             }
             position.lastUpdateTime = timestamp;
             continue;
+          }
+
+          // Log detalhado para PnL pequeno mas válido
+          if (Math.abs(pnl) < 1) {
+            Logger.debug(`💸 [POSITION_CLOSE] PnL pequeno mas válido para ${symbol}: $${pnl.toFixed(4)} (${pnl > 0 ? 'gain' : 'loss'})`);
           }
 
           position.pnl = pnl;

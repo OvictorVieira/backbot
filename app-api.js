@@ -1158,6 +1158,64 @@ app.post('/api/bot/stop', async (req, res) => {
   }
 });
 
+// POST /api/bot/force-sync - Força sincronização das ordens com a corretora
+app.post('/api/bot/force-sync', async (req, res) => {
+  try {
+    const { botId } = req.body;
+
+    if (!botId) {
+      return res.status(400).json({
+        success: false,
+        error: 'botId é obrigatório'
+      });
+    }
+
+    // Busca a configuração do bot
+    const config = await ConfigManagerSQLite.getBotConfigById(botId);
+    if (!config) {
+      return res.status(404).json({
+        success: false,
+        error: `Bot ${botId} não encontrado`
+      });
+    }
+
+    // Verifica se as credenciais estão configuradas
+    if (!config.apiKey || !config.apiSecret) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bot não possui credenciais de API configuradas'
+      });
+    }
+
+    console.log(`🔄 [FORCE_SYNC] Iniciando sincronização forçada para bot ${botId} (${config.botName})`);
+
+    // Importa OrdersService dinamicamente
+    const { default: OrdersService } = await import('./src/Services/OrdersService.js');
+    
+    // Executa sincronização de ordens
+    const syncedOrders = await OrdersService.syncOrdersWithExchange(botId, config);
+    
+    console.log(`✅ [FORCE_SYNC] Bot ${botId}: ${syncedOrders} ordens sincronizadas com sucesso`);
+
+    res.json({
+      success: true,
+      message: `Force sync executado com sucesso: ${syncedOrders} ordens sincronizadas`,
+      data: {
+        botId,
+        botName: config.botName,
+        syncedOrders
+      }
+    });
+
+  } catch (error) {
+    console.error(`❌ [FORCE_SYNC] Erro no force sync para bot ${req.body?.botId}:`, error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Erro interno do servidor'
+    });
+  }
+});
+
 // POST /api/bot/update-running - Atualiza configuração de bot em execução
 app.post('/api/bot/update-running', async (req, res) => {
   try {

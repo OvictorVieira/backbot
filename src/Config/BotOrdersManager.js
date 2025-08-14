@@ -3,28 +3,6 @@ import path from 'path';
 import OrdersService from '../Services/OrdersService.js';
 
 class BotOrdersManager {
-  constructor() {
-    this.ordersFile = path.join(process.cwd(), 'persistence', 'bot_orders.json');
-    console.log(`🔍 [BOT_ORDERS] Inicializando com SQLite: ${this.ordersFile}`);
-
-    try {
-      // Inicializa com JSON como fallback
-      this.orders = this.loadOrdersFromJson();
-
-      // Garante que sempre temos a estrutura correta
-      if (!this.orders || !this.orders.orders || !Array.isArray(this.orders.orders)) {
-        console.log(`⚠️ [BOT_ORDERS] Estrutura inválida detectada, criando estrutura vazia`);
-        this.orders = { orders: [] };
-      }
-
-      console.log(`🔍 [BOT_ORDERS] Ordens carregadas: ${this.orders.orders.length}`);
-    } catch (error) {
-      console.error('❌ [BOT_ORDERS] Erro no construtor:', error.message);
-      console.log(`⚠️ [BOT_ORDERS] Criando estrutura vazia como fallback`);
-      this.orders = { orders: [] };
-    }
-  }
-
   /**
    * Inicializa o sistema (método assíncrono para SQLite)
    */

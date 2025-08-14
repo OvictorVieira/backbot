@@ -38,7 +38,7 @@ class PnlController {
         Logger.info(`📊 [PNL] Calculando estatísticas do bot ${botId} usando sistema de posições`);
         return await this.calculateBotStatistics(botId);
       }
-      
+
       Logger.warn(`⚠️ [PNL] BotId não fornecido - retornando estatísticas vazias`);
       return this.getEmptyStats();
 
@@ -57,7 +57,7 @@ class PnlController {
     try {
       // Obtém estatísticas diretamente do PositionTrackingService
       const stats = await this.positionTracker.getBotPnLStats(botId);
-      
+
       // Enriquece com dados adicionais
       const enrichedStats = {
         ...stats,
@@ -91,10 +91,10 @@ class PnlController {
     if (!stats.lossTrades || stats.lossTrades === 0) {
       return stats.winTrades > 0 ? 999 : 0; // Infinito se só há wins
     }
-    
+
     const grossProfit = stats.winTrades * (stats.maxWin / Math.max(stats.winTrades, 1));
     const grossLoss = Math.abs(stats.lossTrades * (stats.maxLoss / Math.max(stats.lossTrades, 1)));
-    
+
     return grossLoss > 0 ? grossProfit / grossLoss : 0;
   }
 
@@ -111,7 +111,7 @@ class PnlController {
          WHERE botId = ? AND status = 'CLOSED'`,
         [botId]
       );
-      
+
       return result?.totalVolume || 0;
 
     } catch (error) {
@@ -164,47 +164,6 @@ class PnlController {
     };
   }
 
-  /**
-   * Método legado mantido para compatibilidade (DEPRECATED)
-   * @deprecated Use calculateBotStatistics() com botId
-   */
-  async runLegacy(hour = 24, config = null) {
-    try {
-      Logger.warn(`⚠️ [PNL] Usando sistema legado DEPRECATED - migre para o novo sistema com botId`);
-      
-      // SEMPRE usa credenciais do config - lança exceção se não disponível
-      if (!config?.apiKey || !config?.apiSecret) {
-        throw new Error('API_KEY e API_SECRET são obrigatórios - deve ser passado da config do bot');
-      }
-
-      const now = Date.now();
-      const oneDayAgo = now - hour * 60 * 60 * 1000;
-
-      const fills = await History.getFillHistory(
-        null, // symbol
-        null, // orderId
-        oneDayAgo,
-        now,
-        1000, // limit
-        0, // offset
-        null, // fillType
-        null, // marketType
-        null, // sortDirection
-        config.apiKey,
-        config.apiSecret
-      );
-      
-      const result = this.summarizeTrades(fills);
-      Logger.info(`⚠️ [PNL_LEGACY] Últimas ${hour}h:`, result);
-      
-      return result;
-
-    } catch (error) {
-      Logger.error('❌ [PNL_LEGACY] Erro:', error.message);
-      return { totalFee: 0, totalVolume: 0, volumeBylFee: 0 };
-    }
-  } 
-  
   summarizeTrades(trades) {
     try {
       // Verifica se trades é válido

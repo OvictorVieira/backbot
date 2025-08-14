@@ -329,6 +329,29 @@ export function DashboardPage() {
     }
   }
 
+  const handleForceSync = async (botId: number) => {
+    try {
+      const response = await axios.post(`${API_BASE_URL}/api/bot/force-sync`, { botId })
+      
+      if (response.data.success) {
+        // Sucesso - estatísticas serão atualizadas automaticamente
+        console.log('Force sync executado com sucesso:', response.data.message)
+      } else {
+        setErrorModal({
+          isOpen: true,
+          title: 'Erro no Force Sync',
+          message: response.data.message || 'Erro desconhecido'
+        })
+      }
+    } catch (error: any) {
+      setErrorModal({
+        isOpen: true,
+        title: 'Erro no Force Sync',
+        message: error.response?.data?.message || error.message || 'Erro ao sincronizar com a corretora'
+      })
+    }
+  }
+
   const formatStrategyName = (strategyName: string) => {
     // Converte DEFAULT para Default, ALPHA_FLOW para AlphaFlow, etc.
     return strategyName
@@ -530,6 +553,7 @@ export function DashboardPage() {
                   onConfigure={() => handleEditBot(config.id?.toString() || config.strategyName)}
                   onEdit={() => handleEditBot(config.id?.toString() || config.strategyName)}
                   onDelete={handleDeleteBot}
+                  onForceSync={handleForceSync}
                 />
               )
             })}

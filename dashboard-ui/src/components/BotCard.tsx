@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Play, Pause, Settings, Eye, EyeOff, TrendingUp, TrendingDown, DollarSign, Activity, Edit, Square, HelpCircle, Trash2 } from 'lucide-react';
+import { Play, Pause, Settings, Eye, EyeOff, TrendingUp, TrendingDown, DollarSign, Activity, Edit, Square, HelpCircle, Trash2, RefreshCw } from 'lucide-react';
 import axios from 'axios';
 import { DeleteBotModal } from './DeleteBotModal';
 
@@ -69,6 +69,7 @@ interface BotCardProps {
   onConfigure: (strategyName: string) => void;
   onEdit: (strategyName: string) => void;
   onDelete: (botId: number) => void;
+  onForceSync: (botId: number) => void;
 }
 
 // Componente de Skeleton para Estatísticas
@@ -138,7 +139,8 @@ export const BotCard: React.FC<BotCardProps> = ({
   onStop,
   onConfigure,
   onEdit,
-  onDelete
+  onDelete,
+  onForceSync
 }) => {
   const [showApiKey, setShowApiKey] = useState(false);
   const [showApiSecret, setShowApiSecret] = useState(false);
@@ -149,6 +151,7 @@ export const BotCard: React.FC<BotCardProps> = ({
   const [countdown, setCountdown] = useState<string>('');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isForceSyncing, setIsForceSyncing] = useState(false);
 
   // Buscar estatísticas de trading do novo endpoint
   useEffect(() => {
@@ -342,6 +345,23 @@ export const BotCard: React.FC<BotCardProps> = ({
       console.error('Erro ao deletar bot:', error);
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleForceSync = async () => {
+    if (!config.id) return;
+    
+    setIsForceSyncing(true);
+    try {
+      await onForceSync(config.id);
+      // Atualizar estatísticas após o sync
+      setTimeout(() => {
+        window.location.reload(); // Força refresh das estatísticas
+      }, 2000);
+    } catch (error) {
+      console.error('Erro ao fazer force sync:', error);
+    } finally {
+      setIsForceSyncing(false);
     }
   };
 
@@ -625,6 +645,21 @@ export const BotCard: React.FC<BotCardProps> = ({
             <Edit className="h-3 w-3 sm:h-4 sm:w-4" />
             <span className="hidden sm:inline">Editar</span>
           </Button>
+          <div className="relative group">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleForceSync}
+              disabled={isForceSyncing || !config.id}
+              className="flex items-center gap-1 sm:gap-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-xs sm:text-sm"
+            >
+              <RefreshCw className={`h-3 w-3 sm:h-4 sm:w-4 ${isForceSyncing ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Sync</span>
+            </Button>
+            <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black text-white text-xs rounded p-2 w-48 z-10 pointer-events-none">
+              Force Sync: Sincroniza imediatamente as ordens do bot com a corretora
+            </div>
+          </div>
           <Button
             variant="outline"
             size="sm"

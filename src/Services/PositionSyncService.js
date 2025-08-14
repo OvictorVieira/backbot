@@ -33,14 +33,14 @@ class PositionSyncService {
       // Primeira sincronização imediata
       await this.syncBotPositions(botId, config);
 
-      // Configura sincronização periódica (a cada 5 minutos)
+      // Configura sincronização periódica (a cada 1 minuto)
       const intervalId = setInterval(async () => {
         try {
           await this.syncBotPositions(botId, config);
         } catch (error) {
           Logger.error(`❌ [POSITION_SYNC] Erro na sincronização do bot ${botId}:`, error.message);
         }
-      }, 300000); // 5 minutos
+      }, 60000); // 1 minuto
 
       this.syncIntervals.set(botId, intervalId);
       Logger.info(`✅ [POSITION_SYNC] Sincronização iniciada para bot ${botId} (30s)`);

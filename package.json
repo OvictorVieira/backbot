@@ -1,6 +1,6 @@
 {
   "name": "backbot",
-  "version": "1.5.44",
+  "version": "1.5.45",
   "description": "",
   "main": "app.js",
   "scripts": {
@@ -21,7 +21,7 @@
     "prepare": "husky"
   },
   "keywords": [],
-  "author": "@heron_jr",
+  "author": "@owvituh",
   "license": "MIT",
   "type": "module",
   "dependencies": {

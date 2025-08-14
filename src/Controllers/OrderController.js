@@ -1029,7 +1029,7 @@ class OrderController {
       // Cancela apenas as ordens de entrada pendentes específicas
       const cancelPromises = pendingEntryOrders.map(async (order) => {
         const cancelResult = await Order.cancelOpenOrder(symbol, order.id, order.clientId, apiKey, apiSecret);
-        
+
         // Se cancelamento foi bem-sucedido, atualiza status no banco
         if (cancelResult && !cancelResult.error) {
           try {
@@ -1043,7 +1043,7 @@ class OrderController {
             Logger.warn(`⚠️ [CANCEL_PENDING] ${symbol}: Erro ao atualizar status da ordem ${order.id} no banco: ${dbError.message}`);
           }
         }
-        
+
         return cancelResult;
       });
 
@@ -2920,7 +2920,7 @@ class OrderController {
       // Cancela todas as ordens de segurança
       const cancelPromises = failsafeOrders.map(async (order) => {
         const cancelResult = await Order.cancelOpenOrder(symbol, order.id, order.clientId, config?.apiKey, config?.apiSecret);
-        
+
         // Se cancelamento foi bem-sucedido, atualiza status no banco
         if (cancelResult && !cancelResult.error) {
           try {
@@ -2934,7 +2934,7 @@ class OrderController {
             Logger.warn(`⚠️ [FAILSAFE] ${symbol}: Erro ao atualizar status da ordem ${order.id} no banco: ${dbError.message}`);
           }
         }
-        
+
         return cancelResult;
       });
 
@@ -3357,11 +3357,11 @@ class OrderController {
 
   /**
    * 🧹 ÚNICO MÉTODO para monitorar e limpar ordens órfãs
-   * 
+   *
    * Detecta e cancela ordens de stop loss/take profit que ficaram órfãs
    * após posições serem fechadas. Consolidado em um único método para
    * evitar duplicação de lógica entre sistemas single-bot e multi-bot.
-   * 
+   *
    * @param {string} botName - Nome do bot para monitorar
    * @param {object} config - Configurações específicas do bot (apiKey, apiSecret, etc.)
    * @returns {object} Resultado da operação: { orphaned, cancelled, errors }
@@ -3401,7 +3401,7 @@ class OrderController {
           }
 
           const openOrders = await Order.getOpenOrders(symbol, "PERP", apiKey, apiSecret);
-          
+
           if (!openOrders || openOrders.length === 0) {
             Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Nenhuma ordem aberta`);
             continue;
@@ -3472,13 +3472,13 @@ class OrderController {
                 await new Promise(resolve => setTimeout(resolve, 200)); // 200ms delay
 
                 Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Tentando cancelar ordem órfã ${orderId}`);
-                
+
                 const cancelResult = await Order.cancelOpenOrder(symbol, orderId, null, apiKey, apiSecret);
 
                 if (cancelResult && !cancelResult.error) {
                   totalCancelledOrders++;
                   Logger.info(`✅ [${config.botName}][ORPHAN_MONITOR] ${symbol}: Ordem órfã ${orderId} cancelada com sucesso`);
-                  
+
                   // Atualiza status no banco de dados
                   try {
                     await BotOrdersManager.updateOrder(orderId, {
@@ -3491,7 +3491,7 @@ class OrderController {
                     Logger.warn(`⚠️ [${config.botName}][ORPHAN_MONITOR] ${symbol}: Erro ao atualizar status da ordem ${orderId} no banco: ${dbError.message}`);
                     // Não propaga o erro pois o cancelamento na exchange foi bem-sucedido
                   }
-                  
+
                   OrderController.clearStopLossCheckCache(symbol);
                 } else {
                   const errorMsg = cancelResult?.error || 'desconhecido';
@@ -3562,10 +3562,10 @@ class OrderController {
 
   /**
    * 🧹 MÉTODO OTIMIZADO para detectar e cancelar ordens órfãs diretamente da corretora
-   * 
+   *
    * Este método busca TODAS as ordens abertas na corretora e cancela qualquer ordem
    * reduceOnly que não tenha posição ativa correspondente, independente da configuração local.
-   * 
+   *
    * @param {string} botName - Nome do bot para monitorar
    * @param {object} config - Configurações específicas do bot (apiKey, apiSecret, etc.)
    * @returns {object} Resultado da operação: { orphaned, cancelled, errors }
@@ -3583,21 +3583,21 @@ class OrderController {
       // 1. Busca TODAS as posições abertas na corretora
       const positions = await Futures.getOpenPositions(apiKey, apiSecret) || [];
       const activeSymbols = new Set();
-      
+
       // Mapa de símbolos com posições ativas (quantidade > 0)
       for (const position of positions) {
         if (Math.abs(Number(position.netQuantity)) > 0) {
           activeSymbols.add(position.symbol);
         }
       }
-      
+
       Logger.info(`🔍 [${config.botName}][SCAN_CLEANUP] Encontradas ${positions.length} posições, ${activeSymbols.size} com quantidade > 0`);
       Logger.info(`🔍 [${config.botName}][SCAN_CLEANUP] Símbolos ativos: ${Array.from(activeSymbols).join(', ') || 'nenhum'}`);
 
       // 2. Busca TODOS os símbolos que têm ordens abertas na corretora
       // Vamos varrer todos os símbolos possíveis (PERP markets)
       const allSymbolsWithOrders = new Set();
-      
+
       // Primeiro, verifica símbolos configurados
       try {
         const Account = await AccountController.get({
@@ -3606,7 +3606,7 @@ class OrderController {
           strategy: config?.strategyName || 'DEFAULT'
         });
         const configuredSymbols = Account.markets.map(m => m.symbol);
-        
+
         for (const symbol of configuredSymbols) {
           const orders = await Order.getOpenOrders(symbol, "PERP", apiKey, apiSecret);
           if (orders && orders.length > 0) {
@@ -3628,23 +3628,23 @@ class OrderController {
       for (const symbol of allSymbolsWithOrders) {
         try {
           Logger.debug(`🔍 [${config.botName}][SCAN_CLEANUP] Verificando ${symbol}...`);
-          
+
           // Delay para evitar rate limit
           await new Promise(resolve => setTimeout(resolve, 200));
 
           const openOrders = await Order.getOpenOrders(symbol, "PERP", apiKey, apiSecret);
-          
+
           if (!openOrders || openOrders.length === 0) {
             continue;
           }
 
           // Identifica ordens órfãs: reduceOnly sem posição ativa no símbolo
           const orphanedOrders = [];
-          
+
           for (const order of openOrders) {
             const isReduceOnly = order.reduceOnly === true;
             const hasActivePosition = activeSymbols.has(symbol);
-            
+
             // Se é reduceOnly E não há posição ativa, é órfã
             if (isReduceOnly && !hasActivePosition) {
               orphanedOrders.push(order);
@@ -3667,16 +3667,16 @@ class OrderController {
           for (const order of orphanedOrders) {
             try {
               await new Promise(resolve => setTimeout(resolve, 150)); // Delay entre cancelamentos
-              
+
               Logger.debug(`🧹 [${config.botName}][SCAN_CLEANUP] ${symbol}: Cancelando ordem órfã ${order.id}`);
-              
+
               const cancelResult = await Order.cancelOpenOrder(symbol, order.id, null, apiKey, apiSecret);
 
               if (cancelResult && !cancelResult.error) {
                 cancelledInSymbol++;
                 totalCancelledOrders++;
                 Logger.info(`✅ [${config.botName}][SCAN_CLEANUP] ${symbol}: Ordem órfã ${order.id} cancelada com sucesso`);
-                
+
                 // Atualiza status no banco de dados
                 try {
                   await BotOrdersManager.updateOrder(order.id, {
@@ -3764,11 +3764,11 @@ class OrderController {
 
   /**
    * 🧹 MÉTODO UTILITÁRIO para cancelar TODAS as ordens órfãs de forma agressiva
-   * 
+   *
    * Este método é mais agressivo e cancela todas as ordens reduceOnly
    * quando não há posições abertas. Use quando o método principal
    * não conseguir limpar todas as ordens órfãs.
-   * 
+   *
    * @param {string} botName - Nome do bot para monitorar
    * @param {object} config - Configurações específicas do bot (apiKey, apiSecret, etc.)
    * @returns {object} Resultado da operação: { orphaned, cancelled, errors }
@@ -3785,7 +3785,7 @@ class OrderController {
 
       const positions = await Futures.getOpenPositions(apiKey, apiSecret) || [];
       const activeSymbols = positions.filter(p => Math.abs(Number(p.netQuantity)) > 0).map(p => p.symbol);
-      
+
       Logger.info(`🧹 [${config.botName}][FORCE_CLEANUP] Posições ativas encontradas: ${activeSymbols.join(', ') || 'nenhuma'}`);
 
       const Account = await AccountController.get({
@@ -3811,7 +3811,7 @@ class OrderController {
           await new Promise(resolve => setTimeout(resolve, 300));
 
           const openOrders = await Order.getOpenOrders(symbol, "PERP", apiKey, apiSecret);
-          
+
           if (!openOrders || openOrders.length === 0) {
             continue;
           }
@@ -3832,13 +3832,13 @@ class OrderController {
           for (const order of orphanedOrders) {
             try {
               await new Promise(resolve => setTimeout(resolve, 150)); // Delay menor para limpeza rápida
-              
+
               const cancelResult = await Order.cancelOpenOrder(symbol, order.id, null, apiKey, apiSecret);
 
               if (cancelResult && !cancelResult.error) {
                 totalCancelledOrders++;
                 Logger.info(`✅ [${config.botName}][FORCE_CLEANUP] ${symbol}: Ordem ${order.id} cancelada`);
-                
+
                 // Atualiza status no banco de dados
                 try {
                   await BotOrdersManager.updateOrder(order.id, {
@@ -4694,7 +4694,6 @@ class OrderController {
       const fills = await History.getFillHistory(symbol, null, null, null, 100, 0, null, "PERP", null, config.apiKey, config.apiSecret);
 
       if (!fills || fills.length === 0) {
-        console.log(`position: ${JSON.stringify(position)} | fills: ${JSON.stringify(fills)}`);
         console.log(`⚠️ [BOT_VALIDATION] ${symbol}: Nenhum fill encontrado`);
         return false;
       }
