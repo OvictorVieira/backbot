@@ -1619,6 +1619,7 @@ class OrdersService {
         positionsClosed: 0,
         ordersFixed: 0,
         ghostOrdersCleaned: 0,
+        orphanTrailingStatesCleaned: 0,
         total: 0
       };
 
@@ -1631,19 +1632,23 @@ class OrdersService {
       // 3. Executa sincronização baseada em fills (incluindo órfãos)
       results.positionsClosed = await OrdersService.syncPositionsFromExchangeFills(botId, config);
 
-      results.total = results.ghostOrdersCleaned + results.ordersFixed + results.positionsClosed;
+      // 4. Limpa dados órfãos da tabela trailing_state
+      results.orphanTrailingStatesCleaned = await OrdersService.cleanOrphanTrailingStates(botId);
+
+      results.total = results.ghostOrdersCleaned + results.ordersFixed + results.positionsClosed + results.orphanTrailingStatesCleaned;
 
       Logger.info(`🎉 [COMPLETE_SYNC] Sincronização completa concluída para bot ${botId}:`);
       Logger.info(`   • Ordens fantasma limpas: ${results.ghostOrdersCleaned}`);
       Logger.info(`   • Ordens corrigidas: ${results.ordersFixed}`);
       Logger.info(`   • Posições fechadas: ${results.positionsClosed}`);
+      Logger.info(`   • Trailing states órfãos limpos: ${results.orphanTrailingStatesCleaned}`);
       Logger.info(`   • Total de ações: ${results.total}`);
 
       return results;
 
     } catch (error) {
       Logger.error(`❌ [COMPLETE_SYNC] Erro na sincronização completa: ${error.message}`);
-      return { orphanFillsDetected: 0, positionsClosed: 0, ordersFixed: 0, ghostOrdersCleaned: 0, total: 0 };
+      return { orphanFillsDetected: 0, positionsClosed: 0, ordersFixed: 0, ghostOrdersCleaned: 0, orphanTrailingStatesCleaned: 0, total: 0 };
     }
   }
 
@@ -1669,6 +1674,72 @@ class OrdersService {
     } catch (error) {
       Logger.error(`❌ [GHOST_CLEANUP] Erro na limpeza de ordens fantasma: ${error.message}`);
       return { ghostOrdersCleaned: 0, success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Limpa dados órfãos da tabela trailing_state que não têm ordens correspondentes
+   * @param {number} botId - ID do bot
+   * @returns {Promise<number>} Número de registros limpos
+   */
+  static async cleanOrphanTrailingStates(botId) {
+    try {
+      if (!OrdersService.dbService || !OrdersService.dbService.db) {
+        Logger.warn(`⚠️ [TRAILING_CLEANUP] Database não disponível`);
+        return 0;
+      }
+
+      Logger.info(`🧹 [TRAILING_CLEANUP] Iniciando limpeza de trailing states órfãos para bot ${botId}`);
+
+      // Busca todos os trailing states do bot
+      const trailingStates = await OrdersService.dbService.getAll(
+        `SELECT id, botId, symbol FROM trailing_state WHERE botId = ?`,
+        [botId]
+      );
+
+      if (trailingStates.length === 0) {
+        Logger.debug(`ℹ️ [TRAILING_CLEANUP] Nenhum trailing state encontrado para bot ${botId}`);
+        return 0;
+      }
+
+      Logger.info(`🔍 [TRAILING_CLEANUP] Encontrados ${trailingStates.length} trailing states para bot ${botId}`);
+
+      let cleanedCount = 0;
+
+      for (const trailingState of trailingStates) {
+        try {
+          // Verifica se existem ordens ativas (FILLED sem closeTime) para este símbolo
+          const activeOrders = await OrdersService.dbService.getAll(
+            `SELECT id FROM bot_orders 
+             WHERE botId = ? AND symbol = ? AND status = 'FILLED' 
+             AND (closeTime IS NULL OR closeTime = '')`,
+            [botId, trailingState.symbol]
+          );
+
+          // Se não há ordens ativas para este símbolo, remove o trailing state
+          if (activeOrders.length === 0) {
+            await OrdersService.dbService.run(
+              `DELETE FROM trailing_state WHERE id = ?`,
+              [trailingState.id]
+            );
+
+            Logger.info(`🗑️ [TRAILING_CLEANUP] Trailing state órfão removido: ${trailingState.symbol} (ID: ${trailingState.id})`);
+            cleanedCount++;
+          } else {
+            Logger.debug(`✅ [TRAILING_CLEANUP] Trailing state válido mantido: ${trailingState.symbol} (${activeOrders.length} ordens ativas)`);
+          }
+
+        } catch (error) {
+          Logger.error(`❌ [TRAILING_CLEANUP] Erro ao processar trailing state ${trailingState.id}: ${error.message}`);
+        }
+      }
+
+      Logger.info(`🎉 [TRAILING_CLEANUP] Limpeza concluída para bot ${botId}: ${cleanedCount} trailing states órfãos removidos`);
+      return cleanedCount;
+
+    } catch (error) {
+      Logger.error(`❌ [TRAILING_CLEANUP] Erro na limpeza de trailing states órfãos: ${error.message}`);
+      return 0;
     }
   }
 }

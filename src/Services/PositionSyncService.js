@@ -197,8 +197,8 @@ class PositionSyncService {
 
       // Filtra apenas ordens que não foram fechadas
       const openOrders = orders.filter(order => {
-        // Verifica se a ordem foi fechada baseado no status ou se há ordem contrária
-        return !order.status || order.status === 'PENDING' || order.status === 'OPEN';
+        // CORREÇÃO: Contar apenas ordens FILLED que ainda não foram fechadas
+        return order.status === 'FILLED' && (!order.closeTime || order.closeTime === '');
       });
 
       return openOrders;

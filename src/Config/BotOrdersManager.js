@@ -287,11 +287,13 @@ class BotOrdersManager {
       const botOrders = await this.getBotOrders(botId);
 
       // Separa ordens por status
+      // CORREÇÃO: Ordens PENDING no banco não são necessariamente ordens abertas na corretora
+      // Devemos contar apenas ordens que realmente estão abertas (FILLED que ainda não fecharam)
       const openOrders = botOrders.filter(order =>
-        !order.status || order.status === 'PENDING' || order.status === 'OPEN'
+        order.status === 'FILLED' && (!order.closeTime || order.closeTime === '')
       );
       const closedOrders = botOrders.filter(order =>
-        order.status === 'CLOSED' || order.status === 'FILLED'
+        order.status === 'CLOSED' || (order.status === 'FILLED' && order.closeTime && order.closeTime !== '')
       );
 
       // Calcula PnL total

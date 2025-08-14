@@ -350,7 +350,7 @@ export const BotCard: React.FC<BotCardProps> = ({
 
   const handleForceSync = async () => {
     if (!config.id) return;
-    
+
     setIsForceSyncing(true);
     try {
       await onForceSync(config.id);
@@ -494,97 +494,97 @@ export const BotCard: React.FC<BotCardProps> = ({
           <TradingStatsSkeleton />
         ) : tradingStats && hasLoadedOnce ? (
           <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <Activity className="h-4 w-4 text-blue-500" />
-              <span className="font-medium text-sm">Estatísticas de Trading</span>
-            </div>
+            {/*<div className="flex items-center gap-2">*/}
+            {/*  <Activity className="h-4 w-4 text-blue-500" />*/}
+            {/*  <span className="font-medium text-sm">Estatísticas de Trading</span>*/}
+            {/*</div>*/}
 
-            <div className="grid grid-cols-2 gap-1 sm:gap-2 text-xs">
-              <div className="bg-blue-50 dark:bg-blue-950/20 p-2 rounded">
-                <div className="flex items-center gap-1 mb-1">
-                  <TrendingUp className="h-3 w-3 text-green-600" />
-                  <span className="font-medium">Trades Ganhos</span>
-                  <div className="relative group">
-                    <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help hover:text-blue-500" />
-                    <div className="absolute bottom-full left-0 mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black text-white text-xs rounded p-2 w-48 z-10 pointer-events-none">
-                      Número total de operações que resultaram em lucro. Trades com P&L positivo.
-                    </div>
-                  </div>
-                </div>
-                <p className="text-green-600 font-bold">{tradingStats.winningTrades}</p>
-              </div>
+            {/*<div className="grid grid-cols-2 gap-1 sm:gap-2 text-xs">*/}
+            {/*  <div className="bg-blue-50 dark:bg-blue-950/20 p-2 rounded">*/}
+            {/*    <div className="flex items-center gap-1 mb-1">*/}
+            {/*      <TrendingUp className="h-3 w-3 text-green-600" />*/}
+            {/*      <span className="font-medium">Trades Ganhos</span>*/}
+            {/*      <div className="relative group">*/}
+            {/*        <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help hover:text-blue-500" />*/}
+            {/*        <div className="absolute bottom-full left-0 mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black text-white text-xs rounded p-2 w-48 z-10 pointer-events-none">*/}
+            {/*          Número total de operações que resultaram em lucro. Trades com P&L positivo.*/}
+            {/*        </div>*/}
+            {/*      </div>*/}
+            {/*    </div>*/}
+            {/*    <p className="text-green-600 font-bold">{tradingStats.winningTrades}</p>*/}
+            {/*  </div>*/}
 
-              <div className="bg-red-50 dark:bg-red-950/20 p-2 rounded">
-                <div className="flex items-center gap-1 mb-1">
-                  <TrendingDown className="h-3 w-3 text-red-600" />
-                  <span className="font-medium">Trades Perdidos</span>
-                  <div className="relative group">
-                    <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help hover:text-red-500" />
-                    <div className="absolute bottom-full left-0 mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black text-white text-xs rounded p-2 w-48 z-10 pointer-events-none">
-                      Número total de operações que resultaram em prejuízo. Trades com P&L negativo.
-                    </div>
-                  </div>
-                </div>
-                <p className="text-red-600 font-bold">{tradingStats.losingTrades}</p>
-              </div>
+            {/*  <div className="bg-red-50 dark:bg-red-950/20 p-2 rounded">*/}
+            {/*    <div className="flex items-center gap-1 mb-1">*/}
+            {/*      <TrendingDown className="h-3 w-3 text-red-600" />*/}
+            {/*      <span className="font-medium">Trades Perdidos</span>*/}
+            {/*      <div className="relative group">*/}
+            {/*        <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help hover:text-red-500" />*/}
+            {/*        <div className="absolute bottom-full left-0 mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black text-white text-xs rounded p-2 w-48 z-10 pointer-events-none">*/}
+            {/*          Número total de operações que resultaram em prejuízo. Trades com P&L negativo.*/}
+            {/*        </div>*/}
+            {/*      </div>*/}
+            {/*    </div>*/}
+            {/*    <p className="text-red-600 font-bold">{tradingStats.losingTrades}</p>*/}
+            {/*  </div>*/}
 
-              <div className="bg-purple-50 dark:bg-purple-950/20 p-2 rounded">
-                <div className="flex items-center gap-1 mb-1">
-                  <DollarSign className="h-3 w-3 text-purple-600" />
-                  <span className="font-medium">Win Rate</span>
-                  <div className="relative group">
-                    <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help hover:text-purple-500" />
-                    <div className="absolute bottom-full left-0 mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black text-white text-xs rounded p-2 w-48 z-10 pointer-events-none">
-                      Percentual de trades lucrativos em relação ao total de operações realizadas.
-                    </div>
-                  </div>
-                </div>
-                <p className={`font-bold ${getWinRateColor(tradingStats.winRate)}`}>{formatWinRate(tradingStats.winRate)}%</p>
-              </div>
+            {/*  <div className="bg-purple-50 dark:bg-purple-950/20 p-2 rounded">*/}
+            {/*    <div className="flex items-center gap-1 mb-1">*/}
+            {/*      <DollarSign className="h-3 w-3 text-purple-600" />*/}
+            {/*      <span className="font-medium">Win Rate</span>*/}
+            {/*      <div className="relative group">*/}
+            {/*        <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help hover:text-purple-500" />*/}
+            {/*        <div className="absolute bottom-full left-0 mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black text-white text-xs rounded p-2 w-48 z-10 pointer-events-none">*/}
+            {/*          Percentual de trades lucrativos em relação ao total de operações realizadas.*/}
+            {/*        </div>*/}
+            {/*      </div>*/}
+            {/*    </div>*/}
+            {/*    <p className={`font-bold ${getWinRateColor(tradingStats.winRate)}`}>{formatWinRate(tradingStats.winRate)}%</p>*/}
+            {/*  </div>*/}
 
-              <div className="bg-orange-50 dark:bg-orange-950/20 p-2 rounded">
-                <div className="flex items-center gap-1 mb-1">
-                  <DollarSign className="h-3 w-3 text-orange-600" />
-                  <span className="font-medium">Profit Factor</span>
-                  <div className="relative group">
-                    <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help hover:text-orange-500" />
-                    <div className="absolute bottom-full left-0 mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black text-white text-xs rounded p-2 w-48 z-10 pointer-events-none">
-                      Razão entre ganhos e perdas. Infinito = sem perdas, valores &gt; 1 = lucrativo.
-                    </div>
-                  </div>
-                </div>
-                <p className={`font-bold ${getProfitFactorColor(tradingStats.profitRatio)}`}>
-                  {formatProfitRatio(tradingStats.profitRatio)}
-                </p>
-              </div>
-            </div>
+            {/*  <div className="bg-orange-50 dark:bg-orange-950/20 p-2 rounded">*/}
+            {/*    <div className="flex items-center gap-1 mb-1">*/}
+            {/*      <DollarSign className="h-3 w-3 text-orange-600" />*/}
+            {/*      <span className="font-medium">Profit Factor</span>*/}
+            {/*      <div className="relative group">*/}
+            {/*        <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help hover:text-orange-500" />*/}
+            {/*        <div className="absolute bottom-full left-0 mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black text-white text-xs rounded p-2 w-48 z-10 pointer-events-none">*/}
+            {/*          Razão entre ganhos e perdas. Infinito = sem perdas, valores &gt; 1 = lucrativo.*/}
+            {/*        </div>*/}
+            {/*      </div>*/}
+            {/*    </div>*/}
+            {/*    <p className={`font-bold ${getProfitFactorColor(tradingStats.profitRatio)}`}>*/}
+            {/*      {formatProfitRatio(tradingStats.profitRatio)}*/}
+            {/*    </p>*/}
+            {/*  </div>*/}
+            {/*</div>*/}
 
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div>
-                <div className="flex items-center gap-1">
-                  <span className="font-medium">Total Trades:</span>
-                  <div className="relative group">
-                    <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help hover:text-blue-500" />
-                    <div className="absolute bottom-full left-0 mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black text-white text-xs rounded p-2 w-48 z-10 pointer-events-none">
-                      Número total de operações realizadas pelo bot desde o início.
-                    </div>
-                  </div>
-                </div>
-                <p className="text-muted-foreground">{tradingStats.totalTrades}</p>
-              </div>
-              <div>
-                <div className="flex items-center gap-1">
-                  <span className="font-medium">Posições Abertas:</span>
-                  <div className="relative group">
-                    <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help hover:text-blue-500" />
-                    <div className="absolute bottom-full left-0 mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black text-white text-xs rounded p-2 w-48 z-10 pointer-events-none">
-                      Número de posições atualmente abertas no mercado.
-                    </div>
-                  </div>
-                </div>
-                <p className="text-muted-foreground">{tradingStats.openPositions}</p>
-              </div>
-            </div>
+            {/*<div className="grid grid-cols-2 gap-3 text-xs">*/}
+            {/*  <div>*/}
+            {/*    <div className="flex items-center gap-1">*/}
+            {/*      <span className="font-medium">Total Trades:</span>*/}
+            {/*      <div className="relative group">*/}
+            {/*        <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help hover:text-blue-500" />*/}
+            {/*        <div className="absolute bottom-full left-0 mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black text-white text-xs rounded p-2 w-48 z-10 pointer-events-none">*/}
+            {/*          Número total de operações realizadas pelo bot desde o início.*/}
+            {/*        </div>*/}
+            {/*      </div>*/}
+            {/*    </div>*/}
+            {/*    <p className="text-muted-foreground">{tradingStats.totalTrades}</p>*/}
+            {/*  </div>*/}
+            {/*  <div>*/}
+            {/*    <div className="flex items-center gap-1">*/}
+            {/*      <span className="font-medium">Posições Abertas:</span>*/}
+            {/*      <div className="relative group">*/}
+            {/*        <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help hover:text-blue-500" />*/}
+            {/*        <div className="absolute bottom-full left-0 mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black text-white text-xs rounded p-2 w-48 z-10 pointer-events-none">*/}
+            {/*          Número de posições atualmente abertas no mercado.*/}
+            {/*        </div>*/}
+            {/*      </div>*/}
+            {/*    </div>*/}
+            {/*    <p className="text-muted-foreground">{tradingStats.openPositions}</p>*/}
+            {/*  </div>*/}
+            {/*</div>*/}
 
             <div className="text-xs text-muted-foreground">
               {(() => {

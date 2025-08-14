@@ -1622,7 +1622,7 @@ class OrderController {
 
       // Calcula preços de stop loss e take profit (com ajuste por alavancagem)
       const stopPrice = parseFloat(stop);
-      const targetPrice = parseFloat(target);
+      let targetPrice = parseFloat(target); // Será ajustado por alavancagem
 
       // Ajusta Stop Loss pelo leverage do bot/símbolo
       let leverageAdjustedStopPrice = stopPrice;
@@ -1652,23 +1652,44 @@ class OrderController {
           }
 
           console.log(`🛡️ [STOP_LEVERAGE] ${market}: base=${baseStopLossPct}% leverage=${leverage}x → efetivo=${actualStopLossPct.toFixed(2)}% | stop(orig)=${isFinite(stopPrice)?stopPrice.toFixed(6):'NaN'} → stop(lev)=${leverageAdjustedStopPrice.toFixed(6)}`);
+
+          // 🔧 CORREÇÃO CRÍTICA: Ajusta o Take Profit considerando a alavancagem
+          const baseTakeProfitPct = Math.abs(Number(config?.minProfitPercentage ?? 10));
+          const actualTakeProfitPct = baseTakeProfitPct / leverage;
+          
+          const leverageAdjustedTakeProfit = isLong
+            ? entryPrice * (1 + actualTakeProfitPct / 100)
+            : entryPrice * (1 - actualTakeProfitPct / 100);
+
+          // Usa o take profit mais conservador (mais próximo do entry quando alavancagem é alta)
+          if (isFinite(leverageAdjustedTakeProfit)) {
+            if (isLong) {
+              // Para LONG: TP menor (mais próximo) é mais conservador
+              targetPrice = Math.min(leverageAdjustedTakeProfit, targetPrice || Infinity) || leverageAdjustedTakeProfit;
+            } else {
+              // Para SHORT: TP maior (mais próximo) é mais conservador  
+              targetPrice = Math.max(leverageAdjustedTakeProfit, targetPrice || 0) || leverageAdjustedTakeProfit;
+            }
+          }
+
+          console.log(`🎯 [TP_LEVERAGE] ${market}: base=${baseTakeProfitPct}% leverage=${leverage}x → efetivo=${actualTakeProfitPct.toFixed(2)}% | tp(orig)=${isFinite(parseFloat(target))?parseFloat(target).toFixed(6):'NaN'} → tp(lev)=${targetPrice.toFixed(6)}`);
         } else {
-          console.warn(`⚠️ [STOP_LEVERAGE] ${market}: Não foi possível obter leverage para ajuste do stop. Usando stop informado.`);
+          console.warn(`⚠️ [TP_LEVERAGE] ${market}: Não foi possível obter leverage para ajuste do take profit. Usando TP informado.`);
         }
       } catch (levErr) {
-        console.warn(`⚠️ [STOP_LEVERAGE] ${market}: Erro ao ajustar stop por leverage: ${levErr.message}. Usando stop informado.`);
+        console.warn(`⚠️ [TP_LEVERAGE] ${market}: Erro ao ajustar TP por leverage: ${levErr.message}. Usando TP informado.`);
       }
 
       // Verifica se o Trailing Stop está habilitado para determinar se deve criar Take Profit fixo
       const enableTrailingStop = config?.enableTrailingStop === true;
 
       Logger.info(`🛡️ [${strategyNameToUse}] ${market}: Configurando ordens de segurança integradas`);
-      Logger.info(`   • Stop Loss: $${stopPrice.toFixed(6)}`);
+      Logger.info(`   • Stop Loss: $${leverageAdjustedStopPrice.toFixed(6)} (ajustado por alavancagem)`);
 
       if (enableTrailingStop) {
         Logger.info(`   • Take Profit: Será gerenciado dinamicamente pelo Trailing Stop`);
       } else {
-        Logger.info(`   • Take Profit: $${targetPrice.toFixed(6)} (fixo na corretora)`);
+        Logger.info(`   • Take Profit: $${targetPrice.toFixed(6)} (ajustado por alavancagem)`);
       }
 
       const body = {

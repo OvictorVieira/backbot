@@ -5,6 +5,44 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.5.47] - 2025-08-14
+
+### 🎯 **CORREÇÃO CRÍTICA: Take Profit com Alavancagem + Limpeza de Trailing States Órfãos**
+
+#### 🔧 **Problema: Take Profit Incorreto com Alavancagem**
+**Problema:** Ordens limit criavam take profit muito distante sem considerar alavancagem
+**Exemplo:** Com leverage 50x e TP 10%, o preço precisava se mover 10% (deveria ser apenas 0.2%)
+**Solução:**
+- **Ajuste por alavancagem**: `actualTakeProfitPct = baseTakeProfitPct / leverage`
+- **Lógica conservadora**: Usa sempre o TP mais próximo do preço de entrada
+- **Logs informativos**: Mostra valores originais vs ajustados
+- **Paridade com Stop Loss**: Ambos agora consideram alavancagem corretamente
+
+**Resultado:** Take profit agora é atingido na distância correta com alavancagem alta
+
+#### 🧹 **Melhoria: Limpeza de Trailing States Órfãos**
+**Problema:** Dados órfãos na tabela `trailing_state` sem ordens correspondentes
+**Solução:**
+- **`cleanOrphanTrailingStates()`**: Remove trailing states sem posições ativas
+- **Verificação inteligente**: Busca ordens FILLED sem closeTime para cada símbolo
+- **Integração automática**: Executa via `performCompleteFillsSync()` a cada minuto
+- **Logs detalhados**: Relatório de trailing states limpos vs mantidos
+
+#### 🔍 **Correção: Contagem de Ordens Abertas**
+**Problema:** Sistema contava ordens PENDING como abertas incorretamente
+**Solução:**
+- **BotOrdersManager**: Corrigido para contar apenas ordens FILLED sem closeTime
+- **PositionSyncService**: Aplicada mesma lógica de contagem
+- **Consistência**: Sistema agora conta corretamente apenas posições realmente abertas
+
+**Arquivos afetados:**
+- **OrderController.js**: Ajuste de take profit por alavancagem em ordens limit
+- **OrdersService.js**: Novo método `cleanOrphanTrailingStates()` 
+- **BotOrdersManager.js**: Correção na contagem de ordens abertas
+- **PositionSyncService.js**: Correção na contagem de ordens abertas
+
+----
+
 ## [1.5.46] - 2025-08-14
 
 ### 🔧 **BUGFIXES CRÍTICOS: Ordens Fantasma + AccountController + Fills Órfãos**
