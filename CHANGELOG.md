@@ -5,6 +5,19 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.5.56] - 2025-08-15
+
+### 🎨 **FIX: Otimização exibição de tokens ativos**
+
+#### 🔄 **Melhorias na seção Tokens Ativos**
+**Alterações:** Otimizada a exibição de tokens para melhor usabilidade.
+
+**Mudanças implementadas:**
+- ✅ **Limitação de 4 tokens** - Máximo 4 tokens exibidos por vez
+- ✅ **Truncamento inteligente** - Remove sufixos após underscore (BTC_USDT → BTC)
+- ✅ **Indicador "+X"** - Mostra quantos tokens adicionais existem quando há mais de 4
+- ✅ **Nomes limpos** - Exibe apenas a parte principal do nome do token
+
 ## [1.5.55] - 2025-08-15
 
 ### 🎨 **FIX: Ajustes BotCard - Layout Original + Tokens Ativos**

@@ -31,6 +31,8 @@ interface BotConfig {
   enablePendingOrdersMonitor: boolean;
   // Configurações de Limite de Ordens
   maxOpenOrders: number;
+  // Tokens autorizados
+  authorizedTokens?: string[];
   // Próxima validação
   nextValidationAt?: string;
 }
@@ -401,21 +403,43 @@ export const BotCard: React.FC<BotCardProps> = ({
         </div>
 
         {/* Tokens Ativos */}
-        <div className="border-t pt-3">
-          <div className="text-xs font-medium mb-2">Tokens Ativos</div>
-          <div className="flex flex-wrap gap-1">
-            {/* TODO: Buscar tokens ativos do bot via API */}
-            <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
-              BTC
-            </span>
-            <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-green-50 text-green-700 border border-green-200">
-              ETH
-            </span>
-            <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200">
-              AAVE
-            </span>
+        {config.authorizedTokens && config.authorizedTokens.length > 0 && (
+          <div className="border-t pt-3">
+            <div className="text-xs font-medium mb-2">Tokens Ativos</div>
+            <div className="flex flex-wrap gap-1">
+              {config.authorizedTokens.slice(0, 4).map((token, index) => {
+                // Cores alternadas para diferentes tokens
+                const colorClasses = [
+                  'bg-blue-50 text-blue-700 border-blue-200',
+                  'bg-green-50 text-green-700 border-green-200',
+                  'bg-purple-50 text-purple-700 border-purple-200',
+                  'bg-orange-50 text-orange-700 border-orange-200',
+                  'bg-indigo-50 text-indigo-700 border-indigo-200',
+                  'bg-pink-50 text-pink-700 border-pink-200'
+                ];
+                const colorClass = colorClasses[index % colorClasses.length];
+                
+                // Extrai apenas a parte do token antes do underscore (se houver) e limita a 4 caracteres
+                const baseToken = token.split('_')[0];
+                const truncatedToken = baseToken.length > 4 ? baseToken.substring(0, 4) : baseToken;
+                
+                return (
+                  <span 
+                    key={token}
+                    className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border ${colorClass}`}
+                  >
+                    {truncatedToken}
+                  </span>
+                );
+              })}
+              {config.authorizedTokens.length > 4 && (
+                <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border bg-gray-50 text-gray-700 border-gray-200">
+                  +{config.authorizedTokens.length - 4}
+                </span>
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </CardContent>
 
       <CardFooter className="pt-2">
