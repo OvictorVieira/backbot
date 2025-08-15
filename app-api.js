@@ -547,7 +547,7 @@ async function startOrphanOrderMonitor(botId) {
     const now = Date.now();
     const lastFullScan = rateLimit.orphanOrders.lastFullScan || 0;
     const shouldDoFullScan = (now - lastFullScan) > 300000; // 5 minutos desde última varredura completa
-    
+
     let result;
     if (shouldDoFullScan) {
       // Varredura completa a cada 5 minutos
@@ -1191,10 +1191,10 @@ app.post('/api/bot/force-sync', async (req, res) => {
 
     // Importa OrdersService dinamicamente
     const { default: OrdersService } = await import('./src/Services/OrdersService.js');
-    
+
     // Executa sincronização de ordens
     const syncedOrders = await OrdersService.syncOrdersWithExchange(botId, config);
-    
+
     console.log(`✅ [FORCE_SYNC] Bot ${botId}: ${syncedOrders} ordens sincronizadas com sucesso`);
 
     res.json({
@@ -1267,7 +1267,6 @@ app.post('/api/bot/update-running', async (req, res) => {
 app.post('/api/configs', async (req, res) => {
   try {
     const { strategyName, botName, config: botConfig } = req.body;
-    console.log('🔄 [CONFIG] Recebendo requisição para atualizar configuração:', { strategyName, botName, hasConfig: !!botConfig, configKeys: botConfig ? Object.keys(botConfig) : [] });
 
     // Se o request tem a estrutura { botName, config: {...} }
     if (botName && botConfig) {

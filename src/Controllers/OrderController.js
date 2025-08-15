@@ -1064,7 +1064,7 @@ class OrderController {
   }
 
   static async forceClose(position, account = null, config = null) {
-    // Se account não foi fornecido, obtém da API  
+    // Se account não foi fornecido, obtém da API
     const Account = account || await AccountController.get(config);
 
     // Log detalhado para debug
@@ -1656,7 +1656,7 @@ class OrderController {
           // 🔧 CORREÇÃO CRÍTICA: Ajusta o Take Profit considerando a alavancagem
           const baseTakeProfitPct = Math.abs(Number(config?.minProfitPercentage ?? 10));
           const actualTakeProfitPct = baseTakeProfitPct / leverage;
-          
+
           const leverageAdjustedTakeProfit = isLong
             ? entryPrice * (1 + actualTakeProfitPct / 100)
             : entryPrice * (1 - actualTakeProfitPct / 100);
@@ -1667,7 +1667,7 @@ class OrderController {
               // Para LONG: TP menor (mais próximo) é mais conservador
               targetPrice = Math.min(leverageAdjustedTakeProfit, targetPrice || Infinity) || leverageAdjustedTakeProfit;
             } else {
-              // Para SHORT: TP maior (mais próximo) é mais conservador  
+              // Para SHORT: TP maior (mais próximo) é mais conservador
               targetPrice = Math.max(leverageAdjustedTakeProfit, targetPrice || 0) || leverageAdjustedTakeProfit;
             }
           }
@@ -1835,7 +1835,7 @@ class OrderController {
         cancelAttempts++;
         try {
           console.log(`🔄 [${strategyNameToUse}] ${market}: Tentativa ${cancelAttempts}/${maxCancelAttempts} de cancelamento...`);
-          
+
           await Order.cancelOpenOrder(market, limitResult.id, null, config?.apiKey, config?.apiSecret);
           Logger.info(`✅ [${botName}] ${market}: Ordem LIMIT cancelada com sucesso na tentativa ${cancelAttempts}.`);
           orderCancelled = true;
@@ -1852,7 +1852,7 @@ class OrderController {
 
         } catch (cancelError) {
           Logger.warn(`⚠️ [${botName}] ${market}: Erro na tentativa ${cancelAttempts} de cancelamento: ${cancelError.message}`);
-          
+
           // Se não é a última tentativa, aguarda antes de tentar novamente
           if (cancelAttempts < maxCancelAttempts) {
             const waitTime = cancelAttempts * 1000; // 1s, 2s, 3s
@@ -1865,7 +1865,7 @@ class OrderController {
       // Se falhou em cancelar após todas as tentativas
       if (!orderCancelled) {
         Logger.error(`❌ [${botName}] ${market}: FALHA CRÍTICA - Não foi possível cancelar ordem LIMIT após ${maxCancelAttempts} tentativas!`);
-        
+
         // Força atualização no banco para CANCELLED mesmo sem confirmação da corretora
         // Isso evita ordens fantasma no futuro
         try {
@@ -4374,14 +4374,6 @@ class OrderController {
         console.warn(`⚠️ [TP_CREATE] ${symbol}: Posição não encontrada ou já fechada`);
         return;
       }
-
-      console.log(`📊 [TP_CREATE] ${symbol}: Dados da posição:`, {
-        symbol: currentPosition.symbol,
-        netQuantity: currentPosition.netQuantity,
-        entryPrice: currentPosition.entryPrice,
-        markPrice: currentPosition.markPrice,
-        unrealizedPnl: currentPosition.unrealizedPnl
-      });
 
       const currentNetQuantity = parseFloat(currentPosition.netQuantity || 0);
       const currentIsLong = currentNetQuantity > 0;
