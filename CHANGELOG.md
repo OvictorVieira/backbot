@@ -5,6 +5,30 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.5.48] - 2025-08-15
+
+### 🔧 **FIX: Compatibilidade Windows - Caracteres Especiais em Paths**
+
+#### 🪟 **Problema: Dashboard não inicia no Windows com caracteres especiais**
+**Problema:** Usuários Windows com paths contendo `$`, `#` ou espaços enfrentavam erro do esbuild:
+```
+No loader is configured for ".html" files: index.html
+Failed to scan for dependencies from entries
+```
+
+**Solução:**
+- **Configuração esbuild**: Adicionadas configurações específicas para Windows no `vite.config.ts`
+- **Loader personalizado**: Configurado loader para arquivos `.tsx`, `.ts`, `.js` e `.jsx`
+- **OptimizeDeps**: Adicionadas opções do esbuild para melhor compatibilidade
+- **Compatibilidade**: Mantém funcionamento normal em Mac/Linux
+
+**Arquivos afetados:**
+- **dashboard-ui/vite.config.ts**: Adicionadas configurações de compatibilidade Windows
+
+**Alternativa:** Usuários podem mover projeto para path simples como `C:\backbot\`
+
+----
+
 ## [1.5.47] - 2025-08-14
 
 ### 🎯 **CORREÇÃO CRÍTICA: Take Profit com Alavancagem + Limpeza de Trailing States Órfãos**

@@ -10,4 +10,19 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  // Fix para Windows com caracteres especiais no path
+  esbuild: {
+    loader: 'tsx',
+    include: /.*\.(tsx?|jsx?)$/,
+    exclude: []
+  },
+  optimizeDeps: {
+    esbuildOptions: {
+      loader: {
+        '.js': 'jsx',
+        '.ts': 'tsx',
+        '.tsx': 'tsx'
+      }
+    }
+  }
 })
