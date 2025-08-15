@@ -5,6 +5,46 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.5.55] - 2025-08-15
+
+### 🎨 **FIX: Ajustes BotCard - Layout Original + Tokens Ativos**
+
+#### 🔄 **Ajustes solicitados pelo usuário**
+**Alterações:** Revertidas algumas mudanças do BotCard e adicionadas melhorias específicas.
+
+**Mudanças implementadas:**
+
+**Layout de Botões:**
+- ✅ **Voltou para uma linha só** - Todos os botões (Pausar, Editar, Sync, Delete) na mesma linha
+- ✅ **Botão Delete só ícone** - Removido texto, apenas ícone da lixeira
+- ✅ **Layout responsivo mantido** - Texto aparece em telas maiores, ícones em telas pequenas
+
+**Funcionalidades Ativas:**
+- ✅ **Revertido para 4 opções originais** - Grid 2x2 como era antes
+  - Trailing Stop
+  - Post Only Limit Orders  
+  - Stop Loss Híbrido
+  - Market Orders Fallback
+- ❌ **Removidas opções extras** - Monitor Ordens Órfãs e Monitor Ordens Pendentes
+
+**Nova Seção - Tokens Ativos:**
+- ✅ **Seção de tokens** adicionada abaixo de Funcionalidades Ativas
+- ✅ **Tags coloridas** com nomes dos tokens (BTC, ETH, AAVE, etc.)
+- ✅ **Layout flex-wrap** para múltiplos tokens
+- ✅ **Cores temáticas** - azul, verde, roxo para diferentes tokens
+- 📝 **TODO**: Integrar com API para buscar tokens reais do bot
+
+**Resultado:**
+- ✅ Layout de botões otimizado para telas pequenas (uma linha)
+- ✅ Funcionalidades Ativas no formato original
+- ✅ Nova seção visual para tokens ativos
+- ✅ Botão delete mais limpo (só ícone)
+
+**Arquivos modificados:**
+- **dashboard-ui/src/components/BotCard.tsx**: Ajustes de layout e nova seção
+
+----
+
 ## [1.5.54] - 2025-08-15
 
 ### 🎨 **REFACTOR: BotCard - Foco em Configurações ao Invés de Performance**

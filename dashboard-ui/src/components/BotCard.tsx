@@ -381,100 +381,78 @@ export const BotCard: React.FC<BotCardProps> = ({
         </div>
 
         {/* Status das Funcionalidades */}
+        <div className="grid grid-cols-2 gap-1 text-xs">
+          <div className="flex items-center gap-1">
+            <div className={`w-2 h-2 rounded-full ${config.enableTrailingStop ? 'bg-green-500' : 'bg-gray-300'}`} />
+            <span className="truncate">Trailing Stop</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className={`w-2 h-2 rounded-full ${config.enablePostOnly ? 'bg-green-500' : 'bg-gray-300'}`} />
+            <span className="truncate">Post Only Limit Orders</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className={`w-2 h-2 rounded-full ${config.enableHybridStopStrategy ? 'bg-green-500' : 'bg-gray-300'}`} />
+            <span className="truncate">Stop Loss Híbrido</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className={`w-2 h-2 rounded-full ${config.enableMarketFallback ? 'bg-green-500' : 'bg-gray-300'}`} />
+            <span className="truncate">Market Orders Fallback</span>
+          </div>
+        </div>
+
+        {/* Tokens Ativos */}
         <div className="border-t pt-3">
-          <div className="text-xs font-medium mb-2">Funcionalidades Ativas</div>
-          <div className="grid grid-cols-1 gap-1 text-xs">
-            <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${config.enableTrailingStop ? 'bg-green-500' : 'bg-gray-300'}`} />
-              <span className="truncate">Trailing Stop</span>
-              <span className="text-muted-foreground ml-auto">
-                {config.enableTrailingStop ? 'Ativo' : 'Inativo'}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${config.enableHybridStopStrategy ? 'bg-green-500' : 'bg-gray-300'}`} />
-              <span className="truncate">Stop Loss Híbrido (ATR)</span>
-              <span className="text-muted-foreground ml-auto">
-                {config.enableHybridStopStrategy ? 'Ativo' : 'Inativo'}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${config.enablePostOnly ? 'bg-green-500' : 'bg-gray-300'}`} />
-              <span className="truncate">Post Only Limit Orders</span>
-              <span className="text-muted-foreground ml-auto">
-                {config.enablePostOnly ? 'Ativo' : 'Inativo'}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${config.enableMarketFallback ? 'bg-green-500' : 'bg-gray-300'}`} />
-              <span className="truncate">Market Orders Fallback</span>
-              <span className="text-muted-foreground ml-auto">
-                {config.enableMarketFallback ? 'Ativo' : 'Inativo'}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${config.enableOrphanOrderMonitor ? 'bg-green-500' : 'bg-gray-300'}`} />
-              <span className="truncate">Monitor Ordens Órfãs</span>
-              <span className="text-muted-foreground ml-auto">
-                {config.enableOrphanOrderMonitor ? 'Ativo' : 'Inativo'}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${config.enablePendingOrdersMonitor ? 'bg-green-500' : 'bg-gray-300'}`} />
-              <span className="truncate">Monitor Ordens Pendentes</span>
-              <span className="text-muted-foreground ml-auto">
-                {config.enablePendingOrdersMonitor ? 'Ativo' : 'Inativo'}
-              </span>
-            </div>
+          <div className="text-xs font-medium mb-2">Tokens Ativos</div>
+          <div className="flex flex-wrap gap-1">
+            {/* TODO: Buscar tokens ativos do bot via API */}
+            <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+              BTC
+            </span>
+            <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-green-50 text-green-700 border border-green-200">
+              ETH
+            </span>
+            <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200">
+              AAVE
+            </span>
           </div>
         </div>
       </CardContent>
 
       <CardFooter className="pt-2">
-        <div className="w-full space-y-2">
-          {/* Linha principal - Botão de ação */}
-          <div className="flex w-full">
-            {getActionButton()}
-          </div>
-          
-          {/* Linha secundária - Botões de ação */}
-          <div className="flex gap-2 w-full justify-between">
+        <div className="flex gap-2 w-full">
+          {getActionButton()}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onEdit(config.strategyName)}
+            className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm"
+          >
+            <Edit className="h-3 w-3 sm:h-4 sm:w-4" />
+            <span className="hidden sm:inline">Editar</span>
+          </Button>
+          <div className="relative group">
             <Button
               variant="outline"
               size="sm"
-              onClick={() => onEdit(config.strategyName)}
-              className="flex items-center gap-1 text-xs flex-1 min-w-0"
+              onClick={handleForceSync}
+              disabled={isForceSyncing || !config.id}
+              className="flex items-center gap-1 sm:gap-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-xs sm:text-sm"
             >
-              <Edit className="h-3 w-3 flex-shrink-0" />
-              <span className="truncate">Editar</span>
+              <RefreshCw className={`h-3 w-3 sm:h-4 sm:w-4 ${isForceSyncing ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Sync</span>
             </Button>
-            
-            <div className="relative group">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleForceSync}
-                disabled={isForceSyncing || !config.id}
-                className="flex items-center gap-1 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-xs flex-1 min-w-0"
-              >
-                <RefreshCw className={`h-3 w-3 flex-shrink-0 ${isForceSyncing ? 'animate-spin' : ''}`} />
-                <span className="truncate">Sync</span>
-              </Button>
-              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black text-white text-xs rounded p-2 w-48 z-10 pointer-events-none">
-                Force Sync: Sincroniza imediatamente as ordens do bot com a corretora
-              </div>
+            <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black text-white text-xs rounded p-2 w-48 z-10 pointer-events-none">
+              Force Sync: Sincroniza imediatamente as ordens do bot com a corretora
             </div>
-            
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowDeleteModal(true)}
-              className="flex items-center gap-1 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 text-xs flex-1 min-w-0"
-            >
-              <Trash2 className="h-3 w-3 flex-shrink-0" />
-              <span className="truncate">Deletar</span>
-            </Button>
           </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowDeleteModal(true)}
+            className="flex items-center gap-1 sm:gap-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 text-xs sm:text-sm"
+          >
+            <Trash2 className="h-3 w-3 sm:h-4 sm:w-4" />
+          </Button>
         </div>
       </CardFooter>
 
