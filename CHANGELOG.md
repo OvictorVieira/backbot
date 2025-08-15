@@ -5,6 +5,19 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.5.58] - 2025-08-15
+
+### 🎨 **FIX: Reposicionar seção Tokens Ativos no BotCard**
+
+#### 📍 **Melhoria na organização das informações**
+**Alterações:** Movida a seção "Tokens Ativos" para uma posição mais lógica no layout.
+
+**Mudanças implementadas:**
+- ✅ **Nova posição** - Tokens Ativos agora aparecem logo após "Modo Execução"
+- ✅ **Melhor fluxo** - Informações organizadas de forma mais lógica
+- ✅ **Acima do tempo** - Tokens ficam acima do contador de próxima execução
+- ✅ **Layout limpo** - Seção bem posicionada entre configurações e status
+
 ## [1.5.57] - 2025-08-15
 
 ### 🎨 **FIX: Corrigir responsividade do BotCard em telas pequenas**

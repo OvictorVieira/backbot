@@ -21,21 +21,21 @@ class BotInstance {
     this.monitoringInterval = null;
     this.fillMonitoringInterval = null;
     this.lastFillCheck = null;
-    
+
     // Inicializa PositionTrackingService
     this.positionTracker = null;
-    
+
     // Configurações específicas da conta
     this.capitalPercentage = accountConfig.capitalPercentage;
     this.limitOrder = accountConfig.limitOrder;
     this.time = accountConfig.time;
-    
+
     // Configurações da estratégia
     this.strategy = accountConfig.strategy;
     this.ignoreBronzeSignals = accountConfig.ignoreBronzeSignals;
     this.adxLength = accountConfig.adxLength;
     this.adxThreshold = accountConfig.adxThreshold;
-    
+
     this.logger.info(`Instância criada - Estratégia: ${this.strategy}`);
   }
 
@@ -45,40 +45,40 @@ class BotInstance {
   async start() {
     try {
       this.logger.success('Iniciando bot...');
-      
+
       // Valida configurações
       const validation = this.validateConfig();
       if (!validation.isValid) {
         this.logger.error(`Configuração inválida: ${validation.errors.join(', ')}`);
         return false;
       }
-      
+
       // Testa conexão com a API
       const connectionTest = await this.testConnection();
       if (!connectionTest.success) {
         this.logger.error(`Falha na conexão: ${connectionTest.error}`);
         return false;
       }
-      
+
       this.logger.success('Conexão estabelecida com sucesso');
-      
+
       // Inicializa PositionTrackingService
       await this.initializePositionTracking();
 
-      
+
       // Inicia análise
       this.startAnalysis();
-      
+
       // Inicia monitoramento (para PRO_MAX)
       if (this.strategy === 'PRO_MAX') {
         this.startMonitoring();
       }
-      
+
       this.isRunning = true;
       this.logger.success('Bot iniciado com sucesso');
-      
+
       return true;
-      
+
     } catch (error) {
       this.logger.error(`Erro ao iniciar bot: ${error.message}`);
       return false;
@@ -91,20 +91,20 @@ class BotInstance {
   stop() {
     try {
       this.logger.info('Parando bot...');
-      
+
       if (this.analysisInterval) {
         clearInterval(this.analysisInterval);
         this.analysisInterval = null;
       }
-      
+
       if (this.monitoringInterval) {
         clearInterval(this.monitoringInterval);
         this.monitoringInterval = null;
       }
-      
+
       this.isRunning = false;
       this.logger.success('Bot parado com sucesso');
-      
+
     } catch (error) {
       this.logger.error(`Erro ao parar bot: ${error.message}`);
     }
@@ -115,21 +115,21 @@ class BotInstance {
    */
   validateConfig() {
     const errors = [];
-    
+
     if (!this.config.apiKey || !this.config.apiSecret) {
       errors.push('API Key ou Secret não configurados');
     }
-    
+
     if (!['DEFAULT', 'PRO_MAX'].includes(this.strategy)) {
       errors.push(`Estratégia inválida: ${this.strategy}`);
     }
-    
 
-    
+
+
     if (this.capitalPercentage < 0 || this.capitalPercentage > 100) {
       errors.push('Porcentagem do capital deve estar entre 0 e 100');
     }
-    
+
     return {
       isValid: errors.length === 0,
       errors
@@ -142,24 +142,24 @@ class BotInstance {
   async testConnection() {
     try {
       // Testa conexão usando config do bot
-      const accountData = await AccountController.get({ 
-        apiKey: this.config.apiKey, 
+      const accountData = await AccountController.get({
+        apiKey: this.config.apiKey,
         apiSecret: this.config.apiSecret,
-        strategy: this.strategy 
+        strategy: this.strategy
       });
-      
+
       if (!accountData) {
         return {
           success: false,
           error: 'Falha ao obter dados da conta'
         };
       }
-      
+
       return {
         success: true,
         data: accountData
       };
-      
+
     } catch (error) {
       return {
         success: false,
@@ -174,21 +174,21 @@ class BotInstance {
   async initializePositionTracking() {
     try {
       this.logger.debug('Inicializando sistema de rastreamento de posições...');
-      
+
       // Inicializa DatabaseService se ainda não foi inicializado
       const dbService = new DatabaseService();
       if (!dbService.isInitialized()) {
         await dbService.init();
       }
-      
+
       // Cria instância do PositionTrackingService
       this.positionTracker = new PositionTrackingService(dbService);
-      
+
       // Inicia monitoramento de fills
       this.startFillMonitoring();
-      
+
       this.logger.success('Sistema de rastreamento de posições inicializado');
-      
+
     } catch (error) {
       this.logger.error('Erro ao inicializar rastreamento de posições:', error.message);
       throw error;
@@ -200,13 +200,13 @@ class BotInstance {
    */
   startFillMonitoring() {
     this.logger.debug('Iniciando monitoramento de fills...');
-    
+
     // Define timestamp inicial para buscar apenas fills novos
     this.lastFillCheck = Date.now() - (5 * 60 * 1000); // 5 minutos atrás
-    
+
     // Primeira verificação imediata
     this.checkForNewFills();
-    
+
     // Configura verificação periódica a cada 30 segundos
     this.fillMonitoringInterval = setInterval(() => {
       this.checkForNewFills();
@@ -224,7 +224,7 @@ class BotInstance {
 
       const now = Date.now();
       const history = new History();
-      
+
       // Busca fills desde a última verificação
       const fills = await history.getFillHistory(
         null, // symbol - todos os símbolos
@@ -258,12 +258,12 @@ class BotInstance {
 
           // Converte fill da API para o formato esperado pelo PositionTrackingService
           const fillEvent = this.convertFillToEvent(fill);
-          
+
           // Processa o fill
           await this.positionTracker.updatePositionOnFill(fillEvent);
-          
+
           this.logger.debug(`✅ [FILL_MONITOR] Fill processado: ${fill.symbol} ${fill.side} ${fill.quantity} @ ${fill.price}`);
-          
+
         } catch (error) {
           this.logger.error(`❌ [FILL_MONITOR] Erro ao processar fill:`, error.message);
         }
@@ -271,7 +271,7 @@ class BotInstance {
 
       // Atualiza timestamp da última verificação
       this.lastFillCheck = now;
-      
+
     } catch (error) {
       this.logger.error('❌ [FILL_MONITOR] Erro ao verificar fills:', error.message);
     }
@@ -298,7 +298,7 @@ class BotInstance {
           },
           this.config
         );
-        
+
         if (hasValidClientId) {
           this.logger.debug(`✅ [FILL_MONITOR] Fill de abertura detectado: ${fill.symbol} (clientId: ${fill.clientId})`);
           return true;
@@ -309,7 +309,7 @@ class BotInstance {
       if (!fill.clientId) {
         // Verifica se temos posição aberta neste símbolo
         const hasOpenPosition = await this.hasOpenPositionForSymbol(fill.symbol);
-        
+
         if (hasOpenPosition) {
           this.logger.debug(`🔄 [FILL_MONITOR] Fill de fechamento automático detectado: ${fill.symbol}`);
           return true;
@@ -317,7 +317,7 @@ class BotInstance {
       }
 
       return false;
-      
+
     } catch (error) {
       this.logger.debug(`⚠️ [FILL_MONITOR] Erro na validação do fill: ${error.message}`);
       return false;
@@ -338,9 +338,9 @@ class BotInstance {
       // Busca posições abertas do bot para este símbolo
       const openPositions = await this.positionTracker.getBotOpenPositions(this.config.botId);
       const symbolPosition = openPositions.find(pos => pos.symbol === symbol);
-      
+
       return !!symbolPosition;
-      
+
     } catch (error) {
       this.logger.debug(`⚠️ [FILL_MONITOR] Erro ao verificar posição para ${symbol}: ${error.message}`);
       return false;
@@ -370,10 +370,10 @@ class BotInstance {
    */
   startAnalysis() {
     this.logger.verbose(`Iniciando análise - Timeframe: ${this.time}`);
-    
+
     // Primeira análise imediata
     this.runAnalysis();
-    
+
     // Configura intervalo (60 segundos)
     this.analysisInterval = setInterval(() => {
       this.runAnalysis();
@@ -398,7 +398,7 @@ class BotInstance {
         adxLength: this.adxLength,
         adxThreshold: this.adxThreshold,
         botName: this.botName,
-        
+
         // Configurações avançadas da estratégia PRO_MAX
         adxAverageLength: this.config.adxAverageLength,
         useRsiValidation: this.config.useRsiValidation,
@@ -416,35 +416,34 @@ class BotInstance {
         macdFastLength: this.config.macdFastLength,
         macdSlowLength: this.config.macdSlowLength,
         macdSignalLength: this.config.macdSignalLength,
-        
+
         // Configurações de stop loss e take profit
         maxNegativePnlStopPct: this.config.maxNegativePnlStopPct,
         minProfitPercentage: this.config.minProfitPercentage,
         enableTpValidation: this.config.enableTpValidation,
         enableTrailingStop: this.config.enableTrailingStop,
-        
+
         // Configurações de ordem (Alpha Flow)
         order1WeightPct: this.config.order1WeightPct,
         order2WeightPct: this.config.order2WeightPct,
         order3WeightPct: this.config.order3WeightPct,
-        
+
         // Configurações de trailing stop
         initialStopAtrMultiplier: this.config.initialStopAtrMultiplier,
         partialTakeProfitAtrMultiplier: this.config.partialTakeProfitAtrMultiplier,
         partialProfitPercentage: this.config.partialProfitPercentage,
         enableHybridStopStrategy: this.config.enableHybridStopStrategy,
-        
+
         // ID do bot para rastreamento de posições próprias
         botId: this.config.botId,
-        botName: this.botName
       };
-      
+
       // Cria uma instância do Decision com a estratégia específica desta conta
       const decisionInstance = new Decision(this.strategy);
-      
+
       // Executa análise passando o timeframe específico da conta, o logger e a configuração
       await decisionInstance.analyze(this.time, this.logger, instanceConfig);
-      
+
     } catch (error) {
       this.logger.error(`Erro na análise: ${error.message}`);
     }
@@ -455,12 +454,12 @@ class BotInstance {
    */
   startMonitoring() {
     this.logger.verbose('Iniciando monitoramento de take profits...');
-    
+
     this.monitoringInterval = setInterval(async () => {
       try {
         // Executa monitoramento APENAS para esta conta usando config do bot
         await OrderController.monitorPendingEntryOrders(this.botName, this.config);
-        
+
       } catch (error) {
         this.logger.error(`Erro no monitoramento: ${error.message}`);
       }
@@ -487,29 +486,29 @@ class BotInstance {
   async stop() {
     try {
       this.logger.info('Parando bot...');
-      
+
       this.isRunning = false;
-      
+
       // Para intervalos de análise
       if (this.analysisInterval) {
         clearInterval(this.analysisInterval);
         this.analysisInterval = null;
       }
-      
+
       // Para intervalos de monitoramento
       if (this.monitoringInterval) {
         clearInterval(this.monitoringInterval);
         this.monitoringInterval = null;
       }
-      
+
       // Para monitoramento de fills
       if (this.fillMonitoringInterval) {
         clearInterval(this.fillMonitoringInterval);
         this.fillMonitoringInterval = null;
       }
-      
+
       this.logger.success('Bot parado com sucesso');
-      
+
     } catch (error) {
       this.logger.error('Erro ao parar bot:', error.message);
       throw error;
@@ -528,4 +527,4 @@ class BotInstance {
   }
 }
 
-export default BotInstance; 
+export default BotInstance;
