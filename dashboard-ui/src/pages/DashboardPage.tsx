@@ -550,7 +550,6 @@ export function DashboardPage() {
                   botStatus={status}
                   onStart={() => handleStartBot(config.id?.toString() || config.strategyName)}
                   onStop={() => handleStopBot(config.id?.toString() || config.strategyName)}
-                  onConfigure={() => handleEditBot(config.id?.toString() || config.strategyName)}
                   onEdit={() => handleEditBot(config.id?.toString() || config.strategyName)}
                   onDelete={handleDeleteBot}
                   onForceSync={handleForceSync}

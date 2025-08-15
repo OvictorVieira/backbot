@@ -5,6 +5,57 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.5.54] - 2025-08-15
+
+### 🎨 **REFACTOR: BotCard - Foco em Configurações ao Invés de Performance**
+
+#### 📊 **Mudança: Remover estatísticas e expandir configurações**
+**Alteração:** Removida seção de performance/estatísticas de trading do BotCard e expandida exibição de todas as configurações do bot.
+
+**Motivação:** Permitir que usuários vejam TODAS as configurações e opções selecionadas do bot de forma clara e organizada, ao invés de estatísticas que podem ser consultadas em seção dedicada.
+
+**Mudanças implementadas:**
+
+**Removido:**
+- ❌ Seção "Estatísticas de Trading" completa
+- ❌ TradingStatsSkeleton component
+- ❌ Funções formatProfitRatio, formatWinRate, getWinRateColor, getProfitFactorColor
+- ❌ Interface TradingStats e estados relacionados
+- ❌ Requisições axios para buscar estatísticas
+- ❌ Imports não utilizados (axios, Badge, ícones não usados)
+- ❌ Parâmetro onConfigure não usado
+
+**Adicionado:**
+- ✅ **Max Slippage** nas configurações básicas
+- ✅ **Seção ATR** condicional (só aparece se Stop Loss Híbrido ativo)
+  - Stop ATR Multiplier
+  - Trailing ATR Multiplier  
+  - Take Profit ATR Multiplier
+  - Take Profit Parcial %
+- ✅ **Seção Trailing Stop** condicional (só aparece se ativo e não híbrido)
+  - Distância do Trailing Stop
+- ✅ **Funcionalidades expandidas** com status Ativo/Inativo:
+  - Trailing Stop
+  - Stop Loss Híbrido (ATR)
+  - Post Only Limit Orders
+  - Market Orders Fallback
+  - Monitor Ordens Órfãs
+  - Monitor Ordens Pendentes
+- ✅ **Layout organizado** com divisores e seções coloridas
+- ✅ **Status de próxima atualização** simplificado
+
+**Resultado:**
+- ✅ Usuário vê TODAS as configurações do bot
+- ✅ Interface mais limpa e focada
+- ✅ Melhor organização visual com seções
+- ✅ Configurações condicionais aparecem apenas quando relevantes
+
+**Arquivos modificados:**
+- **dashboard-ui/src/components/BotCard.tsx**: Refatoração completa do conteúdo
+- **dashboard-ui/src/pages/DashboardPage.tsx**: Remoção prop onConfigure
+
+----
+
 ## [1.5.53] - 2025-08-15
 
 ### 🎨 **FIX: Layout Responsivo Dashboard - Botões em Telas Pequenas**
