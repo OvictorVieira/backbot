@@ -5,6 +5,35 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.5.51] - 2025-08-15
+
+### 🔧 **FIX: Correção CRÍTICA - Preservar Database Durante Atualizações**
+
+#### 💾 **Problema: Database sendo removida durante atualizações**
+**Problema:** O arquivo `src/persistence/bot.db` (database principal) poderia ser removido durante atualizações automáticas, causando perda de dados de configurações, ordens e histórico.
+
+**Solução:**
+- **Preservação garantida**: Adicionado `src/persistence/` na lista `PRESERVE_ITEMS` do `update.js`
+- **Múltiplos caminhos**: Protege tanto `src/persistence/` quanto `persistence/` (fallback JSON)
+- **Dados seguros**: Database SQLite e arquivos JSON de backup são preservados
+- **Retrocompatibilidade**: Mantém `src/Persistence/` para casos antigos
+
+**Lista completa de itens preservados:**
+- `.env` - Configurações de API
+- `src/persistence/` - Database SQLite principal
+- `src/Persistence/` - Compatibilidade com versões antigas
+- `persistence/` - Arquivos JSON de fallback
+- `node_modules/` - Dependências instaladas
+- `.update_flag` - Flag de controle de atualizações
+
+**Arquivos modificados:**
+- **update.js**: Lista PRESERVE_ITEMS atualizada
+- **README.md**: Documentação corrigida sobre dados preservados
+
+**⚠️ IMPORTANTE**: Esta correção garante que nenhum dado seja perdido durante atualizações futuras.
+
+----
+
 ## [1.5.50] - 2025-08-15
 
 ### ✨ **FEATURE: Sistema de Verificação Automática de Atualizações**

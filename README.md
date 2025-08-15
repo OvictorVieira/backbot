@@ -67,8 +67,8 @@ npm run test:update    # Testa sistema de atualizações
 
 Durante a atualização, seus dados são automaticamente preservados:
 - Configurações de API (`.env`)
-- Base de dados SQLite (`src/Persistence/`)
-- Histórico de ordens e posições
+- Base de dados SQLite (`src/persistence/bot.db`)
+- Histórico de ordens e posições (`persistence/`)
 - Configurações personalizadas
 
 ### 💡 Tipos de Atualização
