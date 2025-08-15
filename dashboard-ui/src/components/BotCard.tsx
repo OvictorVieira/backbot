@@ -634,40 +634,50 @@ export const BotCard: React.FC<BotCardProps> = ({
       </CardContent>
 
       <CardFooter className="pt-2">
-        <div className="flex gap-2 w-full">
-          {getActionButton()}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onEdit(config.strategyName)}
-            className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm"
-          >
-            <Edit className="h-3 w-3 sm:h-4 sm:w-4" />
-            <span className="hidden sm:inline">Editar</span>
-          </Button>
-          <div className="relative group">
+        <div className="w-full space-y-2">
+          {/* Linha principal - Botão de ação */}
+          <div className="flex w-full">
+            {getActionButton()}
+          </div>
+          
+          {/* Linha secundária - Botões de ação */}
+          <div className="flex gap-2 w-full justify-between">
             <Button
               variant="outline"
               size="sm"
-              onClick={handleForceSync}
-              disabled={isForceSyncing || !config.id}
-              className="flex items-center gap-1 sm:gap-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-xs sm:text-sm"
+              onClick={() => onEdit(config.strategyName)}
+              className="flex items-center gap-1 text-xs flex-1 min-w-0"
             >
-              <RefreshCw className={`h-3 w-3 sm:h-4 sm:w-4 ${isForceSyncing ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Sync</span>
+              <Edit className="h-3 w-3 flex-shrink-0" />
+              <span className="truncate">Editar</span>
             </Button>
-            <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black text-white text-xs rounded p-2 w-48 z-10 pointer-events-none">
-              Force Sync: Sincroniza imediatamente as ordens do bot com a corretora
+            
+            <div className="relative group">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleForceSync}
+                disabled={isForceSyncing || !config.id}
+                className="flex items-center gap-1 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-xs flex-1 min-w-0"
+              >
+                <RefreshCw className={`h-3 w-3 flex-shrink-0 ${isForceSyncing ? 'animate-spin' : ''}`} />
+                <span className="truncate">Sync</span>
+              </Button>
+              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black text-white text-xs rounded p-2 w-48 z-10 pointer-events-none">
+                Force Sync: Sincroniza imediatamente as ordens do bot com a corretora
+              </div>
             </div>
+            
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowDeleteModal(true)}
+              className="flex items-center gap-1 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 text-xs flex-1 min-w-0"
+            >
+              <Trash2 className="h-3 w-3 flex-shrink-0" />
+              <span className="truncate">Deletar</span>
+            </Button>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowDeleteModal(true)}
-            className="flex items-center gap-1 sm:gap-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 text-xs sm:text-sm"
-          >
-            <Trash2 className="h-3 w-3 sm:h-4 sm:w-4" />
-          </Button>
         </div>
       </CardFooter>
 

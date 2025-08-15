@@ -5,6 +5,34 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.5.53] - 2025-08-15
+
+### 🎨 **FIX: Layout Responsivo Dashboard - Botões em Telas Pequenas**
+
+#### 📱 **Problema: Botão Delete cortado em telas pequenas**
+**Problema:** Em telas muito pequenas, o botão de delete (lixeira) ficava parcialmente ou totalmente fora do card do bot, prejudicando a usabilidade em dispositivos móveis.
+
+**Causa:** Todos os 4 botões (Pausar/Iniciar, Editar, Sync, Delete) estavam na mesma linha horizontal sem quebra responsiva.
+
+**Solução implementada:**
+- **Layout em duas linhas**: Botão principal (Pausar/Iniciar) em linha separada
+- **Distribuição equilibrada**: Botões secundários (Editar, Sync, Delete) em linha própria com `justify-between`
+- **Flex responsivo**: Cada botão com `flex-1` para ocupar espaço igual
+- **Texto sempre visível**: Removido `hidden sm:inline`, agora mostra texto em todas as telas
+- **Prevenção overflow**: Classes `min-w-0` e `truncate` para evitar estouro
+- **Ícones fixos**: `flex-shrink-0` para manter ícones sempre visíveis
+
+**Resultado:**
+- ✅ Todos os botões sempre visíveis e acessíveis
+- ✅ Layout otimizado para dispositivos móveis
+- ✅ Melhor experiência de usuário em telas pequenas
+- ✅ Texto legível em todos os botões
+
+**Arquivos modificados:**
+- **dashboard-ui/src/components/BotCard.tsx**: Layout do CardFooter reorganizado
+
+----
+
 ## [1.5.52] - 2025-08-15
 
 ### ✅ **VERIFIED: Logger.js - Erro Reportado por Usuário Não Reproduzível**
