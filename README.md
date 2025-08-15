@@ -42,6 +42,45 @@ npm start
 
 O bot começará a analisar o mercado e a operar de acordo com as suas configurações.
 
+## 🔄 Sistema de Atualizações
+
+O BackBot possui um sistema inteligente de atualizações que verifica automaticamente se há novas versões disponíveis.
+
+### ✨ Verificação Automática
+
+Toda vez que você executar `npm start`, o bot:
+1. **Verifica** se há uma nova versão disponível no GitHub
+2. **Pergunta** se você deseja atualizar (Y/n)
+3. **Atualiza automaticamente** se você escolher "Y"
+4. **Preserva** suas configurações e dados durante a atualização
+
+### 🎯 Comandos Disponíveis
+
+```bash
+npm start              # Inicia bot com verificação de atualizações
+npm run start:no-update # Inicia bot SEM verificar atualizações
+npm run update         # Força atualização imediata
+npm run test:update    # Testa sistema de atualizações
+```
+
+### 🛡️ Dados Preservados
+
+Durante a atualização, seus dados são automaticamente preservados:
+- Configurações de API (`.env`)
+- Base de dados SQLite (`src/Persistence/`)
+- Histórico de ordens e posições
+- Configurações personalizadas
+
+### 💡 Tipos de Atualização
+
+- 🚀 **MAJOR**: Mudanças significativas na arquitetura
+- ✨ **MINOR**: Novas funcionalidades e melhorias
+- 🔧 **PATCH**: Correções de bugs e pequenas melhorias
+
+### ⚠️ Nota Importante
+
+Se preferir **não** ser perguntado sobre atualizações, use `npm run start:no-update` ou defina a variável de ambiente `DISABLE_AUTO_UPDATE=true`.
+
 ## ⚠️ Disclaimer
 
 Este software é fornecido para fins educacionais e de pesquisa. O trading de criptomoedas envolve riscos significativos. Os autores não se responsabilizam por quaisquer perdas financeiras. **Use por sua conta e risco.**

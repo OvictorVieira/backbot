@@ -5,6 +5,46 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.5.50] - 2025-08-15
+
+### ✨ **FEATURE: Sistema de Verificação Automática de Atualizações**
+
+#### 🔄 **Nova funcionalidade: Verificação interativa de atualizações**
+**Funcionalidade:** Sistema inteligente que verifica automaticamente se há novas versões disponíveis ao executar `npm start`.
+
+**Como funciona:**
+1. **Verificação automática**: Consulta GitHub para versão mais recente
+2. **Prompt interativo**: Pergunta ao usuário "NOVA VERSÃO DISPONÍVEL: vx.y.z, deseja atualizar? Y/n"
+3. **Atualização automática**: Se o usuário escolher "Y", executa `update.js` automaticamente
+4. **Continuação normal**: Se escolher "n", continua com a versão atual
+5. **Preservação de dados**: Configurações e dados são preservados durante atualização
+
+**Comandos disponíveis:**
+- **`npm start`**: Inicia com verificação de atualizações
+- **`npm run start:no-update`**: Inicia SEM verificar atualizações  
+- **`npm run test:update`**: Testa sistema de verificação
+- **`npm run update`**: Força atualização imediata
+
+**Tipos de atualização detectados:**
+- 🚀 **MAJOR**: Mudanças significativas na arquitetura
+- ✨ **MINOR**: Novas funcionalidades e melhorias  
+- 🔧 **PATCH**: Correções de bugs e pequenas melhorias
+
+**Arquivos criados:**
+- **src/Utils/UpdatePrompt.js**: Classe principal para prompts interativos
+- **check-updates.js**: Script de verificação executado antes do `npm start`
+- **test-update-check.js**: Script de teste do sistema
+
+**Arquivos modificados:**
+- **package.json**: Novos scripts de comando
+- **README.md**: Documentação completa do sistema de atualizações
+
+**Opções de controle:**
+- **`DISABLE_AUTO_UPDATE=true`**: Desabilita verificação automática
+- **`npm run start:no-update`**: Inicia sem verificar atualizações
+
+----
+
 ## [1.5.49] - 2025-08-15
 
 ### 🔧 **FIX: Correção Database Schema + BotOrdersManager**
