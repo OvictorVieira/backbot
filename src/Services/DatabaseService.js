@@ -147,7 +147,8 @@ class DatabaseService {
         { name: 'closeQuantity', type: 'REAL' },
         { name: 'closeType', type: 'TEXT' },
         { name: 'pnl', type: 'REAL' },
-        { name: 'pnlPct', type: 'REAL' }
+        { name: 'pnlPct', type: 'REAL' },
+        { name: 'clientId', type: 'TEXT' }
       ];
 
       for (const column of newColumns) {

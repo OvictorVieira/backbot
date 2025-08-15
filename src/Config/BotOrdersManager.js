@@ -3,6 +3,10 @@ import path from 'path';
 import OrdersService from '../Services/OrdersService.js';
 
 class BotOrdersManager {
+  constructor() {
+    this.ordersFile = path.join(process.cwd(), 'persistence', 'bot_orders.json');
+  }
+
   /**
    * Inicializa o sistema (método assíncrono para SQLite)
    */
@@ -60,7 +64,19 @@ class BotOrdersManager {
   /**
    * Carrega as ordens do arquivo JSON (fallback)
    */
-  loadOrdersFromJson() {}
+  loadOrdersFromJson() {
+    try {
+      if (fs.existsSync(this.ordersFile)) {
+        const data = fs.readFileSync(this.ordersFile, 'utf8');
+        return JSON.parse(data);
+      } else {
+        return { orders: [] };
+      }
+    } catch (error) {
+      console.error('❌ Erro ao carregar ordens do JSON:', error.message);
+      return { orders: [] };
+    }
+  }
 
   /**
    * Salva as ordens no SQLite (com fallback para JSON)

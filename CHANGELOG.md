@@ -5,6 +5,38 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.5.49] - 2025-08-15
+
+### 🔧 **FIX: Correção Database Schema + BotOrdersManager**
+
+#### 💾 **Problema: Erro ao criar ordens por falta da coluna clientId**
+**Problema:** Novos usuários enfrentavam erro ao inicializar database:
+```
+SQLITE_ERROR: table bot_orders has no column named clientId
+```
+
+**Solução:**
+- **Migração automática**: Adicionada coluna `clientId` na migração existente do DatabaseService
+- **Schema atualizado**: Sistema agora adiciona automaticamente colunas faltantes
+- **Retrocompatibilidade**: Usuários existentes não são afetados
+
+#### 🔧 **Problema: Path undefined no BotOrdersManager**
+**Problema:** Erro "path undefined" ao tentar salvar ordens em JSON como fallback:
+```
+The "path" argument must be of type string. Received undefined
+```
+
+**Solução:**
+- **Constructor adicionado**: Definido `this.ordersFile` no constructor da classe
+- **Método implementado**: `loadOrdersFromJson()` estava vazio e foi implementado
+- **Fallback robusto**: JSON backup agora funciona corretamente quando SQLite não está disponível
+
+**Arquivos afetados:**
+- **src/Services/DatabaseService.js**: Adicionada coluna `clientId` na migração
+- **src/Config/BotOrdersManager.js**: Adicionado constructor e implementado `loadOrdersFromJson()`
+
+----
+
 ## [1.5.48] - 2025-08-15
 
 ### 🔧 **FIX: Compatibilidade Windows - Caracteres Especiais em Paths**
