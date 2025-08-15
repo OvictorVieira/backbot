@@ -265,7 +265,7 @@ export const BotCard: React.FC<BotCardProps> = ({
   };
 
   return (
-    <Card className={`w-full max-w-sm ${isRestarting ? 'ring-2 ring-orange-500 ring-opacity-50 animate-pulse' : ''}`}>
+    <Card className={`w-full min-w-[280px] max-w-xs sm:max-w-sm ${isRestarting ? 'ring-2 ring-orange-500 ring-opacity-50 animate-pulse' : ''}`}>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex-1 min-w-0">
@@ -443,18 +443,18 @@ export const BotCard: React.FC<BotCardProps> = ({
       </CardContent>
 
       <CardFooter className="pt-2">
-        <div className="flex gap-2 w-full">
+        <div className="flex gap-1 sm:gap-2 w-full">
           {getActionButton()}
           <Button
             variant="outline"
             size="sm"
             onClick={() => onEdit(config.strategyName)}
-            className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm"
+            className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm flex-shrink-0"
           >
             <Edit className="h-3 w-3 sm:h-4 sm:w-4" />
             <span className="hidden sm:inline">Editar</span>
           </Button>
-          <div className="relative group">
+          <div className="relative group flex-shrink-0">
             <Button
               variant="outline"
               size="sm"
@@ -463,7 +463,6 @@ export const BotCard: React.FC<BotCardProps> = ({
               className="flex items-center gap-1 sm:gap-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-xs sm:text-sm"
             >
               <RefreshCw className={`h-3 w-3 sm:h-4 sm:w-4 ${isForceSyncing ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Sync</span>
             </Button>
             <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black text-white text-xs rounded p-2 w-48 z-10 pointer-events-none">
               Force Sync: Sincroniza imediatamente as ordens do bot com a corretora
@@ -473,7 +472,7 @@ export const BotCard: React.FC<BotCardProps> = ({
             variant="outline"
             size="sm"
             onClick={() => setShowDeleteModal(true)}
-            className="flex items-center gap-1 sm:gap-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 text-xs sm:text-sm"
+            className="flex items-center gap-1 sm:gap-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 text-xs sm:text-sm flex-shrink-0"
           >
             <Trash2 className="h-3 w-3 sm:h-4 sm:w-4" />
           </Button>

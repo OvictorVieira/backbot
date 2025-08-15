@@ -5,6 +5,19 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.5.57] - 2025-08-15
+
+### 🎨 **FIX: Corrigir responsividade do BotCard em telas pequenas**
+
+#### 📱 **Ajustes de layout para mobile**
+**Alterações:** Melhorada a responsividade do card para evitar quebra de layout em telas pequenas.
+
+**Mudanças implementadas:**
+- ✅ **Largura mínima do card** - Definida largura mínima de 280px para comportar todos os botões
+- ✅ **Botões responsivos** - Adicionado flex-shrink-0 para evitar compressão dos botões
+- ✅ **Texto Sync removido** - Removido texto "Sync" do botão para economizar espaço em telas pequenas
+- ✅ **Layout otimizado** - Botões sempre ficam dentro do card em qualquer tamanho de tela
+
 ## [1.5.56] - 2025-08-15
 
 ### 🎨 **FIX: Otimização exibição de tokens ativos**
