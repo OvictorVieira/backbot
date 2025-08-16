@@ -601,9 +601,9 @@ class OrderController {
       Logger.debug(`   • Limite configurado: ${maxTakeProfitOrders} (MAX_TAKE_PROFIT_ORDERS)`);
       Logger.debug(`   • TPs que serão criados: ${finalTPs}`);
         if (finalTPs < nTPs) {
-          console.log(`   • Motivo: Limitado pela configuração MAX_TAKE_PROFIT_ORDERS=${maxTakeProfitOrders}`);
+          Logger.debug(`   • Motivo: Limitado pela configuração MAX_TAKE_PROFIT_ORDERS=${maxTakeProfitOrders}`);
         } else {
-          console.log(`   • Motivo: Posição pequena não permite dividir em ${targets.length} ordens de ${stepSize_quantity} cada`);
+          Logger.debug(`   • Motivo: Posição pequena não permite dividir em ${targets.length} ordens de ${stepSize_quantity} cada`);
         }
       }
 
@@ -625,7 +625,7 @@ class OrderController {
             qty = stepSize_quantity;
             // Log quando a quantidade calculada é menor que o step size
             if (actualTargets < targets.length) {
-              console.log(`   • TP ${i + 1}: Quantidade calculada (${(totalQuantity / actualTargets).toFixed(6)}) < step size (${stepSize_quantity}), ajustado para ${stepSize_quantity}`);
+              Logger.debug(`   • TP ${i + 1}: Quantidade calculada (${(totalQuantity / actualTargets).toFixed(6)}) < step size (${stepSize_quantity}), ajustado para ${stepSize_quantity}`);
             }
           }
           if (qty > remaining) qty = remaining;
@@ -813,17 +813,17 @@ class OrderController {
 
       // Log explicativo quando são criadas menos ordens do que o esperado
       if (finalTPs < targets.length) {
-        console.log(`📊 [PRO_MAX] ${position.symbol}: Ajuste de quantidade de TPs:`);
-        console.log(`   • Targets calculados: ${targets.length}`);
-        console.log(`   • Tamanho da posição: ${totalQuantity}`);
-        console.log(`   • Step size mínimo: ${stepSize_quantity}`);
-        console.log(`   • Máximo de TPs possíveis: ${maxTPs} (${totalQuantity} ÷ ${stepSize_quantity})`);
-        console.log(`   • Limite configurado: ${maxTakeProfitOrders} (MAX_TAKE_PROFIT_ORDERS)`);
-        console.log(`   • TPs que serão criados: ${finalTPs}`);
+        Logger.debug(`📊 [PRO_MAX] ${position.symbol}: Ajuste de quantidade de TPs:`);
+        Logger.debug(`   • Targets calculados: ${targets.length}`);
+        Logger.debug(`   • Tamanho da posição: ${totalQuantity}`);
+        Logger.debug(`   • Step size mínimo: ${stepSize_quantity}`);
+        Logger.debug(`   • Máximo de TPs possíveis: ${maxTPs} (${totalQuantity} ÷ ${stepSize_quantity})`);
+        Logger.debug(`   • Limite configurado: ${maxTakeProfitOrders} (MAX_TAKE_PROFIT_ORDERS)`);
+        Logger.debug(`   • TPs que serão criados: ${finalTPs}`);
         if (finalTPs < nTPs) {
-          console.log(`   • Motivo: Limitado pela configuração MAX_TAKE_PROFIT_ORDERS=${maxTakeProfitOrders}`);
+          Logger.debug(`   • Motivo: Limitado pela configuração MAX_TAKE_PROFIT_ORDERS=${maxTakeProfitOrders}`);
         } else {
-          console.log(`   • Motivo: Posição pequena não permite dividir em ${targets.length} ordens de ${stepSize_quantity} cada`);
+          Logger.debug(`   • Motivo: Posição pequena não permite dividir em ${targets.length} ordens de ${stepSize_quantity} cada`);
         }
       }
 
@@ -845,7 +845,7 @@ class OrderController {
             qty = stepSize_quantity;
             // Log quando a quantidade calculada é menor que o step size
             if (actualTargets < targets.length) {
-              console.log(`   • TP ${i + 1}: Quantidade calculada (${(totalQuantity / actualTargets).toFixed(6)}) < step size (${stepSize_quantity}), ajustado para ${stepSize_quantity}`);
+              Logger.debug(`   • TP ${i + 1}: Quantidade calculada (${(totalQuantity / actualTargets).toFixed(6)}) < step size (${stepSize_quantity}), ajustado para ${stepSize_quantity}`);
             }
           }
           if (qty > remaining) qty = remaining;
@@ -868,7 +868,7 @@ class OrderController {
         return formatted.toString();
       };
 
-      console.log(`\n🎯 [PRO_MAX] ${position.symbol}: Criando ${actualTargets} take profits. Quantidades: [${quantities.join(', ')}] (total: ${totalQuantity})`);
+      Logger.debug(`\n🎯 [PRO_MAX] ${position.symbol}: Criando ${actualTargets} take profits. Quantidades: [${quantities.join(', ')}] (total: ${totalQuantity})`);
 
       // Cria ordens de take profit
       for (let i = 0; i < actualTargets; i++) {
@@ -892,9 +892,9 @@ class OrderController {
         };
         const result = await Order.executeOrder(orderBody, config?.apiKey, config?.apiSecret);
         if (result && !result.error) {
-          console.log(`✅ [PRO_MAX] ${position.symbol}: Take Profit ${i + 1}/${actualTargets} criado - Preço: ${targetPrice.toFixed(6)}, Quantidade: ${qty}, OrderID: ${result.id || 'N/A'}`);
+          Logger.debug(`✅ [PRO_MAX] ${position.symbol}: Take Profit ${i + 1}/${actualTargets} criado - Preço: ${targetPrice.toFixed(6)}, Quantidade: ${qty}, OrderID: ${result.id || 'N/A'}`);
         } else {
-          console.log(`❌ [PRO_MAX] ${position.symbol}: Take Profit ${i + 1}/${actualTargets} FALHOU - Preço: ${targetPrice.toFixed(6)}, Quantidade: ${qty}, Motivo: ${result?.error || 'desconhecido'}`);
+          Logger.debug(`❌ [PRO_MAX] ${position.symbol}: Take Profit ${i + 1}/${actualTargets} FALHOU - Preço: ${targetPrice.toFixed(6)}, Quantidade: ${qty}, Motivo: ${result?.error || 'desconhecido'}`);
         }
       }
 
@@ -918,7 +918,7 @@ class OrderController {
         };
         const stopResult = await Order.executeOrder(stopBody, config?.apiKey, config?.apiSecret);
         if (stopResult) {
-          console.log(`🛡️ [PRO_MAX] ${position.symbol}: Stop loss criado - Preço: ${stop.toFixed(6)}`);
+          Logger.debug(`🛡️ [PRO_MAX] ${position.symbol}: Stop loss criado - Preço: ${stop.toFixed(6)}`);
         }
       }
 
@@ -1016,14 +1016,14 @@ class OrderController {
       });
 
       if (pendingEntryOrders.length === 0) {
-        console.log(`ℹ️ ${symbol}: Nenhuma ordem de entrada pendente encontrada para cancelar`);
+        Logger.debug(`ℹ️ ${symbol}: Nenhuma ordem de entrada pendente encontrada para cancelar`);
         return true;
       }
 
       // Log detalhado das ordens que serão canceladas
-      console.log(`🔍 ${symbol}: Encontradas ${pendingEntryOrders.length} ordens de entrada pendentes para cancelar:`);
+      Logger.debug(`🔍 ${symbol}: Encontradas ${pendingEntryOrders.length} ordens de entrada pendentes para cancelar:`);
       pendingEntryOrders.forEach((order, index) => {
-        console.log(`   ${index + 1}. ID: ${order.id}, Status: ${order.status}, ReduceOnly: ${order.reduceOnly}, StopLoss: ${!!order.stopLossTriggerPrice}, TakeProfit: ${!!order.takeProfitTriggerPrice}`);
+        Logger.debug(`   ${index + 1}. ID: ${order.id}, Status: ${order.status}, ReduceOnly: ${order.reduceOnly}, StopLoss: ${!!order.stopLossTriggerPrice}, TakeProfit: ${!!order.takeProfitTriggerPrice}`);
       });
 
       // Cancela apenas as ordens de entrada pendentes específicas
@@ -2262,7 +2262,7 @@ class OrderController {
 
       // 1. VERIFICA O LOCK
       if (OrderController.stopLossCreationInProgress.has(symbol)) {
-        console.log(`🔒 [${botName}] ${symbol}: Lock ativo, pulando criação de stop loss`);
+        Logger.debug(`🔒 [${botName}] ${symbol}: Lock ativo, pulando criação de stop loss`);
         return false;
       }
 
@@ -2452,7 +2452,7 @@ class OrderController {
 
     // 1. VERIFICA O LOCK
     if (OrderController.takeProfitCreationInProgress.has(symbol)) {
-      console.log(`🔒 [${botName}] ${symbol}: Lock ativo, pulando criação de take profit`);
+      Logger.debug(`🔒 [${botName}] ${symbol}: Lock ativo, pulando criação de take profit`);
       return false;
     }
 

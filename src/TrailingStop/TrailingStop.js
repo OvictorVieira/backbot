@@ -122,7 +122,7 @@ class TrailingStop {
         }
       }
 
-      console.log(`📂 [PERSISTENCE] Estado do trailing stop carregado: ${totalStates} posições da base de dados`);
+      Logger.info(`📂 [PERSISTENCE] Estado do trailing stop carregado: ${totalStates} posições da base de dados`);
 
     } catch (error) {
       console.error(`❌ [PERSISTENCE] Erro ao carregar estado do trailing stop:`, error.message);
@@ -484,7 +484,7 @@ class TrailingStop {
    */
   static debug(message) {
     // Sempre loga em modo debug para facilitar o desenvolvimento
-    console.log(message);
+    Logger.debug(message);
   }
 
   /**
@@ -1615,7 +1615,7 @@ class TrailingStop {
 
         if (positionState && positionState.strategyName === 'AlphaFlowStrategy') {
           // Modo ALPHA FLOW: Verifica apenas o alvo de TP fixo calculado pela estratégia
-          console.log(`📋 [PROFIT_MODE] ${position.symbol}: Modo Alpha Flow ativo. Verificando alvo de TP fixo...`);
+          Logger.debug(`📋 [PROFIT_MODE] ${position.symbol}: Modo Alpha Flow ativo. Verificando alvo de TP fixo...`);
 
           // Obtenha o 'targetPrice' que foi salvo quando a ordem foi criada
           const targetPrice = positionState.takeProfitPrice; // Assumindo que salvamos o alvo no estado
@@ -1631,15 +1631,15 @@ class TrailingStop {
               continue;
             }
           } else {
-            console.log(`⚠️ [PROFIT_MODE] ${position.symbol}: Alvo de TP não encontrado no estado da posição`);
+            Logger.debug(`⚠️ [PROFIT_MODE] ${position.symbol}: Alvo de TP não encontrado no estado da posição`);
           }
 
           // Para Alpha Flow, pula as verificações de profit mínimo e configurado
-          console.log(`📋 [PROFIT_MODE] ${position.symbol}: Alpha Flow - aguardando alvo específico...`);
+          Logger.debug(`📋 [PROFIT_MODE] ${position.symbol}: Alpha Flow - aguardando alvo específico...`);
 
         } else {
           // Modo DEFAULT ou outros: Usa a lógica antiga de PROFIT_CHECK e Trailing Stop
-          console.log(`📋 [PROFIT_MODE] ${position.symbol}: Modo ${positionState?.strategyName || 'DEFAULT'} ativo.`);
+          Logger.debug(`📋 [PROFIT_MODE] ${position.symbol}: Modo ${positionState?.strategyName || 'DEFAULT'} ativo.`);
 
           if (enableTrailingStop) {
             const trailingModeLogged = this.getTrailingModeLogged();

@@ -1042,7 +1042,7 @@ class OrdersService {
 
   static async syncPositionsFromExchangeFills(botId, config) {
     try {
-      Logger.info(`📊 [FILLS_SYNC] Iniciando sincronização baseada em fills da corretora para bot ${botId}`);
+      Logger.debug(`📊 [FILLS_SYNC] Iniciando sincronização baseada em fills da corretora para bot ${botId}`);
 
       const botClientOrderId = config.botClientOrderId?.toString() || '';
       const botCreationDate = config.createdAt || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -1078,7 +1078,7 @@ class OrdersService {
       
       const botFills = [...botFillsWithClientId, ...orphanFills];
 
-      Logger.info(`📊 [FILLS_SYNC] Encontrados ${botFillsWithClientId.length} fills com clientId + ${orphanFills.length} fills órfãos = ${botFills.length} fills totais do bot`);
+      Logger.debug(`📊 [FILLS_SYNC] Encontrados ${botFillsWithClientId.length} fills com clientId + ${orphanFills.length} fills órfãos = ${botFills.length} fills totais do bot`);
 
       const symbolPositions = new Map();
 
@@ -1104,7 +1104,7 @@ class OrdersService {
         const position = OrdersService.calculatePositionFromFills(fills);
 
         if (position.isClosed) {
-          Logger.info(`✅ [FILLS_SYNC] Posição ${symbol} fechada baseada em fills - P&L: ${position.totalPnL.toFixed(4)} USDC`);
+          Logger.debug(`✅ [FILLS_SYNC] Posição ${symbol} fechada baseada em fills - P&L: ${position.totalPnL.toFixed(4)} USDC`);
 
           const ourOrders = await OrdersService.dbService.getAll(
             `SELECT * FROM bot_orders WHERE botId = ? AND symbol = ? AND status = 'FILLED'`,
@@ -1132,7 +1132,7 @@ class OrdersService {
         }
       }
 
-      Logger.info(`📊 [FILLS_SYNC] Bot ${botId}: ${closedCount} posições fechadas baseado em fills`);
+      Logger.debug(`📊 [FILLS_SYNC] Bot ${botId}: ${closedCount} posições fechadas baseado em fills`);
       return closedCount;
 
     } catch (error) {
@@ -1361,9 +1361,9 @@ class OrdersService {
     } else if (isQuantityClosed) {
       // Log detalhado para fechamentos válidos (incluindo loss pequeno)
       if (Math.abs(totalPnL) < 1) {
-        Logger.info(`💸 [FILLS_CALC] Posição fechada com PnL pequeno: $${totalPnL.toFixed(4)} (${totalPnL > 0 ? 'gain' : 'loss'})`);
+        Logger.debug(`💸 [FILLS_CALC] Posição fechada com PnL pequeno: $${totalPnL.toFixed(4)} (${totalPnL > 0 ? 'gain' : 'loss'})`);
       } else {
-        Logger.info(`💰 [FILLS_CALC] Posição fechada com PnL: $${totalPnL.toFixed(2)} (${totalPnL > 0 ? 'gain' : 'loss'})`);
+        Logger.debug(`💰 [FILLS_CALC] Posição fechada com PnL: $${totalPnL.toFixed(2)} (${totalPnL > 0 ? 'gain' : 'loss'})`);
       }
     }
 
@@ -1425,13 +1425,12 @@ class OrdersService {
 
       // 2. Busca ordens abertas REAIS na corretora (incluindo ordens condicionais)
       const { default: Order } = await import('../Backpack/Authenticated/Order.js');
-      const orderInstance = new Order();
       
       // Busca ordens regulares
-      const regularOrders = await orderInstance.getOpenOrders(null, "PERP", config.apiKey, config.apiSecret);
+      const regularOrders = await Order.getOpenOrders(null, "PERP", config.apiKey, config.apiSecret);
       
       // Busca ordens condicionais (trigger orders)
-      const triggerOrders = await orderInstance.getOpenTriggerOrders(null, "PERP", config.apiKey, config.apiSecret);
+      const triggerOrders = await Order.getOpenTriggerOrders(null, "PERP", config.apiKey, config.apiSecret);
 
       if (!regularOrders && !triggerOrders) {
         Logger.warn(`⚠️ [GHOST_ORDERS] Não foi possível buscar ordens da corretora para bot ${botId}`);
@@ -1577,7 +1576,7 @@ class OrdersService {
    */
   static async fixOrdersWithCloseTimeButNotClosed(botId = null) {
     try {
-      Logger.info(`🔧 [ORDERS_FIX] Iniciando correção de ordens com closeTime não marcadas como CLOSED${botId ? ` para bot ${botId}` : ''}`);
+      Logger.debug(`🔧 [ORDERS_FIX] Iniciando correção de ordens com closeTime não marcadas como CLOSED${botId ? ` para bot ${botId}` : ''}`);
 
       // Busca ordens com closeTime mas status != CLOSED
       const query = botId 
@@ -1588,13 +1587,13 @@ class OrdersService {
       const problematicOrders = await OrdersService.dbService.getAll(query, params);
 
       if (problematicOrders.length === 0) {
-        Logger.info(`✅ [ORDERS_FIX] Nenhuma ordem problemática encontrada`);
+        Logger.debug(`✅ [ORDERS_FIX] Nenhuma ordem problemática encontrada`);
         return 0;
       }
 
-      Logger.info(`🔍 [ORDERS_FIX] Encontradas ${problematicOrders.length} ordens com closeTime que não estão CLOSED:`);
+      Logger.debug(`🔍 [ORDERS_FIX] Encontradas ${problematicOrders.length} ordens com closeTime que não estão CLOSED:`);
       problematicOrders.forEach(order => {
-        Logger.info(`  Bot ${order.botId}: ${order.symbol} ${order.side} ${order.quantity} (${order.externalOrderId}) - Status: ${order.status}`);
+        Logger.debug(`  Bot ${order.botId}: ${order.symbol} ${order.side} ${order.quantity} (${order.externalOrderId}) - Status: ${order.status}`);
       });
 
       let fixedCount = 0;
@@ -1628,7 +1627,7 @@ class OrdersService {
         }
       }
 
-      Logger.info(`🎉 [ORDERS_FIX] Correção concluída: ${fixedCount}/${problematicOrders.length} ordens corrigidas`);
+      Logger.debug(`🎉 [ORDERS_FIX] Correção concluída: ${fixedCount}/${problematicOrders.length} ordens corrigidas`);
       return fixedCount;
 
     } catch (error) {
@@ -1670,12 +1669,12 @@ class OrdersService {
 
       results.total = results.ghostOrdersCleaned + results.ordersFixed + results.positionsClosed + results.orphanTrailingStatesCleaned;
 
-      Logger.info(`🎉 [COMPLETE_SYNC] Sincronização completa concluída para bot ${botId}:`);
-      Logger.info(`   • Ordens fantasma limpas: ${results.ghostOrdersCleaned}`);
-      Logger.info(`   • Ordens corrigidas: ${results.ordersFixed}`);
-      Logger.info(`   • Posições fechadas: ${results.positionsClosed}`);
-      Logger.info(`   • Trailing states órfãos limpos: ${results.orphanTrailingStatesCleaned}`);
-      Logger.info(`   • Total de ações: ${results.total}`);
+      Logger.debug(`🎉 [COMPLETE_SYNC] Sincronização completa concluída para bot ${botId}:`);
+      Logger.debug(`   • Ordens fantasma limpas: ${results.ghostOrdersCleaned}`);
+      Logger.debug(`   • Ordens corrigidas: ${results.ordersFixed}`);
+      Logger.debug(`   • Posições fechadas: ${results.positionsClosed}`);
+      Logger.debug(`   • Trailing states órfãos limpos: ${results.orphanTrailingStatesCleaned}`);
+      Logger.debug(`   • Total de ações: ${results.total}`);
 
       return results;
 
@@ -1722,7 +1721,7 @@ class OrdersService {
         return 0;
       }
 
-      Logger.info(`🧹 [TRAILING_CLEANUP] Iniciando limpeza de trailing states órfãos para bot ${botId}`);
+      Logger.debug(`🧹 [TRAILING_CLEANUP] Iniciando limpeza de trailing states órfãos para bot ${botId}`);
 
       // Busca todos os trailing states do bot
       const trailingStates = await OrdersService.dbService.getAll(
@@ -1735,7 +1734,7 @@ class OrdersService {
         return 0;
       }
 
-      Logger.info(`🔍 [TRAILING_CLEANUP] Encontrados ${trailingStates.length} trailing states para bot ${botId}`);
+      Logger.debug(`🔍 [TRAILING_CLEANUP] Encontrados ${trailingStates.length} trailing states para bot ${botId}`);
 
       let cleanedCount = 0;
 
@@ -1767,7 +1766,7 @@ class OrdersService {
         }
       }
 
-      Logger.info(`🎉 [TRAILING_CLEANUP] Limpeza concluída para bot ${botId}: ${cleanedCount} trailing states órfãos removidos`);
+      Logger.debug(`🎉 [TRAILING_CLEANUP] Limpeza concluída para bot ${botId}: ${cleanedCount} trailing states órfãos removidos`);
       return cleanedCount;
 
     } catch (error) {

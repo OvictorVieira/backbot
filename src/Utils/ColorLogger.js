@@ -1,3 +1,5 @@
+import Logger from './Logger.js';
+
 /**
  * Sistema de logs coloridos para múltiplos bots
  * Cada bot/estratégia tem sua própria cor para fácil identificação
@@ -144,8 +146,7 @@ class ColorLogger {
    */
   profitMonitor(message) {
     if (this.pauseLogs) return;
-    const greenColor = '\x1b[32m'; // Verde
-    console.log(`${greenColor}📊 [PROFIT_MONITOR] ${message}${this.resetColor}`);
+    Logger.debug(`📊 [PROFIT_MONITOR] ${message}`);
   }
 
   /**
@@ -153,8 +154,7 @@ class ColorLogger {
    */
   profitFixed(message) {
     if (this.pauseLogs) return;
-    const blueColor = '\x1b[34m'; // Azul
-    console.log(`${blueColor}📋 [PROFIT_MODE] ${message}${this.resetColor}`);
+    Logger.debug(`📋 [PROFIT_MODE] ${message}`);
   }
 
   /**
@@ -252,7 +252,7 @@ class ColorLogger {
    */
   trailingConfig(message) {
     if (this.pauseLogs) return;
-    console.log(`${this.color}${this.prefix} ⚙️ ${message}${this.resetColor}`);
+    Logger.info(`🤖 [TRAILING-STOP] ⚙️ ${message}`);
   }
 
   /**

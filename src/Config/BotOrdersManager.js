@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import OrdersService from '../Services/OrdersService.js';
+import Logger from '../Utils/Logger.js';
 
 class BotOrdersManager {
   constructor() {
@@ -14,10 +15,10 @@ class BotOrdersManager {
     try {
       // Tenta carregar do SQLite primeiro
       if (OrdersService.dbService && OrdersService.dbService.isInitialized()) {
-        console.log(`✅ [BOT_ORDERS] Inicializando com SQLite database`);
+        Logger.info(`✅ [BOT_ORDERS] Inicializando com SQLite database`);
         const orders = await OrdersService.getAllOrders();
         this.orders = { orders: orders || [] };
-        console.log(`📊 [BOT_ORDERS] Ordens carregadas do SQLite: ${this.orders.orders.length}`);
+        Logger.info(`📊 [BOT_ORDERS] Ordens carregadas do SQLite: ${this.orders.orders.length}`);
       } else {
         console.log(`ℹ️ [BOT_ORDERS] SQLite não disponível, usando JSON`);
         // Recarrega do JSON para garantir que temos os dados mais recentes

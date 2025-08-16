@@ -97,7 +97,7 @@ class PositionSyncService {
         
         // Só loga se realmente houve ações
         if (syncResults.total > 0) {
-          Logger.info(`🔄 [POSITION_SYNC] Bot ${botId}: Sincronização - ${syncResults.total} ações (fantasma: ${syncResults.ghostOrdersCleaned}, corrigidas: ${syncResults.ordersFixed}, fechadas: ${syncResults.positionsClosed})`);
+          Logger.debug(`🔄 [POSITION_SYNC] Bot ${botId}: Sincronização - ${syncResults.total} ações (fantasma: ${syncResults.ghostOrdersCleaned}, corrigidas: ${syncResults.ordersFixed}, fechadas: ${syncResults.positionsClosed})`);
         } else {
           Logger.debug(`🔄 [POSITION_SYNC] Bot ${botId}: Sincronização completa - nenhuma ação necessária`);
         }

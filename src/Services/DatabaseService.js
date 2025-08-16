@@ -2,6 +2,7 @@ import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 import path from 'path';
 import { promises as fs } from 'fs';
+import Logger from '../Utils/Logger.js';
 
 class DatabaseService {
   constructor() {
@@ -25,12 +26,12 @@ class DatabaseService {
         driver: sqlite3.Database
       });
 
-      console.log(`🔧 [DATABASE] Database connection established: ${this.dbPath}`);
+      Logger.info(`🔧 [DATABASE] Database connection established: ${this.dbPath}`);
 
       // Create tables
       await this.createTables();
 
-      console.log(`✅ [DATABASE] Database initialized successfully`);
+      Logger.info(`✅ [DATABASE] Database initialized successfully`);
     } catch (error) {
       console.error(`❌ [DATABASE] Error initializing database:`, error.message);
       throw error;
@@ -124,7 +125,7 @@ class DatabaseService {
       await this.migrateBotOrdersTable();
       await this.migrateTrailingStateTable();
 
-      console.log(`📋 [DATABASE] Tables created successfully`);
+      Logger.info(`📋 [DATABASE] Tables created successfully`);
     } catch (error) {
       console.error(`❌ [DATABASE] Error creating tables:`, error.message);
       throw error;
@@ -153,12 +154,12 @@ class DatabaseService {
 
       for (const column of newColumns) {
         if (!columnNames.includes(column.name)) {
-          console.log(`🔄 [DATABASE] Adicionando coluna ${column.name} à tabela bot_orders`);
+          Logger.info(`🔄 [DATABASE] Adicionando coluna ${column.name} à tabela bot_orders`);
           await this.db.exec(`ALTER TABLE bot_orders ADD COLUMN ${column.name} ${column.type}`);
         }
       }
 
-      console.log(`✅ [DATABASE] Migração da tabela bot_orders concluída`);
+      Logger.info(`✅ [DATABASE] Migração da tabela bot_orders concluída`);
     } catch (error) {
       console.error(`❌ [DATABASE] Erro na migração da tabela bot_orders:`, error.message);
     }

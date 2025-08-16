@@ -5,6 +5,29 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.5.60] - 2025-08-16
+
+### 🔧 **FIX: Sistema de logging otimizado e corrigido**
+
+#### 📍 **Logs mais limpos e organizados**
+**Alterações:** Otimização completa do sistema de logging para reduzir verbosidade e corrigir problemas de formatação.
+
+**Mudanças implementadas:**
+- ✅ **Order constructor fix** - Corrigido erro "Order is not a constructor" no cleanGhostOrders
+- ✅ **Logs para DEBUG** - Movidos logs verbosos (FILLS_SYNC, ORDERS_FIX, TRAILING_CLEANUP, etc.) para nível DEBUG
+- ✅ **Logs duplicados** - Removidos logs duplicados de CONFIG_SQLITE que apareciam múltiplas vezes
+- ✅ **Formatação corrigida** - Corrigidos logs quebrados do TRAILING-STOP que misturavam cores ANSI com Logger
+- ✅ **ES modules** - Substituído require() por import nos ColorLogger para compatibilidade ES6
+- ✅ **Performance** - Sistema de logging mais eficiente com menos ruído nos logs de produção
+
+**Logs afetados:**
+- 🔧 DATABASE initialization logs → INFO
+- 🔧 BOT_ORDERS, PERSISTENCE logs → INFO  
+- 🔧 FILLS_SYNC, ORDERS_FIX, COMPLETE_SYNC → DEBUG
+- 🔧 CONFIG_SQLITE repetitive logs → DEBUG
+- 🔧 TRAILING-STOP formatting → Fixed
+- 🔧 PROFIT_MONITOR, PROFIT_MODE → DEBUG
+
 ## [1.5.58] - 2025-08-15
 
 ### 🎨 **FIX: Reposicionar seção Tokens Ativos no BotCard**

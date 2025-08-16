@@ -36,8 +36,6 @@ class ConfigManagerSQLite {
    */
   static async loadConfigs() {
     try {
-      Logger.info('🔍 [CONFIG_SQLITE] Iniciando carregamento de configurações...');
-      
       if (!ConfigManagerSQLite.dbService || !ConfigManagerSQLite.dbService.isInitialized()) {
         Logger.error('❌ [CONFIG_SQLITE] Database service não está inicializado');
         throw new Error('Database service não está inicializado');
@@ -165,7 +163,7 @@ class ConfigManagerSQLite {
    * @param {Object} newConfig - Nova configuração
    */
   static async updateBotConfigById(botId, newConfig) {
-    console.log(`🔄 [CONFIG_SQLITE] Iniciando atualização do bot ID: ${botId}`);
+    Logger.debug(`🔄 [CONFIG_SQLITE] Iniciando atualização do bot ID: ${botId}`);
     
     try {
       const currentConfig = await this.getBotConfigById(botId);
@@ -173,7 +171,7 @@ class ConfigManagerSQLite {
         throw new Error(`Bot com ID ${botId} não encontrado`);
       }
       
-      console.log(`📝 [CONFIG_SQLITE] Configuração atual encontrada: ${currentConfig.botName}`);
+      Logger.debug(`📝 [CONFIG_SQLITE] Configuração atual encontrada: ${currentConfig.botName}`);
       
       // Preserva os campos de rastreamento de ordens se não estiverem no newConfig
       const updatedConfig = {
@@ -192,7 +190,7 @@ class ConfigManagerSQLite {
         [configJson, now, botId]
       );
       
-      console.log(`✅ [CONFIG_SQLITE] Bot ${botId} atualizado com sucesso`);
+      Logger.debug(`✅ [CONFIG_SQLITE] Bot ${botId} atualizado com sucesso`);
     } catch (error) {
       console.error(`❌ [CONFIG_SQLITE] Erro ao atualizar bot ${botId}:`, error.message);
       throw error;
@@ -281,7 +279,7 @@ class ConfigManagerSQLite {
       };
       
       await this.updateBotConfigById(botId, updatedConfig);
-      console.log(`✅ [CONFIG_SQLITE] Status do bot ${botId} atualizado para: ${status}`);
+      Logger.debug(`✅ [CONFIG_SQLITE] Status do bot ${botId} atualizado para: ${status}`);
     } catch (error) {
       console.error(`❌ [CONFIG_SQLITE] Erro ao atualizar status do bot ${botId}:`, error.message);
       throw error;
