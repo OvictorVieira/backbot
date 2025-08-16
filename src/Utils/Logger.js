@@ -24,7 +24,7 @@ class Logger {
     }
 
     static debug(message, ...args) {
-        if (process.env.LOG_TYPE === 'debug') {
+        if (process.env.LOG_LEVEL === 'DEBUG' || process.env.LOG_TYPE === 'debug') {
             Logger.log('debug', message, ...args);
         }
     }
@@ -42,7 +42,7 @@ class Logger {
 
     // Log somente no modo verbose
     static verbose(message, ...args) {
-        if (process.env.LOG_TYPE === 'verbose' || process.env.LOG_TYPE === 'debug') {
+        if (process.env.LOG_LEVEL === 'DEBUG' || process.env.LOG_TYPE === 'verbose' || process.env.LOG_TYPE === 'debug') {
             Logger.log('verbose', message, ...args);
         }
     }
@@ -54,8 +54,9 @@ class Logger {
 
     // Método para verificar configuração do logger (apenas para debug)
     static checkConfig() {
+        console.log(`🔧 [LOGGER] LOG_LEVEL: ${process.env.LOG_LEVEL || 'undefined'}`);
         console.log(`🔧 [LOGGER] LOG_TYPE: ${process.env.LOG_TYPE || 'undefined'}`);
-        console.log(`🔧 [LOGGER] Debug enabled: ${process.env.LOG_TYPE === 'debug'}`);
+        console.log(`🔧 [LOGGER] Debug enabled: ${process.env.LOG_LEVEL === 'DEBUG' || process.env.LOG_TYPE === 'debug'}`);
     }
 }
 

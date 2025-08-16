@@ -742,7 +742,7 @@ class OrdersService {
         return clientId.startsWith(botClientOrderId);
       });
 
-      Logger.info(`📊 [ORDERS_SYNC] Encontradas ${botExchangeOrders.length} ordens ativas na corretora para bot ${botId}`);
+      Logger.debug(`📊 [ORDERS_SYNC] Encontradas ${botExchangeOrders.length} ordens ativas na corretora para bot ${botId}`);
 
       // Log das ordens encontradas na corretora para debug
       botExchangeOrders.forEach(order => {
@@ -757,7 +757,7 @@ class OrdersService {
         [botId]
       );
 
-      Logger.info(`📊 [ORDERS_SYNC] Encontradas ${ourOrders.length} ordens não-CLOSED no nosso banco para bot ${botId}`);
+      Logger.debug(`📊 [ORDERS_SYNC] Encontradas ${ourOrders.length} ordens não-CLOSED no nosso banco para bot ${botId}`);
 
       // Log das ordens do nosso banco para debug
       ourOrders.forEach(order => {

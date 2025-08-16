@@ -95,11 +95,12 @@ class PositionSyncService {
         // Executa sincronização completa (fills órfãos + correções + limpeza fantasma)
         const syncResults = await OrdersService.performCompleteFillsSync(botId, config);
         
-        Logger.info(`🔄 [POSITION_SYNC] Bot ${botId}: Sincronização completa concluída`);
-        Logger.info(`   • Ordens fantasma limpas: ${syncResults.ghostOrdersCleaned}`);
-        Logger.info(`   • Ordens corrigidas: ${syncResults.ordersFixed}`);
-        Logger.info(`   • Posições fechadas: ${syncResults.positionsClosed}`);
-        Logger.info(`   • Total: ${syncResults.total} ações`);
+        // Só loga se realmente houve ações
+        if (syncResults.total > 0) {
+          Logger.info(`🔄 [POSITION_SYNC] Bot ${botId}: Sincronização - ${syncResults.total} ações (fantasma: ${syncResults.ghostOrdersCleaned}, corrigidas: ${syncResults.ordersFixed}, fechadas: ${syncResults.positionsClosed})`);
+        } else {
+          Logger.debug(`🔄 [POSITION_SYNC] Bot ${botId}: Sincronização completa - nenhuma ação necessária`);
+        }
 
       } catch (syncError) {
         Logger.warn(`⚠️ [POSITION_SYNC] Erro na sincronização completa do bot ${botId}: ${syncError.message}`);
@@ -224,7 +225,11 @@ class PositionSyncService {
       // Filtra posições que foram fechadas
       const closedPositionsData = reconstructedPositions.filter(pos => pos.isClosed);
 
-      Logger.info(`🔍 [POSITION_SYNC] Novo sistema detectou ${closedPositionsData.length} posições fechadas para bot ${botId}`);
+      if (closedPositionsData.length > 0) {
+        Logger.info(`🔍 [POSITION_SYNC] Bot ${botId}: ${closedPositionsData.length} posições fechadas detectadas`);
+      } else {
+        Logger.debug(`🔍 [POSITION_SYNC] Bot ${botId}: Nenhuma posição fechada detectada`);
+      }
 
       // Para cada posição fechada, atualiza o banco
       for (const position of closedPositionsData) {
@@ -248,7 +253,9 @@ class PositionSyncService {
         }
       }
 
-      Logger.info(`✅ [POSITION_SYNC] Processadas ${closedPositions.length} posições fechadas para bot ${botId}`);
+      if (closedPositions.length > 0) {
+        Logger.info(`✅ [POSITION_SYNC] Bot ${botId}: ${closedPositions.length} posições processadas`);
+      }
 
     } catch (error) {
       Logger.error(`❌ [POSITION_SYNC] Erro ao detectar posições fechadas (novo sistema) para bot ${botId}:`, error.message);
@@ -294,7 +301,9 @@ class PositionSyncService {
         }
       }
 
-      Logger.info(`🔍 [POSITION_SYNC] Detectadas ${closedPositions.length} posições fechadas automaticamente para bot ${botId}`);
+      if (closedPositions.length > 0) {
+        Logger.info(`🔍 [POSITION_SYNC] Bot ${botId}: ${closedPositions.length} posições fechadas automaticamente`);
+      }
 
     } catch (error) {
       Logger.error(`❌ [POSITION_SYNC] Erro ao detectar posições fechadas para bot ${botId}:`, error.message);
@@ -450,12 +459,7 @@ class PositionSyncService {
       const trackingResult = await positionTracker.trackBotPositions(botId, config);
       const { performanceMetrics } = trackingResult;
 
-      Logger.info(`📊 [POSITION_SYNC] Estatísticas atualizadas para bot ${botId}:`);
-      Logger.info(`   • Total de posições: ${performanceMetrics.totalPositions}`);
-      Logger.info(`   • Posições fechadas: ${performanceMetrics.closedPositions}`);
-      Logger.info(`   • Win Rate: ${performanceMetrics.winRate.toFixed(2)}%`);
-      Logger.info(`   • Profit Factor: ${performanceMetrics.profitFactor.toFixed(2)}`);
-      Logger.info(`   • PnL Total: $${performanceMetrics.totalPnl.toFixed(2)}`);
+      Logger.debug(`📊 [POSITION_SYNC] Bot ${botId}: Estatísticas - ${performanceMetrics.closedPositions}/${performanceMetrics.totalPositions} posições, WR: ${performanceMetrics.winRate.toFixed(1)}%, PnL: $${performanceMetrics.totalPnl.toFixed(2)}`);
 
       // TODO: Salvar estatísticas no banco de dados
 

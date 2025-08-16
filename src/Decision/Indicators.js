@@ -1,5 +1,6 @@
 import { EMA, RSI, MACD, BollingerBands, ATR, Stochastic, ADX, MFI } from 'technicalindicators';
 import axios from 'axios';
+import Logger from '../Utils/Logger.js';
 
 /**
  * Calcula o VWAP e suas bandas de desvio padrão da forma correta (cumulativo com reset diário).
@@ -425,7 +426,7 @@ async function calculateMacroMoneyFlow(candles, timeframe = '5m', symbol = null)
       direction = 'DOWN';
     }
 
-    console.log(`📊 [MACRO] ${symbol}: MFI=${mfiCurrent.toFixed(2)}, EMA=${mfiEmaCurrent.toFixed(2)}, Bias=${macroBias}`);
+    Logger.debug(`📊 [MACRO] ${symbol}: MFI=${mfiCurrent.toFixed(2)}, EMA=${mfiEmaCurrent.toFixed(2)}, Bias=${macroBias}`);
 
     return {
       macroBias,
@@ -474,7 +475,7 @@ async function getBinanceCandles(symbol, timeframe, limit = 22) {
     const binanceSymbol = convertSymbolToBinance(symbol);
     const binanceInterval = convertTimeframeToBinance(timeframe);
     
-    console.log(`🔄 [BINANCE] Buscando ${limit} candles ${timeframe} para ${binanceSymbol} (${binanceInterval})`);
+    Logger.debug(`🔄 [BINANCE] Buscando ${limit} candles ${timeframe} para ${binanceSymbol} (${binanceInterval})`);
     
     const response = await axios.get(`https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=${binanceInterval}&limit=${limit}`);
     
@@ -504,7 +505,7 @@ async function getBinanceCandles(symbol, timeframe, limit = 22) {
     
 
     
-    console.log(`✅ [BINANCE] ${symbol}: ${candles.length} candles ${timeframe} obtidos`);
+    Logger.debug(`✅ [BINANCE] ${symbol}: ${candles.length} candles ${timeframe} obtidos`);
     return candles;
     
   } catch (error) {
@@ -547,7 +548,7 @@ function convertSymbolToBinance(symbol) {
   // Remove duplicatas
   const uniqueVariations = [...new Set(variations)];
   
-  console.log(`🔄 [BINANCE] Tentando variações para ${symbol}: ${uniqueVariations.join(', ')}`);
+  Logger.debug(`🔄 [BINANCE] Tentando variações para ${symbol}: ${uniqueVariations.join(', ')}`);
   
   // Retorna a primeira variação (será testada na função getBinanceCandles)
   return uniqueVariations[0];

@@ -116,7 +116,7 @@ class TrailingStop {
           trailingStateMap.set(symbol, state);
           totalStates++;
 
-          console.log(`📊 [PERSISTENCE] ${botKey} - ${symbol}: Trailing Stop: $${state.trailingStopPrice?.toFixed(4) || 'N/A'}, Ativo: ${state.activated}`);
+          Logger.debug(`📊 [PERSISTENCE] ${botKey} - ${symbol}: Trailing Stop: $${state.trailingStopPrice?.toFixed(4) || 'N/A'}, Ativo: ${state.activated}`);
         } catch (error) {
           console.error(`❌ [PERSISTENCE] Error parsing state for ${row.symbol}:`, error.message);
         }
@@ -210,7 +210,7 @@ class TrailingStop {
         for (const [symbol, state] of trailingStateMap.entries()) {
           if (!openSymbols.includes(symbol)) {
             statesToRemove.push({ botKey, symbol });
-            console.log(`🗑️ [CLEANUP] ${botKey} - ${symbol}: Estado removido - posição não está mais aberta`);
+            Logger.debug(`🗑️ [CLEANUP] ${botKey} - ${symbol}: Estado removido - posição não está mais aberta`);
           }
         }
       }
@@ -224,7 +224,7 @@ class TrailingStop {
       }
 
       if (cleanedStates > 0) {
-        console.log(`💾 [CLEANUP] Salvando estado limpo com ${cleanedStates} estados removidos...`);
+        Logger.debug(`💾 [CLEANUP] Salvando estado limpo com ${cleanedStates} estados removidos...`);
         // Save all remaining states to database
         for (const [botKey, trailingStateMap] of TrailingStop.trailingStateByBot.entries()) {
           const botId = parseInt(botKey.replace('bot_', '')) || 1;
@@ -286,13 +286,13 @@ class TrailingStop {
 
       for (const position of positions) {
         if (trailingStateMap.has(position.symbol)) {
-          console.log(`ℹ️ [MIGRATION] ${position.symbol}: Estado já existe, pulando...`);
+          Logger.debug(`ℹ️ [MIGRATION] ${position.symbol}: Estado já existe, pulando...`);
           continue;
         }
 
         const marketInfo = Account.markets?.find(market => market.symbol === position.symbol);
         if (!marketInfo) {
-          console.log(`⚠️ [MIGRATION] ${position.symbol}: Par não autorizado, pulando...`);
+          Logger.debug(`⚠️ [MIGRATION] ${position.symbol}: Par não autorizado, pulando...`);
           continue;
         }
 
@@ -306,7 +306,7 @@ class TrailingStop {
         const isShort = netQuantity < 0;
 
         if (!isLong && !isShort) {
-          console.log(`⚠️ [MIGRATION] ${position.symbol}: Posição neutra, pulando...`);
+          Logger.debug(`⚠️ [MIGRATION] ${position.symbol}: Posição neutra, pulando...`);
           continue;
         }
 
@@ -1532,26 +1532,26 @@ class TrailingStop {
       const netProfitPct = notional > 0 ? (netProfit / notional) * 100 : 0;
 
       // Log detalhado dos cálculos para debug
-      console.log(`📊 [CONFIG_PROFIT] ${position.symbol}: Detalhes do cálculo:`);
-      console.log(`   • PnL bruto: $${pnl.toFixed(4)} (${pnlPct.toFixed(3)}%)`);
-      console.log(`   • Taxas estimadas: $${totalFees.toFixed(4)} (${((totalFees/notional)*100).toFixed(3)}%)`);
-      console.log(`   • PnL líquido: $${netProfit.toFixed(4)} (${netProfitPct.toFixed(3)}%)`);
-      console.log(`   • Min profit configurado: ${minProfitPct.toFixed(3)}%`);
-      console.log(`   • Notional: $${notional.toFixed(2)}`);
+      Logger.debug(`📊 [CONFIG_PROFIT] ${position.symbol}: Detalhes do cálculo:`);
+      Logger.debug(`   • PnL bruto: $${pnl.toFixed(4)} (${pnlPct.toFixed(3)}%)`);
+      Logger.debug(`   • Taxas estimadas: $${totalFees.toFixed(4)} (${((totalFees/notional)*100).toFixed(3)}%)`);
+      Logger.debug(`   • PnL líquido: $${netProfit.toFixed(4)} (${netProfitPct.toFixed(3)}%)`);
+      Logger.debug(`   • Min profit configurado: ${minProfitPct.toFixed(3)}%`);
+      Logger.debug(`   • Notional: $${notional.toFixed(2)}`);
 
       if (netProfit > 0 && netProfitPct >= minProfitPct) {
-        console.log(`\n✅ [CONFIG_PROFIT] ${position.symbol}: Fechando por lucro ${netProfitPct.toFixed(3)}% >= mínimo ${minProfitPct.toFixed(3)}%`);
-        console.log(`   💰 Lucro líquido após taxas: $${netProfit.toFixed(4)}`);
+        Logger.info(`\n✅ [CONFIG_PROFIT] ${position.symbol}: Fechando por lucro ${netProfitPct.toFixed(3)}% >= mínimo ${minProfitPct.toFixed(3)}%`);
+        Logger.debug(`   💰 Lucro líquido após taxas: $${netProfit.toFixed(4)}`);
         return true;
       }
 
       if (netProfit > 0.01) {
         if (netProfitPct < minProfitPct) {
-          console.log(`\n⚠️ [CONFIG_PROFIT] ${position.symbol}: Aguardando lucro mínimo - Atual: ${netProfitPct.toFixed(3)}% < Mínimo: ${minProfitPct.toFixed(3)}%`);
-          console.log(`   📈 Precisa de mais ${(minProfitPct - netProfitPct).toFixed(3)}% para atingir o lucro mínimo`);
+          Logger.debug(`\n⚠️ [CONFIG_PROFIT] ${position.symbol}: Aguardando lucro mínimo - Atual: ${netProfitPct.toFixed(3)}% < Mínimo: ${minProfitPct.toFixed(3)}%`);
+          Logger.debug(`   📈 Precisa de mais ${(minProfitPct - netProfitPct).toFixed(3)}% para atingir o lucro mínimo`);
         }
       } else if (netProfit <= 0) {
-        console.log(`\n🔴 [CONFIG_PROFIT] ${position.symbol}: Posição em prejuízo líquido: $${netProfit.toFixed(4)}`);
+        Logger.debug(`\n🔴 [CONFIG_PROFIT] ${position.symbol}: Posição em prejuízo líquido: $${netProfit.toFixed(4)}`);
       }
 
       return false;
