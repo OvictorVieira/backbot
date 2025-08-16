@@ -3980,6 +3980,17 @@ class OrderController {
         throw new Error('API_KEY e API_SECRET são obrigatórios - deve ser passado da config do bot');
       }
 
+      // TRAVA DE SEGURANÇA: Verifica limite de ordens antes de criar nova ordem de abertura
+      const maxOrdersPerSymbol = config.maxOrdersPerSymbol || 3; // Default 3 se não especificado
+      if (await OrderController.checkOrderLimit(market, config, maxOrdersPerSymbol)) {
+        Logger.warn(`[ORDER_REJECTED] Limite de ordens (${maxOrdersPerSymbol}) para ${market} já atingido. Nenhuma nova ordem será criada.`);
+        return {
+          success: false,
+          error: `Limite de ${maxOrdersPerSymbol} ordens por símbolo atingido`,
+          ordersRejected: true
+        };
+      }
+
       // Valida se os dados de decimal estão disponíveis
       if (decimal_quantity === undefined || decimal_quantity === null ||
           decimal_price === undefined || decimal_price === null ||
@@ -4806,6 +4817,72 @@ class OrderController {
     } catch (error) {
       console.error(`❌ [TP_ATR] Erro ao obter ATR para ${symbol}:`, error.message);
       return null;
+    }
+  }
+
+  /**
+   * Verifica se o limite de ordens por símbolo já foi atingido
+   * Combina ordens abertas na exchange + ordens PENDING/SENT no banco local
+   * @param {string} symbol - Símbolo da moeda
+   * @param {Object} config - Configuração do bot com credenciais
+   * @param {number} maxOrdersPerSymbol - Limite máximo de ordens por símbolo
+   * @returns {Promise<boolean>} True se limite atingido, false caso contrário
+   */
+  static async checkOrderLimit(symbol, config, maxOrdersPerSymbol) {
+    try {
+      Logger.debug(`[ORDER_LIMIT_CHECK] Verificando limite para ${symbol} (máx: ${maxOrdersPerSymbol})`);
+
+      // 1. Busca ordens abertas na exchange via API
+      const { default: Order } = await import('../Backpack/Authenticated/Order.js');
+      const orderInstance = new Order();
+      
+      // Busca ordens regulares e condicionais
+      const regularOrders = await orderInstance.getOpenOrders(symbol, "PERP", config.apiKey, config.apiSecret);
+      const triggerOrders = await orderInstance.getOpenTriggerOrders(symbol, "PERP", config.apiKey, config.apiSecret);
+      
+      // Unifica todas as ordens da exchange
+      const allExchangeOrders = [
+        ...(regularOrders || []),
+        ...(triggerOrders || [])
+      ];
+
+      // Filtra ordens do bot específico
+      const botClientOrderId = config.botClientOrderId?.toString() || '';
+      const botExchangeOrders = allExchangeOrders.filter(order => {
+        const clientId = order.clientId?.toString() || '';
+        return clientId.startsWith(botClientOrderId) && order.symbol === symbol;
+      });
+
+      // 2. Busca ordens no banco local que não estão em estado terminal
+      const { default: OrdersService } = await import('../Services/OrdersService.js');
+      const localPendingOrders = await OrdersService.dbService.getAll(
+        `SELECT * FROM bot_orders 
+         WHERE botId = ? AND symbol = ? 
+         AND status NOT IN ('CLOSED', 'CANCELLED', 'FILLED')
+         AND externalOrderId IS NOT NULL`,
+        [config.botId, symbol]
+      );
+
+      // 3. Soma contagem total
+      const exchangeOrdersCount = botExchangeOrders.length;
+      const localPendingCount = localPendingOrders.length;
+      const totalOpenAndPendingOrders = exchangeOrdersCount + localPendingCount;
+
+      Logger.debug(`[ORDER_LIMIT_CHECK] ${symbol}: Exchange=${exchangeOrdersCount}, Local=${localPendingCount}, Total=${totalOpenAndPendingOrders}, Limite=${maxOrdersPerSymbol}`);
+
+      // 4. Verifica se excede o limite
+      const limitExceeded = totalOpenAndPendingOrders >= maxOrdersPerSymbol;
+      
+      if (limitExceeded) {
+        Logger.warn(`⚠️ [ORDER_LIMIT_CHECK] ${symbol}: Limite atingido! ${totalOpenAndPendingOrders}/${maxOrdersPerSymbol} ordens`);
+      }
+
+      return limitExceeded;
+
+    } catch (error) {
+      Logger.error(`❌ [ORDER_LIMIT_CHECK] Erro ao verificar limite para ${symbol}:`, error.message);
+      // Em caso de erro, permite a criação da ordem (fail-safe)
+      return false;
     }
   }
 

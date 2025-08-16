@@ -1379,6 +1379,20 @@ class OrdersService {
   }
 
   /**
+   * Identifica se uma ordem é condicional baseada em suas propriedades
+   * @param {Object} order - Ordem a ser verificada
+   * @returns {boolean} True se for ordem condicional
+   */
+  static isConditionalOrder(order) {
+    return order.triggerPrice || 
+           order.stopLossTriggerPrice || 
+           order.takeProfitTriggerPrice ||
+           order.orderType === 'STOP_MARKET' ||
+           order.orderType === 'TAKE_PROFIT_MARKET' ||
+           order.orderType?.includes('TRIGGER');
+  }
+
+  /**
    * MÉTODO CRÍTICO: Detecta e limpa ordens fantasma - ordens que existem no banco mas não na corretora
    * @param {number} botId - ID do bot
    * @param {Object} config - Configuração do bot com credenciais
@@ -1409,23 +1423,35 @@ class OrdersService {
 
       Logger.info(`📊 [GHOST_ORDERS] Encontradas ${pendingOrdersInDB.length} ordens PENDING no banco para bot ${botId}`);
 
-      // 2. Busca ordens abertas REAIS na corretora
+      // 2. Busca ordens abertas REAIS na corretora (incluindo ordens condicionais)
       const { default: Order } = await import('../Backpack/Authenticated/Order.js');
-      const exchangeOrders = await Order.getOpenOrders(null, "PERP", config.apiKey, config.apiSecret);
+      const orderInstance = new Order();
+      
+      // Busca ordens regulares
+      const regularOrders = await orderInstance.getOpenOrders(null, "PERP", config.apiKey, config.apiSecret);
+      
+      // Busca ordens condicionais (trigger orders)
+      const triggerOrders = await orderInstance.getOpenTriggerOrders(null, "PERP", config.apiKey, config.apiSecret);
 
-      if (!exchangeOrders) {
+      if (!regularOrders && !triggerOrders) {
         Logger.warn(`⚠️ [GHOST_ORDERS] Não foi possível buscar ordens da corretora para bot ${botId}`);
         return 0;
       }
 
+      // Unifica todas as ordens da exchange
+      const allOpenOrdersOnExchange = [
+        ...(regularOrders || []),
+        ...(triggerOrders || [])
+      ];
+
       // Filtra ordens do bot específico
       const botClientOrderId = config.botClientOrderId?.toString() || '';
-      const botExchangeOrders = exchangeOrders.filter(order => {
+      const botExchangeOrders = allOpenOrdersOnExchange.filter(order => {
         const clientId = order.clientId?.toString() || '';
         return clientId.startsWith(botClientOrderId);
       });
 
-      Logger.info(`📊 [GHOST_ORDERS] Encontradas ${botExchangeOrders.length} ordens REAIS na corretora para bot ${botId}`);
+      Logger.info(`📊 [GHOST_ORDERS] Encontradas ${botExchangeOrders.length} ordens REAIS na corretora para bot ${botId} (regulares: ${regularOrders?.length || 0}, condicionais: ${triggerOrders?.length || 0})`);
 
       // 3. Cria mapa de ordens que existem na corretora
       const exchangeOrderIds = new Set();
@@ -1449,9 +1475,10 @@ class OrdersService {
         return 0;
       }
 
-      // 5. Log das ordens fantasma para debug
+      // 5. Log das ordens fantasma para debug (com identificação de tipo)
       ghostOrders.forEach(order => {
-        Logger.warn(`👻 [GHOST] Bot ${botId}: ${order.symbol} ${order.side} ${order.quantity} (${order.externalOrderId}) - ${order.orderType}`);
+        const orderType = OrdersService.isConditionalOrder(order) ? 'condicional' : 'padrão';
+        Logger.warn(`👻 [GHOST] Bot ${botId}: ${order.symbol} ${order.side} ${order.quantity} (${order.externalOrderId}) - Tipo: ${orderType} (${order.orderType})`);
       });
 
       // 6. Para cada ordem fantasma, verifica o status real na corretora via histórico
@@ -1506,13 +1533,19 @@ class OrdersService {
 
               if (newStatus !== ghostOrder.status) {
                 await OrdersService.updateOrderStatus(ghostOrder.externalOrderId, newStatus, closeType);
-                Logger.info(`✅ [GHOST_ORDERS] Ordem fantasma ${ghostOrder.externalOrderId}: ${ghostOrder.status} → ${newStatus} (${closeType})`);
+                
+                // Log aprimorado identificando tipo da ordem
+                const orderType = OrdersService.isConditionalOrder(ghostOrder) ? 'condicional' : 'padrão';
+                Logger.info(`✅ [GHOST_ORDERS] Ordem ${orderType} fantasma processada para ${ghostOrder.symbol}: ID ${ghostOrder.externalOrderId} (${ghostOrder.status} → ${newStatus})`);
                 cleanedCount++;
               }
             } else {
               // Ordem não encontrada nem no histórico - marca como CANCELLED
               await OrdersService.updateOrderStatus(ghostOrder.externalOrderId, 'CANCELLED', 'GHOST_ORDER_NOT_FOUND');
-              Logger.info(`❌ [GHOST_ORDERS] Ordem fantasma ${ghostOrder.externalOrderId} não encontrada - marcando como CANCELLED`);
+              
+              // Log aprimorado para ordem não encontrada
+              const orderType = OrdersService.isConditionalOrder(ghostOrder) ? 'condicional' : 'padrão';
+              Logger.info(`❌ [GHOST_ORDERS] Ordem ${orderType} fantasma ${ghostOrder.symbol} não encontrada: ID ${ghostOrder.externalOrderId} - marcada como CANCELLED`);
               cleanedCount++;
             }
           } else {

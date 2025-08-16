@@ -72,6 +72,95 @@ class Order {
     }, `getOpenOrders(symbol=${symbol}, marketType=${marketType})`);
   }
 
+  /**
+   * Busca especificamente por ordens condicionais (trigger orders)
+   * Inclui STOP_MARKET, TAKE_PROFIT_MARKET e outras ordens com triggerPrice
+   */
+  async getOpenTriggerOrders(symbol, marketType = "PERP", apiKey = null, apiSecret = null) {
+    try {
+      // Primeiro tenta o endpoint principal para ver se inclui trigger orders
+      const allOrders = await this.getOpenOrders(symbol, marketType, apiKey, apiSecret);
+      
+      if (!allOrders || !Array.isArray(allOrders)) {
+        Logger.debug(`[TRIGGER_ORDERS] Nenhuma ordem retornada para ${symbol}`);
+        return [];
+      }
+
+      // Filtra apenas ordens que têm características de trigger orders
+      const triggerOrders = allOrders.filter(order => {
+        return order.triggerPrice || 
+               order.stopLossTriggerPrice || 
+               order.takeProfitTriggerPrice ||
+               order.orderType === 'STOP_MARKET' ||
+               order.orderType === 'TAKE_PROFIT_MARKET' ||
+               order.status === 'TriggerPending';
+      });
+
+      Logger.debug(`[TRIGGER_ORDERS] Encontradas ${triggerOrders.length} ordens condicionais para ${symbol}`);
+      return triggerOrders;
+
+    } catch (error) {
+      Logger.error(`[TRIGGER_ORDERS] Erro ao buscar ordens condicionais para ${symbol}:`, error.message);
+      
+      // Fallback: tenta endpoint específico de trigger orders se existir
+      try {
+        return await this.getTriggerOrdersFromSpecificEndpoint(symbol, marketType, apiKey, apiSecret);
+      } catch (fallbackError) {
+        Logger.debug(`[TRIGGER_ORDERS] Endpoint específico não disponível: ${fallbackError.message}`);
+        return [];
+      }
+    }
+  }
+
+  /**
+   * Tenta buscar ordens condicionais de um endpoint específico
+   * Este método pode falhar se o endpoint não existir
+   */
+  async getTriggerOrdersFromSpecificEndpoint(symbol, marketType = "PERP", apiKey = null, apiSecret = null) {
+    return await GlobalRequestQueue.enqueue(async () => {
+      const timestamp = Date.now();
+
+      const params = {}
+      if (symbol) params.symbol = symbol;
+      if (marketType) params.marketType = marketType;
+
+      const headers = auth({
+        instruction: 'orderQueryAll',
+        timestamp,
+        params,
+        apiKey,
+        apiSecret
+      });
+
+      // Tenta diferentes possíveis endpoints para trigger orders
+      const possibleEndpoints = [
+        '/api/v1/trigger_orders',
+        '/api/v1/triggerOrders', 
+        '/api/v1/orders/trigger',
+        '/api/v1/conditional_orders'
+      ];
+
+      for (const endpoint of possibleEndpoints) {
+        try {
+          const response = await axios.get(`${process.env.API_URL}${endpoint}`, {
+            headers,
+            params,
+            timeout: 15000
+          });
+          
+          Logger.debug(`[TRIGGER_ORDERS] Sucesso com endpoint: ${endpoint}`);
+          return response.data;
+        } catch (error) {
+          // Continua tentando outros endpoints
+          continue;
+        }
+      }
+
+      // Se nenhum endpoint funcionar, retorna array vazio
+      throw new Error('Nenhum endpoint específico para trigger orders encontrado');
+    }, `getTriggerOrdersFromSpecificEndpoint(symbol=${symbol})`);
+  }
+
   /*
     {
       "autoLend": true,
