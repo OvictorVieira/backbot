@@ -2269,7 +2269,7 @@ class OrderController {
     try {
       // 2. ADQUIRE O LOCK
       OrderController.stopLossCreationInProgress.add(symbol);
-      console.log(`🔒 [${botName}] ${symbol}: Lock adquirido para criação de stop loss`);
+      Logger.debug(`🔒 [${botName}] ${symbol}: Lock adquirido para criação de stop loss`);
 
       // SEMPRE usa credenciais do config - lança exceção se não disponível
       if (!config?.apiKey || !config?.apiSecret) {
@@ -2292,11 +2292,11 @@ class OrderController {
       }
 
       // Verifica se já existe uma ordem de stop loss para esta posição
-      console.log(`🔍 [${botName}] ${position.symbol}: Verificando se já existe stop loss...`);
+      Logger.debug(`🔍 [${botName}] ${position.symbol}: Verificando se já existe stop loss...`);
       const hasStopLossOrders = await OrderController.hasExistingStopLoss(position.symbol, position, config);
 
       if (hasStopLossOrders) {
-        console.log(`✅ [${botName}] ${position.symbol}: Stop loss já existe, não criando novo`);
+        Logger.debug(`✅ [${botName}] ${position.symbol}: Stop loss já existe, não criando novo`);
         return true;
       }
 
@@ -2427,7 +2427,7 @@ class OrderController {
       return false;
     } finally {
       OrderController.stopLossCreationInProgress.delete(symbol);
-      console.log(`🔓 [${botName}] ${symbol}: Lock liberado após criação de stop loss`);
+      Logger.debug(`🔓 [${botName}] ${symbol}: Lock liberado após criação de stop loss`);
     }
   }
 
@@ -2459,7 +2459,7 @@ class OrderController {
     try {
       // 2. ADQUIRE O LOCK
       OrderController.takeProfitCreationInProgress.add(symbol);
-      console.log(`🔒 [${botName}] ${symbol}: Lock adquirido para criação de take profit`);
+      Logger.debug(`🔒 [${botName}] ${symbol}: Lock adquirido para criação de take profit`);
 
       // SEMPRE usa credenciais do config - lança exceção se não disponível
       if (!config?.apiKey || !config?.apiSecret) {
@@ -2525,7 +2525,7 @@ class OrderController {
       return false;
     } finally {
       OrderController.takeProfitCreationInProgress.delete(symbol);
-      console.log(`🔓 [${botName}] ${symbol}: Lock liberado após criação de take profit`);
+      Logger.debug(`🔓 [${botName}] ${symbol}: Lock liberado após criação de take profit`);
     }
   }
 
@@ -3295,7 +3295,7 @@ class OrderController {
 
       const existingOrders = await Order.getOpenOrders(symbol, "PERP", apiKey, apiSecret);
 
-      console.log(`🔍 [STOP_LOSS_CHECK] ${symbol}: Encontradas ${existingOrders?.length || 0} ordens abertas`);
+      Logger.debug(`🔍 [STOP_LOSS_CHECK] ${symbol}: Encontradas ${existingOrders?.length || 0} ordens abertas`);
 
       if (!existingOrders || existingOrders.length === 0) {
         // Atualiza cache
@@ -3303,7 +3303,7 @@ class OrderController {
           lastCheck: now,
           hasStopLoss: false
         });
-        console.log(`🔍 [STOP_LOSS_CHECK] ${symbol}: Nenhuma ordem encontrada - retornando false`);
+        Logger.debug(`🔍 [STOP_LOSS_CHECK] ${symbol}: Nenhuma ordem encontrada - retornando false`);
         return false;
       }
 
@@ -3311,7 +3311,7 @@ class OrderController {
       const entryPrice = parseFloat(position.entryPrice || position.avgEntryPrice || 0);
       const isLong = parseFloat(position.netQuantity) > 0;
 
-      console.log(`🔍 [STOP_LOSS_CHECK] ${symbol}: Verificando ordens - EntryPrice: ${entryPrice}, IsLong: ${isLong}, NetQuantity: ${position.netQuantity}`);
+      Logger.debug(`🔍 [STOP_LOSS_CHECK] ${symbol}: Verificando ordens - EntryPrice: ${entryPrice}, IsLong: ${isLong}, NetQuantity: ${position.netQuantity}`);
 
       const hasStopLossOrders = existingOrders.some(order => {
         const isReduceOnly = order.reduceOnly;
@@ -3347,11 +3347,11 @@ class OrderController {
           const isCorrectlyPositioned = order.limitPrice ?
             (isLong ? orderPrice < entryPrice : orderPrice > entryPrice) : 'N/A';
 
-          console.log(`🔍 [STOP_LOSS_CHECK] ${symbol}: Ordem ${order.id} - Status: ${order.status}, ReduceOnly: ${isReduceOnly}, Side: ${order.side}, Preço: ${orderPrice}, Tipo: ${positionType}, Entrada: ${entryPrice}, Posicionamento: ${isCorrectlyPositioned} (esperado: ${expectedPosition}), HasTrigger: ${hasStopLossTrigger}, IsStopLoss: ${isStopLossOrder}`);
+          Logger.debug(`🔍 [STOP_LOSS_CHECK] ${symbol}: Ordem ${order.id} - Status: ${order.status}, ReduceOnly: ${isReduceOnly}, Side: ${order.side}, Preço: ${orderPrice}, Tipo: ${positionType}, Entrada: ${entryPrice}, Posicionamento: ${isCorrectlyPositioned} (esperado: ${expectedPosition}), HasTrigger: ${hasStopLossTrigger}, IsStopLoss: ${isStopLossOrder}`);
         }
 
         // Log para TODAS as ordens (não apenas pending)
-                  console.log(`🔍 [STOP_LOSS_CHECK] ${symbol}: Ordem ${order.id} - Status: ${order.status}, ReduceOnly: ${isReduceOnly}, Side: ${order.side}, HasTrigger: ${hasStopLossTrigger}, IsPending: ${isPending}, IsConditionalStopLoss: ${isConditionalStopLoss}, IsStopLoss: ${isStopLossOrder}`);
+                  Logger.debug(`🔍 [STOP_LOSS_CHECK] ${symbol}: Ordem ${order.id} - Status: ${order.status}, ReduceOnly: ${isReduceOnly}, Side: ${order.side}, HasTrigger: ${hasStopLossTrigger}, IsPending: ${isPending}, IsConditionalStopLoss: ${isConditionalStopLoss}, IsStopLoss: ${isStopLossOrder}`);
 
         return (isPending || order.status === 'TriggerPending') && isStopLossOrder;
       });
@@ -3362,7 +3362,7 @@ class OrderController {
         hasStopLoss: hasStopLossOrders
       });
 
-      console.log(`🔍 [STOP_LOSS_CHECK] ${symbol}: Resultado final - HasStopLoss: ${hasStopLossOrders}, Cache atualizado`);
+      Logger.debug(`🔍 [STOP_LOSS_CHECK] ${symbol}: Resultado final - HasStopLoss: ${hasStopLossOrders}, Cache atualizado`);
 
       return hasStopLossOrders;
     } catch (error) {
