@@ -39,6 +39,8 @@ class AutoUpdater {
     console.log('🛡️ Preservando dados do usuário...');
 
     try {
+      // Verifica se as dependências estão OK antes de começar
+      await this.checkDependencies();
       // Verifica se atualização já foi executada recentemente
       if (await this.checkRecentUpdate()) {
         console.log('⏸️ Atualização já foi executada recentemente (últimas 24h)');
@@ -367,6 +369,43 @@ class AutoUpdater {
     };
     
     await fs.writeFile(flagPath, JSON.stringify(flagData, null, 2));
+  }
+
+  async checkDependencies() {
+    console.log('🔍 Verificando dependências...');
+    
+    // Verifica se package.json existe
+    const packageJsonPath = path.join(__dirname, 'package.json');
+    if (!await fs.pathExists(packageJsonPath)) {
+      throw new Error('❌ package.json não encontrado. Certifique-se de estar no diretório correto do bot.');
+    }
+    
+    // Verifica se node_modules existe
+    const nodeModulesPath = path.join(__dirname, 'node_modules');
+    if (!await fs.pathExists(nodeModulesPath)) {
+      console.log('⚠️ node_modules não encontrado. Instalando dependências...');
+      await this.runCommand('npm', ['install'], 'Instalação inicial de dependências');
+      return;
+    }
+    
+    // Verifica se as dependências principais existem
+    const criticalDeps = ['axios', 'adm-zip', 'fs-extra'];
+    const missingDeps = [];
+    
+    for (const dep of criticalDeps) {
+      const depPath = path.join(nodeModulesPath, dep);
+      if (!await fs.pathExists(depPath)) {
+        missingDeps.push(dep);
+      }
+    }
+    
+    if (missingDeps.length > 0) {
+      console.log(`⚠️ Dependências em falta: ${missingDeps.join(', ')}`);
+      console.log('🔧 Reinstalando dependências...');
+      await this.runCommand('npm', ['install'], 'Reinstalação de dependências');
+    } else {
+      console.log('✅ Dependências verificadas');
+    }
   }
 }
 
