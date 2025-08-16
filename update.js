@@ -14,7 +14,14 @@ const __dirname = dirname(__filename);
 // Configurações
 const GITHUB_REPO = 'ovictorvieira/backbot';
 const ZIP_URL = `https://github.com/${GITHUB_REPO}/archive/refs/heads/main.zip`;
-const PRESERVE_ITEMS = ['.env', 'src/persistence/', 'src/Persistence/', 'persistence/', 'node_modules/', '.update_flag'];
+// CRÍTICO: Lista de arquivos/pastas que NUNCA devem ser removidos durante atualização
+// - .env: configurações do usuário
+// - src/: código fonte (será atualizado seletivamente)
+// - src/persistence/: banco de dados do bot (NUNCA remover)
+// - persistence/: backup alternativo do banco
+// - node_modules/: dependências instaladas
+// - .update_flag: flag de controle de atualização
+const PRESERVE_ITEMS = ['.env', 'src/', 'src/persistence/', 'persistence/', 'node_modules/', '.update_flag'];
 const BACKUP_DIR = 'backup_temp';
 const TEMP_DIR = 'temp_update';
 const UPDATE_FLAG_FILE = '.update_flag';
@@ -147,10 +154,14 @@ class AutoUpdater {
       throw new Error('Diretório extraído não encontrado');
     }
 
+    // Log das configurações de preservação
+    console.log('🛡️ Itens configurados para preservação:');
+    PRESERVE_ITEMS.forEach(item => console.log(`  - ${item}`));
+
     // Lista de arquivos/pastas para preservar (não deletar)
     const preservePaths = [
-      this.backupDir,
-      this.tempDir,
+      path.basename(this.backupDir),
+      path.basename(this.tempDir),
       'node_modules'
     ];
 
@@ -159,10 +170,33 @@ class AutoUpdater {
     
     for (const file of currentFiles) {
       const filePath = path.join(__dirname, file);
-      const isPreserved = preservePaths.some(preserve => 
-        filePath.includes(preserve) || 
-        PRESERVE_ITEMS.some(item => filePath.includes(item))
-      );
+      
+      // Verifica se o arquivo/pasta deve ser preservado
+      let isPreserved = false;
+      
+      // Verifica paths temporários
+      if (preservePaths.includes(file)) {
+        isPreserved = true;
+      }
+      
+      // Verifica itens de preservação
+      for (const item of PRESERVE_ITEMS) {
+        const itemPath = path.join(__dirname, item);
+        if (filePath === itemPath || filePath.startsWith(itemPath)) {
+          isPreserved = true;
+          break;
+        }
+        // Se é um arquivo específico (como .env)
+        if (file === item.replace(/\/$/, '')) {
+          isPreserved = true;
+          break;
+        }
+        // Se é uma pasta específica (termina com /)
+        if (item.endsWith('/') && file === item.replace(/\/$/, '')) {
+          isPreserved = true;
+          break;
+        }
+      }
 
       if (!isPreserved) {
         const stat = await fs.stat(filePath);
@@ -172,6 +206,8 @@ class AutoUpdater {
           await fs.remove(filePath);
         }
         console.log(`  🗑️ Removido: ${file}`);
+      } else {
+        console.log(`  🛡️ Preservado: ${file}`);
       }
     }
 
@@ -182,8 +218,44 @@ class AutoUpdater {
       const sourcePath = path.join(this.extractedDir, file);
       const destPath = path.join(__dirname, file);
       
+      // Se for o diretório src/, precisa de tratamento especial
+      if (file === 'src') {
+        await this.updateSrcSelectively(sourcePath, destPath);
+      } else {
+        await fs.copy(sourcePath, destPath);
+        console.log(`  ✅ Copiado: ${file}`);
+      }
+    }
+  }
+
+  async updateSrcSelectively(newSrcPath, destSrcPath) {
+    console.log('🔄 Atualizando diretório src/ seletivamente...');
+    
+    // Garante que o diretório src/ existe
+    await fs.ensureDir(destSrcPath);
+    
+    // Lista arquivos/pastas no novo src/
+    const newSrcItems = await fs.readdir(newSrcPath);
+    
+    for (const item of newSrcItems) {
+      const sourcePath = path.join(newSrcPath, item);
+      const destPath = path.join(destSrcPath, item);
+      
+      // NUNCA substitui src/persistence/ - preserva dados do usuário
+      if (item === 'persistence') {
+        console.log(`  🛡️ Preservado: src/${item}/ (dados do usuário)`);
+        continue;
+      }
+      
+      // Remove o item antigo se existir (exceto persistence)
+      if (await fs.pathExists(destPath)) {
+        await fs.remove(destPath);
+        console.log(`  🗑️ Removido: src/${item}`);
+      }
+      
+      // Copia o novo item
       await fs.copy(sourcePath, destPath);
-      console.log(`  ✅ Copiado: ${file}`);
+      console.log(`  ✅ Atualizado: src/${item}`);
     }
   }
 
