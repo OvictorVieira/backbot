@@ -431,7 +431,7 @@ class BotInstance {
         // Configurações de trailing stop
         initialStopAtrMultiplier: this.config.initialStopAtrMultiplier,
         partialTakeProfitAtrMultiplier: this.config.partialTakeProfitAtrMultiplier,
-        partialProfitPercentage: this.config.partialProfitPercentage,
+        partialProfitPercentage: this.config.partialTakeProfitPercentage,
         enableHybridStopStrategy: this.config.enableHybridStopStrategy,
 
         // ID do bot para rastreamento de posições próprias

@@ -50,6 +50,7 @@ class DatabaseService {
           botId INTEGER NOT NULL,
           symbol TEXT NOT NULL,
           state TEXT NOT NULL,
+          active_stop_order_id TEXT,
           updatedAt TEXT NOT NULL,
           UNIQUE(botId, symbol),
           FOREIGN KEY (botId) REFERENCES bot_configs(botId) ON DELETE CASCADE
@@ -124,6 +125,7 @@ class DatabaseService {
       // Migra tabela existente se necessário
       await this.migrateBotOrdersTable();
       await this.migrateTrailingStateTable();
+      await this.migrateTrailingStateActiveStopColumn();
 
       Logger.info(`📋 [DATABASE] Tables created successfully`);
     } catch (error) {
@@ -191,6 +193,7 @@ class DatabaseService {
             botId INTEGER NOT NULL,
             symbol TEXT NOT NULL,
             state TEXT NOT NULL,
+            active_stop_order_id TEXT,
             updatedAt TEXT NOT NULL,
             UNIQUE(botId, symbol),
             FOREIGN KEY (botId) REFERENCES bot_configs(botId) ON DELETE CASCADE
@@ -210,6 +213,32 @@ class DatabaseService {
       
     } catch (error) {
       console.error(`❌ [DATABASE] Erro na migração da tabela trailing_state:`, error.message);
+    }
+  }
+
+  /**
+   * Migra a tabela trailing_state para incluir a coluna active_stop_order_id
+   */
+  async migrateTrailingStateActiveStopColumn() {
+    try {
+      // Verifica se a coluna active_stop_order_id já existe
+      const tableInfo = await this.getAll("PRAGMA table_info(trailing_state)");
+      const columnNames = tableInfo.map(col => col.name);
+      
+      // Se não tem active_stop_order_id, adiciona a coluna
+      if (!columnNames.includes('active_stop_order_id')) {
+        Logger.info(`🔄 [DATABASE] Adicionando coluna active_stop_order_id à tabela trailing_state`);
+        
+        await this.db.exec(`
+          ALTER TABLE trailing_state 
+          ADD COLUMN active_stop_order_id TEXT DEFAULT NULL
+        `);
+        
+        Logger.info(`✅ [DATABASE] Migração da coluna active_stop_order_id concluída`);
+      }
+      
+    } catch (error) {
+      console.error(`❌ [DATABASE] Erro na migração da coluna active_stop_order_id:`, error.message);
     }
   }
 

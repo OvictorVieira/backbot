@@ -51,8 +51,11 @@ let pendingOrdersLastErrorTime = null;
 
 // Ordens órfãs agora são gerenciadas pelo sistema multi-bot do app-api.js
 
+// Variável global para OrdersService (necessária para injeção de dependência no TrailingStop)
+let globalOrdersService = null;
+
 // Inicializa o TrailingStop com a estratégia correta
-function initializeTrailingStop() {
+function initializeTrailingStop(ordersService = null) {
   if (!activeBotConfig) {
     Logger.error('❌ Configuração do bot não encontrada para inicializar TrailingStop');
     return;
@@ -67,8 +70,16 @@ function initializeTrailingStop() {
   
   const strategyType = activeBotConfig.strategyName || 'DEFAULT';
   Logger.debug(`🔧 [APP_INIT] Inicializando TrailingStop com estratégia: ${strategyType}`);
-  const trailingStopInstance = new TrailingStop(strategyType, activeBotConfig);
+  
+  // Injeção de dependência do OrdersService para sistema ativo
+  const trailingStopInstance = new TrailingStop(strategyType, activeBotConfig, ordersService);
   trailingStopInstance.reinitializeStopLoss(strategyType);
+  
+  if (ordersService) {
+    Logger.info(`✅ [TRAILING_INIT] TrailingStop inicializado com sistema ATIVO de ordens`);
+  } else {
+    Logger.info(`✅ [TRAILING_INIT] TrailingStop inicializado com sistema PASSIVO (modo tradicional)`);
+  }
 }
 
 // Função para exibir timer geral unificado
@@ -271,7 +282,7 @@ async function startStops() {
       return;
     }
     
-    const trailingStopInstance = new TrailingStop(activeBotConfig.strategyName || 'DEFAULT', activeBotConfig);
+    const trailingStopInstance = new TrailingStop(activeBotConfig.strategyName || 'DEFAULT', activeBotConfig, globalOrdersService);
     await trailingStopInstance.stopLoss();
     // Se sucesso, reduz gradualmente o intervalo até o mínimo
     if (trailingStopInterval > trailingStopMinInterval) {
@@ -426,6 +437,7 @@ async function startBot() {
     console.log('📋 [ORDERS] Inicializando OrdersService...');
     const OrdersService = await import('./src/Services/OrdersService.js');
     OrdersService.default.init(dbService);
+    globalOrdersService = OrdersService.default; // Armazena para uso global
 
     // 3. Carregar o estado do Trailing Stop da base de dados
     console.log('📂 [PERSISTENCE] Carregando estado do Trailing Stop...');
@@ -438,8 +450,8 @@ async function startBot() {
     // Inicializa a estratégia selecionada
     initializeDecisionStrategy(activeBotConfig.strategyName);
     
-    // Inicializa o TrailingStop com a estratégia correta
-    initializeTrailingStop();
+    // Inicializa o TrailingStop com a estratégia correta e sistema ativo de ordens
+    initializeTrailingStop(globalOrdersService);
     
     // Log da estratégia selecionada
     console.log(`🔑 Estratégia ${activeBotConfig.strategyName}: usando credenciais do bot ${activeBotConfig.botName}`);
