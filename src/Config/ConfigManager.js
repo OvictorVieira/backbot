@@ -465,7 +465,7 @@ class ConfigManager {
     // Validações específicas
     const errors = [];
     
-    if (config.capitalPercentage <= 0 || config.capitalPercentage > 100) {
+    if (config.capitalPercentage < 0 || config.capitalPercentage > 100) {
       errors.push('Percentual de capital deve estar entre 0 e 100');
     }
     

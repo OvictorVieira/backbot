@@ -356,9 +356,7 @@ class Decision {
     if (this.strategy.constructor.name === 'AlphaFlowStrategy') {
       // AlphaFlow não usa média RSI, mostra configurações específicas
       const alphaFlowMsg = `🧠 ALPHAFLOW CONFIGURAÇÕES:
-   • Capital BRONZE: ${config?.capitalPercentage || 50}%
-   • Capital SILVER: ${config?.capitalPercentage || 75}%
-   • Capital GOLD: ${config?.capitalPercentage || 100}%
+   • Capital Base: ${config?.capitalPercentage !== null && config?.capitalPercentage !== undefined ? config.capitalPercentage : 'padrão'}%
    • Ordem 1: ${config?.order1WeightPct || 50}% | Ordem 2: ${config?.order2WeightPct || 30}% | Ordem 3: ${config?.order3WeightPct || 20}%`;
       if (logger) {
         logger.info(alphaFlowMsg);
@@ -376,7 +374,10 @@ class Decision {
     }
 
     // Usa configuração passada como parâmetro ou valor padrão
-    const CAPITAL_PERCENTAGE = config?.capitalPercentage || 20
+    // Correção: trata capitalPercentage=0 como valor válido
+    const CAPITAL_PERCENTAGE = (config?.capitalPercentage !== null && config?.capitalPercentage !== undefined)
+      ? config.capitalPercentage
+      : 20;
 
     let investmentUSD;
 

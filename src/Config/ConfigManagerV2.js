@@ -154,8 +154,8 @@ class ConfigManagerV2 {
       errors.push('API Secret é obrigatório');
     }
     
-    if (!config.capitalPercentage || config.capitalPercentage <= 0) {
-      errors.push('Percentual de capital deve ser maior que 0');
+    if (config.capitalPercentage === null || config.capitalPercentage === undefined || config.capitalPercentage < 0) {
+      errors.push('Percentual de capital deve ser maior ou igual a 0');
     }
     
     if (!config.time || config.time.trim() === '') {

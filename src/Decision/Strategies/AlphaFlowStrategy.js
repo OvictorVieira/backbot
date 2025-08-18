@@ -591,7 +591,9 @@ export class AlphaFlowStrategy extends BaseStrategy {
    */
   getCapitalMultiplier(conviction, config = null) {
     // Usa configurações do bot se disponível, senão usa variáveis de ambiente
-    const capitalPercentage = config?.capitalPercentage || Number(process.env.ACCOUNT1_CAPITAL_PERCENTAGE || 10);
+    const capitalPercentage = (config?.capitalPercentage !== null && config?.capitalPercentage !== undefined)
+      ? config.capitalPercentage
+      : Number(process.env.ACCOUNT1_CAPITAL_PERCENTAGE || 10);
     
     switch (conviction) {
       case 'BRONZE':

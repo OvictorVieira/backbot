@@ -376,7 +376,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
       }
     }
 
-    if (formData.capitalPercentage <= 0 || formData.capitalPercentage > 100) {
+    if (formData.capitalPercentage < 0 || formData.capitalPercentage > 100) {
       newErrors.capitalPercentage = 'Capital deve estar entre 0 e 100%';
     }
 
