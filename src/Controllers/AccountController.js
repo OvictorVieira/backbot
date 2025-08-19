@@ -106,7 +106,7 @@ class AccountController {
     }
     
     // Usa configuração passada como parâmetro (prioridade) ou fallback para variável de ambiente
-    const maxOpenOrders = config?.limitOrder
+    const maxOpenOrders = config?.maxOpenOrders || 5
     const minVolumeDollar = capitalAvailable / maxOpenOrders
 
     const obj = {

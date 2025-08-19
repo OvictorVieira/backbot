@@ -9,6 +9,9 @@ import Logger from '../Utils/Logger.js';
  */
 class ConfigManagerSQLite {
   static dbService = null;
+  static configsCache = null;
+  static lastLoadTime = 0;
+  static cacheTimeout = 5000; // 5 segundos de cache
 
   /**
    * Inicializa o ConfigManager com o DatabaseService
@@ -17,6 +20,15 @@ class ConfigManagerSQLite {
   static initialize(dbService) {
     ConfigManagerSQLite.dbService = dbService;
     Logger.info('🔧 [CONFIG_SQLITE] ConfigManager SQLite inicializado');
+  }
+
+  /**
+   * Invalida o cache de configurações
+   */
+  static invalidateCache() {
+    ConfigManagerSQLite.configsCache = null;
+    ConfigManagerSQLite.lastLoadTime = 0;
+    Logger.debug('🗑️ [CONFIG_SQLITE] Cache de configurações invalidado');
   }
 
   /**
@@ -41,6 +53,14 @@ class ConfigManagerSQLite {
         throw new Error('Database service não está inicializado');
       }
       
+      // Verifica cache
+      const now = Date.now();
+      if (ConfigManagerSQLite.configsCache && 
+          (now - ConfigManagerSQLite.lastLoadTime) < ConfigManagerSQLite.cacheTimeout) {
+        Logger.debug('🔍 [CONFIG_SQLITE] Retornando configurações do cache');
+        return ConfigManagerSQLite.configsCache;
+      }
+      
       Logger.debug('🔍 [CONFIG_SQLITE] Carregando configurações...');
       const results = await ConfigManagerSQLite.dbService.getAll(
         'SELECT botId, config, createdAt, updatedAt FROM bot_configs ORDER BY botId'
@@ -60,6 +80,10 @@ class ConfigManagerSQLite {
           return null;
         }
       }).filter(config => config !== null);
+      
+      // Atualiza cache
+      ConfigManagerSQLite.configsCache = configs;
+      ConfigManagerSQLite.lastLoadTime = now;
       
       Logger.infoOnce('config-load', `✅ [CONFIG_SQLITE] ${configs.length} configurações carregadas`);
       return configs;
@@ -191,6 +215,9 @@ class ConfigManagerSQLite {
       );
       
       Logger.debug(`✅ [CONFIG_SQLITE] Bot ${botId} atualizado com sucesso`);
+      
+      // Invalida cache após atualização
+      ConfigManagerSQLite.invalidateCache();
     } catch (error) {
       console.error(`❌ [CONFIG_SQLITE] Erro ao atualizar bot ${botId}:`, error.message);
       throw error;
@@ -225,6 +252,10 @@ class ConfigManagerSQLite {
       );
       
       console.log(`✅ [CONFIG_SQLITE] Bot criado com ID: ${botId} e botClientOrderId: ${newBotConfig.botClientOrderId}`);
+      
+      // Invalida cache após criação
+      ConfigManagerSQLite.invalidateCache();
+      
       return botId;
     } catch (error) {
       console.error(`❌ [CONFIG_SQLITE] Erro ao criar bot:`, error.message);
@@ -250,6 +281,9 @@ class ConfigManagerSQLite {
       
       if (result.changes > 0) {
         console.log(`✅ [CONFIG_SQLITE] Bot ${botId} removido com sucesso (${removedOrdersCount} ordens removidas)`);
+        
+        // Invalida cache após remoção
+        ConfigManagerSQLite.invalidateCache();
       } else {
         console.log(`ℹ️ [CONFIG_SQLITE] Bot ${botId} não encontrado para remoção (${removedOrdersCount} ordens removidas)`);
       }

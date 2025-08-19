@@ -304,27 +304,21 @@ async function recoverBot(botId, config, startTime) {
 
     // Configura monitores independentes com intervalos fixos
     const pendingOrdersIntervalId = setInterval(() => {
-      if (config.enablePendingOrdersMonitor) {
-        startPendingOrdersMonitor(botId).catch(error => {
-          Logger.error(`❌ [${config.botName}][PENDING_ORDERS] Erro no monitoramento do bot ${botId}:`, error.message);
-        });
-      }
+      startPendingOrdersMonitor(botId).catch(error => {
+        Logger.error(`❌ [${config.botName}][PENDING_ORDERS] Erro no monitoramento do bot ${botId}:`, error.message);
+      });
     }, 15000); // 15 segundos
 
     const orphanOrdersIntervalId = setInterval(() => {
-      if (config.enableOrphanOrderMonitor) {
-        startOrphanOrderMonitor(botId).catch(error => {
-          Logger.error(`❌ [${config.botName}][ORPHAN_MONITOR] Erro no monitoramento do bot ${botId}:`, error.message);
-        });
-      }
+      startOrphanOrderMonitor(botId).catch(error => {
+        Logger.error(`❌ [${config.botName}][ORPHAN_MONITOR] Erro no monitoramento do bot ${botId}:`, error.message);
+      });
     }, 60000); // 60 segundos (menos agressivo para evitar rate limits)
 
     const takeProfitIntervalId = setInterval(() => {
-      if (config.enableTakeProfitMonitor !== false) { // Ativo por padrão
-        startTakeProfitMonitor(botId).catch(error => {
-          Logger.error(`❌ [${config.botName}][TAKE_PROFIT] Erro no monitoramento do bot ${botId}:`, error.message);
-        });
-      }
+      startTakeProfitMonitor(botId).catch(error => {
+        Logger.error(`❌ [${config.botName}][TAKE_PROFIT] Erro no monitoramento do bot ${botId}:`, error.message);
+      });
     }, 30000); // 30 segundos
 
     // Calcula e salva o próximo horário de validação se não existir
@@ -345,7 +339,7 @@ async function recoverBot(botId, config, startTime) {
       status: 'running'
     });
 
-            Logger.info(`✅ [PERSISTENCE] Bot ${botId} (${config.botName}) recuperado com sucesso`);
+    Logger.info(`✅ [PERSISTENCE] Bot ${botId} (${config.botName}) recuperado com sucesso`);
 
   } catch (error) {
     Logger.error(`❌ [PERSISTENCE] Erro ao recuperar bot ${botId}:`, error.message);
@@ -434,7 +428,10 @@ async function startStops(botId) {
       enableTrailingStop: config.enableTrailingStop
     });
 
-    const trailingStopInstance = new TrailingStop(botConfig.strategyName, config);
+    // Cria instância do OrdersService para sistema ativo de trailing stop
+    const ordersService = new OrdersService(config.apiKey, config.apiSecret);
+
+    const trailingStopInstance = new TrailingStop(botConfig.strategyName, config, ordersService);
     const result = await trailingStopInstance.stopLoss();
 
     // Emite evento via WebSocket
@@ -446,9 +443,29 @@ async function startStops(botId) {
       result
     });
 
-    return result;
+    // Reset contador de erros em caso de sucesso
+    const rateLimit = getMonitorRateLimit(botId);
+    rateLimit.trailingStop = rateLimit.trailingStop || { errorCount: 0, interval: 5000 }; // 5s padrão
+    rateLimit.trailingStop.errorCount = 0;
+
+    // Reduz intervalo gradualmente até mínimo (5s -> 2s)
+    if (rateLimit.trailingStop.interval > 2000) {
+      rateLimit.trailingStop.interval = Math.max(2000, rateLimit.trailingStop.interval - 250);
+    }
+
   } catch (error) {
-    Logger.error(`❌ [STOPS] Erro no trailing stop do bot ${botId}:`, error.message);
+    // Incrementa contador de erros
+    const rateLimit = getMonitorRateLimit(botId);
+    rateLimit.trailingStop = rateLimit.trailingStop || { errorCount: 0, interval: 5000 };
+    rateLimit.trailingStop.errorCount++;
+
+    if (error?.response?.status === 429 || String(error).includes('rate limit')) {
+      // Aumenta intervalo exponencialmente em caso de rate limit
+      rateLimit.trailingStop.interval = Math.min(30000, rateLimit.trailingStop.interval * 2); // máximo 30s
+      Logger.warn(`⚠️ [STOPS] Bot ${botId}: Rate limit detectado! Aumentando intervalo para ${Math.floor(rateLimit.trailingStop.interval / 1000)}s`);
+    } else {
+      Logger.error(`❌ [STOPS] Erro no trailing stop do bot ${botId}:`, error.message);
+    }
 
     // Emite evento de erro via WebSocket
     broadcastViaWs({
@@ -458,8 +475,19 @@ async function startStops(botId) {
       timestamp: new Date().toISOString(),
       error: error.message
     });
+  }
 
-    throw error;
+  // Agenda próxima execução
+  const rateLimit = getMonitorRateLimit(botId);
+  const nextInterval = rateLimit.trailingStop?.interval || 5000;
+
+  // Salva o timeout ID na instância do bot para poder cancelá-lo depois
+  const timeoutId = setTimeout(() => startStops(botId), nextInterval);
+
+  // Atualiza a instância do bot com o novo timeout
+  const botInstance = activeBotInstances.get(botId);
+  if (botInstance) {
+    botInstance.trailingStopTimeoutId = timeoutId;
   }
 }
 
@@ -907,6 +935,9 @@ async function stopBot(botId, updateStatus = true) {
       }
       if (botInstance.takeProfitIntervalId) {
         clearInterval(botInstance.takeProfitIntervalId);
+      }
+      if (botInstance.trailingStopTimeoutId) {
+        clearTimeout(botInstance.trailingStopTimeoutId);
       }
     }
 
@@ -2646,7 +2677,7 @@ app.get('/api/bot/performance/simple', async (req, res) => {
 async function startMonitorsForAllEnabledBots() {
   try {
     Logger.info('🔄 [MONITORS] Iniciando monitores para todos os bots habilitados...');
-    
+
     // Carrega todos os bots habilitados
     const configs = await ConfigManagerSQLite.loadConfigs();
     const enabledBots = configs.filter(config => config.enabled);
@@ -2662,7 +2693,7 @@ async function startMonitorsForAllEnabledBots() {
     for (const botConfig of enabledBots) {
       try {
         const botId = botConfig.id;
-        
+
         // Verifica se tem credenciais antes de iniciar monitores
         if (!botConfig.apiKey || !botConfig.apiSecret) {
           Logger.debug(`⚠️ [MONITORS] Bot ${botId} (${botConfig.botName}) não tem credenciais, pulando monitores`);
@@ -2670,19 +2701,19 @@ async function startMonitorsForAllEnabledBots() {
         }
 
         Logger.debug(`🔄 [MONITORS] Iniciando monitores para bot ${botId} (${botConfig.botName})`);
-        
+
         // Inicia apenas o monitor de trailing stops órfãos (outros monitores são para bots ativos)
         setTimeout(() => startTrailingStopsCleanerMonitor(botId), 2000); // Delay de 2s para não sobrecarregar
-        
+
         Logger.debug(`✅ [MONITORS] Monitores iniciados para bot ${botId}`);
-        
+
       } catch (error) {
         Logger.error(`❌ [MONITORS] Erro ao iniciar monitores para bot ${botConfig.id}:`, error.message);
       }
     }
 
     Logger.info('✅ [MONITORS] Monitores globais iniciados com sucesso');
-    
+
   } catch (error) {
     Logger.error('❌ [MONITORS] Erro ao carregar bots para monitores:', error.message);
   }

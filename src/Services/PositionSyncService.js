@@ -15,42 +15,6 @@ class PositionSyncService {
   }
 
   /**
-   * Inicia monitoramento de sincronização para um bot
-   * @param {number} botId - ID do bot
-   * @param {object} config - Configuração do bot
-   */
-  async startSyncForBot(botId, config) {
-    try {
-      if (!config?.apiKey || !config?.apiSecret) {
-        throw new Error('API_KEY e API_SECRET são obrigatórios');
-      }
-
-      // Para qualquer sincronização anterior
-      this.stopSyncForBot(botId);
-
-      Logger.info(`🔄 [POSITION_SYNC] Iniciando sincronização para bot ${botId}`);
-
-      // Primeira sincronização imediata
-      await this.syncBotPositions(botId, config);
-
-      // Configura sincronização periódica (a cada 1 minuto)
-      const intervalId = setInterval(async () => {
-        try {
-          await this.syncBotPositions(botId, config);
-        } catch (error) {
-          Logger.error(`❌ [POSITION_SYNC] Erro na sincronização do bot ${botId}:`, error.message);
-        }
-      }, 60000); // 1 minuto
-
-      this.syncIntervals.set(botId, intervalId);
-      Logger.info(`✅ [POSITION_SYNC] Sincronização iniciada para bot ${botId} (30s)`);
-
-    } catch (error) {
-      Logger.error(`❌ [POSITION_SYNC] Erro ao iniciar sincronização para bot ${botId}:`, error.message);
-    }
-  }
-
-  /**
    * Para monitoramento de sincronização para um bot
    * @param {number} botId - ID do bot
    */
@@ -79,33 +43,6 @@ class PositionSyncService {
 
       // 1. Rastreia posições usando o novo sistema
       const positionTracker = new PositionTrackingService(this.dbService);
-      const trackingResult = await positionTracker.trackBotPositions(botId, config);
-
-      // 2. Busca posições abertas APENAS do bot (não da exchange)
-      // Usando apenas posições rastreadas pelo próprio bot para evitar interferir com trading manual
-      const botOpenPositions = trackingResult.reconstructedPositions.filter(pos => pos.status === 'OPEN');
-
-      // 3. Detecta fechamentos automáticos baseado no novo sistema
-      const closedPositions = await this.detectClosedPositionsNew(botId, config, trackingResult);
-
-      // 4. NOVA SINCRONIZAÇÃO COMPLETA - Inclui limpeza de ordens fantasma
-      try {
-        const { default: OrdersService } = await import('./OrdersService.js');
-        
-        // Executa sincronização completa (fills órfãos + correções + limpeza fantasma)
-        const syncResults = await OrdersService.performCompleteFillsSync(botId, config);
-        
-        // Só loga se realmente houve ações
-        if (syncResults.total > 0) {
-          Logger.debug(`🔄 [POSITION_SYNC] Bot ${botId}: Sincronização - ${syncResults.total} ações (fantasma: ${syncResults.ghostOrdersCleaned}, corrigidas: ${syncResults.ordersFixed}, fechadas: ${syncResults.positionsClosed})`);
-        } else {
-          Logger.debug(`🔄 [POSITION_SYNC] Bot ${botId}: Sincronização completa - nenhuma ação necessária`);
-        }
-
-      } catch (syncError) {
-        Logger.warn(`⚠️ [POSITION_SYNC] Erro na sincronização completa do bot ${botId}: ${syncError.message}`);
-      }
-
       // 5. Atualiza estatísticas
       await this.updateBotStatistics(botId, config);
 

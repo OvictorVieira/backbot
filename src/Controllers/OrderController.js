@@ -1,17 +1,16 @@
 import Order from '../Backpack/Authenticated/Order.js';
 import Futures from '../Backpack/Authenticated/Futures.js';
 import AccountController from './AccountController.js';
-import Utils from '../Utils/Utils.js';
-import { validateLeverageForSymbol } from '../Utils/Utils.js';
+import Utils, {validateLeverageForSymbol} from '../Utils/Utils.js';
 import Markets from '../Backpack/Public/Markets.js';
 import TrailingStop from '../TrailingStop/TrailingStop.js';
 import ConfigManagerSQLite from '../Config/ConfigManagerSQLite.js';
 import BotOrdersManager from '../Config/BotOrdersManager.js';
 import Logger from '../Utils/Logger.js';
-import { calculateIndicators } from '../Decision/Indicators.js';
-import { ProMaxStrategy } from '../Decision/Strategies/ProMaxStrategy.js';
+import Semaphore from '../Utils/Semaphore.js';
+import {calculateIndicators} from '../Decision/Indicators.js';
+import {ProMaxStrategy} from '../Decision/Strategies/ProMaxStrategy.js';
 import OrdersService from '../Services/OrdersService.js';
-import account from "../Backpack/Authenticated/Account.js";
 
 class OrderController {
 
@@ -1255,13 +1254,7 @@ class OrderController {
 
       // Procura por ordem LIMIT reduce-only com a quantidade parcial
       const partialOrder = openOrders.find(order => {
-        const isReduceOnly = order.reduceOnly === true;
-        const isLimitOrder = order.orderType === 'Limit';
-        const isCorrectSide = isLong ? order.side === 'Ask' : order.side === 'Bid';
-        const isCorrectQuantity = Math.abs(parseFloat(order.quantity) - quantityToClose) < 0.01; // 1% tolerância
-        const hasValidQuantity = parseFloat(order.quantity) > 0; // Quantidade deve ser maior que zero
-
-        return isReduceOnly && isLimitOrder && isCorrectSide && isCorrectQuantity && hasValidQuantity;
+        return order.reduceOnly === true;
       });
 
       return !!partialOrder;
@@ -2249,7 +2242,15 @@ class OrderController {
     clientId: await OrderController.generateUniqueOrderId(config)
   };
 
-    return await Order.executeOrder(body, config?.apiKey, config?.apiSecret);
+    const orderResult = await Order.executeOrder(body, config?.apiKey, config?.apiSecret);
+
+    if (orderResult && orderResult.id) {
+      Logger.debug(`✅ [STOP_ORDER] ${symbol}: Stop loss criado com sucesso. ID: ${orderResult.id}`);
+      return { success: true, orderId: orderResult.id, result: orderResult };
+    } else {
+      Logger.error(`❌ [STOP_ORDER] ${symbol}: Falha ao criar stop loss ou ID não retornado.`);
+      return { success: false, orderId: null, result: orderResult };
+    }
   }
 
   /**
@@ -2591,6 +2592,9 @@ class OrderController {
       const maxOpenTrades = Number(config?.maxOpenOrders || 5);
       const currentOpenPositions = positions.filter(p => Math.abs(Number(p.netQuantity)) > 0).length;
 
+      // Debug log para verificar a validação
+      Logger.debug(`🔍 [MAX_ORDERS_CHECK] ${botName}: ${currentOpenPositions}/${maxOpenTrades} posições abertas (config.maxOpenOrders: ${config?.maxOpenOrders})`);
+
       if (currentOpenPositions >= maxOpenTrades) {
         return {
           isValid: false,
@@ -2776,7 +2780,7 @@ class OrderController {
         stopLossLimitPrice: formatPrice(stopLossPrice),
         timeInForce: 'GTC',
         selfTradePrevention: 'RejectTaker',
-        clientId: await OrderController.generateFailsafeOrderId(config, 'stop')
+        clientId: await OrderController.generateUniqueOrderId(config)
       };
 
       // 5. Cria ordem de Take Profit APENAS se o Trailing Stop estiver desabilitado
@@ -2791,10 +2795,10 @@ class OrderController {
           price: formatPrice(takeProfitPrice),
           takeProfitTriggerBy: 'LastPrice',
           takeProfitTriggerPrice: formatPrice(takeProfitPrice),
-                  takeProfitLimitPrice: formatPrice(takeProfitPrice),
-        timeInForce: 'GTC',
-        selfTradePrevention: 'RejectTaker',
-        clientId: await OrderController.generateUniqueOrderId(config)
+          takeProfitLimitPrice: formatPrice(takeProfitPrice),
+          timeInForce: 'GTC',
+          selfTradePrevention: 'RejectTaker',
+          clientId: await OrderController.generateUniqueOrderId(config)
         };
       }
 
@@ -2911,7 +2915,7 @@ class OrderController {
               Logger.info(`📋 [STRATEGY_TAG] ${market}: Bot marcado como "${orderResult.botName}"`);
             }
 
-            await TrailingStop.saveStateToDB(market, trailingState, config?.id);
+            await TrailingStop.saveStateToDB(market, trailingState, config?.id, config);
           }
         } catch (trailingError) {
           Logger.warn(`⚠️ [FAILSAFE] ${market}: Erro ao atualizar estado do trailing stop:`, trailingError.message);
@@ -4316,7 +4320,7 @@ class OrderController {
   static async createTakeProfitForPosition(position, config) {
     try {
       const symbol = position.symbol;
-      const netQuantity = parseFloat(position.netQuantity || 0);
+      const netQuantity = parseFloat(position.netQuantity);
 
       if (Math.abs(netQuantity) === 0) {
         return { success: false, message: 'Posição fechada' }; // Posição fechada

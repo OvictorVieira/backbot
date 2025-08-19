@@ -5,23 +5,26 @@ import GlobalRequestQueue from '../../Utils/GlobalRequestQueue.js';
 
 class Order {
 
-  async getOpenOrder(symbol, orderId, clientId, apiKey = null, apiSecret = null) {
+  async getOpenOrder(symbol, orderId, clientId = null, apiKey, apiSecret) {
     const timestamp = Date.now();
 
+    if (!apiKey || !apiSecret) {
+      throw new Error('Parâmetros obrigatórios faltando: apiKey, apiSecret');
+    }
+
      if (!symbol) {
-      Logger.error('symbol required');
-      return null;
+      throw new Error('Parâmetros obrigatórios faltando: symbol');
     }
 
     if (!orderId && !clientId) {
-      Logger.error('clientId or orderId is required');
-      return null;
+      throw new Error('Parâmetros obrigatórios faltando: clientId ou orderId');
     }
 
 
     const params = {}
-    if (symbol) params.symbol = symbol;
-    if (orderId) params.orderId = orderId;
+    params.symbol = symbol;
+    params.orderId = orderId;
+    
     if (clientId) params.clientId = clientId;
 
     const headers = auth({
@@ -45,7 +48,11 @@ class Order {
   }
 
   //marketType: "SPOT" "PERP" "IPERP" "DATED" "PREDICTION" "RFQ"
-  async getOpenOrders(symbol, marketType = "PERP", apiKey = null, apiSecret = null) {
+  async getOpenOrders(symbol, marketType = "PERP", apiKey, apiSecret) {
+    if (!apiKey || !apiSecret) {
+      throw new Error('Parâmetros obrigatórios faltando: apiKey, apiSecret');
+    }
+
     // Usa fila global para coordenar todas as requests
     return await GlobalRequestQueue.enqueue(async () => {
       const timestamp = Date.now();
@@ -67,7 +74,7 @@ class Order {
         params,
         timeout: 15000 // 15 segundos de timeout
       });
-      
+
       return response.data;
     }, `getOpenOrders(symbol=${symbol}, marketType=${marketType})`);
   }
@@ -80,7 +87,7 @@ class Order {
     try {
       // Primeiro tenta o endpoint principal para ver se inclui trigger orders
       const allOrders = await this.getOpenOrders(symbol, marketType, apiKey, apiSecret);
-      
+
       if (!allOrders || !Array.isArray(allOrders)) {
         Logger.debug(`[TRIGGER_ORDERS] Nenhuma ordem retornada para ${symbol}`);
         return [];
@@ -88,8 +95,8 @@ class Order {
 
       // Filtra apenas ordens que têm características de trigger orders
       const triggerOrders = allOrders.filter(order => {
-        return order.triggerPrice || 
-               order.stopLossTriggerPrice || 
+        return order.triggerPrice ||
+               order.stopLossTriggerPrice ||
                order.takeProfitTriggerPrice ||
                order.orderType === 'STOP_MARKET' ||
                order.orderType === 'TAKE_PROFIT_MARKET' ||
@@ -101,7 +108,7 @@ class Order {
 
     } catch (error) {
       Logger.error(`[TRIGGER_ORDERS] Erro ao buscar ordens condicionais para ${symbol}:`, error.message);
-      
+
       // Fallback: tenta endpoint específico de trigger orders se existir
       try {
         return await this.getTriggerOrdersFromSpecificEndpoint(symbol, marketType, apiKey, apiSecret);
@@ -135,7 +142,7 @@ class Order {
       // Tenta diferentes possíveis endpoints para trigger orders
       const possibleEndpoints = [
         '/api/v1/trigger_orders',
-        '/api/v1/triggerOrders', 
+        '/api/v1/triggerOrders',
         '/api/v1/orders/trigger',
         '/api/v1/conditional_orders'
       ];
@@ -147,7 +154,7 @@ class Order {
             params,
             timeout: 15000
           });
-          
+
           Logger.debug(`[TRIGGER_ORDERS] Sucesso com endpoint: ${endpoint}`);
           return response.data;
         } catch (error) {
@@ -160,35 +167,6 @@ class Order {
       throw new Error('Nenhum endpoint específico para trigger orders encontrado');
     }, `getTriggerOrdersFromSpecificEndpoint(symbol=${symbol})`);
   }
-
-  /*
-    {
-      "autoLend": true,
-      "autoLendRedeem": true,
-      "autoBorrow": true,
-      "autoBorrowRepay": true,
-      "clientId": 0,
-      "orderType": "Market",
-      "postOnly": true,
-      "price": "string",
-      "quantity": "string",
-      "quoteQuantity": "string",
-      "reduceOnly": true,
-      "selfTradePrevention": "RejectTaker",
-      "side": "Bid",
-      "stopLossLimitPrice": "string",
-      "stopLossTriggerBy": "string",
-      "stopLossTriggerPrice": "string",
-      "symbol": "string",
-      "takeProfitLimitPrice": "string",
-      "takeProfitTriggerBy": "string",
-      "takeProfitTriggerPrice": "string",
-      "timeInForce": "GTC",
-      "triggerBy": "string",
-      "triggerPrice": "string",
-      "triggerQuantity": "string"
-    }
-  */
 
   async executeOrder(body, apiKey = null, apiSecret = null) {
 
@@ -205,7 +183,7 @@ class Order {
       const { data } = await axios.post(`${process.env.API_URL}/api/v1/order`, body, {
         headers
       });
-      
+
       return data;
     } catch (err) {
       Logger.error(`❌ [Order.executeOrder] Erro ao enviar ordem:`, {
@@ -214,14 +192,14 @@ class Order {
         data: err.response?.data,
         message: err.message
       });
-      
+
       // Captura o motivo do erro para retornar
       const errorMessage = err.response?.data?.message || err.response?.data?.msg || err.message || 'Erro desconhecido';
       return { error: errorMessage };
     }
   }
 
-  
+
   async cancelOpenOrder(symbol, orderId, clientId, apiKey = null, apiSecret = null) {
     const timestamp = Date.now();
 

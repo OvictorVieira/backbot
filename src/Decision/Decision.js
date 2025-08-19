@@ -414,11 +414,14 @@ class Decision {
       return;
     }
 
-    // Executa ordens em paralelo usando Promise.all
-    Logger.debug(`🚀 Executando ${rows.length} ordens em paralelo...`);
+    // ✅ CORREÇÃO: Executa ordens SEQUENCIALMENTE para respeitar maxOpenOrders
+    Logger.debug(`🔄 Processando ${rows.length} ordens sequencialmente (1 por vez)...`);
 
-    // Prepara todas as ordens
-    const orderPromises = rows.map(async (row, index) => {
+    const orderResults = [];
+    
+    // Processa cada ordem individualmente de forma sequencial
+    for (let index = 0; index < rows.length; index++) {
+      const row = rows[index];
       try {
         // Determina o market baseado na estrutura do objeto
         let marketSymbol;
@@ -433,12 +436,14 @@ class Decision {
         // Validação de símbolo antes de processar
         if (!row) {
           Logger.error(`❌ [${config?.botName || 'DEFAULT'}] Decisão inválida`);
-          return { index, market: 'UNKNOWN', result: { error: 'Decisão inválida' } };
+          orderResults.push({ index, market: 'UNKNOWN', result: { error: 'Decisão inválida' } });
+          continue;
         }
 
         if (!marketSymbol) {
           Logger.error(`❌ [${config?.botName || 'DEFAULT'}] Decisão sem símbolo válido`);
-          return { index, market: 'UNKNOWN', result: { error: 'Decisão sem símbolo válido' } };
+          orderResults.push({ index, market: 'UNKNOWN', result: { error: 'Decisão sem símbolo válido' } });
+          continue;
         }
 
         const marketInfo = Account.markets.find((el) => el.symbol === marketSymbol);
@@ -446,7 +451,8 @@ class Decision {
         // Verifica se o market foi encontrado
         if (!marketInfo) {
           Logger.error(`❌ [${config?.botName || 'DEFAULT'}] Market não encontrado para ${marketSymbol}. Markets disponíveis: ${Account.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`);
-          return { index, market: marketSymbol, result: { error: `Market não encontrado para ${marketSymbol}` } };
+          orderResults.push({ index, market: marketSymbol, result: { error: `Market não encontrado para ${marketSymbol}` } });
+          continue;
         }
 
         // Valida se os dados de decimal estão disponíveis (aceita 0 como valor válido)
@@ -458,7 +464,8 @@ class Decision {
             decimal_price: marketInfo.decimal_price,
             stepSize_quantity: marketInfo.stepSize_quantity
           });
-          return { index, market: marketSymbol, result: { error: `Dados de decimal ausentes para ${marketSymbol}` } };
+          orderResults.push({ index, market: marketSymbol, result: { error: `Dados de decimal ausentes para ${marketSymbol}` } });
+          continue;
         }
 
         // Verifica se é uma estratégia Alpha Flow com múltiplas ordens
@@ -469,18 +476,20 @@ class Decision {
           const maxTradesRecheck = await OrderController.validateMaxOpenTrades(config?.botName || 'DEFAULT', apiKey, apiSecret, config);
           if (!maxTradesRecheck.isValid) {
             Logger.warn(`   🚫 ${marketSymbol}: ${maxTradesRecheck.message} - Pulando ordem`);
-            return { index, market: marketSymbol, result: { error: maxTradesRecheck.message } };
+            orderResults.push({ index, market: marketSymbol, result: { error: maxTradesRecheck.message } });
+            continue;
           }
 
           // Verifica se já há muitas ordens abertas (limite de 5 por token)
           const existingOrders = await OrderController.getRecentOpenOrders(marketSymbol, config);
           if (existingOrders.length >= 5) {
             Logger.info(`   ⚠️  ${marketSymbol}: Muitas ordens abertas (${existingOrders.length}), pulando...`);
-            return { index, market: marketSymbol, result: { error: `Muitas ordens abertas: ${existingOrders.length}` } };
+            orderResults.push({ index, market: marketSymbol, result: { error: `Muitas ordens abertas: ${existingOrders.length}` } });
+            continue;
           }
 
           // Processa múltiplas ordens para Alpha Flow Strategy
-          const orderResults = [];
+          const alphaFlowOrderResults = [];
           for (let i = 0; i < row.orders.length; i++) {
             const order = row.orders[i];
 
@@ -513,7 +522,7 @@ class Decision {
 
             if (existingPosition) {
               Logger.info(`   ⏸️ ${marketSymbol} (Ordem ${order.orderNumber}): Posição ativa existe, pulando...`);
-              orderResults.push({ orderNumber: order.orderNumber, result: null });
+              alphaFlowOrderResults.push({ orderNumber: order.orderNumber, result: null });
               continue;
             }
 
@@ -539,30 +548,34 @@ class Decision {
             const existingOrdersCount = orders.length;
             if (existingOrdersCount >= 3) {
               Logger.info(`   ⚠️  ${marketSymbol} (Ordem ${order.orderNumber}): Muitas ordens abertas (${existingOrdersCount}), pulando...`);
-              orderResults.push({ orderNumber: order.orderNumber, result: { error: `Muitas ordens abertas: ${existingOrdersCount}` } });
+              alphaFlowOrderResults.push({ orderNumber: order.orderNumber, result: { error: `Muitas ordens abertas: ${existingOrdersCount}` } });
               continue;
             }
 
             if (orders.length > 0 && orders[0].minutes <= 3) {
-              orderResults.push({ orderNumber: order.orderNumber, result: null });
+              alphaFlowOrderResults.push({ orderNumber: order.orderNumber, result: null });
             } else {
               const result = await OrderController.openOrder({ ...orderData, strategyName: config?.strategyName || 'DEFAULT' }, config);
-              orderResults.push({ orderNumber: order.orderNumber, result });
+              alphaFlowOrderResults.push({ orderNumber: order.orderNumber, result });
             }
           }
 
-          return { index, market: marketSymbol, result: { orders: orderResults, conviction: row.conviction } };
+          orderResults.push({ index, market: marketSymbol, result: { orders: alphaFlowOrderResults, conviction: row.conviction } });
         } else {
           // Processa ordem única (estratégias tradicionais)
           // VALIDAÇÃO CRÍTICA: Re-verifica maxOpenTrades antes de executar ordem tradicional
           const maxTradesRecheck = await OrderController.validateMaxOpenTrades(config?.botName || 'DEFAULT', apiKey, apiSecret, config);
           if (!maxTradesRecheck.isValid) {
             Logger.warn(`   🚫 ${marketSymbol}: ${maxTradesRecheck.message} - Pulando ordem`);
-            return { index, market: marketSymbol, result: { error: maxTradesRecheck.message } };
+            orderResults.push({ index, market: marketSymbol, result: { error: maxTradesRecheck.message } });
+            continue;
           }
 
-          // Usa os dados fornecidos pela estratégia ou fallback para os padrões
-          row.volume = row.volume || investmentUSD;
+          // ✅ CORREÇÃO: Usa os dados fornecidos pela estratégia (que já considera capitalPercentage)
+          // Não sobrescrever volume se já foi definido pela strategy
+          if (!row.volume) {
+            row.volume = investmentUSD;
+          }
           row.decimal_quantity = row.decimal_quantity || marketInfo.decimal_quantity;
           row.decimal_price = row.decimal_price || marketInfo.decimal_price;
           row.stepSize_quantity = row.stepSize_quantity || marketInfo.stepSize_quantity;
@@ -574,23 +587,24 @@ class Decision {
           if (existingPosition) {
             // Já existe posição ativa, não criar nova ordem
             Logger.info(`   ⏸️ ${marketSymbol}: Posição ativa existe (${existingPosition.netQuantity}), pulando...`);
-            return { index, market: marketSymbol, result: null };
+            orderResults.push({ index, market: marketSymbol, result: null });
+            continue;
           }
 
           // Verifica se já existe uma ordem pendente
           const orders = await OrderController.getRecentOpenOrders(marketSymbol, config);
 
-                      if (orders.length > 0) {
-              if (orders[0].minutes > 3) {
-                                await Order.cancelOpenOrders(marketSymbol, null, apiKey, apiSecret);
-                const result = await OrderController.openOrder({ ...row, strategyName: config?.strategyName || 'DEFAULT' }, config);
-              return { index, market: marketSymbol, result };
-            } else {
-              return { index, market: marketSymbol, result: null };
-            }
-                      } else {
+          if (orders.length > 0) {
+            if (orders[0].minutes > 3) {
+              await Order.cancelOpenOrders(marketSymbol, null, apiKey, apiSecret);
               const result = await OrderController.openOrder({ ...row, strategyName: config?.strategyName || 'DEFAULT' }, config);
-            return { index, market: marketSymbol, result };
+              orderResults.push({ index, market: marketSymbol, result });
+            } else {
+              orderResults.push({ index, market: marketSymbol, result: null });
+            }
+          } else {
+            const result = await OrderController.openOrder({ ...row, strategyName: config?.strategyName || 'DEFAULT' }, config);
+            orderResults.push({ index, market: marketSymbol, result });
           }
         }
 
@@ -601,12 +615,11 @@ class Decision {
         } else {
           Logger.error(errorMsg);
         }
-        return { index, market: marketSymbol, result: { error: error.message } };
+        orderResults.push({ index, market: marketSymbol, result: { error: error.message } });
       }
-    });
-
-    // Executa todas as ordens em paralelo
-    const orderResults = await Promise.all(orderPromises);
+    }
+    
+    // ✅ CORREÇÃO: Processamento sequencial concluído
 
     // Ordena os resultados pelo índice original e mostra logs
     orderResults.sort((a, b) => a.index - b.index);

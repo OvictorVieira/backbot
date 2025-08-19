@@ -228,19 +228,19 @@ export class DefaultStrategy extends BaseStrategy {
       const moneyFlowValidation = this.validateMoneyFlowConfirmation(data, signals.isLong, data.market.symbol === 'BTC_USDC_PERP');
 
       if (!moneyFlowValidation.isValid) {
-        Logger.debug(`❌ ${data.market.symbol}: Sinal ${signals.signalType} rejeitado - ${moneyFlowValidation.reason}`);
-        Logger.debug(`   💰 Money Flow: ${moneyFlowValidation.details}`);
+        Logger.info(`❌ ${data.market.symbol}: Sinal ${signals.signalType} rejeitado - ${moneyFlowValidation.reason}`);
+        Logger.info(`   💰 Money Flow: ${moneyFlowValidation.details}`);
         return null;
       }
 
-              Logger.debug(`✅ ${data.market.symbol}: Money Flow confirma ${signals.isLong ? 'LONG' : 'SHORT'} - ${moneyFlowValidation.details}`);
+      Logger.info(`✅ ${data.market.symbol}: Money Flow confirma ${signals.isLong ? 'LONG' : 'SHORT'} - ${moneyFlowValidation.details}`);
 
       // FILTRO DE TENDÊNCIA VWAP (sentimento intradiário)
       const vwapValidation = this.validateVWAPTrend(data, signals.isLong, data.market.symbol === 'BTC_USDC_PERP');
 
       if (!vwapValidation.isValid) {
-        Logger.debug(`❌ ${data.market.symbol}: Sinal ${signals.signalType} rejeitado - ${vwapValidation.reason}`);
-        Logger.debug(`   📊 VWAP: ${vwapValidation.details}`);
+        Logger.info(`❌ ${data.market.symbol}: Sinal ${signals.signalType} rejeitado - ${vwapValidation.reason}`);
+        Logger.info(`   📊 VWAP: ${vwapValidation.details}`);
         return null;
       }
 
@@ -255,12 +255,12 @@ export class DefaultStrategy extends BaseStrategy {
 
         // Validação restritiva: só permite operações alinhadas com a tendência do BTC
         if (signals.isLong && btcTrend === 'BEARISH') {
-          Logger.debug(`❌ ${data.market.symbol}: Sinal ${signals.signalType} rejeitado - BTC em tendência BEARISH (não permite LONG em altcoins)`);
+          Logger.info(`❌ ${data.market.symbol}: Sinal ${signals.signalType} rejeitado - BTC em tendência BEARISH (não permite LONG em altcoins)`);
           return null; // BTC em baixa - não entrar LONG em altcoins
         }
 
         if (!signals.isLong && btcTrend === 'BULLISH') {
-          Logger.debug(`❌ ${data.market.symbol}: Sinal ${signals.signalType} rejeitado - BTC em tendência BULLISH (não permite SHORT em altcoins)`);
+          Logger.info(`❌ ${data.market.symbol}: Sinal ${signals.signalType} rejeitado - BTC em tendência BULLISH (não permite SHORT em altcoins)`);
           return null; // BTC em alta - não entrar SHORT em altcoins
         }
       }
