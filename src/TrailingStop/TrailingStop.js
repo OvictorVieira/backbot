@@ -8,6 +8,7 @@ import { validateLeverageForSymbol, clearLeverageAdjustLog } from '../Utils/Util
 import ColorLogger from '../Utils/ColorLogger.js';
 import Logger from '../Utils/Logger.js';
 import ConfigManagerSQLite from '../Config/ConfigManagerSQLite.js';
+import Order from "../Backpack/Authenticated/Order.js";
 
 class TrailingStop {
 
@@ -131,13 +132,157 @@ class TrailingStop {
   }
 
   /**
+   * Carrega o estado do trailing stop para um bot e símbolo específicos do banco de dados.
+   * Este método é mais eficiente do que carregar todos os estados quando apenas um é necessário.
+   * @param {object} dbService - A instância do serviço de banco de dados inicializado.
+   * @param {string} botId - O ID do bot para o qual carregar o estado.
+   * @param {string} symbol - O símbolo do mercado (ex: "SOL_USDC") para o qual carregar o estado.
+   * @returns {Promise<object|null>} O objeto de estado carregado ou null se não for encontrado ou em caso de erro.
+   */
+  static async loadStateForBot(dbService, botId, symbol) {
+    try {
+      if (!dbService || !dbService.isInitialized()) {
+        throw new Error('O serviço de banco de dados deve ser inicializado antes de carregar o estado.');
+      }
+
+      // Garante que o serviço de DB esteja disponível para outros métodos, se necessário
+      TrailingStop.dbService = dbService;
+
+      // 1. Prepara a query SQL parametrizada para segurança e eficiência
+      const query = 'SELECT state FROM trailing_state WHERE botId = ? AND symbol = ?';
+
+      // 2. Executa a busca por um único registro
+      const row = await dbService.get(query, [botId, symbol]);
+
+      // 3. Se um registro for encontrado, processa-o
+      if (row && row.state) {
+        const state = JSON.parse(row.state);
+        const botKey = `bot_${botId}`;
+
+        // Garante que o Map para este bot exista na estrutura de dados em memória
+        if (!TrailingStop.trailingStateByBot.has(botKey)) {
+          TrailingStop.trailingStateByBot.set(botKey, new Map());
+        }
+
+        // Armazena o estado carregado no Map em memória
+        const trailingStateMap = TrailingStop.trailingStateByBot.get(botKey);
+        trailingStateMap.set(symbol, state);
+
+        Logger.info(`📂 [PERSISTENCE] Estado do trailing stop carregado para ${botKey} - ${symbol}`);
+
+        // 4. Retorna o estado para uso imediato
+        return state;
+      } else {
+        Logger.info(`[PERSISTENCE] Nenhum estado de trailing stop salvo encontrado para botId: ${botId}, symbol: ${symbol}.`);
+        return null; // Retorna null se nenhum estado for encontrado
+      }
+
+    } catch (error) {
+      Logger.error(`❌ [PERSISTENCE] Erro ao carregar estado para botId: ${botId}, symbol: ${symbol}:`, error.message);
+      return null; // Retorna null em caso de erro
+    }
+  }
+
+  /**
    * Salva o estado do trailing stop na base de dados
    */
-  static async saveStateToDB(symbol, state, botId, externalOrderId = null) {
+  static async saveStateToDB(symbol, state, botId, config) {
     try {
       if (!TrailingStop.dbService || !TrailingStop.dbService.isInitialized()) {
         Logger.error(`❌ [PERSISTENCE] Database service not initialized, cannot save state`);
         return;
+      }
+
+      let externalOrderId = null;
+
+      // Busca as ordens abertas na corretora
+      const activeOrders = await Order.getOpenOrders(symbol, "PERP", config.apiKey, config.apiSecret);
+
+      if (activeOrders && activeOrders.length > 0) {
+        const stopLossOrder = activeOrders.find(order =>
+            order.status === 'TriggerPending' && order.triggerPrice !== null
+        );
+
+        if (stopLossOrder) {
+          externalOrderId = stopLossOrder.id;
+
+          // 1. Carrega o estado ANTERIOR salvo no banco de dados
+          const foundState = await TrailingStop.loadStateForBot(TrailingStop.dbService, botId, symbol);
+
+          let trailingStopIsBetterThanSL = false;
+
+          if (state.isLong) {
+            // Para uma posição LONG (comprada), um stop "melhor" é um preço MAIS ALTO.
+            // Ele trava mais lucro ou reduz a perda.
+            trailingStopIsBetterThanSL = state.trailingStopPrice > parseFloat(stopLossOrder.price);
+
+          } else {
+            // Para uma posição SHORT (vendida), um stop "melhor" é um preço MAIS BAIXO.
+            // Ele também trava mais lucro ou reduz a perda na direção oposta.
+            trailingStopIsBetterThanSL = state.trailingStopPrice < parseFloat(stopLossOrder.price);
+          }
+
+          // 2. Compara o preço do stop ATUAL (em memória) com o preço do estado SALVO
+          //    Verifica também se foundState existe, para evitar erros.
+          if (foundState && trailingStopIsBetterThanSL || (foundState && state.trailingStopPrice !== foundState.trailingStopPrice)) {
+            Logger.info(`🔄 Trailing stop price for ${symbol} has changed from ${foundState.trailingStopPrice} to ${state.trailingStopPrice}. Replacing order.`);
+
+            const apiKey = config.apiKey;
+            const apiSecret = config.apiSecret;
+
+            const Account = await AccountController.get({
+              apiKey,
+              apiSecret,
+              strategy: config?.strategyName || 'DEFAULT'
+            });
+            const marketInfo = Account.markets.find(m => m.symbol === symbol);
+            if (!marketInfo) {
+              Logger.error(`❌ [TRAILING_STOP] Market info não encontrada para ${symbol}`);
+              return;
+            }
+
+            const decimal_price = marketInfo.decimal_price;
+
+            const formatPrice = (value) => parseFloat(value).toFixed(decimal_price).toString()
+
+            const bodyPayload = {
+              symbol: symbol,
+              side: state.isLong ? 'Ask' : 'Bid',
+              orderType: 'Market',
+              reduceOnly: true,
+              quantity: stopLossOrder.triggerQuantity,
+              stopLossTriggerPrice: formatPrice(state.trailingStopPrice),
+              stopLossTriggerBy: 'IndexPrice',
+              timeInForce: 'GTC',
+              selfTradePrevention: 'RejectTaker',
+              clientId: await OrderController.generateUniqueOrderId(config),
+              apiKey: apiKey,
+              apiSecret: apiSecret,
+            }
+
+            // 3. Cria a NOVA ordem de stop loss com o preço atualizado
+            const stopResult = await OrderController.ordersService.createStopLossOrder(bodyPayload);
+
+            // 4. Se a nova ordem foi criada, cancela a ANTIGA
+            if (stopResult && stopResult.id) {
+              Logger.info(`✅ New stop loss order ${stopResult.id} created. Cancelling old order ${foundState.active_stop_order_id}.`);
+              await OrderController.ordersService.cancelOrder({
+                symbol: symbol,
+                orderId: foundState.active_stop_order_id,
+                apiKey: apiKey,
+                apiSecret: apiSecret
+              });
+
+              externalOrderId = stopResult.id;
+            }
+          }
+
+          Logger.info(`Stop loss ativo encontrado para ${symbol}. Order ID: ${externalOrderId}`);
+        } else {
+          Logger.warn(`Nenhuma ordem de stop loss ativa (TriggerPending) foi encontrada para ${symbol}.`);
+        }
+      } else {
+        Logger.info(`Nenhuma ordem aberta encontrada para ${symbol}.`);
       }
 
       const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
@@ -149,8 +294,8 @@ class TrailingStop {
 
       if (botConfig.enableTrailingStop === true) {
         await TrailingStop.dbService.run(
-          'INSERT OR REPLACE INTO trailing_state (botId, symbol, state, active_stop_order_id, updatedAt) VALUES (?, ?, ?, ?, ?)',
-          [botId, symbol, JSON.stringify(state), externalOrderId, new Date().toISOString()]
+            'INSERT OR REPLACE INTO trailing_state (botId, symbol, state, active_stop_order_id, updatedAt) VALUES (?, ?, ?, ?, ?)',
+            [botId, symbol, JSON.stringify(state), externalOrderId, new Date().toISOString()]
         );
 
         TrailingStop.debug(`💾 [PERSISTENCE] Estado do trailing stop salvo para bot ${botId}, símbolo ${symbol}`);
@@ -228,7 +373,7 @@ class TrailingStop {
         for (const [botKey, trailingStateMap] of TrailingStop.trailingStateByBot.entries()) {
           const botId = parseInt(botKey.replace('bot_', '')) || 1;
           for (const [symbol, state] of trailingStateMap.entries()) {
-            await TrailingStop.saveStateToDB(symbol, state, botId);
+            await TrailingStop.saveStateToDB(symbol, state, botId, config);
           }
         }
         Logger.info(`✅ [CLEANUP] Limpeza concluída: ${cleanedStates} estados obsoletos removidos`);
@@ -238,96 +383,6 @@ class TrailingStop {
 
     } catch (error) {
       Logger.error(`❌ [CLEANUP] Erro durante limpeza:`, error.message);
-    }
-  }
-
-  /**
-   * Preenche o estado do Trailing Stop para posições abertas existentes
-   * que não possuem estado inicial (migração automática)
-   * @param {object} config - Configurações específicas do bot
-   * @param {DatabaseService} dbService - Database service instance
-   */
-  static async backfillStateForOpenPositions(config = null, dbService = null) {
-    try {
-      await TrailingStop.forceCleanupAllStates();
-
-      Logger.info(`📋 [MIGRATION] Obtendo posições abertas atuais...`);
-
-      // SEMPRE usa credenciais do config - lança exceção se não disponível
-      if (!config?.apiKey || !config?.apiSecret) {
-        throw new Error('API_KEY e API_SECRET são obrigatórios - deve ser passado da config do bot');
-      }
-      const apiKey = config.apiKey;
-      const apiSecret = config.apiSecret;
-
-      const positions = await Futures.getOpenPositions(apiKey, apiSecret);
-      if (!positions || positions.length === 0) {
-        Logger.info(`ℹ️ [MIGRATION] Nenhuma posição aberta encontrada para migração`);
-        return;
-      }
-
-      Logger.info(`📋 [MIGRATION] Encontradas ${positions.length} posições abertas para verificação`);
-
-      let newStatesCreated = 0;
-
-      const Account = await AccountController.get({
-        apiKey,
-        apiSecret,
-        strategy: config?.strategyType || 'DEFAULT'
-      });
-
-      // Cria uma instância temporária para acessar o estado do trailing stop
-      const tempTrailingStop = new TrailingStop(config?.strategyType || 'DEFAULT', config);
-      const trailingStateMap = tempTrailingStop.getTrailingState();
-
-      for (const position of positions) {
-        if (trailingStateMap.has(position.symbol)) {
-          Logger.debug(`ℹ️ [MIGRATION] ${position.symbol}: Estado já existe, pulando...`);
-          continue;
-        }
-
-        const marketInfo = Account.markets?.find(market => market.symbol === position.symbol);
-        if (!marketInfo) {
-          Logger.debug(`⚠️ [MIGRATION] ${position.symbol}: Par não autorizado, pulando...`);
-          continue;
-        }
-
-        Logger.info(`🔄 [MIGRATION] ${position.symbol}: Criando estado inicial do Trailing Stop...`);
-
-        let initialState = await TrailingStop.createTakeProfitForPosition(
-            position, Account, config
-        )
-
-        trailingStateMap.set(position.symbol, initialState);
-      }
-
-      if (newStatesCreated > 0) {
-        Logger.info(`💾 [MIGRATION] Salvando ${newStatesCreated} estados frescos na base de dados...`);
-        // Save all states to database using the provided dbService
-        if (dbService && dbService.isInitialized()) {
-          for (const [botKey, trailingStateMap] of TrailingStop.trailingStateByBot.entries()) {
-            for (const [symbol, state] of trailingStateMap.entries()) {
-              await dbService.run(
-                'INSERT OR REPLACE INTO trailing_state (symbol, state, updatedAt) VALUES (?, ?, ?)',
-                [symbol, JSON.stringify(state), new Date().toISOString()]
-              );
-            }
-          }
-        } else {
-          // Fallback to the static method
-          for (const [botKey, trailingStateMap] of TrailingStop.trailingStateByBot.entries()) {
-            for (const [symbol, state] of trailingStateMap.entries()) {
-              await TrailingStop.saveStateToDB(symbol, state, config?.id);
-            }
-          }
-        }
-        Logger.info(`✅ [MIGRATION] Migração concluída: ${newStatesCreated} estados criados com dados atuais`);
-      } else {
-        Logger.info(`ℹ️ [MIGRATION] Nenhum novo estado necessário - base de dados limpa e atualizada`);
-      }
-
-    } catch (error) {
-      Logger.error(`❌ [MIGRATION] Erro durante migração:`, error.message);
     }
   }
 
@@ -460,7 +515,7 @@ class TrailingStop {
         if (firstBotKey) {
           const trailingStateMap = TrailingStop.trailingStateByBot.get(firstBotKey);
           trailingStateMap.set(symbol, recoveredState);
-          await TrailingStop.saveStateToDB(symbol, recoveredState, config?.id);
+          await TrailingStop.saveStateToDB(symbol, recoveredState, config?.id, config);
         }
 
         Logger.info(`🎯 [ATR_RECOVERY] ${symbol}: Stop Loss Inteligente configurado - Volatilidade: ${atrValue.toFixed(6)}, Stop Loss: $${initialAtrStopPrice.toFixed(4)}, Take Profit Parcial: $${partialTakeProfitPrice.toFixed(4)}`);
@@ -642,6 +697,55 @@ class TrailingStop {
   }
 
   /**
+   * Limpa estados de trailing stop órfãos (sem posição correspondente na exchange)
+   * @param {string} apiKey - Chave da API
+   * @param {string} apiSecret - Segredo da API
+   * @param {number} botId - ID do bot (opcional, default = 1)
+   */
+  static async cleanOrphanedTrailingStates(apiKey, apiSecret, botId = 1) {
+    try {
+      Logger.info(`🧹 [TRAILING_CLEANER] Iniciando limpeza de estados órfãos para bot ${botId}`);
+      
+      const botKey = `bot_${botId}`;
+      const trailingStateMap = TrailingStop.trailingStateByBot.get(botKey);
+      
+      if (!trailingStateMap || trailingStateMap.size === 0) {
+        Logger.debug(`[TRAILING_CLEANER] Nenhum estado de trailing stop para bot ${botId}`);
+        return;
+      }
+
+      // Busca todas as posições abertas na exchange
+      const openPositions = await Futures.getOpenPositions(apiKey, apiSecret);
+      const openSymbols = new Set(openPositions.map(pos => pos.symbol));
+      
+      let cleanedCount = 0;
+      const symbolsToClean = [];
+      
+      // Verifica cada estado de trailing stop
+      for (const [symbol, state] of trailingStateMap.entries()) {
+        if (!openSymbols.has(symbol)) {
+          symbolsToClean.push(symbol);
+        }
+      }
+      
+      // Limpa os estados órfãos
+      for (const symbol of symbolsToClean) {
+        await TrailingStop.clearTrailingState(symbol, 'órfão - sem posição aberta');
+        cleanedCount++;
+      }
+      
+      if (cleanedCount > 0) {
+        Logger.info(`✅ [TRAILING_CLEANER] ${cleanedCount} estados órfãos removidos`);
+      } else {
+        Logger.debug(`[TRAILING_CLEANER] Nenhum estado órfão encontrado`);
+      }
+      
+    } catch (error) {
+      Logger.error(`❌ [TRAILING_CLEANER] Erro durante limpeza:`, error.message);
+    }
+  }
+
+  /**
    * Calcula o preço de stop loss baseado em ATR
    * @param {object} position - Dados da posição
    * @param {object} account - Dados da conta
@@ -762,7 +866,7 @@ class TrailingStop {
       }
 
       const { pnl, pnlPct } = TrailingStop.calculatePnL(position, Account);
-      const currentPrice = parseFloat(position.markPrice || position.lastPrice || 0);
+      const currentPrice = parseFloat(position.markPrice || 0);
       const entryPrice = parseFloat(position.entryPrice || 0);
 
       if (currentPrice <= 0 || entryPrice <= 0) {
@@ -797,7 +901,7 @@ class TrailingStop {
     } finally {
       if (trailingState) {
         const botId = this.config?.id;
-        await TrailingStop.saveStateToDB(position.symbol, trailingState, botId);
+        await TrailingStop.saveStateToDB(position.symbol, trailingState, botId, this.config);
       }
     }
   }
@@ -868,13 +972,14 @@ class TrailingStop {
           phase: 'INITIAL_RISK',
           activated: true,
           initialized: true,
+          active_stop_order_id: null, // Será preenchido quando sistema ativo criar ordem
           createdAt: new Date().toISOString()
         };
 
         // Salva o estado no bot atual
         const trailingStateMap = this.getTrailingState();
         trailingStateMap.set(position.symbol, newState);
-        await TrailingStop.saveStateToDB(position.symbol, newState, this.config?.id);
+        await TrailingStop.saveStateToDB(position.symbol, newState, this.config?.id, this.config);
 
         TrailingStop.colorLogger.trailingActivated(`${position.symbol}: 🎯 Stop Loss Inteligente ATIVADO! Fase: Proteção Inicial - PnL: ${pnlPct.toFixed(2)}%, Entrada: $${entryPrice.toFixed(4)}, Atual: $${currentPrice.toFixed(4)}, Volatilidade: ${atrValue?.toFixed(6) || 'N/A'}, Stop Loss Final: $${finalStopPrice?.toFixed(4) || 'N/A'}, Take Profit: $${partialTakeProfitPrice?.toFixed(4) || 'N/A'}`);
 
@@ -980,7 +1085,7 @@ class TrailingStop {
             Logger.error(`❌ [BREAKEVEN] ${position.symbol}: Erro ao atualizar stop loss para breakeven:`, error.message);
           }
 
-          await TrailingStop.saveStateToDB(position.symbol, trailingState, this.config?.id);
+          await TrailingStop.saveStateToDB(position.symbol, trailingState, this.config?.id, this.config);
 
           return trailingState;
         }
@@ -1077,12 +1182,13 @@ class TrailingStop {
           phase: 'TRAILING',
           activated: true,
           initialized: true,
+          active_stop_order_id: null,
           createdAt: new Date().toISOString()
         };
 
         const trailingStateMap = this.getTrailingState();
         trailingStateMap.set(position.symbol, newState);
-        await TrailingStop.saveStateToDB(position.symbol, newState, this.config?.id);
+        await TrailingStop.saveStateToDB(position.symbol, newState, this.config?.id, this.config);
 
         TrailingStop.colorLogger.trailingActivated(`${position.symbol}: Trailing Stop ATIVADO! Posição lucrativa detectada - PnL: ${pnlPct.toFixed(2)}%, Preço de Entrada: $${entryPrice.toFixed(4)}, Preço Atual: $${currentPrice.toFixed(4)}, Stop Inicial: $${initialStopLossPrice.toFixed(4)}`);
 
@@ -1101,7 +1207,7 @@ class TrailingStop {
           trailingState.lowestPrice = currentPrice;
         }
 
-        await TrailingStop.saveStateToDB(position.symbol, trailingState, this.config?.id);
+        await TrailingStop.saveStateToDB(position.symbol, trailingState, this.config?.id, this.config);
 
         TrailingStop.colorLogger.trailingActivated(`${position.symbol}: Trailing Stop REATIVADO! Estado existente ativado - PnL: ${pnlPct.toFixed(2)}%, Preço Atual: $${currentPrice.toFixed(4)}, Stop: $${trailingState.trailingStopPrice.toFixed(4)}`);
 
@@ -1211,7 +1317,7 @@ class TrailingStop {
         return null;
       }
 
-      const currentPrice = parseFloat(position.markPrice || position.lastPrice || 0);
+      const currentPrice = parseFloat(position.markPrice || 0);
       if (currentPrice <= 0) {
         return null;
       }
@@ -1683,16 +1789,16 @@ class TrailingStop {
             const trailingState = trailingStateMap.get(position.symbol);
 
             if (trailingState && trailingState.activated) {
-              TrailingStop.colorLogger.trailingActiveCheck(`${position.symbol}: Trailing Stop ativo - verificando gatilho`);
+              // TrailingStop.colorLogger.trailingActiveCheck(`${position.symbol}: Trailing Stop ativo - verificando gatilho`);
 
-              const trailingDecision = this.checkTrailingStopTrigger(position, trailingState);
-
-              if (trailingDecision && trailingDecision.shouldClose) {
-                TrailingStop.colorLogger.positionClosed(`🚨 [TRAILING_EXECUTION] ${position.symbol}: Executando fechamento por Trailing Stop. Motivo: ${trailingDecision.reason}`);
-                await OrderController.forceClose(position, Account, this.config);
-                await TrailingStop.onPositionClosed(position, 'trailing_stop');
-                continue;
-              }
+              // const trailingDecision = this.checkTrailingStopTrigger(position, trailingState);
+              //
+              // if (trailingDecision && trailingDecision.shouldClose) {
+              //   TrailingStop.colorLogger.positionClosed(`🚨 [TRAILING_EXECUTION] ${position.symbol}: Executando fechamento por Trailing Stop. Motivo: ${trailingDecision.reason}`);
+              //   await OrderController.forceClose(position, Account, this.config);
+              //   await TrailingStop.onPositionClosed(position, 'trailing_stop');
+              //   continue;
+              // }
 
               const priceType = position.markPrice ? 'Current Price' : 'Last Price';
               const distance = trailingState.isLong
@@ -1913,19 +2019,14 @@ class TrailingStop {
         return null;
       }
 
-      const newOrderId = newOrderResult.id || newOrderResult.orderId;
-
       // Etapa 3: Salvar novo estado no banco
       const updatedState = {
         ...currentState,
         stop_loss_price: newStopPrice,
-        active_stop_order_id: newOrderId,
         updatedAt: new Date().toISOString()
       };
 
-      await TrailingStop.saveStateToDB(botId, symbol, updatedState);
-
-      Logger.info(`🎯 [ACTIVE_STOP] ${symbol}: Stop movido para ${newStopPrice}. Nova Ordem ID: ${newOrderId}`);
+      await TrailingStop.saveStateToDB(symbol, updatedState, botId, this.config);
 
       return updatedState;
 
@@ -1963,9 +2064,7 @@ class TrailingStop {
         updatedAt: new Date().toISOString()
       };
 
-      await TrailingStop.saveStateToDB(botId, symbol, initialState);
-
-      Logger.info(`✅ [ACTIVE_STOP] ${symbol}: Ordem stop inicial criada - ID: ${orderId}`);
+      await TrailingStop.saveStateToDB(symbol, initialState, botId, this.config);
 
       return initialState;
 
@@ -2013,13 +2112,13 @@ trailingStopInstance.saveStateToDB = TrailingStop.saveStateToDB;
 trailingStopInstance.loadStateFromDB = TrailingStop.loadStateFromDB;
 trailingStopInstance.clearStateFromDB = TrailingStop.clearStateFromDB;
 trailingStopInstance.clearTrailingState = TrailingStop.clearTrailingState;
+trailingStopInstance.cleanOrphanedTrailingStates = TrailingStop.cleanOrphanedTrailingStates;
 trailingStopInstance.onPositionClosed = TrailingStop.onPositionClosed;
 trailingStopInstance.calculatePnL = TrailingStop.calculatePnL;
 trailingStopInstance.calculateInitialStopLossPrice = TrailingStop.calculateInitialStopLossPrice;
 trailingStopInstance.debug = TrailingStop.debug;
 trailingStopInstance.getTrailingStopConfig = TrailingStop.getTrailingStopConfig;
 trailingStopInstance.logTrailingStopConfig = TrailingStop.logTrailingStopConfig;
-trailingStopInstance.backfillStateForOpenPositions = TrailingStop.backfillStateForOpenPositions;
 trailingStopInstance.cleanupObsoleteStates = TrailingStop.cleanupObsoleteStates;
 trailingStopInstance.forceCleanupAllStates = TrailingStop.forceCleanupAllStates;
 
