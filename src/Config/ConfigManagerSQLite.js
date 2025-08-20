@@ -3,7 +3,7 @@ import Logger from '../Utils/Logger.js';
 
 /**
  * ConfigManager SQLite - Versão que usa banco de dados SQLite
- * 
+ *
  * Gerencia todas as configurações dos bots no banco de dados SQLite
  * em vez de arquivos JSON
  */
@@ -52,20 +52,19 @@ class ConfigManagerSQLite {
         Logger.error('❌ [CONFIG_SQLITE] Database service não está inicializado');
         throw new Error('Database service não está inicializado');
       }
-      
+
       // Verifica cache
       const now = Date.now();
-      if (ConfigManagerSQLite.configsCache && 
+      if (ConfigManagerSQLite.configsCache &&
           (now - ConfigManagerSQLite.lastLoadTime) < ConfigManagerSQLite.cacheTimeout) {
         Logger.debug('🔍 [CONFIG_SQLITE] Retornando configurações do cache');
         return ConfigManagerSQLite.configsCache;
       }
-      
-      Logger.debug('🔍 [CONFIG_SQLITE] Carregando configurações...');
+
       const results = await ConfigManagerSQLite.dbService.getAll(
         'SELECT botId, config, createdAt, updatedAt FROM bot_configs ORDER BY botId'
       );
-      
+
       const configs = results.map(row => {
         try {
           const config = JSON.parse(row.config);
@@ -80,14 +79,14 @@ class ConfigManagerSQLite {
           return null;
         }
       }).filter(config => config !== null);
-      
+
       // Atualiza cache
       ConfigManagerSQLite.configsCache = configs;
       ConfigManagerSQLite.lastLoadTime = now;
-      
+
       Logger.infoOnce('config-load', `✅ [CONFIG_SQLITE] ${configs.length} configurações carregadas`);
       return configs;
-      
+
     } catch (error) {
       Logger.error('❌ [CONFIG_SQLITE] Erro ao carregar configurações:', error.message);
       throw error;
@@ -101,22 +100,22 @@ class ConfigManagerSQLite {
   static async saveConfigs(configs) {
     try {
       Logger.info(`💾 [CONFIG_SQLITE] Iniciando salvamento de ${configs.length} configurações...`);
-      
+
       // Limpa todas as configurações existentes
       await ConfigManagerSQLite.dbService.run('DELETE FROM bot_configs');
-      
+
       // Insere as novas configurações
       for (const config of configs) {
         const { id, createdAt, updatedAt, ...configData } = config;
         const configJson = JSON.stringify(configData);
         const now = new Date().toISOString();
-        
+
         await ConfigManagerSQLite.dbService.run(
           'INSERT INTO bot_configs (botId, config, createdAt, updatedAt) VALUES (?, ?, ?, ?)',
           [id, configJson, createdAt || now, updatedAt || now]
         );
       }
-      
+
       Logger.info(`✅ [CONFIG_SQLITE] Configurações salvas com sucesso`);
     } catch (error) {
       Logger.error('❌ [CONFIG_SQLITE] Erro ao salvar configurações:', error.message);
@@ -155,9 +154,9 @@ class ConfigManagerSQLite {
         'SELECT botId, config, createdAt, updatedAt FROM bot_configs WHERE botId = ?',
         [botId]
       );
-      
+
       if (!result) return null;
-      
+
       const config = JSON.parse(result.config);
       return {
         id: result.botId,
@@ -188,15 +187,15 @@ class ConfigManagerSQLite {
    */
   static async updateBotConfigById(botId, newConfig) {
     Logger.debug(`🔄 [CONFIG_SQLITE] Iniciando atualização do bot ID: ${botId}`);
-    
+
     try {
       const currentConfig = await this.getBotConfigById(botId);
       if (!currentConfig) {
         throw new Error(`Bot com ID ${botId} não encontrado`);
       }
-      
+
       Logger.debug(`📝 [CONFIG_SQLITE] Configuração atual encontrada: ${currentConfig.botName}`);
-      
+
       // Preserva os campos de rastreamento de ordens se não estiverem no newConfig
       const updatedConfig = {
         ...currentConfig,
@@ -205,17 +204,17 @@ class ConfigManagerSQLite {
         botClientOrderId: newConfig.botClientOrderId || currentConfig.botClientOrderId,
         orderCounter: newConfig.orderCounter !== undefined ? newConfig.orderCounter : currentConfig.orderCounter
       };
-      
+
       const configJson = JSON.stringify(updatedConfig);
       const now = new Date().toISOString();
-      
+
       await ConfigManagerSQLite.dbService.run(
         'UPDATE bot_configs SET config = ?, updatedAt = ? WHERE botId = ?',
         [configJson, now, botId]
       );
-      
+
       Logger.debug(`✅ [CONFIG_SQLITE] Bot ${botId} atualizado com sucesso`);
-      
+
       // Invalida cache após atualização
       ConfigManagerSQLite.invalidateCache();
     } catch (error) {
@@ -232,7 +231,7 @@ class ConfigManagerSQLite {
   static async addBotConfig(config) {
     try {
       const botId = await this.generateBotId();
-      
+
       // Garante que os campos de rastreamento de ordens sejam sempre incluídos
       const newBotConfig = {
         ...config,
@@ -242,20 +241,20 @@ class ConfigManagerSQLite {
         status: 'stopped', // Status inicial
         nextValidationAt: new Date(Date.now() + 60000).toISOString() // Próxima validação em 60s
       };
-      
+
       const configJson = JSON.stringify(newBotConfig);
       const now = new Date().toISOString();
-      
+
       await ConfigManagerSQLite.dbService.run(
         'INSERT INTO bot_configs (botId, config, createdAt, updatedAt) VALUES (?, ?, ?, ?)',
         [botId, configJson, now, now]
       );
-      
+
       console.log(`✅ [CONFIG_SQLITE] Bot criado com ID: ${botId} e botClientOrderId: ${newBotConfig.botClientOrderId}`);
-      
+
       // Invalida cache após criação
       ConfigManagerSQLite.invalidateCache();
-      
+
       return botId;
     } catch (error) {
       console.error(`❌ [CONFIG_SQLITE] Erro ao criar bot:`, error.message);
@@ -272,16 +271,16 @@ class ConfigManagerSQLite {
       // Primeiro remove todas as ordens do bot
       const { default: OrdersService } = await import('../Services/OrdersService.js');
       const removedOrdersCount = await OrdersService.removeOrdersByBotId(botId);
-      
+
       // Depois remove a configuração do bot
       const result = await ConfigManagerSQLite.dbService.run(
         'DELETE FROM bot_configs WHERE botId = ?',
         [botId]
       );
-      
+
       if (result.changes > 0) {
         console.log(`✅ [CONFIG_SQLITE] Bot ${botId} removido com sucesso (${removedOrdersCount} ordens removidas)`);
-        
+
         // Invalida cache após remoção
         ConfigManagerSQLite.invalidateCache();
       } else {
@@ -305,13 +304,13 @@ class ConfigManagerSQLite {
       if (!currentConfig) {
         throw new Error(`Bot com ID ${botId} não encontrado`);
       }
-      
+
       const updatedConfig = {
         ...currentConfig,
         status: status,
         startTime: startTime || currentConfig.startTime
       };
-      
+
       await this.updateBotConfigById(botId, updatedConfig);
       Logger.debug(`✅ [CONFIG_SQLITE] Status do bot ${botId} atualizado para: ${status}`);
     } catch (error) {
@@ -346,10 +345,10 @@ class ConfigManagerSQLite {
       if (!currentConfig) {
         throw new Error(`Bot com ID ${botId} não encontrado`);
       }
-      
+
       const newCounter = (currentConfig.orderCounter || 0) + 1;
       await this.updateBotConfigById(botId, { orderCounter: newCounter });
-      
+
       return newCounter;
     } catch (error) {
       console.error(`❌ [CONFIG_SQLITE] Erro ao incrementar contador do bot ${botId}:`, error.message);
@@ -368,7 +367,7 @@ class ConfigManagerSQLite {
       if (!currentConfig) {
         throw new Error(`Bot com ID ${botId} não encontrado`);
       }
-      
+
       const newCounter = await this.incrementOrderCounter(botId);
       return this.generateOrderId(botId, currentConfig.botClientOrderId, newCounter);
     } catch (error) {
@@ -385,7 +384,7 @@ class ConfigManagerSQLite {
     try {
       const configs = await this.loadConfigs();
       const configToRemove = configs.find(config => config.botName === botName);
-      
+
       if (configToRemove) {
         await this.removeBotConfigById(configToRemove.id);
         console.log(`✅ [CONFIG_SQLITE] Bot ${botName} removido com sucesso`);
@@ -407,7 +406,7 @@ class ConfigManagerSQLite {
     try {
       const config = await this.getBotConfigById(botId);
       if (!config) return false;
-      
+
       // Verifica se o bot está habilitado e não está rodando
       return config.enabled && config.status !== 'running';
     } catch (error) {
@@ -425,7 +424,7 @@ class ConfigManagerSQLite {
     try {
       const config = await this.getBotConfigById(botId);
       if (!config) return null;
-      
+
       return config.status || 'stopped';
     } catch (error) {
       console.error(`❌ [CONFIG_SQLITE] Erro ao obter status do bot ${botId}:`, error.message);
@@ -442,7 +441,7 @@ class ConfigManagerSQLite {
     try {
       const config = await this.getBotConfigById(botId);
       if (!config) return null;
-      
+
       return {
         id: config.id,
         botName: config.botName,
@@ -466,7 +465,7 @@ class ConfigManagerSQLite {
     try {
       const currentConfig = await this.getBotConfigById(botId);
       if (!currentConfig) return;
-      
+
       if (currentConfig.status === 'error') {
         await this.updateBotStatusById(botId, 'stopped');
         console.log(`✅ [CONFIG_SQLITE] Status de erro do bot ${botId} limpo`);
@@ -516,15 +515,15 @@ class ConfigManagerSQLite {
       if (!config.botName || config.botName.trim() === '') {
         return false;
       }
-      
+
       if (!config.apiKey || !config.apiSecret) {
         return false;
       }
-      
+
       if (!config.strategyName) {
         return false;
       }
-      
+
       return true;
     } catch (error) {
       console.error(`❌ [CONFIG_SQLITE] Erro ao validar configuração:`, error.message);

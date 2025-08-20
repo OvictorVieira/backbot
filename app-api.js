@@ -179,25 +179,10 @@ async function loadAndRecoverBots() {
     // Carrega todos os bots habilitados que estavam rodando ou em erro
     const configs = await ConfigManagerSQLite.loadConfigs();
 
-    // DEBUG: Log todos os bots encontrados
-    Logger.debug(`🔍 [PERSISTENCE] Todos os bots encontrados:`, configs.map(c => ({
-      id: c.id,
-      botName: c.botName,
-      status: c.status,
-      enabled: c.enabled
-    })));
-
     const botsToRecover = configs.filter(config =>
       config.enabled &&
       (config.status === 'running' || config.status === 'error' || config.status === 'starting')
     );
-
-    Logger.debug(`🔍 [PERSISTENCE] Bots filtrados para recuperação:`, botsToRecover.map(c => ({
-      id: c.id,
-      botName: c.botName,
-      status: c.status,
-      enabled: c.enabled
-    })));
 
     if (botsToRecover.length === 0) {
       Logger.debug(`ℹ️ [PERSISTENCE] Nenhum bot para recuperar encontrado`);
@@ -420,15 +405,6 @@ async function startStops(botId) {
       Logger.warn(`⚠️ [STOPS] Bot ${botId} (${config.botName}) não tem credenciais configuradas`);
     }
 
-    // Executa o trailing stop passando as configurações
-    Logger.debug(`🔧 [STOPS] Bot ${botId}: Config recebida:`, {
-      id: config.id,
-      botName: config.botName,
-      hasApiKey: !!config.apiKey,
-      hasApiSecret: !!config.apiSecret,
-      enableTrailingStop: config.enableTrailingStop
-    });
-
     // Cria instância do OrdersService para sistema ativo de trailing stop
     const ordersService = new OrdersService(config.apiKey, config.apiSecret);
 
@@ -617,20 +593,16 @@ async function startOrphanOrderMonitor(botId) {
       Logger.warn(`⚠️ [ORPHAN_ORDERS] Bot ${botId} (${config.botName}) não tem credenciais configuradas`);
     }
 
-    // Usa o novo método de varredura completa para ser mais eficiente
-    // Alterna entre os métodos baseado em um timestamp para evitar sobrecarregar a API
     const now = Date.now();
     const lastFullScan = rateLimit.orphanOrders.lastFullScan || 0;
     const shouldDoFullScan = (now - lastFullScan) > 300000; // 5 minutos desde última varredura completa
 
     let result;
     if (shouldDoFullScan) {
-      // Varredura completa a cada 5 minutos
       result = await OrderController.scanAndCleanupAllOrphanedOrders(config.botName, config);
       rateLimit.orphanOrders.lastFullScan = now;
-      Logger.info(`🔍 [${config.botName}][ORPHAN_MONITOR] Varredura completa executada: ${result.symbolsScanned} símbolos verificados`);
+      Logger.info(`🔍 [${config.botName}][ORPHAN_MONITOR] Varredura completa executada: ${result.ordersScanned} símbolos verificados`);
     } else {
-      // Limpeza normal baseada na configuração
       result = await OrderController.monitorAndCleanupOrphanedStopLoss(config.botName, config);
     }
 
@@ -713,13 +685,111 @@ async function startTrailingStopsCleanerMonitor(botId) {
 }
 
 /**
+ * Monitor de sincronização de active_order_id do trailing stop
+ * Verifica se o active_order_id salvo corresponde ao stop loss real na corretora
+ */
+async function startTrailingStopSyncMonitor(botId) {
+  try {
+    // Carrega configuração do bot
+    const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
+    if (!botConfig) {
+      throw new Error(`Configuração não encontrada para bot ID: ${botId}`);
+    }
+
+    // Verifica se as credenciais estão presentes
+    if (!botConfig.apiKey || !botConfig.apiSecret) {
+      Logger.debug(`⏭️ [TRAILING_SYNC] Bot ${botId} (${botConfig.botName}) não tem credenciais configuradas`);
+      return;
+    }
+
+    // Busca trailing_states ativas do bot
+    const trailingStates = await TrailingStop.dbService.getAll(
+      'SELECT * FROM trailing_state WHERE botId = ? AND active_stop_order_id IS NOT NULL',
+      [botId]
+    );
+
+    if (!trailingStates || trailingStates.length === 0) {
+      Logger.debug(`⏭️ [TRAILING_SYNC] Bot ${botId}: Nenhum trailing state ativo para sincronizar`);
+      return;
+    }
+
+    Logger.debug(`🔄 [TRAILING_SYNC] Bot ${botId}: Sincronizando ${trailingStates.length} trailing states...`);
+
+    let syncCount = 0;
+    let orphanCount = 0;
+
+    // Para cada trailing state ativo
+    for (const state of trailingStates) {
+      try {
+        await new Promise(resolve => setTimeout(resolve, 200)); // Rate limit
+
+        // Busca ordens abertas deste símbolo na corretora
+        const activeOrders = await Order.getOpenOrders(state.symbol, "PERP", botConfig.apiKey, botConfig.apiSecret);
+
+        if (!activeOrders || activeOrders.length === 0) {
+          // Nenhuma ordem aberta - marcar como órfão
+          await TrailingStop.dbService.run(
+            'UPDATE trailing_state SET active_stop_order_id = NULL, updatedAt = ? WHERE botId = ? AND symbol = ?',
+            [new Date().toISOString(), botId, state.symbol]
+          );
+          orphanCount++;
+          Logger.info(`🧹 [TRAILING_SYNC] ${state.symbol}: Nenhuma ordem aberta encontrada, marcado como órfão`);
+          continue;
+        }
+
+        // Identifica stop loss real (mesmo critério usado no sistema)
+        const realStopLoss = activeOrders.find(order =>
+          order.status === 'TriggerPending' && order.triggerPrice !== null
+        );
+
+        if (!realStopLoss) {
+          // Stop loss não encontrado - marcar como órfão
+          await TrailingStop.dbService.run(
+            'UPDATE trailing_state SET active_stop_order_id = NULL, updatedAt = ? WHERE botId = ? AND symbol = ?',
+            [new Date().toISOString(), botId, state.symbol]
+          );
+          orphanCount++;
+          Logger.info(`🧹 [TRAILING_SYNC] ${state.symbol}: Stop loss não encontrado (${activeOrders.length} ordens abertas), marcado como órfão`);
+          continue;
+        }
+
+        // Verifica se precisa sincronizar
+        if (realStopLoss.id !== state.active_stop_order_id) {
+          await TrailingStop.dbService.run(
+            'UPDATE trailing_state SET active_stop_order_id = ?, updatedAt = ? WHERE botId = ? AND symbol = ?',
+            [realStopLoss.id, new Date().toISOString(), botId, state.symbol]
+          );
+          syncCount++;
+          Logger.info(`🔄 [TRAILING_SYNC] ${state.symbol}: Sincronizado active_order_id: ${state.active_stop_order_id} → ${realStopLoss.id} (trigger: $${realStopLoss.triggerPrice})`);
+        } else {
+          Logger.debug(`✅ [TRAILING_SYNC] ${state.symbol}: active_order_id correto (${realStopLoss.id})`);
+        }
+
+      } catch (error) {
+        Logger.error(`❌ [TRAILING_SYNC] Erro ao sincronizar ${state.symbol}:`, error.message);
+      }
+    }
+
+    if (syncCount > 0 || orphanCount > 0) {
+      Logger.info(`✅ [TRAILING_SYNC] Bot ${botId}: Sincronização concluída - ${syncCount} atualizados, ${orphanCount} órfãos`);
+    }
+
+    return { synchronized: syncCount, orphaned: orphanCount, total: trailingStates.length };
+
+  } catch (error) {
+    Logger.error(`❌ [TRAILING_SYNC] Erro no monitor de sincronização do bot ${botId}:`, error.message);
+    throw error;
+  }
+}
+
+/**
  * Função centralizada para configurar TODOS os monitores de um bot
  * @param {number} botId - ID do bot
  * @param {Object} config - Configuração do bot
  */
 function setupBotMonitors(botId, config) {
   Logger.info(`🚀 [MONITORS] Iniciando TODOS os monitores para bot ${botId} (${config.botName})...`);
-  
+
   // Monitor de ordens pendentes - 15 segundos
   const runPendingOrdersMonitor = async () => {
     try {
@@ -769,14 +839,27 @@ function setupBotMonitors(botId, config) {
   // Inicia com delay de 2 segundos para não sobrecarregar
   setTimeout(runTrailingStopsCleanerMonitor, 2000);
 
+  // Monitor de sincronização trailing stop - 2 minutos
+  const runTrailingStopSyncMonitor = async () => {
+    try {
+      Logger.debug(`🔄 [TRAILING_SYNC] Executando para bot ${botId}`);
+      await startTrailingStopSyncMonitor(botId);
+    } catch (error) {
+      Logger.error(`❌ [${config.botName}][TRAILING_SYNC] Erro no monitoramento do bot ${botId}:`, error.message);
+    }
+    setTimeout(runTrailingStopSyncMonitor, 120000); // 2 minutos
+  };
+  setTimeout(runTrailingStopSyncMonitor, 30000); // Inicia após 30 segundos
+
   Logger.info(`✅ [MONITORS] Todos os monitores iniciados para bot ${botId} (${config.botName})`);
-  
+
   // Para compatibilidade, retorna IDs fictícios
   return {
     pendingOrdersIntervalId: 'timeout_pending',
-    orphanOrdersIntervalId: 'timeout_orphan', 
+    orphanOrdersIntervalId: 'timeout_orphan',
     takeProfitIntervalId: 'timeout_takeprofit',
-    trailingStopsCleanerIntervalId: 'timeout_trailing_cleaner'
+    trailingStopsCleanerIntervalId: 'timeout_trailing_cleaner',
+    trailingSyncIntervalId: 'timeout_trailing_sync'
   };
 }
 

@@ -367,7 +367,7 @@ class TrailingStop {
       const apiSecret = config.apiSecret;
 
       const positions = await Futures.getOpenPositions(apiKey, apiSecret);
-      
+
       // 🔧 CORREÇÃO: Filtra apenas posições realmente abertas (netQuantity > 0)
       const activePositions = positions ? positions.filter(p => Math.abs(parseFloat(p.netQuantity || 0)) > 0) : [];
       const openSymbols = activePositions.map(p => p.symbol);
@@ -1142,32 +1142,7 @@ class TrailingStop {
         }
       }
 
-
-      // Verifica se deve fechar por stop loss inicial
-      const shouldCloseByInitialStop = isLong
-        ? currentPrice <= trailingState.initialAtrStopPrice
-        : currentPrice >= trailingState.initialAtrStopPrice;
-
-      if (shouldCloseByInitialStop) {
-        TrailingStop.colorLogger.trailingTrigger(`${position.symbol}: 🛑 Stop Loss Inteligente ATINGIDO! Preço Atual: $${currentPrice.toFixed(4)}, Stop ATR: $${trailingState.initialAtrStopPrice?.toFixed(4) || 'N/A'}, ATR: ${trailingState.atrValue?.toFixed(6) || 'N/A'}`);
-        return {
-          shouldClose: true,
-          reason: `Stop Loss Inteligente: Preço $${currentPrice.toFixed(4)} cruzou stop loss $${trailingState.initialAtrStopPrice?.toFixed(4) || 'N/A'}`,
-          type: 'HYBRID_INITIAL_STOP',
-          trailingStopPrice: trailingState.initialAtrStopPrice,
-          currentPrice: currentPrice
-        };
-      }
-
-      // === DETECÇÃO DE TAKE PROFIT PARCIAL ===
-      // A lógica de trailing stop unificada já foi executada acima
-      // Aqui apenas verificamos se o take profit parcial foi executado
-      Logger.debug(`🔍 [HYBRID_DEBUG] DETECÇÃO TP: Verificando se o take profit parcial foi executado. Fase atual: ${trailingState.phase}`);
-
-
-      Logger.debug(`🔍 [HYBRID_DEBUG] FIM: Retornando trailingState para ${position.symbol}`);
       return trailingState;
-
     } catch (error) {
       Logger.debug(`🔍 [HYBRID_DEBUG] ERRO: Exception caught in updateTrailingStopHybrid for ${position.symbol}: ${error.message}`);
       Logger.error(`[HYBRID_TRAILING] Erro ao atualizar trailing stop híbrido para ${position.symbol}:`, error.message);

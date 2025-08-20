@@ -3426,8 +3426,10 @@ class OrderController {
         apiSecret,
         strategy: config?.strategyName || 'DEFAULT'
       });
-      const configuredSymbols = Account.markets.map(m => m.symbol);
-      Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] Verificando ${configuredSymbols.length} símbolos configurados: ${configuredSymbols.join(', ')}`);
+      
+      // 🔧 CORREÇÃO: Usa authorizedTokens ao invés de Account.markets
+      const configuredSymbols = config.authorizedTokens || [];
+      Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] Verificando ${configuredSymbols.length} símbolos autorizados: ${configuredSymbols.join(', ')}`);
 
       let totalOrphanedOrders = 0;
       let totalCancelledOrders = 0;
@@ -3763,7 +3765,9 @@ class OrderController {
         apiSecret,
         strategy: config?.strategyName || 'DEFAULT'
       });
-      const configuredSymbols = Account.markets.map(m => m.symbol);
+      
+      // 🔧 CORREÇÃO: Usa authorizedTokens ao invés de Account.markets  
+      const configuredSymbols = config.authorizedTokens || [];
 
       let totalOrphanedOrders = 0;
       let totalCancelledOrders = 0;
