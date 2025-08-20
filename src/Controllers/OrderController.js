@@ -3480,7 +3480,7 @@ class OrderController {
 
             // Log detalhado das ordens órfãs
             for (const order of orphanedOrders) {
-              const orderType = order.stopLossTriggerPrice || order.stopLossLimitPrice ? 'STOP_LOSS' : 
+              const orderType = order.stopLossTriggerPrice || order.stopLossLimitPrice ? 'STOP_LOSS' :
                                order.takeProfitTriggerPrice || order.takeProfitLimitPrice ? 'TAKE_PROFIT' : 'REDUCE_ONLY';
               const triggerPrice = order.stopLossTriggerPrice || order.takeProfitTriggerPrice || order.limitPrice;
               Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Ordem órfã ${orderType} - ID: ${order.id}, Preço: ${triggerPrice}, ReduceOnly: ${order.reduceOnly}`);
@@ -4084,8 +4084,8 @@ class OrderController {
       const markets = new Markets();
       const ticker = await markets.getTicker(market);
 
-      if (ticker && ticker.last) {
-        return parseFloat(ticker.last);
+      if (ticker && ticker?.lastPrice) {
+        return parseFloat(ticker?.lastPrice);
       }
 
       return null;

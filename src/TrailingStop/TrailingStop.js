@@ -12,6 +12,22 @@ import Order from "../Backpack/Authenticated/Order.js";
 
 class TrailingStop {
 
+  // Cache estático para controlar symbols que devem ser skipados (posição fechada)
+  static skippedSymbols = new Map();
+  
+  // Limpa entries do cache que são mais antigas que 24 horas
+  static cleanupSkippedSymbolsCache() {
+    const now = Date.now();
+    const maxAge = 24 * 60 * 60 * 1000; // 24 horas
+    
+    for (const [key, timestamp] of TrailingStop.skippedSymbols.entries()) {
+      if (now - timestamp > maxAge) {
+        TrailingStop.skippedSymbols.delete(key);
+        Logger.debug(`🧹 [CACHE_CLEANUP] Removido ${key} do cache de skip (> 24h)`);
+      }
+    }
+  }
+
   constructor(strategyType = null, config = null, ordersService = null) {
     const finalStrategyType = strategyType || 'DEFAULT';
     this.strategyType = finalStrategyType;
@@ -982,6 +998,30 @@ class TrailingStop {
   async updateTrailingStopHybrid(position, trailingState, account, pnl, pnlPct, currentPrice, entryPrice, isLong, isShort) {
     try {
       Logger.debug(`🔍 [HYBRID_DEBUG] INÍCIO updateTrailingStopHybrid para ${position.symbol}`);
+      
+      // Verifica se este symbol está na lista de skip (posição fechada)
+      const symbolKey = `${position.symbol}_${this.config.botName}`;
+      if (TrailingStop.skippedSymbols.has(symbolKey)) {
+        Logger.debug(`⏭️ [TRAILING_SKIP] Symbol ${position.symbol} está sendo skipado (posição fechada)`);
+        return null;
+      }
+      
+      // Valida se a posição ainda existe na exchange
+      const exchangePositions = await Futures.getOpenPositions(this.config.apiKey, this.config.apiSecret) || [];
+      const activePosition = exchangePositions.find(pos => pos.symbol === position.symbol && pos.netQuantity !== '0');
+      
+      if (!activePosition) {
+        Logger.warn(`⚠️ [POSITION_VALIDATION] Posição ${position.symbol} não encontrada na exchange ou quantidade zero. Skipping até reabertura.`);
+        TrailingStop.skippedSymbols.set(symbolKey, Date.now());
+        return null;
+      } else {
+        // Remove do skip se posição foi reaberta
+        if (TrailingStop.skippedSymbols.has(symbolKey)) {
+          Logger.info(`✅ [POSITION_VALIDATION] Posição ${position.symbol} reaberta, removendo do skip`);
+          TrailingStop.skippedSymbols.delete(symbolKey);
+        }
+      }
+
       Logger.debug(`🔍 [HYBRID_DEBUG] trailingState exists: ${!!trailingState}`);
       Logger.debug(`🔍 [HYBRID_DEBUG] position: ${JSON.stringify(position)}`);
       Logger.debug(`🔍 [HYBRID_DEBUG] pnl: ${pnl}, pnlPct: ${pnlPct}, currentPrice: ${currentPrice}`);

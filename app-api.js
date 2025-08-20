@@ -41,6 +41,8 @@ import Markets from './src/Backpack/Public/Markets.js';
 import PositionSyncServiceClass from './src/Services/PositionSyncService.js';
 import PositionTrackingService from './src/Services/PositionTrackingService.js';
 import OrdersService from "./src/Services/OrdersService.js";
+import Order from "./src/Backpack/Authenticated/Order.js";
+import AccountController from "./src/Controllers/AccountController.js";
 
 // Instancia PositionSyncService (será inicializado depois que o DatabaseService estiver pronto)
 let PositionSyncService = null;
@@ -322,7 +324,27 @@ async function recoverBot(botId, config, startTime) {
       orphanOrdersIntervalId,
       takeProfitIntervalId,
       config,
-      status: 'running'
+      status: 'running',
+      updateConfig: async (newConfig) => {
+        Logger.info(`🔄 [CONFIG_UPDATE] Atualizando configuração do bot ${botId} em tempo real`);
+        // Atualiza a configuração na instância
+        const botInstance = activeBotInstances.get(botId);
+        if (botInstance) {
+          botInstance.config = newConfig;
+          Logger.info(`✅ [CONFIG_UPDATE] Configuração do bot ${botId} atualizada com sucesso`);
+
+          // Invalida qualquer cache relacionado
+          ConfigManagerSQLite.invalidateCache();
+
+          // Log das principais mudanças (para debug)
+          Logger.debug(`📊 [CONFIG_UPDATE] Bot ${botId} - Novas configurações aplicadas:`, {
+            capitalPercentage: newConfig.capitalPercentage,
+            maxOpenOrders: newConfig.maxOpenOrders,
+            enableTrailingStop: newConfig.enableTrailingStop,
+            enabled: newConfig.enabled
+          });
+        }
+      }
     });
 
     Logger.info(`✅ [PERSISTENCE] Bot ${botId} (${config.botName}) recuperado com sucesso`);
@@ -704,7 +726,7 @@ async function startTrailingStopSyncMonitor(botId) {
 
     // Busca trailing_states ativas do bot
     const trailingStates = await TrailingStop.dbService.getAll(
-      'SELECT * FROM trailing_state WHERE botId = ? AND active_stop_order_id IS NOT NULL',
+      'SELECT * FROM trailing_state WHERE botId = ?',
       [botId]
     );
 
@@ -715,6 +737,10 @@ async function startTrailingStopSyncMonitor(botId) {
 
     Logger.debug(`🔄 [TRAILING_SYNC] Bot ${botId}: Sincronizando ${trailingStates.length} trailing states...`);
 
+    // Busca posições abertas na corretora
+    const positions = await Futures.getOpenPositions(botConfig.apiKey, botConfig.apiSecret) || [];
+    Logger.debug(`🔍 [TRAILING_SYNC] Bot ${botId}: ${positions.length} posições abertas na corretora`);
+
     let syncCount = 0;
     let orphanCount = 0;
 
@@ -723,8 +749,19 @@ async function startTrailingStopSyncMonitor(botId) {
       try {
         await new Promise(resolve => setTimeout(resolve, 200)); // Rate limit
 
+        // Define credentials para uso no loop
+        const apiKey = botConfig.apiKey;
+        const apiSecret = botConfig.apiSecret;
+
+        // Busca preço atual do symbol
+        const currentPrice = await OrderController.getCurrentPrice(state.symbol);
+        if (!currentPrice) {
+          Logger.error(`❌ [TRAILING_SYNC] Preço atual não encontrado para ${state.symbol}`);
+          continue;
+        }
+
         // Busca ordens abertas deste símbolo na corretora
-        const activeOrders = await Order.getOpenOrders(state.symbol, "PERP", botConfig.apiKey, botConfig.apiSecret);
+        const activeOrders = await Order.getOpenOrders(state.symbol, "PERP", apiKey, apiSecret);
 
         if (!activeOrders || activeOrders.length === 0) {
           // Nenhuma ordem aberta - marcar como órfão
@@ -737,32 +774,109 @@ async function startTrailingStopSyncMonitor(botId) {
           continue;
         }
 
-        // Identifica stop loss real (mesmo critério usado no sistema)
-        const realStopLoss = activeOrders.find(order =>
-          order.status === 'TriggerPending' && order.triggerPrice !== null
-        );
+        // Identifica trailing stop real baseado na posição e preço
+        let positions = await Futures.getOpenPositions(apiKey, apiSecret) || [];
+        const position = positions.find(pos => pos.symbol === state.symbol);
+        if (!position) {
+          Logger.debug(`🔍 [TRAILING_SYNC] Posição não encontrada para ${state.symbol}`);
+          continue;
+        }
 
-        if (!realStopLoss) {
-          // Stop loss não encontrado - marcar como órfão
-          await TrailingStop.dbService.run(
-            'UPDATE trailing_state SET active_stop_order_id = NULL, updatedAt = ? WHERE botId = ? AND symbol = ?',
-            [new Date().toISOString(), botId, state.symbol]
-          );
-          orphanCount++;
-          Logger.info(`🧹 [TRAILING_SYNC] ${state.symbol}: Stop loss não encontrado (${activeOrders.length} ordens abertas), marcado como órfão`);
+        const isLong = parseFloat(position.netQuantity) > 0;
+        const realTrailingStop = activeOrders.find(order => {
+          // Deve ser uma ordem TriggerPending reduceOnly
+          if (order.status !== 'TriggerPending' || !order.reduceOnly) {
+            return false;
+          }
+
+          const orderPrice = parseFloat(order.triggerPrice || order.takeProfitTriggerPrice || order.price);
+
+          // Para trailing stop: ordem deve estar "atrás" do preço atual (proteção)
+          if (isLong) {
+            // Long: trailing stop abaixo do preço atual
+            return orderPrice < currentPrice;
+          } else {
+            // Short: trailing stop acima do preço atual
+            return orderPrice > currentPrice;
+          }
+        });
+
+        if (!realTrailingStop) {
+          // Trailing stop não encontrado - tentar criar um
+          Logger.warn(`⚠️ [TRAILING_SYNC] ${state.symbol}: Trailing stop não encontrado, tentando criar...`);
+
+          try {
+            // Busca configuração do bot para criar trailing stop
+            const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
+            if (!botConfig || !botConfig.enableTrailingStop) {
+              Logger.debug(`🔍 [TRAILING_SYNC] ${state.symbol}: Trailing stop desabilitado para bot ${botId}`);
+              continue;
+            }
+
+            // Cria trailing stop usando a lógica do TrailingStop
+            const trailingStopPrice = isLong ?
+              currentPrice * (1 - (botConfig.trailingStopDistance || 1.5) / 100) :
+              currentPrice * (1 + (botConfig.trailingStopDistance || 1.5) / 100);
+
+            const Account = await AccountController.get(botConfig);
+
+            const marketInfo = Account.markets.find(m => m.symbol === state.symbol);
+            if (!marketInfo) {
+              Logger.error(`❌ [TRAILING_SYNC] Market info não encontrada para ${state.symbol}`);
+              continue;
+            }
+
+            const formatPrice = (value) => parseFloat(value).toFixed(marketInfo.decimal_price).toString();
+
+            const orderPayload = {
+              symbol: state.symbol,
+              side: isLong ? 'Ask' : 'Bid',
+              orderType: 'Limit',
+              quantity: Math.abs(parseFloat(position.netQuantity)).toString(),
+              stopLossTriggerPrice: formatPrice(trailingStopPrice),
+              clientId: await OrderController.generateUniqueOrderId(botConfig),
+              apiKey: apiKey,
+              apiSecret: apiSecret,
+            };
+
+            const newOrder = await OrderController.ordersService.createStopLossOrder(orderPayload);
+
+            if (newOrder && newOrder.id) {
+              // Salva o active_order_id no banco
+              await TrailingStop.dbService.run(
+                'UPDATE trailing_state SET active_stop_order_id = ?, updatedAt = ? WHERE botId = ? AND symbol = ?',
+                [newOrder.id, new Date().toISOString(), botId, state.symbol]
+              );
+
+              Logger.info(`✅ [TRAILING_SYNC] ${state.symbol}: Trailing stop criado ${newOrder.id} (${formatPrice(trailingStopPrice)})`);
+              syncCount++;
+            } else {
+              throw new Error('Ordem não foi criada');
+            }
+
+          } catch (error) {
+            Logger.error(`❌ [TRAILING_SYNC] Erro ao criar trailing stop para ${state.symbol}:`, error.message);
+            // Marca como órfão se não conseguiu criar
+            await TrailingStop.dbService.run(
+              'UPDATE trailing_state SET active_stop_order_id = NULL, updatedAt = ? WHERE botId = ? AND symbol = ?',
+              [new Date().toISOString(), botId, state.symbol]
+            );
+            orphanCount++;
+          }
           continue;
         }
 
         // Verifica se precisa sincronizar
-        if (realStopLoss.id !== state.active_stop_order_id) {
+        if (realTrailingStop.id !== state.active_stop_order_id) {
           await TrailingStop.dbService.run(
             'UPDATE trailing_state SET active_stop_order_id = ?, updatedAt = ? WHERE botId = ? AND symbol = ?',
-            [realStopLoss.id, new Date().toISOString(), botId, state.symbol]
+            [realTrailingStop.id, new Date().toISOString(), botId, state.symbol]
           );
           syncCount++;
-          Logger.info(`🔄 [TRAILING_SYNC] ${state.symbol}: Sincronizado active_order_id: ${state.active_stop_order_id} → ${realStopLoss.id} (trigger: $${realStopLoss.triggerPrice})`);
+          const orderPrice = realTrailingStop.triggerPrice || realTrailingStop.takeProfitTriggerPrice || realTrailingStop.price;
+          Logger.info(`🔄 [TRAILING_SYNC] ${state.symbol}: Sincronizado active_order_id: ${state.active_stop_order_id} → ${realTrailingStop.id} (trigger: $${orderPrice})`);
         } else {
-          Logger.debug(`✅ [TRAILING_SYNC] ${state.symbol}: active_order_id correto (${realStopLoss.id})`);
+          Logger.debug(`✅ [TRAILING_SYNC] ${state.symbol}: active_order_id correto (${realTrailingStop.id})`);
         }
 
       } catch (error) {
@@ -1001,10 +1115,35 @@ async function startBot(botId, forceRestart = false) {
     // Configura execução periódica
     const intervalId = setInterval(executeBot, executionInterval);
 
+    // Carrega configuração inicial para a instância
+    let botInstanceConfig = await ConfigManagerSQLite.getBotConfigById(botId);
+
     // Adiciona a instância do bot ao mapa de controle
     activeBotInstances.set(botId, {
       intervalId,
-      executeBot
+      executeBot,
+      config: botInstanceConfig,
+      status: 'running',
+      updateConfig: async (newConfig) => {
+        Logger.info(`🔄 [CONFIG_UPDATE] Atualizando configuração do bot ${botId} em tempo real`);
+        // Atualiza a configuração na instância
+        const botInstance = activeBotInstances.get(botId);
+        if (botInstance) {
+          botInstance.config = newConfig;
+          Logger.info(`✅ [CONFIG_UPDATE] Configuração do bot ${botId} atualizada com sucesso`);
+
+          // Invalida qualquer cache relacionado
+          ConfigManagerSQLite.invalidateCache();
+
+          // Log das principais mudanças (para debug)
+          Logger.debug(`📊 [CONFIG_UPDATE] Bot ${botId} - Novas configurações aplicadas:`, {
+            capitalPercentage: newConfig.capitalPercentage,
+            maxOpenOrders: newConfig.maxOpenOrders,
+            enableTrailingStop: newConfig.enableTrailingStop,
+            enabled: newConfig.enabled
+          });
+        }
+      }
     });
 
     Logger.info(`✅ [BOT] Bot ${botId} iniciado com sucesso`);
