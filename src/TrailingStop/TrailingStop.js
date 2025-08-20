@@ -203,8 +203,10 @@ class TrailingStop {
       const activeOrders = await Order.getOpenOrders(symbol, "PERP", config.apiKey, config.apiSecret);
 
       if (activeOrders && activeOrders.length > 0) {
+        // Busca tanto stop loss quanto take profit orders para trailing stop
         const stopLossOrder = activeOrders.find(order =>
-            order.status === 'TriggerPending' && order.triggerPrice !== null
+            order.status === 'TriggerPending' && 
+            (order.triggerPrice !== null || order.takeProfitTriggerPrice !== null || order.price !== null)
         );
 
         if (stopLossOrder) {
@@ -214,16 +216,23 @@ class TrailingStop {
           const foundState = await TrailingStop.loadStateForBot(TrailingStop.dbService, botId, symbol);
 
           let trailingStopIsBetterThanSL = false;
+          
+          // Determina o preço atual da ordem (stop loss, take profit ou price)
+          const currentOrderPrice = stopLossOrder.triggerPrice !== null ? 
+            parseFloat(stopLossOrder.triggerPrice) : 
+            stopLossOrder.takeProfitTriggerPrice !== null ?
+            parseFloat(stopLossOrder.takeProfitTriggerPrice) :
+            parseFloat(stopLossOrder.price);
 
           if (state.isLong) {
             // Para uma posição LONG (comprada), um stop "melhor" é um preço MAIS ALTO.
             // Ele trava mais lucro ou reduz a perda.
-            trailingStopIsBetterThanSL = state.trailingStopPrice > parseFloat(stopLossOrder.triggerPrice);
+            trailingStopIsBetterThanSL = state.trailingStopPrice > currentOrderPrice;
 
           } else {
             // Para uma posição SHORT (vendida), um stop "melhor" é um preço MAIS BAIXO.
             // Ele também trava mais lucro ou reduz a perda na direção oposta.
-            trailingStopIsBetterThanSL = state.trailingStopPrice < parseFloat(stopLossOrder.triggerPrice);
+            trailingStopIsBetterThanSL = state.trailingStopPrice < currentOrderPrice;
           }
 
           if(trailingStopIsBetterThanSL) {
@@ -259,24 +268,46 @@ class TrailingStop {
 
               const formatPrice = (value) => parseFloat(value).toFixed(decimal_price).toString()
 
+              // Determina se a ordem atual é stop loss, take profit ou price
+              const isStopLossOrder = stopLossOrder.triggerPrice !== null;
+              const isTakeProfitOrder = stopLossOrder.takeProfitTriggerPrice !== null;
+              const isPriceOrder = stopLossOrder.price !== null && !isStopLossOrder && !isTakeProfitOrder;
+              
               const bodyPayload = {
                 symbol: symbol,
                 side: state.isLong ? 'Ask' : 'Bid',
                 orderType: 'Limit',
                 quantity: stopLossOrder.triggerQuantity,
-                stopLossTriggerPrice: formatPrice(state.trailingStopPrice),
                 clientId: await OrderController.generateUniqueOrderId(config),
                 apiKey: apiKey,
                 apiSecret: apiSecret,
               }
+              
+              // Define o tipo de trigger baseado na ordem existente
+              if (isStopLossOrder) {
+                bodyPayload.stopLossTriggerPrice = formatPrice(state.trailingStopPrice);
+              } else if (isTakeProfitOrder) {
+                bodyPayload.takeProfitTriggerPrice = formatPrice(state.trailingStopPrice);
+              } else if (isPriceOrder) {
+                bodyPayload.price = formatPrice(state.trailingStopPrice);
+              }
 
-              // 3. Cria a NOVA ordem de stop loss com o preço atualizado
-              const stopResult = await OrderController.ordersService.createStopLossOrder(bodyPayload);
+              // 3. Cria a NOVA ordem (stop loss, take profit ou limit) com o preço atualizado
+              let stopResult;
+              if (isStopLossOrder) {
+                stopResult = await OrderController.ordersService.createStopLossOrder(bodyPayload);
+              } else if (isTakeProfitOrder) {
+                stopResult = await OrderController.ordersService.createTakeProfitOrder(bodyPayload);
+              } else if (isPriceOrder) {
+                stopResult = await OrderController.ordersService.createOrder(bodyPayload);
+              }
 
               // 4. Se a nova ordem foi criada, cancela a ANTIGA (apenas se existir)
               if (stopResult && stopResult.id) {
+                const orderType = isStopLossOrder ? 'stop loss' : 
+                  isTakeProfitOrder ? 'take profit' : 'limit';
                 if (foundState.activeStopOrderId && foundState.activeStopOrderId !== 'undefined') {
-                  Logger.info(`✅ New stop loss order ${stopResult.id} created. Cancelling old order ${foundState.activeStopOrderId}.`);
+                  Logger.info(`✅ New ${orderType} order ${stopResult.id} created. Cancelling old order ${foundState.activeStopOrderId}.`);
                   let cancelOrderPayload = {
                     symbol: symbol,
                     orderId: foundState.activeStopOrderId,
@@ -286,7 +317,7 @@ class TrailingStop {
 
                   await OrderController.ordersService.cancelOrder(cancelOrderPayload);
                 } else {
-                  Logger.info(`✅ New stop loss order ${stopResult.id} created. No old order to cancel.`);
+                  Logger.info(`✅ New ${orderType} order ${stopResult.id} created. No old order to cancel.`);
                 }
 
                 externalOrderId = stopResult.id;
