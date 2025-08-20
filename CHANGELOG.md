@@ -5,6 +5,22 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.6.1] - 2025-08-20
+
+### 🔧 **FIX: Correções no Sistema de Limpeza de Ordens Órfãs**
+
+#### 🧹 **Limpeza Unificada de Ordens Órfãs**
+**Alterações:** Sistema de limpeza expandido para incluir take profit órfãos e correção de exports.
+
+**Melhorias implementadas:**
+- ✅ **Método renomeado** - `monitorAndCleanupOrphanedStopLoss` → `monitorAndCleanupOrphanedOrders`
+- ✅ **Take profit órfãos** - Agora incluídos na limpeza regular (60s) 
+- ✅ **Filtro simplificado** - Usa `reduceOnly` para capturar todos os tipos
+- ✅ **Categorização mantida** - Logs separados para stop loss vs take profit
+- ✅ **Export corrigido** - Removido export redundante de `cleanOrphanedTrailingStates`
+
+**Impacto:** Take profit órfãos não ficam mais acumulados aguardando o ciclo de 5 minutos, melhorando a eficiência da limpeza de ordens.
+
 ## [1.6.0] - 2025-08-20
 
 ### 🚀 **FEATURE: Sistema de Trailing Stop Inteligente e Atualizações em Tempo Real**
