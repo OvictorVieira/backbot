@@ -603,7 +603,7 @@ async function startOrphanOrderMonitor(botId) {
       rateLimit.orphanOrders.lastFullScan = now;
       Logger.info(`🔍 [${config.botName}][ORPHAN_MONITOR] Varredura completa executada: ${result.ordersScanned} símbolos verificados`);
     } else {
-      result = await OrderController.monitorAndCleanupOrphanedStopLoss(config.botName, config);
+      result = await OrderController.monitorAndCleanupOrphanedOrders(config.botName, config);
     }
 
     // Se sucesso, reduz gradualmente o intervalo até o mínimo

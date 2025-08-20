@@ -1143,7 +1143,7 @@ class OrderController {
           // Limpeza automática de ordens órfãs para este símbolo
           try {
             Logger.info(`🧹 [FORCE_CLOSE] ${position.symbol}: Verificando ordens órfãs após fechamento...`);
-            const orphanResult = await OrderController.monitorAndCleanupOrphanedStopLoss('DEFAULT', config);
+            const orphanResult = await OrderController.monitorAndCleanupOrphanedOrders('DEFAULT', config);
             if (orphanResult.orphaned > 0) {
               Logger.info(`🧹 [FORCE_CLOSE] ${position.symbol}: ${orphanResult.orphaned} ordens órfãs limpas após fechamento`);
             }
@@ -3397,19 +3397,14 @@ class OrderController {
   }
 
   /**
-   * 🧹 ÚNICO MÉTODO para monitorar e limpar ordens órfãs
-   *
-   * Detecta e cancela ordens de stop loss/take profit que ficaram órfãs
-   * após posições serem fechadas. Consolidado em um único método para
-   * evitar duplicação de lógica entre sistemas single-bot e multi-bot.
-   *
-   * @param {string} botName - Nome do bot para monitorar
-   * @param {object} config - Configurações específicas do bot (apiKey, apiSecret, etc.)
-   * @returns {object} Resultado da operação: { orphaned, cancelled, errors }
+   * Monitor e limpeza de ordens órfãs (stop loss + take profit)
+   * Remove ordens reduceOnly órfãs quando a posição foi fechada
+   * @param {string} botName - Nome do bot
+   * @param {object} config - Configuração do bot com credenciais
+   * @returns {Promise<object>} Resultado da limpeza
    */
-  static async monitorAndCleanupOrphanedStopLoss(botName, config = null) {
+  static async monitorAndCleanupOrphanedOrders(botName, config = null) {
     try {
-      // SEMPRE usa credenciais do config - lança exceção se não disponível
       if (!config?.apiKey || !config?.apiSecret) {
         throw new Error('API_KEY e API_SECRET são obrigatórios - deve ser passado da config do bot');
       }
@@ -3426,8 +3421,7 @@ class OrderController {
         apiSecret,
         strategy: config?.strategyName || 'DEFAULT'
       });
-      
-      // 🔧 CORREÇÃO: Usa authorizedTokens ao invés de Account.markets
+
       const configuredSymbols = config.authorizedTokens || [];
       Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] Verificando ${configuredSymbols.length} símbolos autorizados: ${configuredSymbols.join(', ')}`);
 
@@ -3453,61 +3447,47 @@ class OrderController {
           totalOrdersChecked += openOrders.length;
           Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: ${openOrders.length} ordens abertas encontradas`);
 
-          // Identifica ordens de stop loss com detecção melhorada
-          const stopLossOrders = openOrders.filter(order => {
-            // Verifica se é uma ordem de stop loss
-            const isReduceOnly = order.reduceOnly;
-            const hasStopLossTrigger = order.stopLossTriggerPrice || order.stopLossLimitPrice;
-            const hasTakeProfitTrigger = order.takeProfitTriggerPrice || order.takeProfitLimitPrice;
-
-            // Se tem trigger de stop loss, é uma ordem de stop loss
-            if (hasStopLossTrigger) {
-              Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Ordem ${order.id} identificada como stop loss (trigger detectado)`);
-              return true;
-            }
-
-            // Se tem trigger de take profit, não é stop loss
-            if (hasTakeProfitTrigger) {
-              return false;
-            }
-
-            // Se não tem trigger, verifica se está posicionada corretamente como stop loss
-            if (isReduceOnly && order.limitPrice) {
-              const position = positions.find(p => p.symbol === symbol);
-              if (position && Math.abs(Number(position.netQuantity)) > 0) {
-                const isCorrectStopLoss = OrderController.isOrderCorrectlyPositionedAsStopLoss(order, position);
-                if (isCorrectStopLoss) {
-                  Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Ordem ${order.id} identificada como stop loss (posicionamento correto)`);
-                }
-                return isCorrectStopLoss;
-              }
-            }
-
-            return false;
+          // 🔧 MELHORIA: Identifica TODAS as ordens reduceOnly órfãs (stop loss + take profit)
+          const orphanedOrders = openOrders.filter(order => {
+            // Só considera ordens reduceOnly como potenciais órfãs
+            return order.reduceOnly === true;
           });
 
-          if (stopLossOrders.length === 0) {
-            Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Nenhuma ordem de stop loss encontrada`);
+          if (orphanedOrders.length === 0) {
+            Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Nenhuma ordem reduceOnly encontrada`);
             continue;
           }
 
-          Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: ${stopLossOrders.length} ordens de stop loss encontradas`);
+          // Categoriza as ordens órfãs por tipo para logging melhor
+          const stopLossOrders = orphanedOrders.filter(order => {
+            const hasStopLossTrigger = order.stopLossTriggerPrice || order.stopLossLimitPrice;
+            return hasStopLossTrigger || (!order.takeProfitTriggerPrice && !order.takeProfitLimitPrice);
+          });
+
+          const takeProfitOrders = orphanedOrders.filter(order => {
+            return order.takeProfitTriggerPrice || order.takeProfitLimitPrice;
+          });
+
+          Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: ${orphanedOrders.length} ordens reduceOnly (${stopLossOrders.length} SL + ${takeProfitOrders.length} TP)`);
 
           const position = positions.find(p => p.symbol === symbol);
 
           // Verifica se posição está fechada (órfã)
           if (!position || Math.abs(Number(position.netQuantity)) === 0) {
-            Logger.info(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: POSIÇÃO FECHADA - ${stopLossOrders.length} ordens de stop loss órfãs detectadas`);
+            Logger.info(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: POSIÇÃO FECHADA - ${orphanedOrders.length} ordens órfãs detectadas (${stopLossOrders.length} SL + ${takeProfitOrders.length} TP)`);
 
-            totalOrphanedOrders += stopLossOrders.length;
+            totalOrphanedOrders += orphanedOrders.length;
 
             // Log detalhado das ordens órfãs
-            for (const order of stopLossOrders) {
-              Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Ordem órfã - ID: ${order.id}, Tipo: ${order.orderType}, Preço: ${order.limitPrice || order.stopLossTriggerPrice}, ReduceOnly: ${order.reduceOnly}`);
+            for (const order of orphanedOrders) {
+              const orderType = order.stopLossTriggerPrice || order.stopLossLimitPrice ? 'STOP_LOSS' : 
+                               order.takeProfitTriggerPrice || order.takeProfitLimitPrice ? 'TAKE_PROFIT' : 'REDUCE_ONLY';
+              const triggerPrice = order.stopLossTriggerPrice || order.takeProfitTriggerPrice || order.limitPrice;
+              Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Ordem órfã ${orderType} - ID: ${order.id}, Preço: ${triggerPrice}, ReduceOnly: ${order.reduceOnly}`);
             }
 
             // Cancela as ordens órfãs
-            for (const order of stopLossOrders) {
+            for (const order of orphanedOrders) {
               const orderId = order.id;
 
               try {
@@ -3555,7 +3535,7 @@ class OrderController {
               }
             }
           } else {
-            Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Posição ativa (${position.netQuantity}), ordens de stop loss são válidas`);
+            Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Posição ativa (${position.netQuantity}), ${orphanedOrders.length} ordens reduceOnly são válidas`);
           }
         } catch (error) {
           // Verifica se é erro de rate limit no nível do símbolo
@@ -3765,8 +3745,8 @@ class OrderController {
         apiSecret,
         strategy: config?.strategyName || 'DEFAULT'
       });
-      
-      // 🔧 CORREÇÃO: Usa authorizedTokens ao invés de Account.markets  
+
+      // 🔧 CORREÇÃO: Usa authorizedTokens ao invés de Account.markets
       const configuredSymbols = config.authorizedTokens || [];
 
       let totalOrphanedOrders = 0;
@@ -4205,11 +4185,11 @@ class OrderController {
       const activePositions = positions.filter(position => {
         const netQuantity = parseFloat(position.netQuantity || 0);
         const isActive = Math.abs(netQuantity) > 0;
-        
+
         if (!isActive) {
           Logger.debug(`⏭️ [TP_MONITOR] ${position.symbol}: Posição fechada (netQuantity: ${netQuantity}) - pulando`);
         }
-        
+
         return isActive;
       });
 

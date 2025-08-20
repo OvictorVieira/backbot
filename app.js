@@ -525,7 +525,7 @@ function setupInteractiveCommands() {
       case 'cleanup':
         console.log('🧹 Iniciando limpeza manual de ordens órfãs...');
         import('./src/Controllers/OrderController.js').then(({ default: OrderController }) => {
-          OrderController.monitorAndCleanupOrphanedStopLoss(activeBotConfig.botName, activeBotConfig).then(result => {
+          OrderController.monitorAndCleanupOrphanedOrders(activeBotConfig.botName, activeBotConfig).then(result => {
             console.log(`🧹 Limpeza concluída: ${result.orphaned} ordens órfãs detectadas, ${result.cancelled} canceladas`);
             if (result.errors.length > 0) {
               console.log(`❌ Erros: ${result.errors.join(', ')}`);
