@@ -5,6 +5,43 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.6.0] - 2025-08-20
+
+### 🚀 **FEATURE: Sistema de Trailing Stop Inteligente e Atualizações em Tempo Real**
+
+#### 🎯 **Trailing Stop com Validações Avançadas**
+**Alterações:** Sistema completo de trailing stop com validações inteligentes e suporte a múltiplos tipos de ordem.
+
+**TrailingStop.js - Validações:**
+- ✅ **Validação de posições** - Verifica se posição existe na exchange antes de processar
+- ✅ **Sistema de skip** - Cache inteligente para symbols sem posição aberta
+- ✅ **Limpeza automática** - Cache limpo automaticamente após 24h
+- ✅ **Suporte completo** - triggerPrice, takeProfitTriggerPrice e price
+
+**Monitor de Sincronização:**
+- ✅ **Detecção correta** - Distingue trailing stops reais de ordens parciais
+- ✅ **Criação automática** - Cria trailing stop quando não existe
+- ✅ **Validação por preço** - Baseada na posição (long: abaixo, short: acima)
+- ✅ **Variáveis corrigidas** - currentPrice, apiKey, apiSecret definidos
+
+#### ⚡ **Sistema de Atualização em Tempo Real**
+**Alterações:** Configurações de bot são aplicadas sem necessidade de restart.
+
+**Atualizações dinâmicas:**
+- ✅ **updateConfig** - Método para atualizar instâncias ativas
+- ✅ **Sem restart** - Mudanças aplicadas imediatamente
+- ✅ **Cache invalidation** - Limpeza automática de cache
+- ✅ **Logs detalhados** - Rastreamento das mudanças aplicadas
+
+#### 🛠️ **Correções Técnicas**
+**Alterações:** Melhorias na robustez e confiabilidade do sistema.
+
+**Correções implementadas:**
+- ✅ **getCurrentPrice()** - Uso correto do método existente
+- ✅ **getOpenPositions()** - Validação adequada de posições
+- ✅ **Rate limiting** - Tratamento robusto de erros de API
+- ✅ **Logs informativos** - Feedback claro em todas as operações
+
 ## [1.5.60] - 2025-08-16
 
 ### 🔧 **FIX: Sistema de logging otimizado e corrigido**
