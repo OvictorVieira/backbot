@@ -311,21 +311,6 @@ class OrdersService {
       if (!symbol || !side || !quantity || !stopLossTriggerPrice || !clientId) {
         throw new Error('Parâmetros obrigatórios faltando: symbol, side, quantity, stopLossTriggerPrice, clientId');
       }
-      //
-      // const orderBody = {
-      //   symbol,
-      //   side,
-      //   triggerQuantity: quantity.toString(),
-      //   orderType: 'Market',
-      //   clientId,
-      //   timeInForce: 'GTC',
-      //   reduceOnly: true,
-      //   triggerPrice: stopLossTriggerPrice.toString(),
-      //   stopLossTriggerPrice: stopLossTriggerPrice.toString(),
-      //   stopLossLimitPrice: stopLossTriggerPrice.toString(),
-      //   stopLossTriggerBy: 'LastPrice',
-      //   ...additionalParams
-      // };
 
       const orderBody = {
         symbol,

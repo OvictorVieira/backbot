@@ -3635,7 +3635,7 @@ class OrderController {
         return { orphaned: 0, cancelled: 0, errors: [], ordersScanned: 0 };
       }
 
-      // 2. Busca TODAS as posições abertas na corretora 
+      // 2. Busca TODAS as posições abertas na corretora
       const positions = await Futures.getOpenPositions(apiKey, apiSecret) || [];
       const activeSymbols = new Set();
 
@@ -4207,7 +4207,6 @@ class OrderController {
 
       for (const position of positions) {
         try {
-          // 🔧 NOVO: Valida se a posição foi criada pelo bot
           const isBotPosition = await OrderController.isPositionCreatedByBot(position, config);
           if (!isBotPosition) {
             Logger.debug(`⏭️ [TP_MONITOR] ${position.symbol}: Posição não criada pelo bot - pulando`);
@@ -4256,11 +4255,12 @@ class OrderController {
         return { error: 'Account inválido ou sem markets' };
       }
 
-      const enableTrailingStop = config?.enableTrailingStop === true;
-      if (enableTrailingStop) {
-        Logger.debug(`⏭️ [TP_CREATE] ${symbol}: Trailing Stop ativo - NÃO criando Take Profit fixo`);
-        Logger.debug(`ℹ️ [TP_CREATE] ${symbol}: Take Profit será gerenciado dinamicamente pelo Trailing Stop`);
-        return { success: false, message: 'Trailing Stop ativo' }; // Não cria TP fixo quando trailing stop está ativo
+      let enableTrailingStop = config?.enableTrailingStop === true;
+      let enableHybridStopStrategy = config?.enableHybridStopStrategy === true;
+
+      if (enableTrailingStop && !enableHybridStopStrategy) {
+        Logger.debug(`⏭️ [TP_CREATE] ${symbol}: Trailing Stop ativo sem opção de saída parcial - Take Profit vai ser monitorado pelo Trailing Stop`);
+        return { success: false, message: 'Trailing Stop ativo' };
       }
 
       // Verifica se já existe ordem de Take Profit
@@ -4298,18 +4298,17 @@ class OrderController {
       }
 
       const currentPosition = currentPositions.find(p => p.symbol === symbol);
-      if (!currentPosition || Math.abs(parseFloat(currentPosition.netQuantity || 0)) === 0) {
+      if (!currentPosition || Math.abs(parseFloat(currentPosition.netQuantity)) === 0) {
         Logger.warn(`⚠️ [TP_CREATE] ${symbol}: Posição não encontrada ou já fechada`);
         return;
       }
 
-      const currentNetQuantity = parseFloat(currentPosition.netQuantity || 0);
+      const currentNetQuantity = parseFloat(currentPosition.netQuantity);
       const currentIsLong = currentNetQuantity > 0;
-      const entryPrice = parseFloat(currentPosition.entryPrice || 0);
+      const entryPrice = parseFloat(currentPosition.entryPrice);
 
-      let enableHybridStopStrategy = config?.enableHybridStopStrategy || false;
       let takeProfitPrice = null;
-      let takeProfitQuantity = Math.abs(currentNetQuantity); // Será ajustado baseado na estratégia
+      let takeProfitQuantity;
 
       if (enableHybridStopStrategy) {
         // Modo Híbrido: Usa ATR para calcular TP parcial
@@ -4324,15 +4323,13 @@ class OrderController {
           Logger.info(`📊 [TP_HYBRID] ${symbol}: TP Parcial ${partialTakeProfitPercentage}% - Preço: $${takeProfitPrice?.toFixed(4)}, Qty: ${takeProfitQuantity.toFixed(6)}`);
         } else {
           Logger.info(`⚠️ [TP_HYBRID] ${symbol}: ATR não disponível ou inválido (${atrValue}), usando TP total`);
-          enableHybridStopStrategy = false; // Fallback para TP total
-          takeProfitQuantity = Math.abs(currentNetQuantity); // Quantidade total para fallback
+          enableHybridStopStrategy = false;
+          takeProfitQuantity = Math.abs(currentNetQuantity);
         }
       } else {
-        // Modo Tradicional: TP total baseado em minProfitPercentage
-        const minProfitPercentage = Number(config?.minProfitPercentage || 10);
+        const minProfitPercentage = Number(config?.minProfitPercentage);
 
-        // 🔧 CORREÇÃO CRÍTICA: Obtém a alavancagem da conta para calcular o TP correto
-        let leverage = 1; // Default
+        let leverage = 1;
         try {
           const Account = await AccountController.get({
             apiKey: config.apiKey,
@@ -4341,7 +4338,6 @@ class OrderController {
           });
           if (Account && Account.leverage) {
             const rawLeverage = parseFloat(Account.leverage);
-            // Aplica validação de alavancagem por símbolo (50x para BTC/ETH/SOL, 10x para outros)
             leverage = validateLeverageForSymbol(symbol, rawLeverage);
             Logger.info(`🔧 [TP_TRADITIONAL] ${symbol}: Alavancagem ${leverage}x (validada, original: ${rawLeverage}x)`);
           }
@@ -4370,7 +4366,7 @@ class OrderController {
       }
 
       if (!takeProfitPrice || takeProfitPrice <= 0 || isNaN(takeProfitPrice)) {
-        Logger.error(`❌ [TP_CREATE] ${symbol}: Preço de TP inválido: ${takeProfitPrice} (entryPrice=${entryPrice}, isLong=${isLong})`);
+        Logger.error(`❌ [TP_CREATE] ${symbol}: Preço de TP inválido: ${takeProfitPrice} (entryPrice=${entryPrice}, isLong=${config?.isLong})`);
         return;
       }
 
@@ -4386,7 +4382,6 @@ class OrderController {
         return formatted.toString();
       };
 
-      // Verificar ordens abertas para evitar duplicidade de TPs (parciais ou totais)
       try {
         const OrderModule = await import('../Backpack/Authenticated/Order.js');
         const openOrders = await OrderModule.default.getOpenOrders(symbol, 'PERP', config.apiKey, config.apiSecret);
@@ -4437,9 +4432,8 @@ class OrderController {
                 Logger.info(`ℹ️ [TP_CREATE] ${symbol}: TP existente insuficiente (${existingQty} < ${tolerance}). Continuando criação.`);
               }
             } else {
-              // 🔧 CORREÇÃO: Verifica se o TP existente é realmente total (não parcial)
               const isTotalTP = existingReduceOnly.some(order => {
-                const orderQty = Math.abs(parseFloat(order.quantity || 0));
+                const orderQty = Math.abs(parseFloat(order.quantity));
                 const positionQty = Math.abs(currentNetQuantity);
                 const isTotal = orderQty >= positionQty * 0.99; // 99% da posição = total
 
@@ -4482,21 +4476,19 @@ class OrderController {
         return;
       }
 
-      // Cria a ordem de Take Profit como ordem de Take Profit com gatilho (compatível com PRO_MAX)
       const formattedLimitPrice = OrderController.formatPriceSafely(takeProfitPrice, decimal_price, tickSize);
+
+      const quantity = formatQuantity(takeProfitQuantity);
+
       const takeProfitOrder = {
         symbol: symbol,
         side: currentIsLong ? 'Ask' : 'Bid',
-        orderType: 'Limit',
-        postOnly: true,
+        orderType: 'Market',
         reduceOnly: true,
-        quantity: formatQuantity(takeProfitQuantity),
-        price: formattedLimitPrice,
-        takeProfitTriggerBy: 'LastPrice',
-        takeProfitTriggerPrice: formattedLimitPrice,
-        takeProfitLimitPrice: formattedLimitPrice,
+        quantity: quantity,
+        triggerPrice: formattedLimitPrice,
+        triggerQuantity: quantity,
         timeInForce: 'GTC',
-        selfTradePrevention: 'RejectTaker',
         clientId: await OrderController.generateUniqueOrderId(config)
       };
 
@@ -4618,8 +4610,8 @@ class OrderController {
    */
   static calculateAtrTakeProfitPrice(position, atrValue, multiplier = 1.5) {
     try {
-      const entryPrice = parseFloat(position.entryPrice || 0);
-      const netQuantity = parseFloat(position.netQuantity || 0);
+      const entryPrice = parseFloat(position.entryPrice);
+      const netQuantity = parseFloat(position.netQuantity);
       const isLong = netQuantity > 0;
 
       if (!entryPrice || entryPrice <= 0 || !atrValue || atrValue <= 0 || isNaN(atrValue)) {
