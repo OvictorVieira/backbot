@@ -26,6 +26,12 @@ class DatabaseService {
         driver: sqlite3.Database
       });
 
+      // Configure SQLite for better concurrency
+      await this.db.exec('PRAGMA journal_mode = WAL;');
+      await this.db.exec('PRAGMA synchronous = NORMAL;');
+      await this.db.exec('PRAGMA busy_timeout = 30000;');
+      await this.db.exec('PRAGMA cache_size = 10000;');
+
       Logger.info(`🔧 [DATABASE] Database connection established: ${this.dbPath}`);
 
       // Create tables

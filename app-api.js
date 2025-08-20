@@ -178,10 +178,26 @@ async function loadAndRecoverBots() {
   try {
     // Carrega todos os bots habilitados que estavam rodando ou em erro
     const configs = await ConfigManagerSQLite.loadConfigs();
+
+    // DEBUG: Log todos os bots encontrados
+    Logger.debug(`🔍 [PERSISTENCE] Todos os bots encontrados:`, configs.map(c => ({
+      id: c.id,
+      botName: c.botName,
+      status: c.status,
+      enabled: c.enabled
+    })));
+
     const botsToRecover = configs.filter(config =>
       config.enabled &&
       (config.status === 'running' || config.status === 'error' || config.status === 'starting')
     );
+
+    Logger.debug(`🔍 [PERSISTENCE] Bots filtrados para recuperação:`, botsToRecover.map(c => ({
+      id: c.id,
+      botName: c.botName,
+      status: c.status,
+      enabled: c.enabled
+    })));
 
     if (botsToRecover.length === 0) {
       Logger.debug(`ℹ️ [PERSISTENCE] Nenhum bot para recuperar encontrado`);
@@ -302,24 +318,9 @@ async function recoverBot(botId, config, startTime) {
       });
     }, executionInterval);
 
-    // Configura monitores independentes com intervalos fixos
-    const pendingOrdersIntervalId = setInterval(() => {
-      startPendingOrdersMonitor(botId).catch(error => {
-        Logger.error(`❌ [${config.botName}][PENDING_ORDERS] Erro no monitoramento do bot ${botId}:`, error.message);
-      });
-    }, 15000); // 15 segundos
-
-    const orphanOrdersIntervalId = setInterval(() => {
-      startOrphanOrderMonitor(botId).catch(error => {
-        Logger.error(`❌ [${config.botName}][ORPHAN_MONITOR] Erro no monitoramento do bot ${botId}:`, error.message);
-      });
-    }, 60000); // 60 segundos (menos agressivo para evitar rate limits)
-
-    const takeProfitIntervalId = setInterval(() => {
-      startTakeProfitMonitor(botId).catch(error => {
-        Logger.error(`❌ [${config.botName}][TAKE_PROFIT] Erro no monitoramento do bot ${botId}:`, error.message);
-      });
-    }, 30000); // 30 segundos
+    // Inicia TODOS os monitores usando função centralizada
+    const monitorIds = setupBotMonitors(botId, config);
+    const { pendingOrdersIntervalId, orphanOrdersIntervalId, takeProfitIntervalId } = monitorIds;
 
     // Calcula e salva o próximo horário de validação se não existir
     if (!config.nextValidationAt) {
@@ -711,6 +712,74 @@ async function startTrailingStopsCleanerMonitor(botId) {
   setTimeout(() => startTrailingStopsCleanerMonitor(botId), nextInterval);
 }
 
+/**
+ * Função centralizada para configurar TODOS os monitores de um bot
+ * @param {number} botId - ID do bot
+ * @param {Object} config - Configuração do bot
+ */
+function setupBotMonitors(botId, config) {
+  Logger.info(`🚀 [MONITORS] Iniciando TODOS os monitores para bot ${botId} (${config.botName})...`);
+  
+  // Monitor de ordens pendentes - 15 segundos
+  const runPendingOrdersMonitor = async () => {
+    try {
+      Logger.debug(`🔄 [PENDING_ORDERS] Executando para bot ${botId}`);
+      await startPendingOrdersMonitor(botId);
+    } catch (error) {
+      Logger.error(`❌ [${config.botName}][PENDING_ORDERS] Erro no monitoramento do bot ${botId}:`, error.message);
+    }
+    setTimeout(runPendingOrdersMonitor, 15000);
+  };
+  setTimeout(runPendingOrdersMonitor, 15000);
+
+  // Monitor de ordens órfãs - 60 segundos
+  const runOrphanOrdersMonitor = async () => {
+    try {
+      Logger.debug(`🔄 [ORPHAN_MONITOR] Executando para bot ${botId}`);
+      await startOrphanOrderMonitor(botId);
+    } catch (error) {
+      Logger.error(`❌ [${config.botName}][ORPHAN_MONITOR] Erro no monitoramento do bot ${botId}:`, error.message);
+    }
+    setTimeout(runOrphanOrdersMonitor, 60000);
+  };
+  setTimeout(runOrphanOrdersMonitor, 60000);
+
+  // Monitor de take profit - 30 segundos
+  const runTakeProfitMonitor = async () => {
+    try {
+      Logger.debug(`🔄 [TAKE_PROFIT] Executando para bot ${botId}`);
+      await startTakeProfitMonitor(botId);
+    } catch (error) {
+      Logger.error(`❌ [${config.botName}][TAKE_PROFIT] Erro no monitoramento do bot ${botId}:`, error.message);
+    }
+    setTimeout(runTakeProfitMonitor, 30000);
+  };
+  setTimeout(runTakeProfitMonitor, 30000);
+
+  // Monitor de trailing stops órfãos - 5 minutos inicialmente
+  const runTrailingStopsCleanerMonitor = async () => {
+    try {
+      Logger.debug(`🔄 [TRAILING_CLEANER] Executando para bot ${botId}`);
+      await startTrailingStopsCleanerMonitor(botId);
+    } catch (error) {
+      Logger.error(`❌ [${config.botName}][TRAILING_CLEANER] Erro no monitoramento do bot ${botId}:`, error.message);
+      // startTrailingStopsCleanerMonitor já agenda a próxima execução internamente
+    }
+  };
+  // Inicia com delay de 2 segundos para não sobrecarregar
+  setTimeout(runTrailingStopsCleanerMonitor, 2000);
+
+  Logger.info(`✅ [MONITORS] Todos os monitores iniciados para bot ${botId} (${config.botName})`);
+  
+  // Para compatibilidade, retorna IDs fictícios
+  return {
+    pendingOrdersIntervalId: 'timeout_pending',
+    orphanOrdersIntervalId: 'timeout_orphan', 
+    takeProfitIntervalId: 'timeout_takeprofit',
+    trailingStopsCleanerIntervalId: 'timeout_trailing_cleaner'
+  };
+}
+
 // Função para iniciar um bot específico
 async function startBot(botId, forceRestart = false) {
   let botConfig = null; // Declaração movida para fora do try
@@ -798,11 +867,7 @@ async function startBot(botId, forceRestart = false) {
         // Executa trailing stop
         await startStops(botId);
 
-        await startPendingOrdersMonitor(botId);
-
-        await startOrphanOrderMonitor(botId);
-
-        await startTrailingStopsCleanerMonitor(botId);
+        // Monitores são gerenciados pela função setupBotMonitors() chamada no recoverBot()
 
         // Executa PnL Controller para este bot específico
         try {
@@ -2702,8 +2767,8 @@ async function startMonitorsForAllEnabledBots() {
 
         Logger.debug(`🔄 [MONITORS] Iniciando monitores para bot ${botId} (${botConfig.botName})`);
 
-        // Inicia apenas o monitor de trailing stops órfãos (outros monitores são para bots ativos)
-        setTimeout(() => startTrailingStopsCleanerMonitor(botId), 2000); // Delay de 2s para não sobrecarregar
+        // Todos os monitores agora são gerenciados pela função setupBotMonitors() em recoverBot()
+        // Este local agora não inicia monitores duplicados
 
         Logger.debug(`✅ [MONITORS] Monitores iniciados para bot ${botId}`);
 

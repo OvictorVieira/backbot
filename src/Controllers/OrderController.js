@@ -1451,9 +1451,6 @@ class OrderController {
     }
   }
 
-  // Estatísticas globais de fallback
-  static fallbackCount = 0;
-  static totalHybridOrders = 0;
 
   // Função auxiliar para calcular slippage percentual
   static calcSlippagePct(priceLimit, priceCurrent) {
@@ -1942,8 +1939,6 @@ class OrderController {
 
       const marketResult = await Order.executeOrder(marketBody, config.apiKey, config.apiSecret);
       if (marketResult && !marketResult.error) {
-        OrderController.fallbackCount++;
-
         // Calcula slippage real
         const executionPrice = parseFloat(marketResult.price || marketResult.avgPrice || entryPrice);
         const slippage = OrderController.calcSlippagePct(entryPrice, executionPrice);
@@ -1979,17 +1974,6 @@ class OrderController {
             Logger.error(`❌ [FAILSAFE] ${market}: Erro ao criar TP/SL automático:`, error.message);
           }
         }, 2000); // Aguarda 2 segundos para posição ser registrada
-
-        // Estatística de fallback
-        if (OrderController.totalHybridOrders % 50 === 0) {
-          const fallbackPct = (OrderController.fallbackCount / OrderController.totalHybridOrders) * 100;
-          Logger.info(`\n📈 [EXECUTION_STATS] Taxa de fallback: ${fallbackPct.toFixed(1)}% (${OrderController.fallbackCount}/${OrderController.totalHybridOrders} ordens)`);
-          if (fallbackPct > 30) {
-            Logger.info('⚠️ Taxa de fallback alta! Considere ajustar ORDER_EXECUTION_TIMEOUT_SECONDS ou o preço da LIMIT.');
-          } else {
-            Logger.info('✅ Taxa de fallback dentro do esperado.');
-          }
-        }
 
         return { success: true, type: 'MARKET', marketResult, executionPrice, slippage };
       } else {
@@ -3624,10 +3608,9 @@ class OrderController {
   }
 
   /**
-   * 🧹 MÉTODO OTIMIZADO para detectar e cancelar ordens órfãs diretamente da corretora
-   *
-   * Este método busca TODAS as ordens abertas na corretora e cancela qualquer ordem
-   * reduceOnly que não tenha posição ativa correspondente, independente da configuração local.
+   * Método para escanear e limpar TODAS as ordens órfãs na corretora (global).
+   * Este método verifica na corretora todas as ordens abertas e cancela aquelas
+   * que não possuem mais uma posição ativa correspondente.
    *
    * @param {string} botName - Nome do bot para monitorar
    * @param {object} config - Configurações específicas do bot (apiKey, apiSecret, etc.)
@@ -3641,9 +3624,18 @@ class OrderController {
       const apiKey = config.apiKey;
       const apiSecret = config.apiSecret;
 
-      Logger.debug(`🔍 [${config.botName}][SCAN_CLEANUP] Iniciando busca completa de ordens órfãs na corretora`);
+      Logger.debug(`🔍 [${config.botName}][SCAN_CLEANUP] Iniciando limpeza de ordens órfãs na corretora`);
 
-      // 1. Busca TODAS as posições abertas na corretora
+      // 1. Busca TODAS as ordens abertas na corretora (sem especificar símbolo)
+      const allOpenOrders = await Order.getOpenOrders(null, "PERP", apiKey, apiSecret) || [];
+      Logger.debug(`🔍 [${config.botName}][SCAN_CLEANUP] Encontradas ${allOpenOrders.length} ordens abertas na corretora`);
+
+      if (allOpenOrders.length === 0) {
+        Logger.info(`✅ [${config.botName}][SCAN_CLEANUP] Nenhuma ordem aberta encontrada`);
+        return { orphaned: 0, cancelled: 0, errors: [], ordersScanned: 0 };
+      }
+
+      // 2. Busca TODAS as posições abertas na corretora 
       const positions = await Futures.getOpenPositions(apiKey, apiSecret) || [];
       const activeSymbols = new Set();
 
@@ -3654,174 +3646,95 @@ class OrderController {
         }
       }
 
-      Logger.debug(`🔍 [${config.botName}][SCAN_CLEANUP] Encontradas ${positions.length} posições, ${activeSymbols.size} com quantidade > 0`);
-      Logger.debug(`🔍 [${config.botName}][SCAN_CLEANUP] Símbolos ativos: ${Array.from(activeSymbols).join(', ') || 'nenhum'}`);
+      Logger.debug(`🔍 [${config.botName}][SCAN_CLEANUP] Encontradas ${positions.length} posições, ${activeSymbols.size} símbolos com posição ativa`);
+      Logger.debug(`🔍 [${config.botName}][SCAN_CLEANUP] Símbolos com posição: ${Array.from(activeSymbols).join(', ') || 'nenhum'}`);
 
-      // 2. Busca TODOS os símbolos que têm ordens abertas na corretora
-      // Vamos varrer todos os símbolos possíveis (PERP markets)
-      const allSymbolsWithOrders = new Set();
+      // 3. Identifica ordens órfãs: ordens reduceOnly que não possuem posição ativa correspondente
+      const orphanedOrders = [];
 
-      // Primeiro, verifica símbolos configurados
-      try {
-        const Account = await AccountController.get({
-          apiKey,
-          apiSecret,
-          strategy: config?.strategyName || 'DEFAULT'
-        });
-        const configuredSymbols = Account.markets.map(m => m.symbol);
+      for (const order of allOpenOrders) {
+        const isReduceOnly = order.reduceOnly === true;
+        const hasActivePosition = activeSymbols.has(order.symbol);
 
-        for (const symbol of configuredSymbols) {
-          const orders = await Order.getOpenOrders(symbol, "PERP", apiKey, apiSecret);
-          if (orders && orders.length > 0) {
-            allSymbolsWithOrders.add(symbol);
-          }
-          // Delay para evitar rate limit
-          await new Promise(resolve => setTimeout(resolve, 100));
+        // Se é reduceOnly E não há posição ativa para este símbolo, a ordem é órfã
+        if (isReduceOnly && !hasActivePosition) {
+          orphanedOrders.push(order);
+          Logger.debug(`🔍 [${config.botName}][SCAN_CLEANUP] Ordem órfã detectada: ${order.symbol} - ID: ${order.id}, Tipo: ${order.orderType}, ReduceOnly: ${order.reduceOnly}`);
         }
-      } catch (error) {
-        Logger.warn(`⚠️ [${config.botName}][SCAN_CLEANUP] Erro ao buscar símbolos configurados: ${error.message}`);
       }
 
-      // 3. Para cada símbolo encontrado, verifica ordens órfãs
-      let totalOrphanedOrders = 0;
+      if (orphanedOrders.length === 0) {
+        Logger.info(`✅ [${config.botName}][SCAN_CLEANUP] Nenhuma ordem órfã encontrada`);
+        return { orphaned: 0, cancelled: 0, errors: [], ordersScanned: allOpenOrders.length };
+      }
+
+      Logger.info(`🧹 [${config.botName}][SCAN_CLEANUP] ${orphanedOrders.length} ordens órfãs detectadas`);
+
+      // 4. Cancela as ordens órfãs encontradas
       let totalCancelledOrders = 0;
       const errors = [];
-      const detailedResults = [];
 
-      for (const symbol of allSymbolsWithOrders) {
+      for (const order of orphanedOrders) {
         try {
-          Logger.debug(`🔍 [${config.botName}][SCAN_CLEANUP] Verificando ${symbol}...`);
+          await new Promise(resolve => setTimeout(resolve, 150)); // Delay entre cancelamentos
 
-          // Delay para evitar rate limit
-          await new Promise(resolve => setTimeout(resolve, 200));
+          Logger.debug(`🧹 [${config.botName}][SCAN_CLEANUP] Cancelando ordem órfã ${order.symbol} - ID: ${order.id}`);
 
-          const openOrders = await Order.getOpenOrders(symbol, "PERP", apiKey, apiSecret);
+          const cancelResult = await Order.cancelOpenOrder(order.symbol, order.id, null, apiKey, apiSecret);
 
-          if (!openOrders || openOrders.length === 0) {
-            continue;
-          }
+          if (cancelResult && !cancelResult.error) {
+            totalCancelledOrders++;
+            Logger.info(`✅ [${config.botName}][SCAN_CLEANUP] Ordem órfã cancelada: ${order.symbol} - ID: ${order.id}`);
 
-          // Identifica ordens órfãs: reduceOnly sem posição ativa no símbolo
-          const orphanedOrders = [];
-
-          for (const order of openOrders) {
-            const isReduceOnly = order.reduceOnly === true;
-            const hasActivePosition = activeSymbols.has(symbol);
-
-            // Se é reduceOnly E não há posição ativa, é órfã
-            if (isReduceOnly && !hasActivePosition) {
-              orphanedOrders.push(order);
-              Logger.debug(`🔍 [${config.botName}][SCAN_CLEANUP] ${symbol}: Ordem órfã detectada - ID: ${order.id}, Tipo: ${order.orderType}, ReduceOnly: ${order.reduceOnly}`);
-            }
-          }
-
-          if (orphanedOrders.length === 0) {
-            Logger.debug(`🔍 [${config.botName}][SCAN_CLEANUP] ${symbol}: Nenhuma ordem órfã encontrada`);
-            continue;
-          }
-
-          Logger.info(`🧹 [${config.botName}][SCAN_CLEANUP] ${symbol}: ${orphanedOrders.length} ordens órfãs detectadas`);
-          totalOrphanedOrders += orphanedOrders.length;
-
-          // 4. Cancela as ordens órfãs encontradas
-          let cancelledInSymbol = 0;
-          const errorsInSymbol = [];
-
-          for (const order of orphanedOrders) {
+            // Atualiza status no banco de dados se existir
             try {
-              await new Promise(resolve => setTimeout(resolve, 150)); // Delay entre cancelamentos
-
-              Logger.debug(`🧹 [${config.botName}][SCAN_CLEANUP] ${symbol}: Cancelando ordem órfã ${order.id}`);
-
-              const cancelResult = await Order.cancelOpenOrder(symbol, order.id, null, apiKey, apiSecret);
-
-              if (cancelResult && !cancelResult.error) {
-                cancelledInSymbol++;
-                totalCancelledOrders++;
-                Logger.info(`✅ [${config.botName}][SCAN_CLEANUP] ${symbol}: Ordem órfã ${order.id} cancelada com sucesso`);
-
-                // Atualiza status no banco de dados
-                try {
-                  await BotOrdersManager.updateOrder(order.id, {
-                    status: 'CANCELLED',
-                    closeTime: new Date().toISOString(),
-                    closeType: 'SCAN_ORPHAN_CLEANUP'
-                  });
-                  Logger.debug(`📝 [${config.botName}][SCAN_CLEANUP] ${symbol}: Status da ordem ${order.id} atualizado no banco para CANCELLED`);
-                } catch (dbError) {
-                  Logger.warn(`⚠️ [${config.botName}][SCAN_CLEANUP] ${symbol}: Erro ao atualizar status da ordem ${order.id} no banco: ${dbError.message}`);
-                }
-              } else {
-                const errorMsg = cancelResult?.error || 'desconhecido';
-                errorsInSymbol.push(`${order.id}: ${errorMsg}`);
-                Logger.warn(`❌ [${config.botName}][SCAN_CLEANUP] ${symbol}: Falha ao cancelar ordem órfã ${order.id}: ${errorMsg}`);
-              }
-            } catch (error) {
-              if (error?.response?.status === 429 || String(error).includes('rate limit')) {
-                Logger.warn(`⚠️ [${config.botName}][SCAN_CLEANUP] ${symbol}: Rate limit detectado, pausando 2s`);
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                errorsInSymbol.push(`${order.id}: Rate limit`);
-                break; // Para de cancelar ordens deste símbolo
-              } else {
-                errorsInSymbol.push(`${order.id}: ${error.message}`);
-                Logger.error(`❌ [${config.botName}][SCAN_CLEANUP] ${symbol}: Erro ao cancelar ordem ${order.id}:`, error.message);
-              }
+              await BotOrdersManager.updateOrder(order.id, {
+                status: 'CANCELLED',
+                closeTime: new Date().toISOString(),
+                closeType: 'ORPHAN_CLEANUP'
+              });
+            } catch (dbError) {
+              // Ignora erros de banco (ordem pode não estar registrada localmente)
+              Logger.debug(`📝 [${config.botName}][SCAN_CLEANUP] Ordem ${order.id} não encontrada no banco local (normal para ordens externas)`);
             }
+          } else {
+            const errorMsg = cancelResult?.error || 'desconhecido';
+            errors.push(`${order.symbol}:${order.id} - ${errorMsg}`);
+            Logger.warn(`❌ [${config.botName}][SCAN_CLEANUP] Falha ao cancelar ordem órfã ${order.symbol}:${order.id} - ${errorMsg}`);
           }
-
-          // Registra resultado detalhado por símbolo
-          detailedResults.push({
-            symbol,
-            orphanedFound: orphanedOrders.length,
-            cancelled: cancelledInSymbol,
-            errors: errorsInSymbol
-          });
-
-          if (errorsInSymbol.length > 0) {
-            errors.push(`${symbol}: ${errorsInSymbol.join(', ')}`);
-          }
-
         } catch (error) {
           if (error?.response?.status === 429 || String(error).includes('rate limit')) {
-            Logger.warn(`⚠️ [${config.botName}][SCAN_CLEANUP] ${symbol}: Rate limit no símbolo`);
-            errors.push(`${symbol}: Rate limit`);
+            Logger.warn(`⚠️ [${config.botName}][SCAN_CLEANUP] Rate limit detectado, pausando 2s`);
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            errors.push(`${order.symbol}:${order.id} - Rate limit`);
           } else {
-            Logger.error(`❌ [${config.botName}][SCAN_CLEANUP] ${symbol}: Erro ao processar símbolo:`, error.message);
-            errors.push(`${symbol}: ${error.message}`);
+            errors.push(`${order.symbol}:${order.id} - ${error.message}`);
+            Logger.error(`❌ [${config.botName}][SCAN_CLEANUP] Erro ao cancelar ordem ${order.symbol}:${order.id}:`, error.message);
           }
         }
       }
 
       // Log do resultado final
-      Logger.info(`🧹 [${config.botName}][SCAN_CLEANUP] Varredura completa finalizada:`);
-      Logger.info(`   • Símbolos verificados: ${allSymbolsWithOrders.size}`);
-      Logger.info(`   • Ordens órfãs detectadas: ${totalOrphanedOrders}`);
+      Logger.info(`🧹 [${config.botName}][SCAN_CLEANUP] Limpeza finalizada:`);
+      Logger.info(`   • Ordens verificadas: ${allOpenOrders.length}`);
+      Logger.info(`   • Ordens órfãs detectadas: ${orphanedOrders.length}`);
       Logger.info(`   • Ordens canceladas: ${totalCancelledOrders}`);
       Logger.info(`   • Erros: ${errors.length}`);
-
-      // Log detalhado por símbolo
-      if (detailedResults.length > 0) {
-        Logger.info(`📊 [${config.botName}][SCAN_CLEANUP] Resultados por símbolo:`);
-        for (const result of detailedResults) {
-          Logger.info(`   • ${result.symbol}: ${result.orphanedFound} órfãs → ${result.cancelled} canceladas`);
-        }
-      }
 
       if (errors.length > 0) {
         Logger.warn(`   • Detalhes dos erros: ${errors.join(', ')}`);
       }
 
       return {
-        orphaned: totalOrphanedOrders,
+        orphaned: orphanedOrders.length,
         cancelled: totalCancelledOrders,
         errors,
-        symbolsScanned: allSymbolsWithOrders.size,
-        detailedResults
+        ordersScanned: allOpenOrders.length
       };
 
     } catch (error) {
-      Logger.error(`❌ [${config.botName}][SCAN_CLEANUP] Erro na varredura completa:`, error.message);
-      return { orphaned: 0, cancelled: 0, errors: [error.message], symbolsScanned: 0 };
+      Logger.error(`❌ [${config.botName}][SCAN_CLEANUP] Erro na limpeza de ordens órfãs:`, error.message);
+      return { orphaned: 0, cancelled: 0, errors: [error.message], ordersScanned: 0 };
     }
   }
 

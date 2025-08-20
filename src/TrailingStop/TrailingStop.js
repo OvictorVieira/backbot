@@ -230,9 +230,18 @@ class TrailingStop {
 
           if(trailingStopIsBetterThanSL) {
             // 2. Compara o preço do stop ATUAL (em memória) com o preço do estado SALVO
-            //    Verifica também se foundState existe, para evitar erros.
-            if (foundState && trailingStopIsBetterThanSL || (foundState && state.trailingStopPrice !== foundState.trailingStopPrice)) {
+            //    Só atualiza se o trailing stop melhorou E o preço mudou significativamente
+            const priceChangedSignificantly = foundState ? 
+              Math.abs(state.trailingStopPrice - foundState.trailingStopPrice) > 0.0001 : true;
+            
+            if (foundState && trailingStopIsBetterThanSL && priceChangedSignificantly) {
               Logger.info(`🔄 Trailing stop price for ${symbol} has changed from ${foundState.trailingStopPrice} to ${state.trailingStopPrice}. Replacing order.`);
+            } else if (foundState && trailingStopIsBetterThanSL && !priceChangedSignificantly) {
+              Logger.debug(`⏭️ [TRAILING_SKIP] ${symbol}: Trailing stop melhorou mas mudança insignificante (${Math.abs(state.trailingStopPrice - foundState.trailingStopPrice).toFixed(8)}), mantendo ordem atual`);
+              return; // Não atualiza ordem nem estado
+            }
+            
+            if (foundState && trailingStopIsBetterThanSL && priceChangedSignificantly) {
 
               const apiKey = config.apiKey;
               const apiSecret = config.apiSecret;
@@ -277,9 +286,7 @@ class TrailingStop {
                     apiSecret: apiSecret
                   };
 
-                  let canceled = await OrderController.ordersService.cancelOrder(cancelOrderPayload);
-
-                  Logger.info(canceled)
+                  await OrderController.ordersService.cancelOrder(cancelOrderPayload);
                 } else {
                   Logger.info(`✅ New stop loss order ${stopResult.id} created. No old order to cancel.`);
                 }
