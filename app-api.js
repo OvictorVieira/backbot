@@ -15,6 +15,7 @@ import express from 'express';
 import cors from 'cors';
 import { WebSocketServer } from 'ws';
 import http from 'http';
+import { execSync } from 'child_process';
 import fetch from 'node-fetch';
 import Account from './src/Backpack/Authenticated/Account.js';
 import Capital from './src/Backpack/Authenticated/Capital.js';
@@ -39,6 +40,9 @@ import DatabaseService from './src/Services/DatabaseService.js';
 import Markets from './src/Backpack/Public/Markets.js';
 import PositionSyncServiceClass from './src/Services/PositionSyncService.js';
 import PositionTrackingService from './src/Services/PositionTrackingService.js';
+import OrdersService from "./src/Services/OrdersService.js";
+import Order from "./src/Backpack/Authenticated/Order.js";
+import AccountController from "./src/Controllers/AccountController.js";
 
 // Instancia PositionSyncService (será inicializado depois que o DatabaseService estiver pronto)
 let PositionSyncService = null;
@@ -47,6 +51,59 @@ let PositionSyncService = null;
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.API_PORT || 3001;
+
+// Função para verificar e matar processos na porta
+function killProcessOnPort(port) {
+  try {
+    Logger.info(`🔍 [SERVER] Verificando se porta ${port} está em uso...`);
+
+    // Busca processos usando a porta
+    const command = process.platform === 'win32'
+      ? `netstat -ano | findstr :${port}`
+      : `lsof -ti:${port}`;
+
+    const result = execSync(command, { encoding: 'utf8', stdio: 'pipe' });
+
+    if (result.trim()) {
+      Logger.warn(`⚠️ [SERVER] Porta ${port} está sendo usada. Encerrando processos...`);
+
+      if (process.platform === 'win32') {
+        // Windows
+        const lines = result.trim().split('\n');
+        const pids = lines.map(line => line.trim().split(/\s+/).pop()).filter(pid => pid);
+        pids.forEach(pid => {
+          try {
+            execSync(`taskkill /F /PID ${pid}`, { stdio: 'ignore' });
+            Logger.info(`✅ [SERVER] Processo ${pid} encerrado`);
+          } catch (err) {
+            Logger.warn(`⚠️ [SERVER] Não foi possível encerrar processo ${pid}`);
+          }
+        });
+      } else {
+        // Linux/macOS
+        const pids = result.trim().split('\n').filter(pid => pid);
+        pids.forEach(pid => {
+          try {
+            execSync(`kill -9 ${pid}`, { stdio: 'ignore' });
+            Logger.info(`✅ [SERVER] Processo ${pid} encerrado`);
+          } catch (err) {
+            Logger.warn(`⚠️ [SERVER] Não foi possível encerrar processo ${pid}`);
+          }
+        });
+      }
+
+      // Aguarda um momento para a porta ser liberada
+      Logger.info(`⏳ [SERVER] Aguardando liberação da porta...`);
+      return new Promise(resolve => setTimeout(resolve, 2000));
+    } else {
+      Logger.info(`✅ [SERVER] Porta ${port} está livre`);
+      return Promise.resolve();
+    }
+  } catch (error) {
+    Logger.debug(`ℹ️ [SERVER] Nenhum processo encontrado na porta ${port} ou erro na verificação`);
+    return Promise.resolve();
+  }
+}
 
 // Middleware
 app.use(cors());
@@ -123,6 +180,7 @@ async function loadAndRecoverBots() {
   try {
     // Carrega todos os bots habilitados que estavam rodando ou em erro
     const configs = await ConfigManagerSQLite.loadConfigs();
+
     const botsToRecover = configs.filter(config =>
       config.enabled &&
       (config.status === 'running' || config.status === 'error' || config.status === 'starting')
@@ -141,7 +199,7 @@ async function loadAndRecoverBots() {
         Logger.debug(`🔄 [PERSISTENCE] Iniciando recuperação do bot: ${botConfig.id} (${botConfig.botName}) - Status anterior: ${botConfig.status}`);
         await recoverBot(botConfig.id, botConfig, botConfig.startTime);
       } catch (error) {
-        console.error(`❌ [PERSISTENCE] Erro ao recuperar bot ${botConfig.id}:`, error.message);
+        Logger.error(`❌ [PERSISTENCE] Erro ao recuperar bot ${botConfig.id}:`, error.message);
       }
     });
 
@@ -149,11 +207,11 @@ async function loadAndRecoverBots() {
     Promise.all(recoveryPromises).then(() => {
       Logger.info(`✅ [PERSISTENCE] Recuperação de bots concluída`);
     }).catch((error) => {
-      console.error(`❌ [PERSISTENCE] Erro na recuperação de bots:`, error.message);
+      Logger.error(`❌ [PERSISTENCE] Erro na recuperação de bots:`, error.message);
     });
 
   } catch (error) {
-    console.error(`❌ [PERSISTENCE] Erro ao carregar bots ativos:`, error.message);
+    Logger.error(`❌ [PERSISTENCE] Erro ao carregar bots ativos:`, error.message);
   }
 }
 
@@ -166,7 +224,7 @@ async function recoverBot(botId, config, startTime) {
   try {
     // Verifica se a estratégia é válida
     if (!StrategyFactory.isValidStrategy(config.strategyName)) {
-      console.error(`❌ [PERSISTENCE] Estratégia ${config.strategyName} não é válida`);
+      Logger.error(`❌ [PERSISTENCE] Estratégia ${config.strategyName} não é válida`);
       return;
     }
 
@@ -184,29 +242,20 @@ async function recoverBot(botId, config, startTime) {
     if (executionMode === 'ON_CANDLE_CLOSE') {
       // Modo ON_CANDLE_CLOSE: Aguarda o próximo fechamento de vela
       executionInterval = timeframeConfig.getTimeUntilNextCandleClose(config.time || '5m');
-      console.log(`⏰ [ON_CANDLE_CLOSE] Bot ${botId}: Próxima análise em ${Math.floor(executionInterval / 1000)}s`);
+      Logger.info(`⏰ [ON_CANDLE_CLOSE] Bot ${botId}: Próxima análise em ${Math.floor(executionInterval / 1000)}s`);
     } else {
       // Modo REALTIME: Análise a cada 60 segundos
       executionInterval = 60000;
-      console.log(`⏰ [REALTIME] Bot ${botId}: Próxima análise em ${Math.floor(executionInterval / 1000)}s`);
+      Logger.info(`⏰ [REALTIME] Bot ${botId}: Próxima análise em ${Math.floor(executionInterval / 1000)}s`);
     }
 
-    console.log(`🔧 [DEBUG] Bot ${botId}: Execution Mode: ${executionMode}, Next Interval: ${executionInterval}ms`);
+    Logger.info(`🔧 [DEBUG] Bot ${botId}: Execution Mode: ${executionMode}, Next Interval: ${executionInterval}ms`);
 
     // Função de execução do bot
     const executeBot = async () => {
       try {
         // Atualiza status no ConfigManager
         await ConfigManagerSQLite.updateBotStatusById(botId, 'running');
-
-        // Inicia sincronização de posições para este bot
-        try {
-          await PositionSyncService.startSyncForBot(botId, config);
-          Logger.info(`🔄 [BOT] Sincronização de posições iniciada para bot ${botId}`);
-        } catch (syncError) {
-          Logger.error(`❌ [BOT] Erro ao iniciar sincronização de posições para bot ${botId}:`, syncError.message);
-        }
-
         // Executa análise
         await startDecision(botId);
 
@@ -228,7 +277,7 @@ async function recoverBot(botId, config, startTime) {
         });
 
       } catch (error) {
-        console.error(`❌ [BOT] Erro na execução do bot ${botId}:`, error.message);
+        Logger.error(`❌ [BOT] Erro na execução do bot ${botId}:`, error.message);
 
         // Atualiza status de erro no ConfigManager
         await ConfigManagerSQLite.updateBotStatusById(botId, 'error');
@@ -246,40 +295,19 @@ async function recoverBot(botId, config, startTime) {
 
     // Executa imediatamente em background
     executeBot().catch(error => {
-      console.error(`❌ [${config.botName}][BOT] Erro crítico na execução do bot ${botId}:`, error.message);
+      Logger.error(`❌ [${config.botName}][BOT] Erro crítico na execução do bot ${botId}:`, error.message);
     });
 
     // Configura execução periódica em background (apenas análise)
     const intervalId = setInterval(() => {
       executeBot().catch(error => {
-        console.error(`❌ [${config.botName}][BOT] Erro na execução periódica do bot ${botId}:`, error.message);
+        Logger.error(`❌ [${config.botName}][BOT] Erro na execução periódica do bot ${botId}:`, error.message);
       });
     }, executionInterval);
 
-    // Configura monitores independentes com intervalos fixos
-    const pendingOrdersIntervalId = setInterval(() => {
-      if (config.enablePendingOrdersMonitor) {
-        startPendingOrdersMonitor(botId).catch(error => {
-          console.error(`❌ [${config.botName}][PENDING_ORDERS] Erro no monitoramento do bot ${botId}:`, error.message);
-        });
-      }
-    }, 15000); // 15 segundos
-
-    const orphanOrdersIntervalId = setInterval(() => {
-      if (config.enableOrphanOrderMonitor) {
-        startOrphanOrderMonitor(botId).catch(error => {
-          console.error(`❌ [${config.botName}][ORPHAN_MONITOR] Erro no monitoramento do bot ${botId}:`, error.message);
-        });
-      }
-    }, 60000); // 60 segundos (menos agressivo para evitar rate limits)
-
-    const takeProfitIntervalId = setInterval(() => {
-      if (config.enableTakeProfitMonitor !== false) { // Ativo por padrão
-        startTakeProfitMonitor(botId).catch(error => {
-          console.error(`❌ [${config.botName}][TAKE_PROFIT] Erro no monitoramento do bot ${botId}:`, error.message);
-        });
-      }
-    }, 30000); // 30 segundos
+    // Inicia TODOS os monitores usando função centralizada
+    const monitorIds = setupBotMonitors(botId, config);
+    const { pendingOrdersIntervalId, orphanOrdersIntervalId, takeProfitIntervalId } = monitorIds;
 
     // Calcula e salva o próximo horário de validação se não existir
     if (!config.nextValidationAt) {
@@ -296,13 +324,33 @@ async function recoverBot(botId, config, startTime) {
       orphanOrdersIntervalId,
       takeProfitIntervalId,
       config,
-      status: 'running'
+      status: 'running',
+      updateConfig: async (newConfig) => {
+        Logger.info(`🔄 [CONFIG_UPDATE] Atualizando configuração do bot ${botId} em tempo real`);
+        // Atualiza a configuração na instância
+        const botInstance = activeBotInstances.get(botId);
+        if (botInstance) {
+          botInstance.config = newConfig;
+          Logger.info(`✅ [CONFIG_UPDATE] Configuração do bot ${botId} atualizada com sucesso`);
+
+          // Invalida qualquer cache relacionado
+          ConfigManagerSQLite.invalidateCache();
+
+          // Log das principais mudanças (para debug)
+          Logger.debug(`📊 [CONFIG_UPDATE] Bot ${botId} - Novas configurações aplicadas:`, {
+            capitalPercentage: newConfig.capitalPercentage,
+            maxOpenOrders: newConfig.maxOpenOrders,
+            enableTrailingStop: newConfig.enableTrailingStop,
+            enabled: newConfig.enabled
+          });
+        }
+      }
     });
 
-            Logger.info(`✅ [PERSISTENCE] Bot ${botId} (${config.botName}) recuperado com sucesso`);
+    Logger.info(`✅ [PERSISTENCE] Bot ${botId} (${config.botName}) recuperado com sucesso`);
 
   } catch (error) {
-    console.error(`❌ [PERSISTENCE] Erro ao recuperar bot ${botId}:`, error.message);
+    Logger.error(`❌ [PERSISTENCE] Erro ao recuperar bot ${botId}:`, error.message);
     await ConfigManagerSQLite.updateBotStatusById(botId, 'error');
   }
 }
@@ -322,7 +370,7 @@ async function startDecision(botId) {
 
     // Debug: Verifica se as credenciais estão presentes
     if (!config.apiKey || !config.apiSecret) {
-      console.warn(`⚠️ [DECISION] Bot ${botId} (${config.botName}) não tem credenciais configuradas`);
+      Logger.warn(`⚠️ [DECISION] Bot ${botId} (${config.botName}) não tem credenciais configuradas`);
     }
 
     // Inicializa o Decision com a estratégia
@@ -346,7 +394,7 @@ async function startDecision(botId) {
 
     return result;
   } catch (error) {
-    console.error(`❌ [DECISION] Erro na análise do bot ${botId}:`, error.message);
+    Logger.error(`❌ [DECISION] Erro na análise do bot ${botId}:`, error.message);
 
     // Emite evento de erro via WebSocket
     broadcastViaWs({
@@ -376,19 +424,13 @@ async function startStops(botId) {
 
     // Debug: Verifica se as credenciais estão presentes
     if (!config.apiKey || !config.apiSecret) {
-      console.warn(`⚠️ [STOPS] Bot ${botId} (${config.botName}) não tem credenciais configuradas`);
+      Logger.warn(`⚠️ [STOPS] Bot ${botId} (${config.botName}) não tem credenciais configuradas`);
     }
 
-    // Executa o trailing stop passando as configurações
-    Logger.debug(`🔧 [STOPS] Bot ${botId}: Config recebida:`, {
-      id: config.id,
-      botName: config.botName,
-      hasApiKey: !!config.apiKey,
-      hasApiSecret: !!config.apiSecret,
-      enableTrailingStop: config.enableTrailingStop
-    });
+    // Cria instância do OrdersService para sistema ativo de trailing stop
+    const ordersService = new OrdersService(config.apiKey, config.apiSecret);
 
-    const trailingStopInstance = new TrailingStop(botConfig.strategyName, config);
+    const trailingStopInstance = new TrailingStop(botConfig.strategyName, config, ordersService);
     const result = await trailingStopInstance.stopLoss();
 
     // Emite evento via WebSocket
@@ -400,9 +442,29 @@ async function startStops(botId) {
       result
     });
 
-    return result;
+    // Reset contador de erros em caso de sucesso
+    const rateLimit = getMonitorRateLimit(botId);
+    rateLimit.trailingStop = rateLimit.trailingStop || { errorCount: 0, interval: 5000 }; // 5s padrão
+    rateLimit.trailingStop.errorCount = 0;
+
+    // Reduz intervalo gradualmente até mínimo (5s -> 2s)
+    if (rateLimit.trailingStop.interval > 2000) {
+      rateLimit.trailingStop.interval = Math.max(2000, rateLimit.trailingStop.interval - 250);
+    }
+
   } catch (error) {
-    console.error(`❌ [STOPS] Erro no trailing stop do bot ${botId}:`, error.message);
+    // Incrementa contador de erros
+    const rateLimit = getMonitorRateLimit(botId);
+    rateLimit.trailingStop = rateLimit.trailingStop || { errorCount: 0, interval: 5000 };
+    rateLimit.trailingStop.errorCount++;
+
+    if (error?.response?.status === 429 || String(error).includes('rate limit')) {
+      // Aumenta intervalo exponencialmente em caso de rate limit
+      rateLimit.trailingStop.interval = Math.min(30000, rateLimit.trailingStop.interval * 2); // máximo 30s
+      Logger.warn(`⚠️ [STOPS] Bot ${botId}: Rate limit detectado! Aumentando intervalo para ${Math.floor(rateLimit.trailingStop.interval / 1000)}s`);
+    } else {
+      Logger.error(`❌ [STOPS] Erro no trailing stop do bot ${botId}:`, error.message);
+    }
 
     // Emite evento de erro via WebSocket
     broadcastViaWs({
@@ -412,8 +474,19 @@ async function startStops(botId) {
       timestamp: new Date().toISOString(),
       error: error.message
     });
+  }
 
-    throw error;
+  // Agenda próxima execução
+  const rateLimit = getMonitorRateLimit(botId);
+  const nextInterval = rateLimit.trailingStop?.interval || 5000;
+
+  // Salva o timeout ID na instância do bot para poder cancelá-lo depois
+  const timeoutId = setTimeout(() => startStops(botId), nextInterval);
+
+  // Atualiza a instância do bot com o novo timeout
+  const botInstance = activeBotInstances.get(botId);
+  if (botInstance) {
+    botInstance.trailingStopTimeoutId = timeoutId;
   }
 }
 
@@ -433,7 +506,7 @@ async function startTakeProfitMonitor(botId) {
 
     // Debug: Verifica se as credenciais estão presentes
     if (!config.apiKey || !config.apiSecret) {
-      console.warn(`⚠️ [TAKE_PROFIT] Bot ${botId} (${config.botName}) não tem credenciais configuradas`);
+      Logger.warn(`⚠️ [TAKE_PROFIT] Bot ${botId} (${config.botName}) não tem credenciais configuradas`);
     }
 
     // Executa o monitor de Take Profit
@@ -462,9 +535,9 @@ async function startTakeProfitMonitor(botId) {
       rateLimit.takeProfit.lastErrorTime = Date.now();
       // Aumenta o intervalo exponencialmente até o máximo
       rateLimit.takeProfit.interval = Math.min(rateLimit.takeProfit.maxInterval, rateLimit.takeProfit.interval * 2);
-      console.warn(`⚠️ [TAKE_PROFIT] Bot ${botId}: Rate limit detectado! Aumentando intervalo para ${Math.floor(rateLimit.takeProfit.interval / 1000)}s`);
+      Logger.warn(`⚠️ [TAKE_PROFIT] Bot ${botId}: Rate limit detectado! Aumentando intervalo para ${Math.floor(rateLimit.takeProfit.interval / 1000)}s`);
     } else {
-      console.error(`❌ [TAKE_PROFIT] Erro inesperado no monitoramento do bot ${botId}:`, error.message || error);
+      Logger.error(`❌ [TAKE_PROFIT] Erro inesperado no monitoramento do bot ${botId}:`, error.message || error);
     }
     throw error;
   }
@@ -486,7 +559,7 @@ async function startPendingOrdersMonitor(botId) {
 
     // Debug: Verifica se as credenciais estão presentes
     if (!config.apiKey || !config.apiSecret) {
-      console.warn(`⚠️ [PENDING_ORDERS] Bot ${botId} (${config.botName}) não tem credenciais configuradas`);
+      Logger.warn(`⚠️ [PENDING_ORDERS] Bot ${botId} (${config.botName}) não tem credenciais configuradas`);
     }
 
     // Passa as configurações do bot para o monitor
@@ -515,9 +588,9 @@ async function startPendingOrdersMonitor(botId) {
       rateLimit.pendingOrders.lastErrorTime = Date.now();
       // Aumenta o intervalo exponencialmente até o máximo
       rateLimit.pendingOrders.interval = Math.min(rateLimit.pendingOrders.maxInterval, rateLimit.pendingOrders.interval * 2);
-      console.warn(`⚠️ [PENDING_ORDERS] Bot ${botId}: Rate limit detectado! Aumentando intervalo para ${Math.floor(rateLimit.pendingOrders.interval / 1000)}s`);
+      Logger.warn(`⚠️ [PENDING_ORDERS] Bot ${botId}: Rate limit detectado! Aumentando intervalo para ${Math.floor(rateLimit.pendingOrders.interval / 1000)}s`);
     } else {
-      console.error(`❌ [PENDING_ORDERS] Erro inesperado no monitoramento do bot ${botId}:`, error.message || error);
+      Logger.error(`❌ [PENDING_ORDERS] Erro inesperado no monitoramento do bot ${botId}:`, error.message || error);
     }
     throw error;
   }
@@ -539,24 +612,20 @@ async function startOrphanOrderMonitor(botId) {
 
     // Debug: Verifica se as credenciais estão presentes
     if (!config.apiKey || !config.apiSecret) {
-      console.warn(`⚠️ [ORPHAN_ORDERS] Bot ${botId} (${config.botName}) não tem credenciais configuradas`);
+      Logger.warn(`⚠️ [ORPHAN_ORDERS] Bot ${botId} (${config.botName}) não tem credenciais configuradas`);
     }
 
-    // Usa o novo método de varredura completa para ser mais eficiente
-    // Alterna entre os métodos baseado em um timestamp para evitar sobrecarregar a API
     const now = Date.now();
     const lastFullScan = rateLimit.orphanOrders.lastFullScan || 0;
     const shouldDoFullScan = (now - lastFullScan) > 300000; // 5 minutos desde última varredura completa
 
     let result;
     if (shouldDoFullScan) {
-      // Varredura completa a cada 5 minutos
       result = await OrderController.scanAndCleanupAllOrphanedOrders(config.botName, config);
       rateLimit.orphanOrders.lastFullScan = now;
-      console.log(`🔍 [${config.botName}][ORPHAN_MONITOR] Varredura completa executada: ${result.symbolsScanned} símbolos verificados`);
+      Logger.info(`🔍 [${config.botName}][ORPHAN_MONITOR] Varredura completa executada: ${result.ordersScanned} símbolos verificados`);
     } else {
-      // Limpeza normal baseada na configuração
-      result = await OrderController.monitorAndCleanupOrphanedStopLoss(config.botName, config);
+      result = await OrderController.monitorAndCleanupOrphanedOrders(config.botName, config);
     }
 
     // Se sucesso, reduz gradualmente o intervalo até o mínimo
@@ -582,12 +651,330 @@ async function startOrphanOrderMonitor(botId) {
       rateLimit.orphanOrders.lastErrorTime = Date.now();
       // Aumenta o intervalo exponencialmente até o máximo
       rateLimit.orphanOrders.interval = Math.min(rateLimit.orphanOrders.maxInterval, rateLimit.orphanOrders.interval * 2);
-      console.warn(`⚠️ [ORPHAN_ORDERS] Bot ${botId}: Rate limit detectado! Aumentando intervalo para ${Math.floor(rateLimit.orphanOrders.interval / 1000)}s`);
+      Logger.warn(`⚠️ [ORPHAN_ORDERS] Bot ${botId}: Rate limit detectado! Aumentando intervalo para ${Math.floor(rateLimit.orphanOrders.interval / 1000)}s`);
     } else {
-      console.error(`❌ [ORPHAN_ORDERS] Erro inesperado na limpeza do bot ${botId}:`, error.message || error);
+      Logger.error(`❌ [ORPHAN_ORDERS] Erro inesperado na limpeza do bot ${botId}:`, error.message || error);
     }
     throw error;
   }
+}
+
+// Monitor de trailing stops órfãos por bot
+async function startTrailingStopsCleanerMonitor(botId) {
+  const rateLimit = getMonitorRateLimit(botId);
+
+  try {
+    // Carrega configuração do bot
+    const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
+    if (!botConfig) {
+      throw new Error(`Configuração não encontrada para bot ID: ${botId}`);
+    }
+
+    // Verifica se as credenciais estão presentes
+    if (!botConfig.apiKey || !botConfig.apiSecret) {
+      Logger.debug(`[TRAILING_CLEANER] Bot ${botId} (${botConfig.botName}) não tem credenciais configuradas`);
+      setTimeout(() => startTrailingStopsCleanerMonitor(botId), 5 * 60 * 1000); // 5 minutos
+      return;
+    }
+
+    // Executa limpeza de trailing stops órfãos
+    await TrailingStop.cleanOrphanedTrailingStates(botConfig.apiKey, botConfig.apiSecret, botId);
+
+    // Reset contador de erros em caso de sucesso
+    rateLimit.trailingCleaner = rateLimit.trailingCleaner || { errorCount: 0 };
+    rateLimit.trailingCleaner.errorCount = 0;
+
+  } catch (error) {
+    // Incrementa contador de erros
+    const trailingCleanerLimit = rateLimit.trailingCleaner || { errorCount: 0 };
+    trailingCleanerLimit.errorCount = (trailingCleanerLimit.errorCount || 0) + 1;
+    rateLimit.trailingCleaner = trailingCleanerLimit;
+
+    if (error?.response?.status === 429 || String(error).includes('rate limit')) {
+      Logger.warn(`⚠️ [BOT ${botId}][TRAILING_CLEANER] Rate limit detectado`);
+    } else {
+      Logger.error(`❌ [BOT ${botId}][TRAILING_CLEANER] Erro no monitor:`, error.message);
+    }
+  }
+
+  // Calcula próximo intervalo baseado em erros (5-15 minutos)
+  const baseInterval = 5 * 60 * 1000; // 5 minutos
+  const maxInterval = 15 * 60 * 1000; // 15 minutos
+  const errorCount = rateLimit.trailingCleaner?.errorCount || 0;
+  const nextInterval = Math.min(maxInterval, baseInterval + (errorCount * 2 * 60 * 1000)); // +2min por erro
+
+  setTimeout(() => startTrailingStopsCleanerMonitor(botId), nextInterval);
+}
+
+/**
+ * Monitor de sincronização de active_order_id do trailing stop
+ * Verifica se o active_order_id salvo corresponde ao stop loss real na corretora
+ */
+async function startTrailingStopSyncMonitor(botId) {
+  try {
+    // Carrega configuração do bot
+    const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
+    if (!botConfig) {
+      throw new Error(`Configuração não encontrada para bot ID: ${botId}`);
+    }
+
+    // Verifica se as credenciais estão presentes
+    if (!botConfig.apiKey || !botConfig.apiSecret) {
+      Logger.debug(`⏭️ [TRAILING_SYNC] Bot ${botId} (${botConfig.botName}) não tem credenciais configuradas`);
+      return;
+    }
+
+    // Busca trailing_states ativas do bot
+    const trailingStates = await TrailingStop.dbService.getAll(
+      'SELECT * FROM trailing_state WHERE botId = ?',
+      [botId]
+    );
+
+    if (!trailingStates || trailingStates.length === 0) {
+      Logger.debug(`⏭️ [TRAILING_SYNC] Bot ${botId}: Nenhum trailing state ativo para sincronizar`);
+      return;
+    }
+
+    Logger.debug(`🔄 [TRAILING_SYNC] Bot ${botId}: Sincronizando ${trailingStates.length} trailing states...`);
+
+    // Busca posições abertas na corretora
+    const positions = await Futures.getOpenPositions(botConfig.apiKey, botConfig.apiSecret) || [];
+    Logger.debug(`🔍 [TRAILING_SYNC] Bot ${botId}: ${positions.length} posições abertas na corretora`);
+
+    let syncCount = 0;
+    let orphanCount = 0;
+
+    // Para cada trailing state ativo
+    for (const state of trailingStates) {
+      try {
+        await new Promise(resolve => setTimeout(resolve, 200)); // Rate limit
+
+        // Define credentials para uso no loop
+        const apiKey = botConfig.apiKey;
+        const apiSecret = botConfig.apiSecret;
+
+        // Busca preço atual do symbol
+        const currentPrice = await OrderController.getCurrentPrice(state.symbol);
+        if (!currentPrice) {
+          Logger.error(`❌ [TRAILING_SYNC] Preço atual não encontrado para ${state.symbol}`);
+          continue;
+        }
+
+        // Busca ordens abertas deste símbolo na corretora
+        const activeOrders = await Order.getOpenOrders(state.symbol, "PERP", apiKey, apiSecret);
+
+        if (!activeOrders || activeOrders.length === 0) {
+          // Nenhuma ordem aberta - marcar como órfão
+          await TrailingStop.dbService.run(
+            'UPDATE trailing_state SET active_stop_order_id = NULL, updatedAt = ? WHERE botId = ? AND symbol = ?',
+            [new Date().toISOString(), botId, state.symbol]
+          );
+          orphanCount++;
+          Logger.info(`🧹 [TRAILING_SYNC] ${state.symbol}: Nenhuma ordem aberta encontrada, marcado como órfão`);
+          continue;
+        }
+
+        // Identifica trailing stop real baseado na posição e preço
+        let positions = await Futures.getOpenPositions(apiKey, apiSecret) || [];
+        const position = positions.find(pos => pos.symbol === state.symbol);
+        if (!position) {
+          Logger.debug(`🔍 [TRAILING_SYNC] Posição não encontrada para ${state.symbol}`);
+          continue;
+        }
+
+        const isLong = parseFloat(position.netQuantity) > 0;
+        const realTrailingStop = activeOrders.find(order => {
+          // Deve ser uma ordem TriggerPending reduceOnly
+          if (order.status !== 'TriggerPending' || !order.reduceOnly) {
+            return false;
+          }
+
+          const orderPrice = parseFloat(order.triggerPrice || order.takeProfitTriggerPrice || order.price);
+
+          // Para trailing stop: ordem deve estar "atrás" do preço atual (proteção)
+          if (isLong) {
+            // Long: trailing stop abaixo do preço atual
+            return orderPrice < currentPrice;
+          } else {
+            // Short: trailing stop acima do preço atual
+            return orderPrice > currentPrice;
+          }
+        });
+
+        if (!realTrailingStop) {
+          // Trailing stop não encontrado - tentar criar um
+          Logger.warn(`⚠️ [TRAILING_SYNC] ${state.symbol}: Trailing stop não encontrado, tentando criar...`);
+
+          try {
+            // Busca configuração do bot para criar trailing stop
+            const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
+            if (!botConfig || !botConfig.enableTrailingStop) {
+              Logger.debug(`🔍 [TRAILING_SYNC] ${state.symbol}: Trailing stop desabilitado para bot ${botId}`);
+              continue;
+            }
+
+            // Cria trailing stop usando a lógica do TrailingStop
+            const trailingStopPrice = isLong ?
+              currentPrice * (1 - (botConfig.trailingStopDistance || 1.5) / 100) :
+              currentPrice * (1 + (botConfig.trailingStopDistance || 1.5) / 100);
+
+            const Account = await AccountController.get(botConfig);
+
+            const marketInfo = Account.markets.find(m => m.symbol === state.symbol);
+            if (!marketInfo) {
+              Logger.error(`❌ [TRAILING_SYNC] Market info não encontrada para ${state.symbol}`);
+              continue;
+            }
+
+            const formatPrice = (value) => parseFloat(value).toFixed(marketInfo.decimal_price).toString();
+
+            const orderPayload = {
+              symbol: state.symbol,
+              side: isLong ? 'Ask' : 'Bid',
+              orderType: 'Limit',
+              quantity: Math.abs(parseFloat(position.netQuantity)).toString(),
+              stopLossTriggerPrice: formatPrice(trailingStopPrice),
+              clientId: await OrderController.generateUniqueOrderId(botConfig),
+              apiKey: apiKey,
+              apiSecret: apiSecret,
+            };
+
+            const newOrder = await OrderController.ordersService.createStopLossOrder(orderPayload);
+
+            if (newOrder && newOrder.id) {
+              // Salva o active_order_id no banco
+              await TrailingStop.dbService.run(
+                'UPDATE trailing_state SET active_stop_order_id = ?, updatedAt = ? WHERE botId = ? AND symbol = ?',
+                [newOrder.id, new Date().toISOString(), botId, state.symbol]
+              );
+
+              Logger.info(`✅ [TRAILING_SYNC] ${state.symbol}: Trailing stop criado ${newOrder.id} (${formatPrice(trailingStopPrice)})`);
+              syncCount++;
+            } else {
+              throw new Error('Ordem não foi criada');
+            }
+
+          } catch (error) {
+            Logger.error(`❌ [TRAILING_SYNC] Erro ao criar trailing stop para ${state.symbol}:`, error.message);
+            // Marca como órfão se não conseguiu criar
+            await TrailingStop.dbService.run(
+              'UPDATE trailing_state SET active_stop_order_id = NULL, updatedAt = ? WHERE botId = ? AND symbol = ?',
+              [new Date().toISOString(), botId, state.symbol]
+            );
+            orphanCount++;
+          }
+          continue;
+        }
+
+        // Verifica se precisa sincronizar
+        if (realTrailingStop.id !== state.active_stop_order_id) {
+          await TrailingStop.dbService.run(
+            'UPDATE trailing_state SET active_stop_order_id = ?, updatedAt = ? WHERE botId = ? AND symbol = ?',
+            [realTrailingStop.id, new Date().toISOString(), botId, state.symbol]
+          );
+          syncCount++;
+          const orderPrice = realTrailingStop.triggerPrice || realTrailingStop.takeProfitTriggerPrice || realTrailingStop.price;
+          Logger.info(`🔄 [TRAILING_SYNC] ${state.symbol}: Sincronizado active_order_id: ${state.active_stop_order_id} → ${realTrailingStop.id} (trigger: $${orderPrice})`);
+        } else {
+          Logger.debug(`✅ [TRAILING_SYNC] ${state.symbol}: active_order_id correto (${realTrailingStop.id})`);
+        }
+
+      } catch (error) {
+        Logger.error(`❌ [TRAILING_SYNC] Erro ao sincronizar ${state.symbol}:`, error.message);
+      }
+    }
+
+    if (syncCount > 0 || orphanCount > 0) {
+      Logger.info(`✅ [TRAILING_SYNC] Bot ${botId}: Sincronização concluída - ${syncCount} atualizados, ${orphanCount} órfãos`);
+    }
+
+    return { synchronized: syncCount, orphaned: orphanCount, total: trailingStates.length };
+
+  } catch (error) {
+    Logger.error(`❌ [TRAILING_SYNC] Erro no monitor de sincronização do bot ${botId}:`, error.message);
+    throw error;
+  }
+}
+
+/**
+ * Função centralizada para configurar TODOS os monitores de um bot
+ * @param {number} botId - ID do bot
+ * @param {Object} config - Configuração do bot
+ */
+function setupBotMonitors(botId, config) {
+  Logger.info(`🚀 [MONITORS] Iniciando TODOS os monitores para bot ${botId} (${config.botName})...`);
+
+  // Monitor de ordens pendentes - 15 segundos
+  const runPendingOrdersMonitor = async () => {
+    try {
+      Logger.debug(`🔄 [PENDING_ORDERS] Executando para bot ${botId}`);
+      await startPendingOrdersMonitor(botId);
+    } catch (error) {
+      Logger.error(`❌ [${config.botName}][PENDING_ORDERS] Erro no monitoramento do bot ${botId}:`, error.message);
+    }
+    setTimeout(runPendingOrdersMonitor, 15000);
+  };
+  setTimeout(runPendingOrdersMonitor, 15000);
+
+  // Monitor de ordens órfãs - 60 segundos
+  const runOrphanOrdersMonitor = async () => {
+    try {
+      Logger.debug(`🔄 [ORPHAN_MONITOR] Executando para bot ${botId}`);
+      await startOrphanOrderMonitor(botId);
+    } catch (error) {
+      Logger.error(`❌ [${config.botName}][ORPHAN_MONITOR] Erro no monitoramento do bot ${botId}:`, error.message);
+    }
+    setTimeout(runOrphanOrdersMonitor, 60000);
+  };
+  setTimeout(runOrphanOrdersMonitor, 60000);
+
+  // Monitor de take profit - 30 segundos
+  const runTakeProfitMonitor = async () => {
+    try {
+      Logger.debug(`🔄 [TAKE_PROFIT] Executando para bot ${botId}`);
+      await startTakeProfitMonitor(botId);
+    } catch (error) {
+      Logger.error(`❌ [${config.botName}][TAKE_PROFIT] Erro no monitoramento do bot ${botId}:`, error.message);
+    }
+    setTimeout(runTakeProfitMonitor, 30000);
+  };
+  setTimeout(runTakeProfitMonitor, 30000);
+
+  // Monitor de trailing stops órfãos - 5 minutos inicialmente
+  const runTrailingStopsCleanerMonitor = async () => {
+    try {
+      Logger.debug(`🔄 [TRAILING_CLEANER] Executando para bot ${botId}`);
+      await startTrailingStopsCleanerMonitor(botId);
+    } catch (error) {
+      Logger.error(`❌ [${config.botName}][TRAILING_CLEANER] Erro no monitoramento do bot ${botId}:`, error.message);
+      // startTrailingStopsCleanerMonitor já agenda a próxima execução internamente
+    }
+  };
+  // Inicia com delay de 2 segundos para não sobrecarregar
+  setTimeout(runTrailingStopsCleanerMonitor, 2000);
+
+  // Monitor de sincronização trailing stop - 2 minutos
+  const runTrailingStopSyncMonitor = async () => {
+    try {
+      Logger.debug(`🔄 [TRAILING_SYNC] Executando para bot ${botId}`);
+      await startTrailingStopSyncMonitor(botId);
+    } catch (error) {
+      Logger.error(`❌ [${config.botName}][TRAILING_SYNC] Erro no monitoramento do bot ${botId}:`, error.message);
+    }
+    setTimeout(runTrailingStopSyncMonitor, 120000); // 2 minutos
+  };
+  setTimeout(runTrailingStopSyncMonitor, 30000); // Inicia após 30 segundos
+
+  Logger.info(`✅ [MONITORS] Todos os monitores iniciados para bot ${botId} (${config.botName})`);
+
+  // Para compatibilidade, retorna IDs fictícios
+  return {
+    pendingOrdersIntervalId: 'timeout_pending',
+    orphanOrdersIntervalId: 'timeout_orphan',
+    takeProfitIntervalId: 'timeout_takeprofit',
+    trailingStopsCleanerIntervalId: 'timeout_trailing_cleaner',
+    trailingSyncIntervalId: 'timeout_trailing_sync'
+  };
 }
 
 // Função para iniciar um bot específico
@@ -671,29 +1058,13 @@ async function startBot(botId, forceRestart = false) {
         // Atualiza status no ConfigManager
         await ConfigManagerSQLite.updateBotStatusById(botId, 'running');
 
-        // Inicia sincronização de posições para este bot
-        try {
-          await PositionSyncService.startSyncForBot(botId, currentBotConfig);
-          Logger.info(`🔄 [BOT] Sincronização de posições iniciada para bot ${botId}`);
-        } catch (syncError) {
-          Logger.error(`❌ [BOT] Erro ao iniciar sincronização de posições para bot ${botId}:`, syncError.message);
-        }
-
         // Executa análise
         await startDecision(botId);
 
         // Executa trailing stop
         await startStops(botId);
 
-        // Monitora ordens pendentes se habilitado
-        if (currentBotConfig.enablePendingOrdersMonitor) {
-          await startPendingOrdersMonitor(botId);
-        }
-
-        // Limpa ordens órfãs se habilitado
-        if (currentBotConfig.enableOrphanOrderMonitor) {
-          await startOrphanOrderMonitor(botId);
-        }
+        // Monitores são gerenciados pela função setupBotMonitors() chamada no recoverBot()
 
         // Executa PnL Controller para este bot específico
         try {
@@ -701,14 +1072,6 @@ async function startBot(botId, forceRestart = false) {
         } catch (pnlError) {
           Logger.warn(`⚠️ [BOT] Erro no PnL Controller para bot ${botId}:`, pnlError.message);
         }
-
-        // Executa migração do Trailing Stop para este bot específico
-        try {
-          await TrailingStop.backfillStateForOpenPositions(currentBotConfig);
-        } catch (trailingError) {
-          console.warn(`⚠️ [BOT] Erro na migração do Trailing Stop para bot ${botId}:`, trailingError.message);
-        }
-
         // Calcula e salva o próximo horário de validação
         const nextValidationAt = new Date(Date.now() + executionInterval);
         await ConfigManagerSQLite.updateBotConfigById(botId, {
@@ -724,7 +1087,7 @@ async function startBot(botId, forceRestart = false) {
         });
 
       } catch (error) {
-        console.error(`❌ [BOT] Erro na execução do bot ${botId}:`, error.message);
+        Logger.error(`❌ [BOT] Erro na execução do bot ${botId}:`, error.message);
 
         // Atualiza status de erro no ConfigManager
         await ConfigManagerSQLite.updateBotStatusById(botId, 'error');
@@ -752,10 +1115,35 @@ async function startBot(botId, forceRestart = false) {
     // Configura execução periódica
     const intervalId = setInterval(executeBot, executionInterval);
 
+    // Carrega configuração inicial para a instância
+    let botInstanceConfig = await ConfigManagerSQLite.getBotConfigById(botId);
+
     // Adiciona a instância do bot ao mapa de controle
     activeBotInstances.set(botId, {
       intervalId,
-      executeBot
+      executeBot,
+      config: botInstanceConfig,
+      status: 'running',
+      updateConfig: async (newConfig) => {
+        Logger.info(`🔄 [CONFIG_UPDATE] Atualizando configuração do bot ${botId} em tempo real`);
+        // Atualiza a configuração na instância
+        const botInstance = activeBotInstances.get(botId);
+        if (botInstance) {
+          botInstance.config = newConfig;
+          Logger.info(`✅ [CONFIG_UPDATE] Configuração do bot ${botId} atualizada com sucesso`);
+
+          // Invalida qualquer cache relacionado
+          ConfigManagerSQLite.invalidateCache();
+
+          // Log das principais mudanças (para debug)
+          Logger.debug(`📊 [CONFIG_UPDATE] Bot ${botId} - Novas configurações aplicadas:`, {
+            capitalPercentage: newConfig.capitalPercentage,
+            maxOpenOrders: newConfig.maxOpenOrders,
+            enableTrailingStop: newConfig.enableTrailingStop,
+            enabled: newConfig.enabled
+          });
+        }
+      }
     });
 
     Logger.info(`✅ [BOT] Bot ${botId} iniciado com sucesso`);
@@ -810,7 +1198,7 @@ async function restartBot(botId) {
 }
 
 // Função para parar um bot específico
-async function stopBot(botId) {
+async function stopBot(botId, updateStatus = true) {
   try {
     Logger.info(`🛑 [BOT] Parando bot: ${botId}`);
 
@@ -835,6 +1223,9 @@ async function stopBot(botId) {
       if (botInstance.takeProfitIntervalId) {
         clearInterval(botInstance.takeProfitIntervalId);
       }
+      if (botInstance.trailingStopTimeoutId) {
+        clearTimeout(botInstance.trailingStopTimeoutId);
+      }
     }
 
     // Remove da lista de instâncias ativas
@@ -851,8 +1242,10 @@ async function stopBot(botId) {
       Logger.error(`❌ [BOT] Erro ao parar sincronização de posições para bot ${botId}:`, syncError.message);
     }
 
-    // Atualiza status no ConfigManager
-    await ConfigManagerSQLite.updateBotStatusById(botId, 'stopped');
+    // Atualiza status no ConfigManager apenas se solicitado
+    if (updateStatus) {
+      await ConfigManagerSQLite.updateBotStatusById(botId, 'stopped');
+    }
 
     Logger.info(`✅ [BOT] Bot ${botId} parado com sucesso`);
 
@@ -876,13 +1269,9 @@ app.get('/api/bot/status', async (req, res) => {
   try {
     const configs = await ConfigManagerSQLite.loadConfigs();
     const status = configs.map(config => {
-      // Verifica se o bot está realmente rodando (status no DB + instância ativa)
-      const isRunning = config.status === 'running' && activeBotInstances.has(config.id);
+      const isRunning = config.status === 'running';
 
-      // Se o status no DB é 'running' mas não há instância ativa, considera como 'stopped'
-      const effectiveStatus = config.status === 'running' && !activeBotInstances.has(config.id)
-        ? 'stopped'
-        : config.status || 'stopped';
+      const effectiveStatus = config.status === 'running' ? 'stopped' : config.status || 'stopped';
 
       return {
         id: config.id,
@@ -1187,7 +1576,7 @@ app.post('/api/bot/force-sync', async (req, res) => {
       });
     }
 
-    console.log(`🔄 [FORCE_SYNC] Iniciando sincronização forçada para bot ${botId} (${config.botName})`);
+    Logger.info(`🔄 [FORCE_SYNC] Iniciando sincronização forçada para bot ${botId} (${config.botName})`);
 
     // Importa OrdersService dinamicamente
     const { default: OrdersService } = await import('./src/Services/OrdersService.js');
@@ -1195,7 +1584,7 @@ app.post('/api/bot/force-sync', async (req, res) => {
     // Executa sincronização de ordens
     const syncedOrders = await OrdersService.syncOrdersWithExchange(botId, config);
 
-    console.log(`✅ [FORCE_SYNC] Bot ${botId}: ${syncedOrders} ordens sincronizadas com sucesso`);
+    Logger.info(`✅ [FORCE_SYNC] Bot ${botId}: ${syncedOrders} ordens sincronizadas com sucesso`);
 
     res.json({
       success: true,
@@ -1208,7 +1597,7 @@ app.post('/api/bot/force-sync', async (req, res) => {
     });
 
   } catch (error) {
-    console.error(`❌ [FORCE_SYNC] Erro no force sync para bot ${req.body?.botId}:`, error.message);
+    Logger.error(`❌ [FORCE_SYNC] Erro no force sync para bot ${req.body?.botId}:`, error.message);
     res.status(500).json({
       success: false,
       error: error.message || 'Erro interno do servidor'
@@ -1228,7 +1617,7 @@ app.post('/api/bot/update-running', async (req, res) => {
       });
     }
 
-    console.log(`🔄 [BOT_UPDATE] Atualizando configuração do bot ${botId} em execução...`);
+    Logger.info(`🔄 [BOT_UPDATE] Atualizando configuração do bot ${botId} em execução...`);
 
     // Verifica se o bot está realmente rodando
     if (!activeBotInstances.has(botId)) {
@@ -1247,7 +1636,7 @@ app.post('/api/bot/update-running', async (req, res) => {
       await botInstance.updateConfig(config);
     }
 
-    console.log(`✅ [BOT_UPDATE] Bot ${botId} atualizado com sucesso`);
+    Logger.info(`✅ [BOT_UPDATE] Bot ${botId} atualizado com sucesso`);
 
     res.json({
       success: true,
@@ -1255,7 +1644,7 @@ app.post('/api/bot/update-running', async (req, res) => {
       botId: botId
     });
   } catch (error) {
-    console.error(`❌ [BOT_UPDATE] Erro ao atualizar bot ${req.body?.botId}:`, error.message);
+    Logger.error(`❌ [BOT_UPDATE] Erro ao atualizar bot ${req.body?.botId}:`, error.message);
     res.status(500).json({
       success: false,
       error: error.message
@@ -1295,7 +1684,7 @@ app.post('/api/configs', async (req, res) => {
 
         if (wasRunning) {
           // Se está rodando, usa a nova rota de atualização
-          console.log(`🔄 [CONFIG] Bot ${botConfig.id} está rodando, usando atualização segura...`);
+          Logger.info(`🔄 [CONFIG] Bot ${botConfig.id} está rodando, usando atualização segura...`);
 
           // Chama a nova rota de atualização
           const updateResponse = await fetch(`http://localhost:${PORT}/api/bot/update-running`, {
@@ -1367,7 +1756,7 @@ app.post('/api/configs', async (req, res) => {
 
         if (wasRunning) {
           // Se está rodando, usa a nova rota de atualização
-          console.log(`🔄 [CONFIG] Bot ${botConfig.id} está rodando, usando atualização segura...`);
+          Logger.info(`🔄 [CONFIG] Bot ${botConfig.id} está rodando, usando atualização segura...`);
 
           // Chama a nova rota de atualização
           const updateResponse = await fetch(`http://localhost:${PORT}/api/bot/update-running`, {
@@ -1438,7 +1827,7 @@ app.post('/api/configs', async (req, res) => {
 
         if (wasRunning) {
           // Se está rodando, usa a nova rota de atualização
-          console.log(`🔄 [CONFIG] Bot ${config.id} está rodando, usando atualização segura...`);
+          Logger.info(`🔄 [CONFIG] Bot ${config.id} está rodando, usando atualização segura...`);
 
           // Chama a nova rota de atualização
           const updateResponse = await fetch(`http://localhost:${PORT}/api/bot/update-running`, {
@@ -1485,7 +1874,7 @@ app.post('/api/configs', async (req, res) => {
       }
     }
   } catch (error) {
-    console.error(`❌ [CONFIG] Erro ao processar configuração:`, error.message);
+    Logger.error(`❌ [CONFIG] Erro ao processar configuração:`, error.message);
     res.status(500).json({
       success: false,
       error: error.message
@@ -1511,7 +1900,7 @@ app.get('/api/configs', async (req, res) => {
       data: configs
     });
   } catch (error) {
-    console.error('❌ Erro no endpoint /api/configs:', error);
+    Logger.error('❌ Erro no endpoint /api/configs:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -1566,7 +1955,7 @@ app.delete('/api/configs/:botId', async (req, res) => {
 
     // Para o bot se estiver rodando
     if (activeBotInstances.has(botIdNum)) {
-      console.log(`🛑 [DELETE] Parando bot ${existingConfig.botName} antes de deletar...`);
+      Logger.info(`🛑 [DELETE] Parando bot ${existingConfig.botName} antes de deletar...`);
       await stopBot(botIdNum);
     }
 
@@ -1574,7 +1963,7 @@ app.delete('/api/configs/:botId', async (req, res) => {
 
     // 1. Remove a configuração do bot
     await ConfigManagerSQLite.removeBotConfigById(botIdNum);
-    console.log(`✅ [DELETE] Configuração do bot ${botIdNum} removida`);
+    Logger.info(`✅ [DELETE] Configuração do bot ${botIdNum} removida`);
 
     // 2. Limpa o estado do trailing stop do bot
     const botKey = `bot_${botIdNum}`;
@@ -1582,7 +1971,7 @@ app.delete('/api/configs/:botId', async (req, res) => {
     const trailingRemoved = TrailingStateAdapter.default.removeBotState(botKey);
 
     if (trailingRemoved) {
-      console.log(`🧹 [DELETE] Estado do trailing stop do bot ${botIdNum} removido`);
+      Logger.info(`🧹 [DELETE] Estado do trailing stop do bot ${botIdNum} removido`);
     }
 
     // 3. Limpa ordens do bot usando OrdersService
@@ -1590,10 +1979,10 @@ app.delete('/api/configs/:botId', async (req, res) => {
       const OrdersService = await import('./src/Services/OrdersService.js');
       const ordersRemoved = await OrdersService.default.clearOrdersByBotId(botIdNum);
       if (ordersRemoved > 0) {
-        console.log(`🧹 [DELETE] ${ordersRemoved} ordens do bot ${botIdNum} removidas`);
+        Logger.info(`🧹 [DELETE] ${ordersRemoved} ordens do bot ${botIdNum} removidas`);
       }
     } catch (error) {
-      console.log(`ℹ️ [DELETE] OrdersService não disponível ou erro: ${error.message}`);
+      Logger.info(`ℹ️ [DELETE] OrdersService não disponível ou erro: ${error.message}`);
     }
 
     // 4. Limpa posições do bot da nova tabela positions
@@ -1603,32 +1992,32 @@ app.delete('/api/configs/:botId', async (req, res) => {
         [botIdNum]
       );
       if (positionsResult.changes > 0) {
-        console.log(`🧹 [DELETE] ${positionsResult.changes} posições do bot ${botIdNum} removidas`);
+        Logger.info(`🧹 [DELETE] ${positionsResult.changes} posições do bot ${botIdNum} removidas`);
       }
     } catch (error) {
-      console.log(`ℹ️ [DELETE] Erro ao remover posições: ${error.message}`);
+      Logger.info(`ℹ️ [DELETE] Erro ao remover posições: ${error.message}`);
     }
 
     // 5. Remove de instâncias ativas (se ainda estiver lá)
     if (activeBotInstances.has(botIdNum)) {
       activeBotInstances.delete(botIdNum);
-      console.log(`🧹 [DELETE] Instância ativa do bot ${botIdNum} removida`);
+      Logger.info(`🧹 [DELETE] Instância ativa do bot ${botIdNum} removida`);
     }
 
     // 6. Remove configurações de rate limit
     if (monitorRateLimits.has(botIdNum)) {
       monitorRateLimits.delete(botIdNum);
-      console.log(`🧹 [DELETE] Rate limits do bot ${botIdNum} removidos`);
+      Logger.info(`🧹 [DELETE] Rate limits do bot ${botIdNum} removidos`);
     }
 
-    console.log(`🎯 [DELETE] Bot ${botIdNum} completamente removido - Config, Trailing, Ordens, Posições, Instâncias e Rate Limits`);
+    Logger.info(`🎯 [DELETE] Bot ${botIdNum} completamente removido - Config, Trailing, Ordens, Posições, Instâncias e Rate Limits`);
 
     res.json({
       success: true,
       message: `Bot ID ${botIdNum} removido com sucesso - Todos os dados foram limpos`
     });
   } catch (error) {
-    console.error('❌ [DELETE] Erro ao deletar bot:', error);
+    Logger.error('❌ [DELETE] Erro ao deletar bot:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -1745,20 +2134,20 @@ app.get('/api/health', async (req, res) => {
 // GET /api/tokens/available - Retorna tokens/markets disponíveis
 app.get('/api/tokens/available', async (req, res) => {
   try {
-    console.log('🔍 [API] Buscando tokens disponíveis...');
+    Logger.info('🔍 [API] Buscando tokens disponíveis...');
 
     // Usar a classe Markets para obter dados da Backpack API
     const Markets = await import('./src/Backpack/Public/Markets.js');
-    console.log('✅ [API] Markets importado com sucesso');
+    Logger.debug('✅ [API] Markets importado com sucesso');
 
     const marketsInstance = new Markets.default();
-    console.log('✅ [API] Instância Markets criada');
+    Logger.debug('✅ [API] Instância Markets criada');
 
     const markets = await marketsInstance.getMarkets();
-    console.log(`📊 [API] Dados recebidos da API: ${markets ? markets.length : 0} mercados`);
+    Logger.debug(`📊 [API] Dados recebidos da API: ${markets ? markets.length : 0} mercados`);
 
     if (!markets || !Array.isArray(markets)) {
-      console.error('❌ [API] Dados inválidos recebidos da API:', markets);
+      Logger.error('❌ [API] Dados inválidos recebidos da API:', markets);
       return res.status(500).json({
         success: false,
         error: 'Erro ao obter dados de mercado da API'
@@ -1766,8 +2155,8 @@ app.get('/api/tokens/available', async (req, res) => {
     }
 
     // Filtrar apenas mercados PERP ativos
-    console.log(`🔍 [API] Filtrando ${markets.length} mercados...`);
-    console.log(`🔍 [API] Primeiros 3 mercados:`, markets.slice(0, 3).map(m => ({ symbol: m.symbol, marketType: m.marketType, orderBookState: m.orderBookState })));
+    Logger.debug(`🔍 [API] Filtrando ${markets.length} mercados...`);
+    Logger.debug(`🔍 [API] Primeiros 3 mercados:`, markets.slice(0, 3).map(m => ({ symbol: m.symbol, marketType: m.marketType, orderBookState: m.orderBookState })));
 
     const availableTokens = markets
       .filter(market =>
@@ -1784,7 +2173,7 @@ app.get('/api/tokens/available', async (req, res) => {
       }))
       .sort((a, b) => a.symbol.localeCompare(b.symbol));
 
-    console.log(`✅ [API] Tokens filtrados: ${availableTokens.length} PERP ativos`);
+    Logger.debug(`✅ [API] Tokens filtrados: ${availableTokens.length} PERP ativos`);
 
     res.json({
       success: true,
@@ -1792,7 +2181,7 @@ app.get('/api/tokens/available', async (req, res) => {
       total: availableTokens.length
     });
   } catch (error) {
-    console.error('❌ Erro ao buscar tokens disponíveis:', error);
+    Logger.error('❌ Erro ao buscar tokens disponíveis:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -1813,7 +2202,7 @@ app.get('/api/positions', async (req, res) => {
           const botPositions = await getBotPositions(botName);
           positions.push(...botPositions);
         } catch (error) {
-          console.error(`Erro ao buscar posições do bot ${botName}:`, error);
+          Logger.error(`Erro ao buscar posições do bot ${botName}:`, error);
         }
       }
     }
@@ -1843,7 +2232,7 @@ app.get('/api/orders', async (req, res) => {
           const botOrders = await getBotOrders(botName);
           orders.push(...botOrders);
         } catch (error) {
-          console.error(`Erro ao buscar ordens do bot ${botName}:`, error);
+          Logger.error(`Erro ao buscar ordens do bot ${botName}:`, error);
         }
       }
     }
@@ -1912,7 +2301,7 @@ app.get('/api/trading-stats/:botId', async (req, res) => {
       data: stats
     });
   } catch (error) {
-    console.error('Erro ao buscar estatísticas de trading:', error);
+    Logger.error('Erro ao buscar estatísticas de trading:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -1966,7 +2355,7 @@ app.get('/api/trading-stats/bot/:botName', async (req, res) => {
       data: stats
     });
   } catch (error) {
-    console.error('Erro ao buscar estatísticas de trading:', error);
+    Logger.error('Erro ao buscar estatísticas de trading:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -1996,7 +2385,7 @@ app.get('/api/backpack-positions/bot/:botName', async (req, res) => {
       data: positions.positions || []
     });
   } catch (error) {
-    console.error('Erro ao buscar posições da Backpack:', error);
+    Logger.error('Erro ao buscar posições da Backpack:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -2045,7 +2434,7 @@ app.post('/api/validate-credentials', async (req, res) => {
         });
       }
     } catch (backpackError) {
-      console.error('Erro na validação da Backpack:', backpackError);
+      Logger.error('Erro na validação da Backpack:', backpackError);
       res.status(401).json({
         success: false,
         error: 'Credenciais inválidas ou erro de conexão com a Backpack',
@@ -2053,7 +2442,7 @@ app.post('/api/validate-credentials', async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('Erro ao validar credenciais:', error);
+    Logger.error('Erro ao validar credenciais:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -2097,7 +2486,7 @@ app.post('/api/validate-duplicate-credentials', async (req, res) => {
       message: 'Credenciais únicas, pode prosseguir'
     });
   } catch (error) {
-    console.error('Erro ao validar credenciais duplicadas:', error);
+    Logger.error('Erro ao validar credenciais duplicadas:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -2108,7 +2497,7 @@ app.post('/api/validate-duplicate-credentials', async (req, res) => {
 // WebSocket connection handler
 wss.on('connection', (ws) => {
   connections.add(ws);
-  console.log(`🔌 [WS] Nova conexão WebSocket estabelecida`);
+  Logger.info(`🔌 [WS] Nova conexão WebSocket estabelecida`);
 
   // Envia status inicial
   ws.send(JSON.stringify({
@@ -2119,11 +2508,11 @@ wss.on('connection', (ws) => {
 
   ws.on('close', () => {
     connections.delete(ws);
-    console.log(`🔌 [WS] Conexão WebSocket fechada`);
+    Logger.info(`🔌 [WS] Conexão WebSocket fechada`);
   });
 
   ws.on('error', (error) => {
-    console.error('🔌 [WS] Erro na conexão WebSocket:', error.message);
+    Logger.error('🔌 [WS] Erro na conexão WebSocket:', error.message);
   });
 });
 
@@ -2166,7 +2555,7 @@ async function getBotPositions(botName) {
 
     return positions;
   } catch (error) {
-    console.error(`Erro ao buscar posições do bot ${botName}:`, error);
+    Logger.error(`Erro ao buscar posições do bot ${botName}:`, error);
     return [];
   }
 }
@@ -2208,7 +2597,7 @@ async function getBotOrders(botName) {
 
     return orders;
   } catch (error) {
-    console.error(`Erro ao buscar ordens do bot ${botName}:`, error);
+    Logger.error(`Erro ao buscar ordens do bot ${botName}:`, error);
     return [];
   }
 }
@@ -2386,7 +2775,7 @@ app.get('/api/bot/performance', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Erro ao analisar performance do bot:', error);
+    Logger.error('Erro ao analisar performance do bot:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -2481,7 +2870,7 @@ app.get('/api/bot/performance/details', async (req, res) => {
       });
 
     } catch (error) {
-      console.error('Erro ao buscar detalhes de performance do bot:', error);
+      Logger.error('Erro ao buscar detalhes de performance do bot:', error);
       res.status(500).json({
         success: false,
         error: error.message
@@ -2529,17 +2918,17 @@ app.get('/api/bot/performance/simple', async (req, res) => {
     // Usa botClientOrderId do bot ou botName como fallback
     const botClientOrderId = botConfig.botClientOrderId || botConfig.botName;
 
-    console.log(`🔍 Testando performance para bot ${botId} (${botClientOrderId})`);
-    console.log(`🔍 Configuração do bot:`, {
+    Logger.info(`🔍 Testando performance para bot ${botId} (${botClientOrderId})`);
+    Logger.info(`🔍 Configuração do bot:`, {
       id: botConfig.id,
       botName: botConfig.botName,
       botClientOrderId: botConfig.botClientOrderId,
       orderCounter: botConfig.orderCounter
     });
 
-    console.log(`🔍 [ENDPOINT] Chamando History.analyzeBotPerformance...`);
-    console.log(`🔍 [ENDPOINT] History object:`, typeof History);
-    console.log(`🔍 [ENDPOINT] History.analyzeBotPerformance:`, typeof History.analyzeBotPerformance);
+    Logger.info(`🔍 [ENDPOINT] Chamando History.analyzeBotPerformance...`);
+    Logger.info(`🔍 [ENDPOINT] History object:`, typeof History);
+    Logger.info(`🔍 [ENDPOINT] History.analyzeBotPerformance:`, typeof History.analyzeBotPerformance);
     // Executa análise simples
     const performanceData = await History.analyzeBotPerformance(
       botClientOrderId,
@@ -2547,7 +2936,7 @@ app.get('/api/bot/performance/simple', async (req, res) => {
       botConfig.apiKey,
       botConfig.apiSecret
     );
-    console.log(`🔍 [ENDPOINT] History.analyzeBotPerformance concluído`);
+    Logger.info(`🔍 [ENDPOINT] History.analyzeBotPerformance concluído`);
 
     res.json({
       success: true,
@@ -2563,13 +2952,59 @@ app.get('/api/bot/performance/simple', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Erro no endpoint simples:', error);
+    Logger.error('Erro no endpoint simples:', error);
     res.status(500).json({
       success: false,
       error: error.message
     });
   }
 });
+
+// Função para iniciar monitores para todos os bots habilitados
+async function startMonitorsForAllEnabledBots() {
+  try {
+    Logger.info('🔄 [MONITORS] Iniciando monitores para todos os bots habilitados...');
+
+    // Carrega todos os bots habilitados
+    const configs = await ConfigManagerSQLite.loadConfigs();
+    const enabledBots = configs.filter(config => config.enabled);
+
+    if (enabledBots.length === 0) {
+      Logger.debug('ℹ️ [MONITORS] Nenhum bot habilitado encontrado');
+      return;
+    }
+
+    Logger.info(`🔄 [MONITORS] Iniciando monitores para ${enabledBots.length} bots habilitados...`);
+
+    // Inicia monitores para cada bot habilitado
+    for (const botConfig of enabledBots) {
+      try {
+        const botId = botConfig.id;
+
+        // Verifica se tem credenciais antes de iniciar monitores
+        if (!botConfig.apiKey || !botConfig.apiSecret) {
+          Logger.debug(`⚠️ [MONITORS] Bot ${botId} (${botConfig.botName}) não tem credenciais, pulando monitores`);
+          continue;
+        }
+
+        Logger.debug(`🔄 [MONITORS] Iniciando monitores para bot ${botId} (${botConfig.botName})`);
+
+        // Todos os monitores agora são gerenciados pela função setupBotMonitors() em recoverBot()
+        // Este local agora não inicia monitores duplicados
+
+        Logger.debug(`✅ [MONITORS] Monitores iniciados para bot ${botId}`);
+
+      } catch (error) {
+        Logger.error(`❌ [MONITORS] Erro ao iniciar monitores para bot ${botConfig.id}:`, error.message);
+      }
+    }
+
+    Logger.info('✅ [MONITORS] Monitores globais iniciados com sucesso');
+
+  } catch (error) {
+    Logger.error('❌ [MONITORS] Erro ao carregar bots para monitores:', error.message);
+  }
+}
 
 // Inicialização do servidor
 async function initializeServer() {
@@ -2608,16 +3043,34 @@ async function initializeServer() {
     Logger.info('🔄 [SERVER] Inicializando PositionSyncService...');
     PositionSyncService = new PositionSyncServiceClass(ConfigManagerSQLite.dbService);
 
+    // Verifica e libera a porta antes de iniciar o servidor
+    await killProcessOnPort(PORT);
+
     // Inicializa o servidor primeiro
     server.listen(PORT, () => {
       Logger.info(`✅ [SERVER] Servidor rodando na porta ${PORT}`);
       Logger.info(`📊 [SERVER] API disponível em http://localhost:${PORT}`);
       Logger.info(`🔌 [SERVER] WebSocket disponível em ws://localhost:${PORT}`);
       Logger.info(`🤖 [SERVER] Estratégias disponíveis: ${StrategyFactory.getAvailableStrategies().join(', ')}`);
+    }).on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        Logger.error(`❌ [SERVER] Porta ${PORT} ainda está em uso após limpeza. Abortando...`);
+        process.exit(1);
+      } else {
+        Logger.error(`❌ [SERVER] Erro ao iniciar servidor:`, err.message);
+        process.exit(1);
+      }
     });
 
     // Carrega e recupera bots em background (não bloqueia o servidor)
-    loadAndRecoverBots();
+    loadAndRecoverBots().catch(error => {
+      Logger.error('❌ [SERVER] Erro ao carregar e recuperar bots:', error.message);
+    });
+
+    // Inicia monitores para todos os bots habilitados (independente de estarem rodando)
+    startMonitorsForAllEnabledBots().catch(error => {
+      Logger.error('❌ [SERVER] Erro ao iniciar monitores globais:', error.message);
+    });
 
   } catch (error) {
     Logger.error('❌ [SERVER] Erro ao inicializar servidor:', error.message);
@@ -2667,7 +3120,7 @@ app.get('/api/bot/:botId/sync-status', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Erro ao buscar status da sincronização:', error);
+    Logger.error('❌ Erro ao buscar status da sincronização:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -2708,12 +3161,12 @@ app.get('/api/bot/summary', async (req, res) => {
     // Usa botClientOrderId do bot
     const botClientOrderId = botConfig.botClientOrderId;
 
-    console.log(`🔍 [SUMMARY] Gerando resumo para bot ${botId} (${botClientOrderId})`);
+    Logger.info(`🔍 [SUMMARY] Gerando resumo para bot ${botId} (${botClientOrderId})`);
 
     // NOVO SISTEMA: Usa PositionTrackingService para dados de performance
     let performanceData;
     try {
-      console.log(`🔄 [SUMMARY] Usando novo sistema de rastreamento para bot ${botIdNum}`);
+      Logger.info(`🔄 [SUMMARY] Usando novo sistema de rastreamento para bot ${botIdNum}`);
 
       // Instancia o PositionTrackingService com o DatabaseService
       const positionTracker = new PositionTrackingService(ConfigManagerSQLite.dbService);
@@ -2742,7 +3195,7 @@ app.get('/api/bot/summary', async (req, res) => {
       };
 
     } catch (error) {
-      console.warn(`⚠️ [SUMMARY] Erro ao buscar dados de performance (novo sistema): ${error.message}`);
+      Logger.warn(`⚠️ [SUMMARY] Erro ao buscar dados de performance (novo sistema): ${error.message}`);
 
       performanceData = {
         performance: {
@@ -2770,9 +3223,9 @@ app.get('/api/bot/summary', async (req, res) => {
     try {
       const positionTracker = new PositionTrackingService(ConfigManagerSQLite.dbService);
       activePositions = await positionTracker.getBotOpenPositions(botIdNum);
-      console.log(`📊 [SUMMARY] Usando ${activePositions.length} posições do bot (evitando posições manuais)`);
+      Logger.info(`📊 [SUMMARY] Usando ${activePositions.length} posições do bot (evitando posições manuais)`);
     } catch (error) {
-      console.warn(`⚠️ [SUMMARY] Erro ao buscar posições ativas do bot: ${error.message}`);
+      Logger.warn(`⚠️ [SUMMARY] Erro ao buscar posições ativas do bot: ${error.message}`);
     }
 
     // Calcula profitRatio profissional baseado na análise trade a trade
@@ -2845,7 +3298,7 @@ app.get('/api/bot/summary', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Erro no endpoint /api/bot/summary:', error);
+    Logger.error('❌ Erro no endpoint /api/bot/summary:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -2874,7 +3327,7 @@ app.get('/api/bot/test-api/:botId', async (req, res) => {
       });
     }
 
-    console.log(`🧪 [TEST-API] Testando API da corretora para bot ${botIdNum}`);
+    Logger.info(`🧪 [TEST-API] Testando API da corretora para bot ${botIdNum}`);
 
     // Testa busca de fills diretamente
     const History = (await import('./src/Backpack/Authenticated/History.js')).default;
@@ -2924,10 +3377,84 @@ app.get('/api/bot/test-api/:botId', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Erro no teste da API da corretora:', error);
+    Logger.error('❌ Erro no teste da API da corretora:', error);
     res.status(500).json({
       success: false,
       error: error.message
     });
   }
 });
+
+// ======= SHUTDOWN HANDLERS =======
+// Função para fazer shutdown graceful de todos os bots
+async function gracefulShutdown(signal) {
+  Logger.info(`🛑 [SHUTDOWN] Recebido sinal ${signal}. Iniciando shutdown graceful...`);
+
+  try {
+    // Para o servidor HTTP primeiro
+    if (server && server.listening) {
+      Logger.info(`🛑 [SHUTDOWN] Fechando servidor HTTP...`);
+      server.close((err) => {
+        if (err) {
+          Logger.error(`❌ [SHUTDOWN] Erro ao fechar servidor:`, err.message);
+        } else {
+          Logger.info(`✅ [SHUTDOWN] Servidor HTTP fechado`);
+        }
+      });
+    }
+
+    // Para todos os bots ativos
+    const activeBotIds = Array.from(activeBotInstances.keys());
+    Logger.info(`🛑 [SHUTDOWN] Parando ${activeBotIds.length} bots ativos...`);
+
+    for (const botId of activeBotIds) {
+      try {
+        await stopBot(botId, false); // Não atualiza status durante shutdown graceful
+        Logger.info(`✅ [SHUTDOWN] Bot ${botId} parado com sucesso`);
+      } catch (error) {
+        Logger.error(`❌ [SHUTDOWN] Erro ao parar bot ${botId}:`, error.message);
+      }
+    }
+
+    // Para serviços globais se existirem
+    if (PositionSyncService && typeof PositionSyncService.stopAllSync === 'function') {
+      PositionSyncService.stopAllSync();
+      Logger.info(`✅ [SHUTDOWN] PositionSyncService parado`);
+    }
+
+    if (typeof TrailingStop.cleanup === 'function') {
+      await TrailingStop.cleanup();
+    }
+
+    Logger.info(`✅ [SHUTDOWN] Shutdown graceful concluído`);
+
+    // Força saída após um tempo limite
+    setTimeout(() => {
+      Logger.warn(`⚠️ [SHUTDOWN] Forçando saída após timeout`);
+      process.exit(0);
+    }, 3000);
+
+    process.exit(0);
+
+  } catch (error) {
+    Logger.error(`❌ [SHUTDOWN] Erro durante shutdown:`, error.message);
+    process.exit(1);
+  }
+}
+
+// Registra handlers para sinais de shutdown
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+
+// Handler para erros não capturados
+process.on('uncaughtException', (error) => {
+  Logger.error('❌ [UNCAUGHT_EXCEPTION] Erro não capturado:', error);
+  gracefulShutdown('UNCAUGHT_EXCEPTION');
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  Logger.error('❌ [UNHANDLED_REJECTION] Promise rejeitada não tratada:', reason);
+  gracefulShutdown('UNHANDLED_REJECTION');
+});
+
+Logger.info('✅ [STARTUP] Handlers de shutdown configurados');

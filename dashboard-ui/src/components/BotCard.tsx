@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Play, Edit, Square, Trash2, RefreshCw } from 'lucide-react';
+import { Play, Edit, Square, Trash2 } from 'lucide-react';
 import { DeleteBotModal } from './DeleteBotModal';
 
 interface BotConfig {
@@ -72,13 +72,11 @@ export const BotCard: React.FC<BotCardProps> = ({
   onStop,
   onEdit,
   onDelete,
-  onForceSync
 }) => {
   const [nextExecution, setNextExecution] = useState<NextExecution | null>(null);
   const [countdown, setCountdown] = useState<string>('');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isForceSyncing, setIsForceSyncing] = useState(false);
 
   // Calcular próximo tempo de execução baseado no nextValidationAt do status
   useEffect(() => {
@@ -174,29 +172,12 @@ export const BotCard: React.FC<BotCardProps> = ({
   const handleDeleteBot = async (botId: number) => {
     setIsDeleting(true);
     try {
-      await onDelete(botId);
+      onDelete(botId);
       setShowDeleteModal(false);
     } catch (error) {
       console.error('Erro ao deletar bot:', error);
     } finally {
       setIsDeleting(false);
-    }
-  };
-
-  const handleForceSync = async () => {
-    if (!config.id) return;
-
-    setIsForceSyncing(true);
-    try {
-      await onForceSync(config.id);
-      // Atualizar estatísticas após o sync
-      setTimeout(() => {
-        window.location.reload(); // Força refresh das estatísticas
-      }, 2000);
-    } catch (error) {
-      console.error('Erro ao fazer force sync:', error);
-    } finally {
-      setIsForceSyncing(false);
     }
   };
 
@@ -328,45 +309,6 @@ export const BotCard: React.FC<BotCardProps> = ({
             </p>
           </div>
 
-          {/* Tokens Ativos */}
-          {config.authorizedTokens && config.authorizedTokens.length > 0 && (
-            <div className="border-t pt-2">
-              <div className="text-xs font-medium mb-2">Tokens Ativos</div>
-              <div className="flex flex-wrap gap-1">
-                {config.authorizedTokens.slice(0, 4).map((token, index) => {
-                  // Cores alternadas para diferentes tokens
-                  const colorClasses = [
-                    'bg-blue-50 text-blue-700 border-blue-200',
-                    'bg-green-50 text-green-700 border-green-200',
-                    'bg-purple-50 text-purple-700 border-purple-200',
-                    'bg-orange-50 text-orange-700 border-orange-200',
-                    'bg-indigo-50 text-indigo-700 border-indigo-200',
-                    'bg-pink-50 text-pink-700 border-pink-200'
-                  ];
-                  const colorClass = colorClasses[index % colorClasses.length];
-                  
-                  // Extrai apenas a parte do token antes do underscore (se houver) e limita a 4 caracteres
-                  const baseToken = token.split('_')[0];
-                  const truncatedToken = baseToken.length > 4 ? baseToken.substring(0, 4) : baseToken;
-                  
-                  return (
-                    <span 
-                      key={token}
-                      className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border ${colorClass}`}
-                    >
-                      {truncatedToken}
-                    </span>
-                  );
-                })}
-                {config.authorizedTokens.length > 4 && (
-                  <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border bg-gray-50 text-gray-700 border-gray-200">
-                    +{config.authorizedTokens.length - 4}
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
-
           {/* Configurações de Stop Loss Híbrido */}
           {config.enableHybridStopStrategy && (
             <div className="border-t pt-2">
@@ -393,7 +335,7 @@ export const BotCard: React.FC<BotCardProps> = ({
           )}
 
           {/* Configurações de Trailing Stop */}
-          {config.enableTrailingStop && !config.enableHybridStopStrategy && (
+          {config.enableTrailingStop && (
             <div className="border-t pt-2">
               <div className="text-xs font-medium mb-2 text-green-600">Configurações Trailing Stop</div>
               <div className="text-xs">
@@ -401,6 +343,45 @@ export const BotCard: React.FC<BotCardProps> = ({
                 <p className="text-muted-foreground">{config.trailingStopDistance}%</p>
               </div>
             </div>
+          )}
+
+          {/* Tokens Ativos */}
+          {config.authorizedTokens && config.authorizedTokens.length > 0 && (
+              <div className="border-t pt-2">
+                <div className="text-xs font-medium mb-2">Tokens Ativos</div>
+                <div className="flex flex-wrap gap-1">
+                  {config.authorizedTokens.slice(0, 4).map((token, index) => {
+                    // Cores alternadas para diferentes tokens
+                    const colorClasses = [
+                      'bg-blue-50 text-blue-700 border-blue-200',
+                      'bg-green-50 text-green-700 border-green-200',
+                      'bg-purple-50 text-purple-700 border-purple-200',
+                      'bg-orange-50 text-orange-700 border-orange-200',
+                      'bg-indigo-50 text-indigo-700 border-indigo-200',
+                      'bg-pink-50 text-pink-700 border-pink-200'
+                    ];
+                    const colorClass = colorClasses[index % colorClasses.length];
+
+                    // Extrai apenas a parte do token antes do underscore (se houver) e limita a 4 caracteres
+                    const baseToken = token.split('_')[0];
+                    const truncatedToken = baseToken.length > 4 ? baseToken.substring(0, 4) : baseToken;
+
+                    return (
+                        <span
+                            key={token}
+                            className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border ${colorClass}`}
+                        >
+                      {truncatedToken}
+                    </span>
+                    );
+                  })}
+                  {config.authorizedTokens.length > 4 && (
+                      <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border bg-gray-50 text-gray-700 border-gray-200">
+                    +{config.authorizedTokens.length - 4}
+                  </span>
+                  )}
+                </div>
+              </div>
           )}
 
           {/* Status de próxima atualização */}
@@ -455,20 +436,6 @@ export const BotCard: React.FC<BotCardProps> = ({
             <Edit className="h-3 w-3 sm:h-4 sm:w-4" />
             <span className="hidden sm:inline">Editar</span>
           </Button>
-          <div className="relative group flex-shrink-0">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleForceSync}
-              disabled={isForceSyncing || !config.id}
-              className="flex items-center gap-1 sm:gap-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-xs sm:text-sm"
-            >
-              <RefreshCw className={`h-3 w-3 sm:h-4 sm:w-4 ${isForceSyncing ? 'animate-spin' : ''}`} />
-            </Button>
-            <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black text-white text-xs rounded p-2 w-48 z-10 pointer-events-none">
-              Force Sync: Sincroniza imediatamente as ordens do bot com a corretora
-            </div>
-          </div>
           <Button
             variant="outline"
             size="sm"

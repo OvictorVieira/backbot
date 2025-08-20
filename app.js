@@ -51,24 +51,35 @@ let pendingOrdersLastErrorTime = null;
 
 // Ordens órfãs agora são gerenciadas pelo sistema multi-bot do app-api.js
 
+// Variável global para OrdersService (necessária para injeção de dependência no TrailingStop)
+let globalOrdersService = null;
+
 // Inicializa o TrailingStop com a estratégia correta
-function initializeTrailingStop() {
+function initializeTrailingStop(ordersService = null) {
   if (!activeBotConfig) {
     Logger.error('❌ Configuração do bot não encontrada para inicializar TrailingStop');
     return;
   }
-  
+
   // Verifica se as credenciais estão configuradas
   if (!activeBotConfig.apiKey || !activeBotConfig.apiSecret) {
     Logger.error('❌ Credenciais de API não configuradas para inicializar TrailingStop');
     Logger.error(`💡 Configure as credenciais para o bot: ${activeBotConfig.botName}`);
     return;
   }
-  
+
   const strategyType = activeBotConfig.strategyName || 'DEFAULT';
   Logger.debug(`🔧 [APP_INIT] Inicializando TrailingStop com estratégia: ${strategyType}`);
-  const trailingStopInstance = new TrailingStop(strategyType, activeBotConfig);
+
+  // Injeção de dependência do OrdersService para sistema ativo
+  const trailingStopInstance = new TrailingStop(strategyType, activeBotConfig, ordersService);
   trailingStopInstance.reinitializeStopLoss(strategyType);
+
+  if (ordersService) {
+    Logger.info(`✅ [TRAILING_INIT] TrailingStop inicializado com sistema ATIVO de ordens`);
+  } else {
+    Logger.info(`✅ [TRAILING_INIT] TrailingStop inicializado com sistema PASSIVO (modo tradicional)`);
+  }
 }
 
 // Função para exibir timer geral unificado
@@ -80,11 +91,11 @@ function showGlobalTimer(waitTimeMs = null) {
   const durationMs = waitTimeMs || 60000; // Usa o tempo fornecido ou 60 segundos padrão
   const startTime = Date.now();
   const nextAnalysis = new Date(startTime + durationMs);
-  const timeString = nextAnalysis.toLocaleTimeString('pt-BR', { 
-    hour: '2-digit', 
-    minute: '2-digit', 
+  const timeString = nextAnalysis.toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
     second: '2-digit',
-    hour12: false 
+    hour12: false
   });
 
   // Função para calcular o progresso baseado no tempo real decorrido
@@ -95,9 +106,9 @@ function showGlobalTimer(waitTimeMs = null) {
     const currentPeriodStart = Math.floor(now / timeframeMs) * timeframeMs;
     const elapsedInPeriod = now - currentPeriodStart;
     const progress = Math.min((elapsedInPeriod / timeframeMs) * 100, 100);
-    
 
-    
+
+
     return Math.floor(progress);
   };
 
@@ -107,12 +118,12 @@ function showGlobalTimer(waitTimeMs = null) {
   const originalLog = console.log;
   const originalError = console.error;
   const originalWarn = console.warn;
-  
+
   // Função para limpar a linha do progresso
   const clearProgressLine = () => {
     process.stdout.write('\r' + ' '.repeat(process.stdout.columns || 80) + '\r');
   };
-  
+
   // Função para mostrar o progresso no rodapé
   const showProgress = (progress, progressBar, percentage) => {
     // Move o cursor para o final da tela
@@ -129,15 +140,15 @@ function showGlobalTimer(waitTimeMs = null) {
   console.log = (...args) => {
     // Filtra logs que podem quebrar a barra de progresso
     const message = args.join(' ');
-    const isSpamLog = message.includes('Stop loss já existe') || 
+    const isSpamLog = message.includes('Stop loss já existe') ||
                      message.includes('ℹ️ [CONTA') ||
                      message.includes('⚠️ [CONTA');
-    
+
     // Se for log de spam, não mostra para não quebrar a barra
     if (isSpamLog) {
       return;
     }
-    
+
     // Limpa a linha do progresso antes de mostrar o log
     clearProgressLine();
     // Mostra o log
@@ -176,12 +187,12 @@ function showGlobalTimer(waitTimeMs = null) {
     const percentage = calculateProgress();
     const bars = Math.floor(percentage / 5);
     const emptyBars = 20 - bars;
-    
+
     const progressBar = '█'.repeat(bars) + '░'.repeat(emptyBars);
-    
+
     // Mostra o progresso no rodapé
     showProgress(percentage, progressBar, percentage);
-    
+
     if (percentage >= 100) {
       clearInterval(globalTimerInterval);
       // Restaura console.log original
@@ -209,42 +220,35 @@ async function startDecision() {
     console.error('❌ Instância do Decision não inicializada');
     return;
   }
-  
+
   // Verifica se há configuração do bot ativo
   if (!activeBotConfig) {
     console.error('❌ Configuração do bot ativo não encontrada');
     return;
   }
-  
+
   // Verifica se as credenciais estão configuradas
   if (!activeBotConfig.apiKey || !activeBotConfig.apiSecret) {
     console.error('❌ API_KEY e API_SECRET são obrigatórios');
     console.log('   Configure as credenciais no dashboard para o bot:', activeBotConfig.botName);
     return;
   }
-  
+
   // Verifica se o bot está habilitado
   if (!activeBotConfig.enabled) {
     console.log(`⏸️ Bot ${activeBotConfig.botName} está pausado. Ative-o no dashboard para continuar.`);
     return;
   }
-  
+
   await decisionInstance.analyze(null, null, activeBotConfig);
-  
-  // Executa migração do Trailing Stop para este bot específico
-  try {
-    await TrailingStop.backfillStateForOpenPositions(activeBotConfig);
-  } catch (trailingError) {
-    console.warn(`⚠️ [${activeBotConfig.botName}][APP] Erro na migração do Trailing Stop para bot ${activeBotConfig.botName}:`, trailingError.message);
-  }
-  
+
   // SISTEMA GLOBAL DE INTERVALO BASEADO NO EXECUTION_MODE
   let nextInterval;
   const timeframeConfig = new TimeframeConfig(activeBotConfig);
-  
+
   // Usa configuração do bot para determinar o modo de execução
   const executionMode = activeBotConfig.executionMode || 'REALTIME';
-  
+
   if (executionMode === 'ON_CANDLE_CLOSE') {
     // Modo ON_CANDLE_CLOSE: Aguarda o próximo fechamento de vela
     nextInterval = timeframeConfig.getTimeUntilNextCandleClose(activeBotConfig.time);
@@ -254,12 +258,12 @@ async function startDecision() {
     nextInterval = 60000;
           Logger.debug(`⏰ [${activeBotConfig.botName}][REALTIME] Próxima análise em ${Math.floor(nextInterval / 1000)}s`);
   }
-  
+
   console.log(`🔧 [${activeBotConfig.botName}][DEBUG] Execution Mode: ${executionMode}, Next Interval: ${nextInterval}ms`);
-  
+
   // Inicia o timer geral após cada análise
   showGlobalTimer();
-  
+
   setTimeout(startDecision, nextInterval);
 }
 
@@ -270,8 +274,8 @@ async function startStops() {
       console.warn(`⚠️ [${activeBotConfig.botName}][TRAILING] Configuração do bot não encontrada ou credenciais ausentes`);
       return;
     }
-    
-    const trailingStopInstance = new TrailingStop(activeBotConfig.strategyName || 'DEFAULT', activeBotConfig);
+
+    const trailingStopInstance = new TrailingStop(activeBotConfig.strategyName || 'DEFAULT', activeBotConfig, globalOrdersService);
     await trailingStopInstance.stopLoss();
     // Se sucesso, reduz gradualmente o intervalo até o mínimo
     if (trailingStopInterval > trailingStopMinInterval) {
@@ -315,9 +319,9 @@ async function startPendingOrdersMonitor() {
       console.warn(`⚠️ [${activeBotConfig.botName}][PENDING_ORDERS] Configuração do bot não encontrada ou credenciais ausentes`);
       return;
     }
-    
+
     await OrderController.monitorPendingEntryOrders(activeBotConfig.botName, activeBotConfig);
-    
+
     // Se sucesso, reduz gradualmente o intervalo até o mínimo
     if (pendingOrdersInterval > pendingOrdersMinInterval) {
       pendingOrdersInterval = Math.max(pendingOrdersMinInterval, pendingOrdersInterval - 1000);
@@ -338,6 +342,7 @@ async function startPendingOrdersMonitor() {
   setTimeout(startPendingOrdersMonitor, pendingOrdersInterval);
 }
 
+
 // Função para inicializar ou re-inicializar a estratégia do Decision
 function initializeDecisionStrategy(strategyType) {
   try {
@@ -355,32 +360,32 @@ function initializeDecisionStrategy(strategyType) {
 async function startBot() {
   try {
     console.log('🚀 Iniciando BackBot...');
-    
+
     // Carrega todas as configurações de bots
     const allConfigs = ConfigManager.loadConfigs();
     console.log(`📋 Encontradas ${allConfigs.length} configurações de bots`);
-    
+
     // Filtra apenas bots habilitados (inclui bots que não estão rodando mas estão habilitados)
     let enabledBots = allConfigs.filter(config => config.enabled);
     console.log(`✅ ${enabledBots.length} bots habilitados encontrados`);
-    
+
     // Filtra bots com credenciais válidas
     const botsWithCredentials = enabledBots.filter(config => config.apiKey && config.apiSecret);
     console.log(`🔑 ${botsWithCredentials.length} bots com credenciais configuradas`);
-    
+
     if (botsWithCredentials.length === 0) {
       console.error('❌ Nenhum bot com credenciais válidas encontrado!');
       console.error('💡 Configure as credenciais de API no dashboard');
       process.exit(1);
     }
-    
+
     // Usa apenas bots com credenciais válidas
     enabledBots = botsWithCredentials;
-    
+
     if (enabledBots.length === 0) {
       console.log('❌ Nenhum bot habilitado encontrado!');
       console.log('💡 Configure pelo menos um bot no dashboard ou crie uma configuração padrão');
-      
+
       // Verifica se há bots configurados mas não habilitados
       const configuredBots = allConfigs.filter(config => config.apiKey && config.apiSecret);
       if (configuredBots.length > 0) {
@@ -392,10 +397,10 @@ async function startBot() {
       } else {
         console.log('💡 Crie uma configuração de bot no dashboard primeiro');
       }
-      
+
       process.exit(1);
     }
-    
+
     // Se há múltiplos bots habilitados, usa modo multi-bot
     if (enabledBots.length > 1) {
       console.log('🤖 Iniciando modo Multi-Bot...');
@@ -404,19 +409,19 @@ async function startBot() {
       await multiBotManager.runMultiMode();
       return;
     }
-    
+
     // Modo single bot - usa o primeiro bot habilitado
     activeBotConfig = enabledBots[0];
-    
+
     // Verifica se as credenciais estão configuradas
     if (!activeBotConfig.apiKey || !activeBotConfig.apiSecret) {
       console.error(`❌ Bot ${activeBotConfig.botName} não tem credenciais configuradas!`);
       console.error('💡 Configure as credenciais no dashboard antes de iniciar o bot');
       process.exit(1);
     }
-    
+
     console.log(`🤖 Iniciando bot: ${activeBotConfig.botName} (${activeBotConfig.strategyName})`);
-    
+
     // 1. Inicializar a base de dados
     console.log('🔧 [DATABASE] Inicializando base de dados...');
     const dbService = new DatabaseService();
@@ -426,24 +431,21 @@ async function startBot() {
     console.log('📋 [ORDERS] Inicializando OrdersService...');
     const OrdersService = await import('./src/Services/OrdersService.js');
     OrdersService.default.init(dbService);
+    globalOrdersService = OrdersService.default; // Armazena para uso global
 
     // 3. Carregar o estado do Trailing Stop da base de dados
     console.log('📂 [PERSISTENCE] Carregando estado do Trailing Stop...');
     await TrailingStop.loadStateFromDB(dbService);
 
-    // 4. Preencher o estado para posições abertas que não estavam na base de dados
-    console.log('🔄 [BACKFILL] Preenchendo estado para posições abertas...');
-    await TrailingStop.backfillStateForOpenPositions(activeBotConfig, dbService);
-    
     // Inicializa a estratégia selecionada
     initializeDecisionStrategy(activeBotConfig.strategyName);
-    
-    // Inicializa o TrailingStop com a estratégia correta
-    initializeTrailingStop();
-    
+
+    // Inicializa o TrailingStop com a estratégia correta e sistema ativo de ordens
+    initializeTrailingStop(globalOrdersService);
+
     // Log da estratégia selecionada
     console.log(`🔑 Estratégia ${activeBotConfig.strategyName}: usando credenciais do bot ${activeBotConfig.botName}`);
-    
+
     // Log do modo de execução
     const executionMode = activeBotConfig.executionMode || 'REALTIME';
     if (activeBotConfig.strategyName === 'ALPHA_FLOW') {
@@ -469,18 +471,18 @@ async function startBot() {
     // Verifica se deve fazer análise imediatamente ou aguardar
     const timeframeConfig = new TimeframeConfig(activeBotConfig);
     const waitCheck = timeframeConfig.shouldWaitBeforeAnalysis(activeBotConfig.time);
-    
+
     console.log(`🔧 [DEBUG] Execution Mode: ${activeBotConfig.executionMode}`);
     console.log(`🔧 [DEBUG] Strategy: ${activeBotConfig.strategyName}`);
     console.log(`🔧 [DEBUG] Timeframe: ${activeBotConfig.time}`);
     console.log(`🔧 [DEBUG] Wait Check:`, waitCheck);
-    
+
     if (waitCheck.shouldWait) {
       console.log(`⏰ [ON_CANDLE_CLOSE] Próxima análise em ${Math.floor(waitCheck.waitTime / 1000)}s (fechamento de vela)`);
-      
+
       // Inicia o timer geral para mostrar progresso
       showGlobalTimer(waitCheck.waitTime);
-      
+
       // Agenda a primeira análise
       setTimeout(() => {
         startDecision();
@@ -493,13 +495,13 @@ async function startBot() {
 
     // Configura comandos interativos
     setupInteractiveCommands();
-    
+
     console.log('✅ BackBot iniciado com sucesso!');
     console.log(`📊 Bot ativo: ${activeBotConfig.botName}`);
     console.log(`🔧 Estratégia: ${activeBotConfig.strategyName}`);
     console.log(`💰 Capital: ${activeBotConfig.capitalPercentage}%`);
     console.log(`⏰ Timeframe: ${activeBotConfig.time}`);
-    
+
   } catch (error) {
     console.error('❌ Erro ao iniciar BackBot:', error.message);
     process.exit(1);
@@ -515,7 +517,7 @@ function setupInteractiveCommands() {
 
   rl.on('line', (input) => {
     const command = input.trim().toLowerCase();
-    
+
     switch (command) {
       case 'status':
         showDynamicStopLossStatus();
@@ -523,7 +525,7 @@ function setupInteractiveCommands() {
       case 'cleanup':
         console.log('🧹 Iniciando limpeza manual de ordens órfãs...');
         import('./src/Controllers/OrderController.js').then(({ default: OrderController }) => {
-          OrderController.monitorAndCleanupOrphanedStopLoss(activeBotConfig.botName, activeBotConfig).then(result => {
+          OrderController.monitorAndCleanupOrphanedOrders(activeBotConfig.botName, activeBotConfig).then(result => {
             console.log(`🧹 Limpeza concluída: ${result.orphaned} ordens órfãs detectadas, ${result.cancelled} canceladas`);
             if (result.errors.length > 0) {
               console.log(`❌ Erros: ${result.errors.join(', ')}`);
@@ -590,3 +592,38 @@ startBot();
 setTimeout(() => {
   setupInteractiveCommands();
 }, 3000);
+
+// ======= SHUTDOWN HANDLERS =======
+// Função para fazer shutdown graceful
+async function gracefulShutdown(signal) {
+  console.log(`\n🛑 [SHUTDOWN] Recebido sinal ${signal}. Encerrando BackBot...`);
+
+  try {
+    // Para o timer global se estiver rodando
+    stopGlobalTimer();
+
+    console.log('✅ [SHUTDOWN] BackBot encerrado com sucesso');
+    process.exit(0);
+
+  } catch (error) {
+    console.error('❌ [SHUTDOWN] Erro durante shutdown:', error.message);
+    process.exit(1);
+  }
+}
+
+// Registra handlers para sinais de shutdown
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+
+// Handler para erros não capturados
+process.on('uncaughtException', (error) => {
+  console.error('❌ [UNCAUGHT_EXCEPTION] Erro não capturado:', error);
+  gracefulShutdown('UNCAUGHT_EXCEPTION');
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ [UNHANDLED_REJECTION] Promise rejeitada não tratada:', reason);
+  gracefulShutdown('UNHANDLED_REJECTION');
+});
+
+console.log('✅ [STARTUP] Handlers de shutdown configurados');

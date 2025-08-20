@@ -1,16 +1,15 @@
 import Order from '../Backpack/Authenticated/Order.js';
 import Futures from '../Backpack/Authenticated/Futures.js';
 import AccountController from './AccountController.js';
-import Utils from '../Utils/Utils.js';
-import { validateLeverageForSymbol } from '../Utils/Utils.js';
+import Utils, {validateLeverageForSymbol} from '../Utils/Utils.js';
 import Markets from '../Backpack/Public/Markets.js';
 import TrailingStop from '../TrailingStop/TrailingStop.js';
-import ConfigManager from '../Config/ConfigManager.js';
 import ConfigManagerSQLite from '../Config/ConfigManagerSQLite.js';
-import BotOrdersManager, { initializeBotOrdersManager } from '../Config/BotOrdersManager.js';
+import BotOrdersManager from '../Config/BotOrdersManager.js';
 import Logger from '../Utils/Logger.js';
-import { calculateIndicators } from '../Decision/Indicators.js';
-import { ProMaxStrategy } from '../Decision/Strategies/ProMaxStrategy.js';
+import Semaphore from '../Utils/Semaphore.js';
+import {calculateIndicators} from '../Decision/Indicators.js';
+import {ProMaxStrategy} from '../Decision/Strategies/ProMaxStrategy.js';
 import OrdersService from '../Services/OrdersService.js';
 
 class OrderController {
@@ -107,7 +106,7 @@ class OrderController {
       Logger.error(`❌ [ORDER_ID] Erro ao gerar ID único:`, error.message);
       // Em vez de parar o bot, gera um ID de emergência baseado no timestamp
       const emergencyId = Math.floor(Date.now() / 1000) % 1000000;
-      console.warn(`⚠️ [ORDER_ID] Usando ID de emergência: ${emergencyId}`);
+      Logger.warn(`⚠️ [ORDER_ID] Usando ID de emergência: ${emergencyId}`);
       return emergencyId;
     }
   }
@@ -121,10 +120,10 @@ class OrderController {
       // Adiciona sufixo para identificar que é take profit
       return parseInt(`${baseId}${targetIndex + 1}`);
     } catch (error) {
-      console.error(`❌ [ORDER_ID] Erro ao gerar ID para take profit:`, error.message);
+      Logger.error(`❌ [ORDER_ID] Erro ao gerar ID para take profit:`, error.message);
       // Em vez de parar o bot, gera um ID de emergência
       const emergencyId = Math.floor(Date.now() / 1000) % 1000000 + (targetIndex + 1);
-      console.warn(`⚠️ [ORDER_ID] Usando ID de emergência para take profit: ${emergencyId}`);
+      Logger.warn(`⚠️ [ORDER_ID] Usando ID de emergência para take profit: ${emergencyId}`);
       return emergencyId;
     }
   }
@@ -137,9 +136,9 @@ class OrderController {
       const baseId = await this.generateUniqueOrderId(config);
       return parseInt(`${baseId}999`);
     } catch (error) {
-      console.error(`❌ [ORDER_ID] Erro ao gerar ID para stop loss:`, error.message);
+      Logger.error(`❌ [ORDER_ID] Erro ao gerar ID para stop loss:`, error.message);
       const emergencyId = Math.floor(Date.now() / 1000) % 1000000 + 999;
-      console.warn(`⚠️ [ORDER_ID] Usando ID de emergência para stop loss: ${emergencyId}`);
+      Logger.warn(`⚠️ [ORDER_ID] Usando ID de emergência para stop loss: ${emergencyId}`);
       return emergencyId;
     }
   }
@@ -154,10 +153,10 @@ class OrderController {
       const suffix = type === 'stop' ? '1001' : '1002';
       return parseInt(`${baseId}${suffix}`);
     } catch (error) {
-      console.error(`❌ [ORDER_ID] Erro ao gerar ID para failsafe:`, error.message);
+      Logger.error(`❌ [ORDER_ID] Erro ao gerar ID para failsafe:`, error.message);
       // Em vez de parar o bot, gera um ID de emergência
       const emergencyId = Math.floor(Date.now() / 1000) % 1000000 + (type === 'stop' ? 1001 : 1002);
-      console.warn(`⚠️ [ORDER_ID] Usando ID de emergência para failsafe: ${emergencyId}`);
+      Logger.warn(`⚠️ [ORDER_ID] Usando ID de emergência para failsafe: ${emergencyId}`);
       return emergencyId;
     }
   }
@@ -189,7 +188,7 @@ class OrderController {
       // Obtém configuração do bot por ID
       const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
       if (!botConfig || !botConfig.botClientOrderId) {
-        console.warn(`⚠️ [BOT_ORDERS] Bot ID ${botId} não encontrado ou sem botClientOrderId`);
+        Logger.warn(`⚠️ [BOT_ORDERS] Bot ID ${botId} não encontrado ou sem botClientOrderId`);
         return [];
       }
 
@@ -210,7 +209,7 @@ class OrderController {
 
       return botOrders;
     } catch (error) {
-      console.error(`❌ [BOT_ORDERS] Erro ao recuperar ordens do bot ID ${botId}:`, error.message);
+      Logger.error(`❌ [BOT_ORDERS] Erro ao recuperar ordens do bot ID ${botId}:`, error.message);
       return [];
     }
   }
@@ -226,14 +225,14 @@ class OrderController {
       // Busca configuração do bot por nome
       const botConfig = await ConfigManagerSQLite.getBotConfigByBotName(botName);
       if (!botConfig) {
-        console.warn(`⚠️ [BOT_ORDERS] Bot ${botName} não encontrado`);
+        Logger.warn(`⚠️ [BOT_ORDERS] Bot ${botName} não encontrado`);
         return [];
       }
 
       // Usa o método por ID
       return await OrderController.getBotOrdersById(botConfig.id, config);
     } catch (error) {
-      console.error(`❌ [BOT_ORDERS] Erro ao recuperar ordens de ${botName}:`, error.message);
+      Logger.error(`❌ [BOT_ORDERS] Erro ao recuperar ordens de ${botName}:`, error.message);
       return [];
     }
   }
@@ -296,7 +295,7 @@ class OrderController {
 
       return botsOrders;
     } catch (error) {
-      console.error(`❌ [ALL_BOTS_ORDERS] Erro ao recuperar ordens de todos os bots:`, error.message);
+      Logger.error(`❌ [ALL_BOTS_ORDERS] Erro ao recuperar ordens de todos os bots:`, error.message);
       return {};
     }
   }
@@ -412,8 +411,8 @@ class OrderController {
           }
         }
       } catch (error) {
-        console.warn(`⚠️ [MONITOR-${botName}] Falha ao obter posições, continuando monitoramento...`);
-        console.error(`❌ [MONITOR-${botName}] Erro detalhado:`, error.message);
+        Logger.warn(`⚠️ [MONITOR-${botName}] Falha ao obter posições, continuando monitoramento...`);
+        Logger.error(`❌ [MONITOR-${botName}] Erro detalhado:`, error.message);
         positions = [];
       }
 
@@ -432,7 +431,7 @@ class OrderController {
 
           // Verifica se marketInfo existe antes de acessar a propriedade fee
           if (!marketInfo) {
-            console.warn(`⚠️ [MONITOR-${botName}] Market info não encontrada para ${market}, usando fee padrão`);
+            Logger.warn(`⚠️ [MONITOR-${botName}] Market info não encontrada para ${market}, usando fee padrão`);
             return; // Retorna se não encontrar as informações do mercado
           }
 
@@ -517,7 +516,7 @@ class OrderController {
       }
 
     } catch (error) {
-      console.warn(`⚠️ [MONITOR-${botName}] Falha ao verificar posições não monitoradas:`, error.message);
+      Logger.warn(`⚠️ [MONITOR-${botName}] Falha ao verificar posições não monitoradas:`, error.message);
     }
   }
 
@@ -542,7 +541,7 @@ class OrderController {
       });
       const marketInfo = Account.markets.find(m => m.symbol === market);
       if (!marketInfo) {
-        console.error(`❌ [PRO_MAX] Market info não encontrada para ${market}`);
+        Logger.error(`❌ [PRO_MAX] Market info não encontrada para ${market}`);
         return;
       }
       const decimal_quantity = marketInfo.decimal_quantity;
@@ -567,12 +566,12 @@ class OrderController {
       const action = isLong ? 'long' : 'short';
       const stopAndTargets = strategy.calculateStopAndMultipleTargets(data, entryPrice, action);
       if (!stopAndTargets) {
-        console.error(`❌ [PRO_MAX] Não foi possível calcular targets para ${market}`);
+        Logger.error(`❌ [PRO_MAX] Não foi possível calcular targets para ${market}`);
         return;
       }
       const { stop, targets } = stopAndTargets;
       if (!targets || targets.length === 0) {
-        console.error(`❌ [PRO_MAX] Nenhum target calculado para ${market}`);
+        Logger.error(`❌ [PRO_MAX] Nenhum target calculado para ${market}`);
         return;
       }
 
@@ -587,7 +586,7 @@ class OrderController {
       const finalTPs = Math.min(nTPs, maxTakeProfitOrders);
 
       if (finalTPs === 0) {
-        console.error(`❌ [PRO_MAX] Posição muito pequena para criar qualquer TP válido para ${market}`);
+        Logger.error(`❌ [PRO_MAX] Posição muito pequena para criar qualquer TP válido para ${market}`);
         return;
       }
 
@@ -731,7 +730,7 @@ class OrderController {
       // Valida se existe stop loss e cria se necessário
       await OrderController.validateAndCreateStopLoss(position, botName, config);
     } catch (error) {
-      console.error(`❌ [PRO_MAX] Erro ao processar posição aberta para ${market}:`, error.message);
+      Logger.error(`❌ [PRO_MAX] Erro ao processar posição aberta para ${market}:`, error.message);
     }
   }
 
@@ -749,7 +748,7 @@ class OrderController {
       const apiSecret = config?.apiSecret;
 
       if (!apiKey || !apiSecret) {
-        console.error(`❌ [PRO_MAX] Credenciais de API não fornecidas para ${position.symbol}`);
+        Logger.error(`❌ [PRO_MAX] Credenciais de API não fornecidas para ${position.symbol}`);
         return;
       }
 
@@ -760,7 +759,7 @@ class OrderController {
       });
       const marketInfo = Account.markets.find(m => m.symbol === position.symbol);
       if (!marketInfo) {
-        console.error(`❌ [PRO_MAX] Market info não encontrada para ${position.symbol}`);
+        Logger.error(`❌ [PRO_MAX] Market info não encontrada para ${position.symbol}`);
         return;
       }
 
@@ -786,13 +785,13 @@ class OrderController {
 
       const stopAndTargets = strategy.calculateStopAndMultipleTargets(data, entryPrice, action);
       if (!stopAndTargets) {
-        console.error(`❌ [PRO_MAX] Não foi possível calcular targets para ${position.symbol}`);
+        Logger.error(`❌ [PRO_MAX] Não foi possível calcular targets para ${position.symbol}`);
         return;
       }
 
       const { stop, targets } = stopAndTargets;
       if (!targets || targets.length === 0) {
-        console.error(`❌ [PRO_MAX] Nenhum target calculado para ${position.symbol}`);
+        Logger.error(`❌ [PRO_MAX] Nenhum target calculado para ${position.symbol}`);
         return;
       }
 
@@ -807,7 +806,7 @@ class OrderController {
       const finalTPs = Math.min(nTPs, maxTakeProfitOrders);
 
       if (finalTPs === 0) {
-        console.error(`❌ [PRO_MAX] Posição muito pequena para criar qualquer TP válido para ${position.symbol}`);
+        Logger.error(`❌ [PRO_MAX] Posição muito pequena para criar qualquer TP válido para ${position.symbol}`);
         return;
       }
 
@@ -925,7 +924,7 @@ class OrderController {
       // Valida se existe stop loss e cria se necessário
       await OrderController.validateAndCreateStopLoss(position, botName, config);
     } catch (error) {
-      console.error(`❌ [PRO_MAX] Erro ao forçar criação de alvos para ${position.symbol}:`, error.message);
+      Logger.error(`❌ [PRO_MAX] Erro ao forçar criação de alvos para ${position.symbol}:`, error.message);
     }
   }
 
@@ -974,7 +973,7 @@ class OrderController {
       };
 
     } catch (error) {
-      console.error('❌ Erro na validação de margem:', error.message);
+      Logger.error('❌ Erro na validação de margem:', error.message);
       return {
         isValid: false,
         message: `Erro ao validar margem: ${error.message}`
@@ -1051,14 +1050,14 @@ class OrderController {
       const successfulCancels = cancelResults.filter(result => result !== null && !result.error).length;
 
       if (successfulCancels > 0) {
-        console.log(`🗑️ ${symbol}: ${successfulCancels} ordens de entrada pendentes canceladas com sucesso`);
+        Logger.info(`🗑️ ${symbol}: ${successfulCancels} ordens de entrada pendentes canceladas com sucesso`);
         return true;
       } else {
-        console.error(`❌ ${symbol}: Falha ao cancelar ordens de entrada pendentes`);
+        Logger.error(`❌ ${symbol}: Falha ao cancelar ordens de entrada pendentes`);
         return false;
       }
     } catch (error) {
-      console.error(`❌ Erro ao cancelar ordens de entrada pendentes para ${symbol}:`, error.message);
+      Logger.error(`❌ Erro ao cancelar ordens de entrada pendentes para ${symbol}:`, error.message);
       return false;
     }
   }
@@ -1068,9 +1067,9 @@ class OrderController {
     const Account = account || await AccountController.get(config);
 
     // Log detalhado para debug
-    console.log(`🔍 [FORCE_CLOSE] Procurando market para ${position.symbol}`);
-    console.log(`🔍 [FORCE_CLOSE] Total de markets disponíveis: ${Account.markets?.length || 0}`);
-    console.log(`🔍 [FORCE_CLOSE] Markets: ${Account.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`);
+    Logger.info(`🔍 [FORCE_CLOSE] Procurando market para ${position.symbol}`);
+    Logger.info(`🔍 [FORCE_CLOSE] Total de markets disponíveis: ${Account.markets?.length || 0}`);
+    Logger.info(`🔍 [FORCE_CLOSE] Markets: ${Account.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`);
 
     let market = Account.markets.find((el) => {
         return el.symbol === position.symbol
@@ -1082,18 +1081,18 @@ class OrderController {
           return el.symbol.toLowerCase() === position.symbol.toLowerCase()
       })
       if (marketCaseInsensitive) {
-        console.log(`⚠️ [FORCE_CLOSE] Market encontrado com case diferente para ${position.symbol}: ${marketCaseInsensitive.symbol}`);
+        Logger.info(`⚠️ [FORCE_CLOSE] Market encontrado com case diferente para ${position.symbol}: ${marketCaseInsensitive.symbol}`);
         market = marketCaseInsensitive;
       }
     }
 
     // Verifica se o market foi encontrado
     if (!market) {
-      console.error(`❌ [FORCE_CLOSE] Market não encontrado para ${position.symbol}. Markets disponíveis: ${Account.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`);
+      Logger.error(`❌ [FORCE_CLOSE] Market não encontrado para ${position.symbol}. Markets disponíveis: ${Account.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`);
       throw new Error(`Market não encontrado para ${position.symbol}`);
     }
 
-    console.log(`✅ [FORCE_CLOSE] Market encontrado para ${position.symbol}: decimal_quantity=${market.decimal_quantity}`);
+    Logger.info(`✅ [FORCE_CLOSE] Market encontrado para ${position.symbol}: decimal_quantity=${market.decimal_quantity}`);
 
     const isLong = parseFloat(position.netQuantity) > 0;
     const quantity = Math.abs(parseFloat(position.netQuantity));
@@ -1126,7 +1125,7 @@ class OrderController {
     let closePrice = closeResult?.price || position.markPrice || position.entryPrice;
     const exitValue = parseFloat(body.quantity) * parseFloat(closePrice);
     const exitFee = exitValue * fee;
-    console.log(`[LOG][FEE] Fechamento: ${position.symbol} | Valor: $${exitValue.toFixed(2)} | Fee saída: $${exitFee.toFixed(6)} (${(fee * 100).toFixed(4)}%)`);
+    Logger.info(`[LOG][FEE] Fechamento: ${position.symbol} | Valor: $${exitValue.toFixed(2)} | Fee saída: $${exitFee.toFixed(6)} (${(fee * 100).toFixed(4)}%)`);
     // Cancela ordens pendentes para este símbolo
             if (closeResult) {
           await this.cancelPendingOrders(position.symbol, config);
@@ -1138,18 +1137,18 @@ class OrderController {
             const TrailingStop = (await import('../TrailingStop/TrailingStop.js')).default;
             TrailingStop.clearTrailingState(position.symbol);
           } catch (error) {
-            console.error(`[FORCE_CLOSE] Erro ao limpar trailing state para ${position.symbol}:`, error.message);
+            Logger.error(`[FORCE_CLOSE] Erro ao limpar trailing state para ${position.symbol}:`, error.message);
           }
 
           // Limpeza automática de ordens órfãs para este símbolo
           try {
-            console.log(`🧹 [FORCE_CLOSE] ${position.symbol}: Verificando ordens órfãs após fechamento...`);
-            const orphanResult = await OrderController.monitorAndCleanupOrphanedStopLoss('DEFAULT', config);
+            Logger.info(`🧹 [FORCE_CLOSE] ${position.symbol}: Verificando ordens órfãs após fechamento...`);
+            const orphanResult = await OrderController.monitorAndCleanupOrphanedOrders('DEFAULT', config);
             if (orphanResult.orphaned > 0) {
-              console.log(`🧹 [FORCE_CLOSE] ${position.symbol}: ${orphanResult.orphaned} ordens órfãs limpas após fechamento`);
+              Logger.info(`🧹 [FORCE_CLOSE] ${position.symbol}: ${orphanResult.orphaned} ordens órfãs limpas após fechamento`);
             }
           } catch (error) {
-            console.error(`[FORCE_CLOSE] Erro ao limpar ordens órfãs para ${position.symbol}:`, error.message);
+            Logger.error(`[FORCE_CLOSE] Erro ao limpar ordens órfãs para ${position.symbol}:`, error.message);
           }
         }
 
@@ -1174,7 +1173,7 @@ class OrderController {
 
       // Verifica se o market foi encontrado
       if (!market) {
-        console.error(`❌ [TAKE_PARTIAL] Market não encontrado para ${position.symbol}. Markets disponíveis: ${Account.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`);
+        Logger.error(`❌ [TAKE_PARTIAL] Market não encontrado para ${position.symbol}. Markets disponíveis: ${Account.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`);
         throw new Error(`Market não encontrado para ${position.symbol}`);
       }
 
@@ -1216,7 +1215,7 @@ class OrderController {
             const TrailingStop = (await import('../TrailingStop/TrailingStop.js')).default;
             TrailingStop.clearTrailingState(position.symbol);
           } catch (error) {
-            console.error(`[TAKE_PARTIAL] Erro ao limpar trailing state para ${position.symbol}:`, error.message);
+            Logger.error(`[TAKE_PARTIAL] Erro ao limpar trailing state para ${position.symbol}:`, error.message);
           }
         }
         return true;
@@ -1225,29 +1224,17 @@ class OrderController {
       }
 
     } catch (error) {
-      console.error(`❌ Erro ao realizar take profit parcial para ${position.symbol}:`, error.message);
+      Logger.error(`❌ Erro ao realizar take profit parcial para ${position.symbol}:`, error.message);
       return false;
     }
   }
 
-  /**
-   * Verifica se existe ordem LIMIT de take profit parcial
-   * @param {string} symbol - Símbolo da posição
-   * @param {object} position - Dados da posição
-   * @param {object} account - Dados da conta (opcional)
-   * @returns {Promise<boolean>} - True se ordem existe, false caso contrário
-   */
-  static async hasPartialTakeProfitOrder(symbol, position, account = null, config = null) {
+  static async hasPartialTakeProfitOrder(position, config) {
     try {
-      const Account = account || await AccountController.get(config);
       const isLong = parseFloat(position.netQuantity) > 0;
-      const totalQuantity = Math.abs(parseFloat(position.netQuantity));
-      const partialPercentage = Number(config?.partialTakeProfitPercentage || 50);
-      const quantityToClose = (totalQuantity * partialPercentage) / 100;
 
-      // Busca ordens abertas para o símbolo
       const OrderModule = await import('../Backpack/Authenticated/Order.js');
-      const openOrders = await OrderModule.default.getOpenOrders(symbol, "PERP", config?.apiKey, config?.apiSecret);
+      const openOrders = await OrderModule.default.getOpenOrders(position.symbol, "PERP", config?.apiKey, config?.apiSecret);
 
       if (!openOrders || openOrders.length === 0) {
         return false;
@@ -1255,19 +1242,20 @@ class OrderController {
 
       // Procura por ordem LIMIT reduce-only com a quantidade parcial
       const partialOrder = openOrders.find(order => {
-        const isReduceOnly = order.reduceOnly === true;
-        const isLimitOrder = order.orderType === 'Limit';
-        const isCorrectSide = isLong ? order.side === 'Ask' : order.side === 'Bid';
-        const isCorrectQuantity = Math.abs(parseFloat(order.quantity) - quantityToClose) < 0.01; // 1% tolerância
-        const hasValidQuantity = parseFloat(order.quantity) > 0; // Quantidade deve ser maior que zero
+        let isReducePrice;
+        if(isLong) {
+          isReducePrice = parseFloat(order.triggerPrice || order.price) > parseFloat(position.entryPrice);
+        } else {
+          isReducePrice = parseFloat(order.triggerPrice || order.price) < parseFloat(position.entryPrice);
+        }
 
-        return isReduceOnly && isLimitOrder && isCorrectSide && isCorrectQuantity && hasValidQuantity;
+        return order.reduceOnly === true && isReducePrice;
       });
 
       return !!partialOrder;
 
     } catch (error) {
-      console.error(`❌ [TP_CHECK] Erro ao verificar ordem de take profit parcial para ${symbol}:`, error.message);
+      Logger.error(`❌ [TP_CHECK] Erro ao verificar ordem de take profit parcial para ${symbol}:`, error.message);
       return false;
     }
   }
@@ -1278,6 +1266,7 @@ class OrderController {
    * @param {number} takeProfitPrice - Preço do take profit
    * @param {number} percentageToClose - Porcentagem da posição para fechar (ex: 50 = 50%)
    * @param {object} account - Dados da conta (opcional)
+   * @param config
    * @returns {object|null} - Resultado da operação ou null se falhar
    */
   static async createPartialTakeProfitOrder(position, takeProfitPrice, percentageToClose = 50, account = null, config = null) {
@@ -1295,14 +1284,14 @@ class OrderController {
             return el.symbol.toLowerCase() === position.symbol.toLowerCase()
         })
         if (marketCaseInsensitive) {
-          console.log(`⚠️ [TP_LIMIT] Market encontrado com case diferente para ${position.symbol}: ${marketCaseInsensitive.symbol}`);
+          Logger.info(`⚠️ [TP_LIMIT] Market encontrado com case diferente para ${position.symbol}: ${marketCaseInsensitive.symbol}`);
           market = marketCaseInsensitive;
         }
       }
 
       // Verifica se o market foi encontrado
       if (!market) {
-        console.error(`❌ [TP_LIMIT] Market não encontrado para ${position.symbol}. Markets disponíveis: ${Account.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`);
+        Logger.error(`❌ [TP_LIMIT] Market não encontrado para ${position.symbol}. Markets disponíveis: ${Account.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`);
         throw new Error(`Market não encontrado para ${position.symbol}`);
       }
 
@@ -1312,8 +1301,8 @@ class OrderController {
       const decimal_quantity = market.decimal_quantity;
       const decimal_price = market.decimal_price;
 
-      console.log(`🎯 [TP_LIMIT] ${position.symbol}: Criando ordem LIMIT de take profit parcial`);
-      console.log(`📊 [TP_LIMIT] ${position.symbol}: Preço: $${takeProfitPrice.toFixed(decimal_price)}, Quantidade: ${quantityToClose.toFixed(decimal_quantity)} (${percentageToClose}%)`);
+      Logger.info(`🎯 [TP_LIMIT] ${position.symbol}: Criando ordem LIMIT de take profit parcial`);
+      Logger.info(`📊 [TP_LIMIT] ${position.symbol}: Preço: $${takeProfitPrice.toFixed(decimal_price)}, Quantidade: ${quantityToClose.toFixed(decimal_quantity)} (${percentageToClose}%)`);
 
       const formatPrice = (value) => parseFloat(value).toFixed(decimal_price).toString();
       const formatQuantity = (value) => {
@@ -1338,7 +1327,7 @@ class OrderController {
         clientId: await OrderController.generateUniqueOrderId(config)
       };
 
-      console.log(`🔄 [TP_LIMIT] ${position.symbol}: Enviando ordem LIMIT para corretora...`);
+      Logger.info(`🔄 [TP_LIMIT] ${position.symbol}: Enviando ordem LIMIT para corretora...`);
 
       const result = await OrderController.ordersService.createLimitOrder({
         symbol: position.symbol,
@@ -1355,22 +1344,22 @@ class OrderController {
       });
 
       if (result && !result.error) {
-        console.log(`✅ [TP_LIMIT] ${position.symbol}: Ordem LIMIT de take profit parcial criada com sucesso!`);
-        console.log(`   • Order ID: ${result.id || 'N/A'}`);
-        console.log(`   • Preço: $${takeProfitPrice.toFixed(decimal_price)}`);
-        console.log(`   • Quantidade: ${quantityToClose.toFixed(decimal_quantity)}`);
-        console.log(`   • Tipo: ${isLong ? 'LONG' : 'SHORT'}`);
-        console.log(`   • ReduceOnly: true`);
-        console.log(`   • OrderType: Limit`);
+        Logger.info(`✅ [TP_LIMIT] ${position.symbol}: Ordem LIMIT de take profit parcial criada com sucesso!`);
+        Logger.info(`   • Order ID: ${result.id || 'N/A'}`);
+        Logger.info(`   • Preço: $${takeProfitPrice.toFixed(decimal_price)}`);
+        Logger.info(`   • Quantidade: ${quantityToClose.toFixed(decimal_quantity)}`);
+        Logger.info(`   • Tipo: ${isLong ? 'LONG' : 'SHORT'}`);
+        Logger.info(`   • ReduceOnly: true`);
+        Logger.info(`   • OrderType: Limit`);
         return result;
       } else {
         const errorMsg = result && result.error ? result.error : 'desconhecido';
-        console.error(`❌ [TP_LIMIT] ${position.symbol}: Falha ao criar ordem LIMIT - Erro: ${errorMsg}`);
+        Logger.error(`❌ [TP_LIMIT] ${position.symbol}: Falha ao criar ordem LIMIT - Erro: ${errorMsg}`);
         return null;
       }
 
     } catch (error) {
-      console.error(`❌ [TP_LIMIT] Erro ao criar ordem LIMIT de take profit parcial para ${position.symbol}:`, error.message);
+      Logger.error(`❌ [TP_LIMIT] Erro ao criar ordem LIMIT de take profit parcial para ${position.symbol}:`, error.message);
       return null;
     }
   }
@@ -1388,8 +1377,8 @@ class OrderController {
       const Account = account || await AccountController.get(config);
 
       // Log detalhado para debug
-      console.log(`🔍 [CLOSE_PARTIAL] Procurando market para ${position.symbol}`);
-      console.log(`🔍 [CLOSE_PARTIAL] Total de markets disponíveis: ${Account.markets?.length || 0}`);
+      Logger.info(`🔍 [CLOSE_PARTIAL] Procurando market para ${position.symbol}`);
+      Logger.info(`🔍 [CLOSE_PARTIAL] Total de markets disponíveis: ${Account.markets?.length || 0}`);
 
       let market = Account.markets.find((el) => {
           return el.symbol === position.symbol
@@ -1401,26 +1390,26 @@ class OrderController {
             return el.symbol.toLowerCase() === position.symbol.toLowerCase()
         })
         if (marketCaseInsensitive) {
-          console.log(`⚠️ [CLOSE_PARTIAL] Market encontrado com case diferente para ${position.symbol}: ${marketCaseInsensitive.symbol}`);
+          Logger.info(`⚠️ [CLOSE_PARTIAL] Market encontrado com case diferente para ${position.symbol}: ${marketCaseInsensitive.symbol}`);
           market = marketCaseInsensitive;
         }
       }
 
       // Verifica se o market foi encontrado
       if (!market) {
-        console.error(`❌ [CLOSE_PARTIAL] Market não encontrado para ${position.symbol}. Markets disponíveis: ${Account.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`);
+        Logger.error(`❌ [CLOSE_PARTIAL] Market não encontrado para ${position.symbol}. Markets disponíveis: ${Account.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`);
         throw new Error(`Market não encontrado para ${position.symbol}`);
       }
 
-      console.log(`✅ [CLOSE_PARTIAL] Market encontrado para ${position.symbol}: decimal_quantity=${market.decimal_quantity}`);
+      Logger.info(`✅ [CLOSE_PARTIAL] Market encontrado para ${position.symbol}: decimal_quantity=${market.decimal_quantity}`);
 
       const isLong = parseFloat(position.netQuantity) > 0;
       const totalQuantity = Math.abs(parseFloat(position.netQuantity));
       const quantityToClose = (totalQuantity * percentageToClose) / 100;
       const decimal = market.decimal_quantity;
 
-      console.log(`📊 [CLOSE_PARTIAL] ${position.symbol}: Fechando ${percentageToClose}% da posição`);
-      console.log(`📊 [CLOSE_PARTIAL] ${position.symbol}: Quantidade total: ${totalQuantity}, Quantidade a fechar: ${quantityToClose.toFixed(decimal)}`);
+      Logger.info(`📊 [CLOSE_PARTIAL] ${position.symbol}: Fechando ${percentageToClose}% da posição`);
+      Logger.info(`📊 [CLOSE_PARTIAL] ${position.symbol}: Quantidade total: ${totalQuantity}, Quantidade a fechar: ${quantityToClose.toFixed(decimal)}`);
 
       const body = {
           symbol: position.symbol,
@@ -1441,25 +1430,22 @@ class OrderController {
         const exitValue = parseFloat(body.quantity) * parseFloat(closePrice);
         const exitFee = exitValue * fee;
 
-        console.log(`💰 [CLOSE_PARTIAL] ${position.symbol}: Fechamento parcial realizado com sucesso!`);
-        console.log(`💰 [CLOSE_PARTIAL] ${position.symbol}: Valor fechado: $${exitValue.toFixed(2)} | Fee: $${exitFee.toFixed(6)} (${(fee * 100).toFixed(4)}%)`);
-        console.log(`💰 [CLOSE_PARTIAL] ${position.symbol}: Quantidade restante: ${(totalQuantity - quantityToClose).toFixed(decimal)}`);
+        Logger.info(`💰 [CLOSE_PARTIAL] ${position.symbol}: Fechamento parcial realizado com sucesso!`);
+        Logger.info(`💰 [CLOSE_PARTIAL] ${position.symbol}: Valor fechado: $${exitValue.toFixed(2)} | Fee: $${exitFee.toFixed(6)} (${(fee * 100).toFixed(4)}%)`);
+        Logger.info(`💰 [CLOSE_PARTIAL] ${position.symbol}: Quantidade restante: ${(totalQuantity - quantityToClose).toFixed(decimal)}`);
 
         return closeResult;
       } else {
-        console.error(`❌ [CLOSE_PARTIAL] ${position.symbol}: Falha ao executar ordem de fechamento parcial`);
+        Logger.error(`❌ [CLOSE_PARTIAL] ${position.symbol}: Falha ao executar ordem de fechamento parcial`);
         return null;
       }
 
     } catch (error) {
-      console.error(`❌ [CLOSE_PARTIAL] Erro ao fechar parcialmente ${position.symbol}:`, error.message);
+      Logger.error(`❌ [CLOSE_PARTIAL] Erro ao fechar parcialmente ${position.symbol}:`, error.message);
       return null;
     }
   }
 
-  // Estatísticas globais de fallback
-  static fallbackCount = 0;
-  static totalHybridOrders = 0;
 
   // Função auxiliar para calcular slippage percentual
   static calcSlippagePct(priceLimit, priceCurrent) {
@@ -1471,11 +1457,11 @@ class OrderController {
     try {
       // Se não temos dados originais do sinal, assume válido
       if (!originalSignalData) {
-        console.log(`ℹ️ [${botName}] ${market}: Sem dados originais para revalidação. Assumindo sinal válido.`);
+        Logger.info(`ℹ️ [${botName}] ${market}: Sem dados originais para revalidação. Assumindo sinal válido.`);
         return true;
       }
 
-      console.log(`🔍 [${botName}] ${market}: Dados originais do sinal:`, {
+      Logger.info(`🔍 [${botName}] ${market}: Dados originais do sinal:`, {
         action: originalSignalData.action,
         config: originalSignalData.config,
         timestamp: originalSignalData.timestamp
@@ -1488,10 +1474,10 @@ class OrderController {
       const { StrategyFactory } = await import('../Decision/Strategies/StrategyFactory.js');
       const strategy = StrategyFactory.createStrategy(strategyNameToUse);
 
-      console.log(`🔍 [${botName}] ${market}: Usando estratégia: ${strategyNameToUse} (${strategy?.constructor?.name || 'NÃO ENCONTRADA'})`);
+      Logger.info(`🔍 [${botName}] ${market}: Usando estratégia: ${strategyNameToUse} (${strategy?.constructor?.name || 'NÃO ENCONTRADA'})`);
 
       if (!strategy) {
-        console.warn(`⚠️ [${botName}] ${market}: Estratégia ${strategyNameToUse} não encontrada. Assumindo sinal válido.`);
+        Logger.warn(`⚠️ [${botName}] ${market}: Estratégia ${strategyNameToUse} não encontrada. Assumindo sinal válido.`);
         return true;
       }
 
@@ -1501,7 +1487,7 @@ class OrderController {
       const candles = await markets.getKLines(market, timeframe, 30);
 
       if (!candles || candles.length < 20) {
-        console.warn(`⚠️ [${botName}] ${market}: Dados insuficientes para revalidação. Assumindo sinal válido.`);
+        Logger.warn(`⚠️ [${botName}] ${market}: Dados insuficientes para revalidação. Assumindo sinal válido.`);
         return true;
       }
 
@@ -1526,7 +1512,7 @@ class OrderController {
       const investmentUSD = config?.investmentUSD || 5;
       const media_rsi = config?.mediaRsi || 50;
 
-      console.log(`🔍 [${botName}] ${market}: Revalidando com dados atualizados - Preço atual: $${currentPrice.toFixed(6)}, Fee: ${fee}, Investment: $${investmentUSD}`);
+      Logger.info(`🔍 [${botName}] ${market}: Revalidando com dados atualizados - Preço atual: $${currentPrice.toFixed(6)}, Fee: ${fee}, Investment: $${investmentUSD}`);
 
       const decision = await strategy.analyzeTrade(
         fee,
@@ -1547,30 +1533,30 @@ class OrderController {
 
       // Se não há decisão atual, significa que não há sinal válido
       if (!decision) {
-        console.log(`🔍 [${botName}] ${market}: Estratégia retornou null - não há sinal válido atualmente`);
+        Logger.info(`🔍 [${botName}] ${market}: Estratégia retornou null - não há sinal válido atualmente`);
         return false;
       }
 
       // Se não há ação atual, significa que não há sinal válido
       if (!currentAction) {
-        console.log(`🔍 [${botName}] ${market}: Estratégia não retornou ação - não há sinal válido atualmente`);
+        Logger.info(`🔍 [${botName}] ${market}: Estratégia não retornou ação - não há sinal válido atualmente`);
         return false;
       }
 
       const isStillValid = normalizedCurrentAction === normalizedOriginalAction;
 
       if (isStillValid) {
-        console.log(`✅ [${botName}] ${market}: Sinal revalidado com sucesso.`);
+        Logger.info(`✅ [${botName}] ${market}: Sinal revalidado com sucesso.`);
       } else {
-        console.log(`❌ [${botName}] ${market}: Sinal não é mais válido. Condições de mercado mudaram.`);
-        console.log(`🔍 [${botName}] ${market}: Ação original: ${originalAction} (normalizada: ${normalizedOriginalAction}), Ação atual: ${currentAction || 'NENHUMA'} (normalizada: ${normalizedCurrentAction || 'NENHUMA'})`);
-        console.log(`🔍 [${botName}] ${market}: Decision completo:`, decision);
+        Logger.info(`❌ [${botName}] ${market}: Sinal não é mais válido. Condições de mercado mudaram.`);
+        Logger.info(`🔍 [${botName}] ${market}: Ação original: ${originalAction} (normalizada: ${normalizedOriginalAction}), Ação atual: ${currentAction || 'NENHUMA'} (normalizada: ${normalizedCurrentAction || 'NENHUMA'})`);
+        Logger.info(`🔍 [${botName}] ${market}: Decision completo:`, decision);
       }
 
       return isStillValid;
 
     } catch (error) {
-              console.warn(`⚠️ [${botName}] ${market}: Erro na revalidação do sinal: ${error.message}. Assumindo válido.`);
+              Logger.warn(`⚠️ [${botName}] ${market}: Erro na revalidação do sinal: ${error.message}. Assumindo válido.`);
       return true; // Em caso de erro, assume válido para não perder oportunidades
     }
   }
@@ -1602,13 +1588,13 @@ class OrderController {
       const finalPrice = formatPrice(entryPrice);
 
       // Debug dos valores calculados
-      console.log(`🔍 [DEBUG] ${market}: Valores calculados:`);
-      console.log(`   • Entry: ${entry} -> entryPrice: ${entryPrice}`);
-      console.log(`   • Volume: ${volume} -> quantity: ${quantity}`);
-      console.log(`   • OrderValue: ${orderValue}`);
-      console.log(`   • Side: ${side} (action: ${action})`);
-      console.log(`   • FinalPrice: ${finalPrice}`);
-      console.log(`   • Decimal_quantity: ${decimal_quantity}, Decimal_price: ${decimal_price}`);
+      Logger.info(`🔍 [DEBUG] ${market}: Valores calculados:`);
+      Logger.info(`   • Entry: ${entry} -> entryPrice: ${entryPrice}`);
+      Logger.info(`   • Volume: ${volume} -> quantity: ${quantity}`);
+      Logger.info(`   • OrderValue: ${orderValue}`);
+      Logger.info(`   • Side: ${side} (action: ${action})`);
+      Logger.info(`   • FinalPrice: ${finalPrice}`);
+      Logger.info(`   • Decimal_quantity: ${decimal_quantity}, Decimal_price: ${decimal_price}`);
 
       // Validação de quantidade
       if (parseFloat(quantity) <= 0) {
@@ -1651,7 +1637,7 @@ class OrderController {
             }
           }
 
-          console.log(`🛡️ [STOP_LEVERAGE] ${market}: base=${baseStopLossPct}% leverage=${leverage}x → efetivo=${actualStopLossPct.toFixed(2)}% | stop(orig)=${isFinite(stopPrice)?stopPrice.toFixed(6):'NaN'} → stop(lev)=${leverageAdjustedStopPrice.toFixed(6)}`);
+          Logger.info(`🛡️ [STOP_LEVERAGE] ${market}: base=${baseStopLossPct}% leverage=${leverage}x → efetivo=${actualStopLossPct.toFixed(2)}% | stop(orig)=${isFinite(stopPrice)?stopPrice.toFixed(6):'NaN'} → stop(lev)=${leverageAdjustedStopPrice.toFixed(6)}`);
 
           // 🔧 CORREÇÃO CRÍTICA: Ajusta o Take Profit considerando a alavancagem
           const baseTakeProfitPct = Math.abs(Number(config?.minProfitPercentage ?? 10));
@@ -1672,12 +1658,12 @@ class OrderController {
             }
           }
 
-          console.log(`🎯 [TP_LEVERAGE] ${market}: base=${baseTakeProfitPct}% leverage=${leverage}x → efetivo=${actualTakeProfitPct.toFixed(2)}% | tp(orig)=${isFinite(parseFloat(target))?parseFloat(target).toFixed(6):'NaN'} → tp(lev)=${targetPrice.toFixed(6)}`);
+          Logger.info(`🎯 [TP_LEVERAGE] ${market}: base=${baseTakeProfitPct}% leverage=${leverage}x → efetivo=${actualTakeProfitPct.toFixed(2)}% | tp(orig)=${isFinite(parseFloat(target))?parseFloat(target).toFixed(6):'NaN'} → tp(lev)=${targetPrice.toFixed(6)}`);
         } else {
-          console.warn(`⚠️ [TP_LEVERAGE] ${market}: Não foi possível obter leverage para ajuste do take profit. Usando TP informado.`);
+          Logger.warn(`⚠️ [TP_LEVERAGE] ${market}: Não foi possível obter leverage para ajuste do take profit. Usando TP informado.`);
         }
       } catch (levErr) {
-        console.warn(`⚠️ [TP_LEVERAGE] ${market}: Erro ao ajustar TP por leverage: ${levErr.message}. Usando TP informado.`);
+        Logger.warn(`⚠️ [TP_LEVERAGE] ${market}: Erro ao ajustar TP por leverage: ${levErr.message}. Usando TP informado.`);
       }
 
       // Verifica se o Trailing Stop está habilitado para determinar se deve criar Take Profit fixo
@@ -1729,8 +1715,8 @@ class OrderController {
           const errorMessage = limitResult && limitResult.error ? limitResult.error.toString() : '';
 
           if (errorMessage.includes("Order would immediately match and take")) {
-            console.log(`🟡 [INFO] ${market}: A ordem com desconto (LIMIT) não foi aceita porque o mercado se moveu muito rápido.`);
-            console.log(`[AÇÃO] ${market}: Cancelando e acionando plano B com ordem a MERCADO.`);
+            Logger.info(`🟡 [INFO] ${market}: A ordem com desconto (LIMIT) não foi aceita porque o mercado se moveu muito rápido.`);
+            Logger.info(`[AÇÃO] ${market}: Cancelando e acionando plano B com ordem a MERCADO.`);
 
             return await OrderController.executeMarketFallback({
               market,
@@ -1742,12 +1728,12 @@ class OrderController {
               config
             });
                   } else {
-          console.error(`❌ [${botName}] ${market}: Falha ao enviar ordem LIMIT: ${limitResult && limitResult.error}`);
+          Logger.error(`❌ [${botName}] ${market}: Falha ao enviar ordem LIMIT: ${limitResult && limitResult.error}`);
           return { error: limitResult && limitResult.error };
         }
       }
 
-      console.log(`✅ [${strategyNameToUse}] ${market}: Ordem LIMIT enviada com sucesso (ID: ${limitResult.id || 'N/A'})`);
+      Logger.info(`✅ [${strategyNameToUse}] ${market}: Ordem LIMIT enviada com sucesso (ID: ${limitResult.id || 'N/A'})`);
 
       // Registra a ordem no sistema de persistência
       if (limitResult && limitResult.id && config && config.id) {
@@ -1768,8 +1754,8 @@ class OrderController {
       const errorMessage = error.message || error.toString();
 
       if (errorMessage.includes("Order would immediately match and take")) {
-        console.log(`🟡 [INFO] ${market}: A ordem com desconto (LIMIT) não foi aceita porque o mercado se moveu muito rápido.`);
-        console.log(`[AÇÃO] ${market}: Cancelando e acionando plano B com ordem a MERCADO.`);
+        Logger.info(`🟡 [INFO] ${market}: A ordem com desconto (LIMIT) não foi aceita porque o mercado se moveu muito rápido.`);
+        Logger.info(`[AÇÃO] ${market}: Cancelando e acionando plano B com ordem a MERCADO.`);
 
         return await OrderController.executeMarketFallback({
           market,
@@ -1781,14 +1767,14 @@ class OrderController {
           config
         });
         } else {
-          console.error(`❌ [${strategyNameToUse}] ${market}: Erro ao enviar ordem LIMIT:`, error.message);
+          Logger.error(`❌ [${strategyNameToUse}] ${market}: Erro ao enviar ordem LIMIT:`, error.message);
           return { error: error.message };
         }
       }
 
       // 2. Monitora execução por ORDER_EXECUTION_TIMEOUT_SECONDS
       const timeoutSec = Number(config?.orderExecutionTimeoutSeconds || 12);
-      console.log(`⏰ [${strategyNameToUse}] ${market}: Monitorando execução por ${timeoutSec} segundos...`);
+      Logger.info(`⏰ [${strategyNameToUse}] ${market}: Monitorando execução por ${timeoutSec} segundos...`);
 
       let filled = false;
       for (let i = 0; i < timeoutSec; i++) {
@@ -1808,23 +1794,23 @@ class OrderController {
 
           // Log de progresso a cada 3 segundos
           if (i % 3 === 0 && i > 0) {
-            console.log(`⏳ [${strategyNameToUse}] ${market}: Aguardando execução... ${i}/${timeoutSec}s`);
+            Logger.info(`⏳ [${strategyNameToUse}] ${market}: Aguardando execução... ${i}/${timeoutSec}s`);
           }
 
         } catch (monitorError) {
-          console.warn(`⚠️ [${botName}] ${market}: Erro ao monitorar ordem: ${monitorError.message}`);
+          Logger.warn(`⚠️ [${botName}] ${market}: Erro ao monitorar ordem: ${monitorError.message}`);
         }
       }
 
       if (filled) {
-        console.log(`✅ [SUCESSO] ${market}: Ordem LIMIT executada normalmente em ${timeoutSec} segundos.`);
-        console.log(`🛡️ [SUCESSO] ${market}: Ordens de segurança (SL/TP) já configuradas na ordem principal!`);
+        Logger.info(`✅ [SUCESSO] ${market}: Ordem LIMIT executada normalmente em ${timeoutSec} segundos.`);
+        Logger.info(`🛡️ [SUCESSO] ${market}: Ordens de segurança (SL/TP) já configuradas na ordem principal!`);
 
         return { success: true, type: 'LIMIT', limitResult };
       }
 
       // 3. Timeout: cancela ordem LIMIT com retry robusto
-      console.log(`⏰ [${strategyNameToUse}] ${market}: Ordem LIMIT não executada em ${timeoutSec} segundos. Cancelando...`);
+      Logger.info(`⏰ [${strategyNameToUse}] ${market}: Ordem LIMIT não executada em ${timeoutSec} segundos. Cancelando...`);
 
       let orderCancelled = false;
       let cancelAttempts = 0;
@@ -1834,7 +1820,7 @@ class OrderController {
       while (!orderCancelled && cancelAttempts < maxCancelAttempts) {
         cancelAttempts++;
         try {
-          console.log(`🔄 [${strategyNameToUse}] ${market}: Tentativa ${cancelAttempts}/${maxCancelAttempts} de cancelamento...`);
+          Logger.info(`🔄 [${strategyNameToUse}] ${market}: Tentativa ${cancelAttempts}/${maxCancelAttempts} de cancelamento...`);
 
           await Order.cancelOpenOrder(market, limitResult.id, null, config?.apiKey, config?.apiSecret);
           Logger.info(`✅ [${botName}] ${market}: Ordem LIMIT cancelada com sucesso na tentativa ${cancelAttempts}.`);
@@ -1856,7 +1842,7 @@ class OrderController {
           // Se não é a última tentativa, aguarda antes de tentar novamente
           if (cancelAttempts < maxCancelAttempts) {
             const waitTime = cancelAttempts * 1000; // 1s, 2s, 3s
-            console.log(`⏳ [${strategyNameToUse}] ${market}: Aguardando ${waitTime}ms antes da próxima tentativa...`);
+            Logger.info(`⏳ [${strategyNameToUse}] ${market}: Aguardando ${waitTime}ms antes da próxima tentativa...`);
             await new Promise(resolve => setTimeout(resolve, waitTime));
           }
         }
@@ -1877,12 +1863,12 @@ class OrderController {
         }
 
         // OPCIONAL: Pode abortar aqui em vez de continuar com market order
-        console.log(`🚫 [${strategyNameToUse}] ${market}: Abortando entrada devido a falha no cancelamento`);
+        Logger.info(`🚫 [${strategyNameToUse}] ${market}: Abortando entrada devido a falha no cancelamento`);
         return { error: 'Failed to cancel limit order', limitOrderId: limitResult.id };
       }
 
       // 4. Revalida sinal e slippage
-      console.log(`🔍 [${strategyNameToUse}] ${market}: Revalidando sinal e verificando slippage...`);
+      Logger.info(`🔍 [${strategyNameToUse}] ${market}: Revalidando sinal e verificando slippage...`);
 
               const signalValid = await OrderController.revalidateSignal({ market, botName: strategyNameToUse, originalSignalData, config });
               const markets = new Markets();
@@ -1890,21 +1876,21 @@ class OrderController {
       const priceCurrent = parseFloat(markPrices2[0]?.markPrice || entryPrice);
       const slippage = OrderController.calcSlippagePct(entryPrice, priceCurrent);
 
-              console.log(`📊 [${strategyNameToUse}] ${market}: Revalidação - Sinal: ${signalValid ? '✅ VÁLIDO' : '❌ INVÁLIDO'} | Slippage: ${slippage.toFixed(3)}%`);
+              Logger.info(`📊 [${strategyNameToUse}] ${market}: Revalidação - Sinal: ${signalValid ? '✅ VÁLIDO' : '❌ INVÁLIDO'} | Slippage: ${slippage.toFixed(3)}%`);
 
       if (!signalValid) {
-        console.log(`🚫 [${strategyNameToUse}] ${market}: Sinal não é mais válido. Abortando entrada.`);
+        Logger.info(`🚫 [${strategyNameToUse}] ${market}: Sinal não é mais válido. Abortando entrada.`);
         return { aborted: true, reason: 'signal' };
       }
 
       const maxSlippage = parseFloat(config?.maxSlippagePct || 0.2);
       if (slippage > maxSlippage) {
-        console.log(`🚫 [${strategyNameToUse}] ${market}: Slippage de ${slippage.toFixed(3)}% excede o máximo permitido (${maxSlippage}%). Abortando entrada.`);
+        Logger.info(`🚫 [${strategyNameToUse}] ${market}: Slippage de ${slippage.toFixed(3)}% excede o máximo permitido (${maxSlippage}%). Abortando entrada.`);
         return { aborted: true, reason: 'slippage' };
       }
 
       // 5. Fallback: envia ordem a mercado
-      console.log(`[AÇÃO] ${market}: Acionando plano B com ordem a MERCADO para garantir entrada.`);
+      Logger.info(`[AÇÃO] ${market}: Acionando plano B com ordem a MERCADO para garantir entrada.`);
 
               return await OrderController.executeMarketFallback({
           market,
@@ -1917,7 +1903,7 @@ class OrderController {
         });
 
     } catch (error) {
-      console.error(`❌ [${strategyNameToUse}] ${market}: Erro no fluxo híbrido:`, error.message);
+      Logger.error(`❌ [${strategyNameToUse}] ${market}: Erro no fluxo híbrido:`, error.message);
       return { error: error.message };
     }
   }
@@ -1929,7 +1915,7 @@ class OrderController {
    */
   static async executeMarketFallback({ market, side, quantity, botName, originalSignalData, entryPrice, config = null }) {
     try {
-      console.log(`⚡ [${botName}] ${market}: Executando fallback a MERCADO para garantir entrada...`);
+      Logger.info(`⚡ [${botName}] ${market}: Executando fallback a MERCADO para garantir entrada...`);
 
       const marketBody = {
         symbol: market,
@@ -1948,14 +1934,12 @@ class OrderController {
 
       const marketResult = await Order.executeOrder(marketBody, config.apiKey, config.apiSecret);
       if (marketResult && !marketResult.error) {
-        OrderController.fallbackCount++;
-
         // Calcula slippage real
         const executionPrice = parseFloat(marketResult.price || marketResult.avgPrice || entryPrice);
         const slippage = OrderController.calcSlippagePct(entryPrice, executionPrice);
 
-        console.log(`✅ [SUCESSO] ${market}: Operação aberta com sucesso via fallback a MERCADO!`);
-        console.log(`📊 [${botName}] ${market}: Preço de execução: $${executionPrice.toFixed(6)} | Slippage: ${slippage.toFixed(3)}%`);
+        Logger.info(`✅ [SUCESSO] ${market}: Operação aberta com sucesso via fallback a MERCADO!`);
+        Logger.info(`📊 [${botName}] ${market}: Preço de execução: $${executionPrice.toFixed(6)} | Slippage: ${slippage.toFixed(3)}%`);
 
         // Registra a ordem no sistema de persistência
         if (marketResult && marketResult.id && config && config.id) {
@@ -1973,7 +1957,7 @@ class OrderController {
         }
 
         // 🔧 NOVO: Detecta posição aberta e cria TP/SL automaticamente
-        console.log(`🛡️ [FAILSAFE] ${market}: Detectando posição aberta e criando TP/SL...`);
+        Logger.info(`🛡️ [FAILSAFE] ${market}: Detectando posição aberta e criando TP/SL...`);
         setTimeout(async () => {
           try {
             await OrderController.detectPositionOpenedAndCreateFailsafe(market, botName, {
@@ -1982,28 +1966,17 @@ class OrderController {
               executionPrice
             }, config); // 🔧 CORREÇÃO: Passa config com credenciais
           } catch (error) {
-            console.error(`❌ [FAILSAFE] ${market}: Erro ao criar TP/SL automático:`, error.message);
+            Logger.error(`❌ [FAILSAFE] ${market}: Erro ao criar TP/SL automático:`, error.message);
           }
         }, 2000); // Aguarda 2 segundos para posição ser registrada
 
-        // Estatística de fallback
-        if (OrderController.totalHybridOrders % 50 === 0) {
-          const fallbackPct = (OrderController.fallbackCount / OrderController.totalHybridOrders) * 100;
-          console.log(`\n📈 [EXECUTION_STATS] Taxa de fallback: ${fallbackPct.toFixed(1)}% (${OrderController.fallbackCount}/${OrderController.totalHybridOrders} ordens)`);
-          if (fallbackPct > 30) {
-            console.log('⚠️ Taxa de fallback alta! Considere ajustar ORDER_EXECUTION_TIMEOUT_SECONDS ou o preço da LIMIT.');
-          } else {
-            console.log('✅ Taxa de fallback dentro do esperado.');
-          }
-        }
-
         return { success: true, type: 'MARKET', marketResult, executionPrice, slippage };
       } else {
-        console.log(`❌ [${botName}] ${market}: Fallback - Falha ao executar ordem a mercado: ${marketResult && marketResult.error}`);
+        Logger.info(`❌ [${botName}] ${market}: Fallback - Falha ao executar ordem a mercado: ${marketResult && marketResult.error}`);
         return { error: marketResult && marketResult.error };
       }
     } catch (error) {
-      console.error(`❌ [${botName}] ${market}: Erro no fluxo híbrido:`, error.message);
+      Logger.error(`❌ [${botName}] ${market}: Erro no fluxo híbrido:`, error.message);
       return { error: error.message };
     }
   };
@@ -2027,20 +2000,20 @@ class OrderController {
 
       for (const param of requiredParams) {
         if (orderData[param] === undefined || orderData[param] === null) {
-          console.error(`❌ [openOrder] Parâmetro obrigatório ausente: ${param}`);
+          Logger.error(`❌ [openOrder] Parâmetro obrigatório ausente: ${param}`);
           return { error: `Parâmetro obrigatório ausente: ${param}` };
         }
       }
 
       // Verifica se é uma ordem da Alpha Flow Strategy (com orderNumber)
       if (orderData.orderNumber) {
-        console.log(`🔄 [openOrder] Ordem Alpha Flow detectada: ${orderData.market} (Ordem ${orderData.orderNumber})`);
+        Logger.info(`🔄 [openOrder] Ordem Alpha Flow detectada: ${orderData.market} (Ordem ${orderData.orderNumber})`);
 
         // Debug: Verifica os valores antes do cálculo
-        console.log(`🔍 [DEBUG] Valores para cálculo de quantidade:`);
-        console.log(`   • Quantity: ${orderData.quantity}`);
-        console.log(`   • Entry: ${orderData.entry}`);
-        console.log(`   • Volume calculado: ${orderData.quantity * orderData.entry}`);
+        Logger.info(`🔍 [DEBUG] Valores para cálculo de quantidade:`);
+        Logger.info(`   • Quantity: ${orderData.quantity}`);
+        Logger.info(`   • Entry: ${orderData.entry}`);
+        Logger.info(`   • Volume calculado: ${orderData.quantity * orderData.entry}`);
 
         // Usa o método específico para ordens com triggers
         const result = await OrderController.createLimitOrderWithTriggers({
@@ -2078,7 +2051,7 @@ class OrderController {
         return result;
       }
     } catch (error) {
-      console.error(`❌ [openOrder] Erro ao executar ordem:`, error.message);
+      Logger.error(`❌ [openOrder] Erro ao executar ordem:`, error.message);
       // Retorna erro mas NÃO para o bot - apenas registra o erro
       return { error: error.message };
     }
@@ -2117,7 +2090,7 @@ class OrderController {
 
       // Log detalhado para debug
       if (isPending) {
-        console.log(`   📋 ${market}: ID=${order.id}, Type=${order.orderType}, Status=${order.status}, ReduceOnly=${order.reduceOnly}, StopLoss=${!!order.stopLossTriggerPrice}, TakeProfit=${!!order.takeProfitTriggerPrice} → ${isEntryOrder ? 'ENTRADA' : 'OUTRO'}`);
+        Logger.info(`   📋 ${market}: ID=${order.id}, Type=${order.orderType}, Status=${order.status}, ReduceOnly=${order.reduceOnly}, StopLoss=${!!order.stopLossTriggerPrice}, TakeProfit=${!!order.takeProfitTriggerPrice} → ${isEntryOrder ? 'ENTRADA' : 'OUTRO'}`);
       }
 
       return isEntryOrder;
@@ -2160,7 +2133,7 @@ class OrderController {
 
       // Log detalhado para debug
       if (isPending) {
-        console.log(`   📋 ${market}: ID=${order.id}, Type=${order.orderType}, Status=${order.status}, ReduceOnly=${order.reduceOnly}, StopLoss=${!!order.stopLossTriggerPrice}, TakeProfit=${!!order.takeProfitTriggerPrice} → ${isEntryOrder ? 'ENTRADA' : 'OUTRO'}`);
+        Logger.info(`   📋 ${market}: ID=${order.id}, Type=${order.orderType}, Status=${order.status}, ReduceOnly=${order.reduceOnly}, StopLoss=${!!order.stopLossTriggerPrice}, TakeProfit=${!!order.takeProfitTriggerPrice} → ${isEntryOrder ? 'ENTRADA' : 'OUTRO'}`);
       }
 
       return isEntryOrder;
@@ -2169,7 +2142,7 @@ class OrderController {
     const orderShorted = entryOrders.sort((a,b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
     const result = orderShorted.map((el) => {
         const minutes = Utils.minutesAgo(el.createdAt);
-        console.log(`   ⏰ ${market}: Ordem ${el.id} criada há ${minutes} minutos`);
+        Logger.info(`   ⏰ ${market}: Ordem ${el.id} criada há ${minutes} minutos`);
         return {
             id: el.id,
             minutes: minutes,
@@ -2248,7 +2221,15 @@ class OrderController {
     clientId: await OrderController.generateUniqueOrderId(config)
   };
 
-    return await Order.executeOrder(body, config?.apiKey, config?.apiSecret);
+    const orderResult = await Order.executeOrder(body, config?.apiKey, config?.apiSecret);
+
+    if (orderResult && orderResult.id) {
+      Logger.debug(`✅ [STOP_ORDER] ${symbol}: Stop loss criado com sucesso. ID: ${orderResult.id}`);
+      return { success: true, orderId: orderResult.id, result: orderResult };
+    } else {
+      Logger.error(`❌ [STOP_ORDER] ${symbol}: Falha ao criar stop loss ou ID não retornado.`);
+      return { success: false, orderId: null, result: orderResult };
+    }
   }
 
   /**
@@ -2300,12 +2281,12 @@ class OrderController {
         return true;
       }
 
-      console.log(`❌ [${botName}] ${position.symbol}: Stop loss não encontrado, criando novo...`);
+      Logger.info(`❌ [${botName}] ${position.symbol}: Stop loss não encontrado, criando novo...`);
 
       // Verifica se a posição tem quantidade suficiente
       const totalQuantity = Math.abs(parseFloat(position.netQuantity));
       if (totalQuantity <= 0) {
-        console.log(`⚠️ [${botName}] ${position.symbol}: Quantidade inválida para stop loss: ${totalQuantity}`);
+        Logger.info(`⚠️ [${botName}] ${position.symbol}: Quantidade inválida para stop loss: ${totalQuantity}`);
         return false;
       }
 
@@ -2321,7 +2302,7 @@ class OrderController {
 
       // VALIDAÇÃO: Verifica se a alavancagem existe na Account
       if (!Account.leverage) {
-        console.error(`❌ [STOP_LOSS_ERROR] ${position.symbol}: Alavancagem não encontrada na Account`);
+        Logger.error(`❌ [STOP_LOSS_ERROR] ${position.symbol}: Alavancagem não encontrada na Account`);
         return false;
       }
 
@@ -2339,7 +2320,7 @@ class OrderController {
         ? entryPrice * (1 - actualStopLossPct / 100)
         : entryPrice * (1 + actualStopLossPct / 100);
 
-      console.log(`🛡️ [${botName}] ${position.symbol}: FAILSAFE DE SEGURANÇA - ${baseStopLossPct}% -> ${actualStopLossPct.toFixed(2)}% (leverage ${leverage}x), Preço: $${failsafeStopLossPrice.toFixed(6)}`);
+      Logger.info(`🛡️ [${botName}] ${position.symbol}: FAILSAFE DE SEGURANÇA - ${baseStopLossPct}% -> ${actualStopLossPct.toFixed(2)}% (leverage ${leverage}x), Preço: $${failsafeStopLossPrice.toFixed(6)}`);
 
       // 🎯 CAMADA 2: STOP LOSS TÁTICO (se estratégia híbrida ativada)
       let tacticalStopLossPrice = null;
@@ -2358,9 +2339,9 @@ class OrderController {
             ? currentPrice - atrDistance
             : currentPrice + atrDistance;
 
-          console.log(`🎯 [${botName}] ${position.symbol}: STOP TÁTICO ATR - ATR: ${atrValue.toFixed(6)}, Multiplicador: ${atrMultiplier}, Distância: ${atrDistance.toFixed(6)}, Preço: $${tacticalStopLossPrice.toFixed(6)}`);
+          Logger.info(`🎯 [${botName}] ${position.symbol}: STOP TÁTICO ATR - ATR: ${atrValue.toFixed(6)}, Multiplicador: ${atrMultiplier}, Distância: ${atrDistance.toFixed(6)}, Preço: $${tacticalStopLossPrice.toFixed(6)}`);
         } else {
-          console.log(`⚠️ [${botName}] ${position.symbol}: ATR não disponível para stop tático`);
+          Logger.info(`⚠️ [${botName}] ${position.symbol}: ATR não disponível para stop tático`);
         }
       }
 
@@ -2371,10 +2352,10 @@ class OrderController {
         ? tacticalStopLossPrice
         : failsafeStopLossPrice;
 
-      console.log(`✅ [${botName}] ${position.symbol}: Stop Loss Final - $${stopLossPrice.toFixed(6)} (${tacticalStopLossPrice ? 'Tático ATR' : 'Failsafe Tradicional'})`);
+      Logger.info(`✅ [${botName}] ${position.symbol}: Stop Loss Final - $${stopLossPrice.toFixed(6)} (${tacticalStopLossPrice ? 'Tático ATR' : 'Failsafe Tradicional'})`);
 
       // 🛡️ LOG DE ALTA VISIBILIDADE - ORDEM DE SEGURANÇA MÁXIMA
-      console.log(`🛡️ [FAILSAFE] ${position.symbol}: Ordem de segurança máxima (${baseStopLossPct}% PnL) enviada para a corretora com gatilho em $${failsafeStopLossPrice.toFixed(4)}.`);
+      Logger.info(`🛡️ [FAILSAFE] ${position.symbol}: Ordem de segurança máxima (${baseStopLossPct}% PnL) enviada para a corretora com gatilho em $${failsafeStopLossPrice.toFixed(4)}.`);
 
       try {
         const formatPrice = (value) => parseFloat(value).toFixed(decimal_price).toString();
@@ -2401,29 +2382,29 @@ class OrderController {
           clientId: await OrderController.generateUniqueOrderId(config)
         };
 
-        console.log(`🔄 [${botName}] ${position.symbol}: Criando stop loss - Trigger Price: $${stopLossPrice.toFixed(6)}`);
+        Logger.info(`🔄 [${botName}] ${position.symbol}: Criando stop loss - Trigger Price: $${stopLossPrice.toFixed(6)}`);
 
         const stopResult = await Order.executeOrder(stopBody, config?.apiKey, config?.apiSecret);
 
         if (stopResult && !stopResult.error) {
-                  console.log(`✅ [${botName}] ${position.symbol}: Stop loss criado com sucesso! - Trigger: $${stopLossPrice.toFixed(6)}, Quantidade: ${totalQuantity}`);
+                  Logger.info(`✅ [${botName}] ${position.symbol}: Stop loss criado com sucesso! - Trigger: $${stopLossPrice.toFixed(6)}, Quantidade: ${totalQuantity}`);
         const positionKey = `${botName}_${position.symbol}`;
           OrderController.validatedStopLossPositions.add(positionKey);
           OrderController.clearStopLossCheckCache(position.symbol);
-          console.log(`🧹 [${botName}] ${position.symbol}: Cache de stop loss limpo após criação`);
+          Logger.info(`🧹 [${botName}] ${position.symbol}: Cache de stop loss limpo após criação`);
           return true;
         } else {
           const errorMsg = stopResult && stopResult.error ? stopResult.error : 'desconhecido';
-          console.log(`❌ [${botName}] ${position.symbol}: Falha ao criar stop loss - Erro: ${errorMsg}`);
+          Logger.info(`❌ [${botName}] ${position.symbol}: Falha ao criar stop loss - Erro: ${errorMsg}`);
           return false;
         }
       } catch (error) {
-        console.log(`❌ [${botName}] ${position.symbol}: Erro ao criar stop loss: ${error.message}`);
+        Logger.info(`❌ [${botName}] ${position.symbol}: Erro ao criar stop loss: ${error.message}`);
         return false;
       }
 
     } catch (error) {
-      console.error(`❌ [${botName}] Erro ao validar/criar stop loss para ${position.symbol}:`, error.message);
+      Logger.error(`❌ [${botName}] Erro ao validar/criar stop loss para ${position.symbol}:`, error.message);
       return false;
     } finally {
       OrderController.stopLossCreationInProgress.delete(symbol);
@@ -2478,32 +2459,31 @@ class OrderController {
       if (!marketInfo) {
         // Par não autorizado - retorna silenciosamente sem tentar criar take profit
         OrderController.debug(`ℹ️ [${botName}] ${position.symbol}: Par não autorizado - pulando criação de take profit`);
-        return false;
+        return { success: false, message: `Par não autorizado - pulando criação de take profit` };
       }
 
       // Verifica se já existe uma ordem de take profit para esta posição
-      console.log(`🔍 [${botName}] ${position.symbol}: Verificando se já existe take profit...`);
+      Logger.info(`🔍 [${botName}] ${position.symbol}: Verificando se já existe take profit...`);
       const hasTakeProfitOrders = await OrderController.hasTakeProfitOrder(position.symbol, position, config);
 
       if (hasTakeProfitOrders) {
-        console.log(`✅ [${botName}] ${position.symbol}: Take profit já existe, não criando novo`);
-        return true;
+        Logger.info(`✅ [${botName}] ${position.symbol}: Take profit já existe, não criando novo`);
+        return { success: true, message: `Take profit já existe, não criando novo` };
       }
 
-      console.log(`❌ [${botName}] ${position.symbol}: Take profit não encontrado, criando novo...`);
+      Logger.info(`❌ [${botName}] ${position.symbol}: Take profit não encontrado, criando novo...`);
 
       // Verifica se a posição tem quantidade suficiente
       const totalQuantity = Math.abs(parseFloat(position.netQuantity));
       if (totalQuantity <= 0) {
-        console.log(`⚠️ [${botName}] ${position.symbol}: Quantidade inválida para take profit: ${totalQuantity}`);
-        return false;
+        Logger.info(`⚠️ [${botName}] ${position.symbol}: Quantidade inválida para take profit: ${totalQuantity}`);
+        return { success: false, message: `Quantidade inválida para take profit: ${totalQuantity}` };
       }
 
-      // Cria take profit usando o método existente
       const takeProfitResult = await OrderController.createTakeProfitForPosition(position, config);
 
-      if (takeProfitResult && !takeProfitResult.error) {
-        console.log(`✅ [${botName}] ${position.symbol}: Take profit criado com sucesso!`);
+      if (takeProfitResult && !takeProfitResult.message) {
+        Logger.info(`✅ [${botName}] ${position.symbol}: Take profit criado com sucesso!`);
 
         // Atualiza o cache para refletir que agora EXISTE take profit
         const cacheKey = `${position.symbol}_TP_${position.netQuantity > 0 ? 'LONG' : 'SHORT'}`;
@@ -2512,16 +2492,16 @@ class OrderController {
           hasTakeProfit: true
         });
 
-        console.log(`🧹 [${botName}] ${position.symbol}: Cache de take profit atualizado para TRUE após criação`);
-        return true;
+        Logger.info(`🧹 [${botName}] ${position.symbol}: Cache de take profit atualizado para TRUE após criação`);
+        return { success: true, message: `Cache de take profit atualizado para TRUE após criação` };
       } else {
-        const errorMsg = takeProfitResult && takeProfitResult.error ? takeProfitResult.error : 'desconhecido';
-        console.log(`❌ [${botName}] ${position.symbol}: Falha ao criar take profit - Erro: ${errorMsg}`);
-        return false;
+        const errorMsg = takeProfitResult && takeProfitResult.message ? takeProfitResult.message : 'Desconhecido';
+        Logger.info(`❌ [${botName}] ${position.symbol}: Falha ao criar take profit - Erro: ${errorMsg}`);
+        return { success: false, message: `Falha ao criar take profit - Erro: ${errorMsg}` };
       }
 
     } catch (error) {
-      console.error(`❌ [${botName}] Erro ao validar/criar take profit para ${position.symbol}:`, error.message);
+      Logger.error(`❌ [${botName}] Erro ao validar/criar take profit para ${position.symbol}:`, error.message);
       return false;
     } finally {
       OrderController.takeProfitCreationInProgress.delete(symbol);
@@ -2538,7 +2518,7 @@ class OrderController {
   static calculateATR(candles, period = 14) {
     try {
       if (!candles || candles.length < period + 1) {
-        console.warn(`⚠️ ATR: Dados insuficientes. Necessário: ${period + 1}, Disponível: ${candles?.length || 0}`);
+        Logger.warn(`⚠️ ATR: Dados insuficientes. Necessário: ${period + 1}, Disponível: ${candles?.length || 0}`);
         return null;
       }
 
@@ -2571,7 +2551,7 @@ class OrderController {
       return atr;
 
     } catch (error) {
-      console.error('❌ Erro ao calcular ATR:', error.message);
+      Logger.error('❌ Erro ao calcular ATR:', error.message);
       return null;
     }
   }
@@ -2590,6 +2570,9 @@ class OrderController {
       const maxOpenTrades = Number(config?.maxOpenOrders || 5);
       const currentOpenPositions = positions.filter(p => Math.abs(Number(p.netQuantity)) > 0).length;
 
+      // Debug log para verificar a validação
+      Logger.debug(`🔍 [MAX_ORDERS_CHECK] ${botName}: ${currentOpenPositions}/${maxOpenTrades} posições abertas (config.maxOpenOrders: ${config?.maxOpenOrders})`);
+
       if (currentOpenPositions >= maxOpenTrades) {
         return {
           isValid: false,
@@ -2606,7 +2589,7 @@ class OrderController {
         maxCount: maxOpenTrades
       };
     } catch (error) {
-      console.error(`❌ [${botName}] Erro ao validar máximo de ordens:`, error.message);
+      Logger.error(`❌ [${botName}] Erro ao validar máximo de ordens:`, error.message);
       return {
         isValid: false,
         message: `Erro ao validar máximo de ordens: ${error.message}`,
@@ -2631,7 +2614,7 @@ class OrderController {
       const apiSecret = config?.apiSecret;
 
       if (!apiKey || !apiSecret) {
-        console.error(`❌ [FAILSAFE] Credenciais de API não fornecidas para ${position.symbol}`);
+        Logger.error(`❌ [FAILSAFE] Credenciais de API não fornecidas para ${position.symbol}`);
         return { error: 'Credenciais de API não fornecidas' };
       }
 
@@ -2643,7 +2626,7 @@ class OrderController {
       });
       const marketInfo = Account.markets.find(m => m.symbol === position.symbol);
       if (!marketInfo) {
-        console.error(`❌ [FAILSAFE] Market info não encontrada para ${position.symbol}`);
+        Logger.error(`❌ [FAILSAFE] Market info não encontrada para ${position.symbol}`);
         return { error: 'Market info não encontrada' };
       }
 
@@ -2651,7 +2634,7 @@ class OrderController {
       const hasStopLossOrders = await OrderController.hasExistingStopLoss(position.symbol, position, config);
 
       if (hasStopLossOrders) {
-        console.log(`✅ [FAILSAFE] ${position.symbol}: Stop loss já existe, pulando criação de failsafe orders`);
+        Logger.info(`✅ [FAILSAFE] ${position.symbol}: Stop loss já existe, pulando criação de failsafe orders`);
         return { success: true, message: 'Stop loss já existe' };
       }
 
@@ -2667,10 +2650,10 @@ class OrderController {
       const totalQuantity = Math.abs(Number(position.netQuantity));
 
       // Debug das variáveis de configuração
-      console.log(`🔍 [FAILSAFE_VARS] ${position.symbol}: Variáveis de configuração`);
-      console.log(`   • MIN_PROFIT_PERCENTAGE: ${config?.minProfitPercentage || 'não definido'} -> ${targetProfitPct}%`);
-      console.log(`   • MAX_NEGATIVE_PNL_STOP_PCT: ${config?.maxNegativePnlStopPct || 'não definido'} -> ${stopLossPct}%`);
-      console.log(`   • Leverage: ${leverage}x`);
+      Logger.info(`🔍 [FAILSAFE_VARS] ${position.symbol}: Variáveis de configuração`);
+      Logger.info(`   • MIN_PROFIT_PERCENTAGE: ${config?.minProfitPercentage || 'não definido'} -> ${targetProfitPct}%`);
+      Logger.info(`   • MAX_NEGATIVE_PNL_STOP_PCT: ${config?.maxNegativePnlStopPct || 'não definido'} -> ${stopLossPct}%`);
+      Logger.info(`   • Leverage: ${leverage}x`);
 
       // 2. Calcular os preços de gatilho considerando alavancagem
       let takeProfitPrice;
@@ -2689,21 +2672,21 @@ class OrderController {
       }
 
       // Log adicional para debug da lógica
-      console.log(`🔍 [FAILSAFE_LOGIC] ${position.symbol}: Lógica de cálculo`);
-      console.log(`   • Posição: ${isLong ? 'LONG' : 'SHORT'} (quantidade: ${position.netQuantity})`);
-      console.log(`   • Para ${isLong ? 'LONG' : 'SHORT'}: TP ${isLong ? 'acima' : 'abaixo'} do preço, SL ${isLong ? 'abaixo' : 'acima'} do preço`);
+      Logger.info(`🔍 [FAILSAFE_LOGIC] ${position.symbol}: Lógica de cálculo`);
+      Logger.info(`   • Posição: ${isLong ? 'LONG' : 'SHORT'} (quantidade: ${position.netQuantity})`);
+      Logger.info(`   • Para ${isLong ? 'LONG' : 'SHORT'}: TP ${isLong ? 'acima' : 'abaixo'} do preço, SL ${isLong ? 'abaixo' : 'acima'} do preço`);
 
       // 3. Logar os preços calculados para verificação
-      console.log(`🛡️ [FAILSAFE_CALC] ${position.symbol}: Entry=${entryPrice.toFixed(6)}, Leverage=${leverage}x`);
-      console.log(`  -> TP Target: ${targetProfitPct}% -> Preço Alvo: $${takeProfitPrice.toFixed(6)}`);
-      console.log(`  -> SL Target: ${stopLossPct}% -> Preço Alvo: $${stopLossPrice.toFixed(6)}`);
+      Logger.info(`🛡️ [FAILSAFE_CALC] ${position.symbol}: Entry=${entryPrice.toFixed(6)}, Leverage=${leverage}x`);
+      Logger.info(`  -> TP Target: ${targetProfitPct}% -> Preço Alvo: $${takeProfitPrice.toFixed(6)}`);
+      Logger.info(`  -> SL Target: ${stopLossPct}% -> Preço Alvo: $${stopLossPrice.toFixed(6)}`);
 
       // 🛡️ LOG DE ALTA VISIBILIDADE - ORDEM DE SEGURANÇA MÁXIMA
-      console.log(`🛡️ [FAILSAFE] ${position.symbol}: Ordem de segurança máxima (${stopLossPct}% PnL) enviada para a corretora com gatilho em $${stopLossPrice.toFixed(4)}.`);
+      Logger.info(`🛡️ [FAILSAFE] ${position.symbol}: Ordem de segurança máxima (${stopLossPct}% PnL) enviada para a corretora com gatilho em $${stopLossPrice.toFixed(4)}.`);
 
       // Valida se os preços são válidos
       if (stopLossPrice <= 0 || takeProfitPrice <= 0) {
-        console.error(`❌ [FAILSAFE] ${position.symbol}: Preços calculados inválidos - SL: ${stopLossPrice}, TP: ${takeProfitPrice}`);
+        Logger.error(`❌ [FAILSAFE] ${position.symbol}: Preços calculados inválidos - SL: ${stopLossPrice}, TP: ${takeProfitPrice}`);
         return { error: 'Preços calculados inválidos' };
       }
 
@@ -2711,27 +2694,27 @@ class OrderController {
       const minDistance = entryPrice * 0.001; // 0.1%
       const currentPrice = parseFloat(position.markPrice || entryPrice);
 
-      console.log(`🔍 [FAILSAFE_DEBUG] ${position.symbol}: Validando distâncias mínimas`);
-      console.log(`   • Preço atual: $${currentPrice.toFixed(6)}`);
-      console.log(`   • Distância mínima: $${minDistance.toFixed(6)}`);
+      Logger.info(`🔍 [FAILSAFE_DEBUG] ${position.symbol}: Validando distâncias mínimas`);
+      Logger.info(`   • Preço atual: $${currentPrice.toFixed(6)}`);
+      Logger.info(`   • Distância mínima: $${minDistance.toFixed(6)}`);
 
       const slDistance = Math.abs(stopLossPrice - currentPrice);
       const tpDistance = Math.abs(takeProfitPrice - currentPrice);
 
-      console.log(`   • Distância SL: $${slDistance.toFixed(6)} (${slDistance < minDistance ? 'MUITO PRÓXIMO' : 'OK'})`);
-      console.log(`   • Distância TP: $${tpDistance.toFixed(6)} (${tpDistance < minDistance ? 'MUITO PRÓXIMO' : 'OK'})`);
+      Logger.info(`   • Distância SL: $${slDistance.toFixed(6)} (${slDistance < minDistance ? 'MUITO PRÓXIMO' : 'OK'})`);
+      Logger.info(`   • Distância TP: $${tpDistance.toFixed(6)} (${tpDistance < minDistance ? 'MUITO PRÓXIMO' : 'OK'})`);
 
       if (slDistance < minDistance) {
-        console.warn(`⚠️ [FAILSAFE] ${position.symbol}: Stop Loss muito próximo do preço atual (${slDistance.toFixed(6)} < ${minDistance.toFixed(6)})`);
+        Logger.warn(`⚠️ [FAILSAFE] ${position.symbol}: Stop Loss muito próximo do preço atual (${slDistance.toFixed(6)} < ${minDistance.toFixed(6)})`);
         const newStopLossPrice = currentPrice + (isLong ? -minDistance : minDistance);
-        console.warn(`   • Ajustando Stop Loss de ${stopLossPrice.toFixed(6)} para ${newStopLossPrice.toFixed(6)}`);
+        Logger.warn(`   • Ajustando Stop Loss de ${stopLossPrice.toFixed(6)} para ${newStopLossPrice.toFixed(6)}`);
         stopLossPrice = newStopLossPrice;
       }
 
       if (tpDistance < minDistance) {
-        console.warn(`⚠️ [FAILSAFE] ${position.symbol}: Take Profit muito próximo do preço atual (${tpDistance.toFixed(6)} < ${minDistance.toFixed(6)})`);
+        Logger.warn(`⚠️ [FAILSAFE] ${position.symbol}: Take Profit muito próximo do preço atual (${tpDistance.toFixed(6)} < ${minDistance.toFixed(6)})`);
         const newTakeProfitPrice = currentPrice + (isLong ? minDistance : -minDistance);
-        console.warn(`   • Ajustando Take Profit de ${takeProfitPrice.toFixed(6)} para ${newTakeProfitPrice.toFixed(6)}`);
+        Logger.warn(`   • Ajustando Take Profit de ${takeProfitPrice.toFixed(6)} para ${newTakeProfitPrice.toFixed(6)}`);
         takeProfitPrice = newTakeProfitPrice;
       }
 
@@ -2751,16 +2734,16 @@ class OrderController {
       // Verifica se o Trailing Stop está habilitado para determinar se deve criar Take Profit fixo
       const enableTrailingStop = config?.enableTrailingStop === true;
 
-      console.log(`🛡️ [FAILSAFE] ${position.symbol}: Criando ordens de segurança`);
-      console.log(`   • Preço de entrada: $${entryPrice.toFixed(6)}`);
-      console.log(`   • Stop Loss: $${stopLossPrice.toFixed(6)} (${stopLossPct}% com ${leverage}x leverage)`);
+      Logger.info(`🛡️ [FAILSAFE] ${position.symbol}: Criando ordens de segurança`);
+      Logger.info(`   • Preço de entrada: $${entryPrice.toFixed(6)}`);
+      Logger.info(`   • Stop Loss: $${stopLossPrice.toFixed(6)} (${stopLossPct}% com ${leverage}x leverage)`);
 
       if (enableTrailingStop) {
-        console.log(`   • Take Profit: Será gerenciado dinamicamente pelo Trailing Stop`);
+        Logger.info(`   • Take Profit: Será gerenciado dinamicamente pelo Trailing Stop`);
       } else {
-        console.log(`   • Take Profit: $${takeProfitPrice.toFixed(6)} (${targetProfitPct}% com ${leverage}x leverage)`);
+        Logger.info(`   • Take Profit: $${takeProfitPrice.toFixed(6)} (${targetProfitPct}% com ${leverage}x leverage)`);
       }
-      console.log(`   • Quantidade: ${totalQuantity}`);
+      Logger.info(`   • Quantidade: ${totalQuantity}`);
 
       // 4. Cria ordem de Stop Loss (STOP_MARKET com reduceOnly) - SEMPRE criada
       const stopLossBody = {
@@ -2775,7 +2758,7 @@ class OrderController {
         stopLossLimitPrice: formatPrice(stopLossPrice),
         timeInForce: 'GTC',
         selfTradePrevention: 'RejectTaker',
-        clientId: await OrderController.generateFailsafeOrderId(config, 'stop')
+        clientId: await OrderController.generateUniqueOrderId(config)
       };
 
       // 5. Cria ordem de Take Profit APENAS se o Trailing Stop estiver desabilitado
@@ -2790,10 +2773,10 @@ class OrderController {
           price: formatPrice(takeProfitPrice),
           takeProfitTriggerBy: 'LastPrice',
           takeProfitTriggerPrice: formatPrice(takeProfitPrice),
-                  takeProfitLimitPrice: formatPrice(takeProfitPrice),
-        timeInForce: 'GTC',
-        selfTradePrevention: 'RejectTaker',
-        clientId: await OrderController.generateUniqueOrderId(config)
+          takeProfitLimitPrice: formatPrice(takeProfitPrice),
+          timeInForce: 'GTC',
+          selfTradePrevention: 'RejectTaker',
+          clientId: await OrderController.generateUniqueOrderId(config)
         };
       }
 
@@ -2810,23 +2793,23 @@ class OrderController {
       let errorMessages = [];
 
       if (stopLossResult && !stopLossResult.error) {
-        console.log(`✅ [FAILSAFE] ${position.symbol}: Stop Loss criado - OrderID: ${stopLossResult.id || 'N/A'}`);
+        Logger.info(`✅ [FAILSAFE] ${position.symbol}: Stop Loss criado - OrderID: ${stopLossResult.id || 'N/A'}`);
         successCount++;
       } else {
         const error = stopLossResult?.error || 'desconhecido';
-        console.log(`❌ [FAILSAFE] ${position.symbol}: Stop Loss FALHOU - Motivo: ${error}`);
+        Logger.info(`❌ [FAILSAFE] ${position.symbol}: Stop Loss FALHOU - Motivo: ${error}`);
         errorMessages.push(`Stop Loss: ${error}`);
       }
 
       if (enableTrailingStop) {
         // Se o Trailing Stop está ativo, não criamos Take Profit fixo
-        console.log(`ℹ️ [FAILSAFE] ${position.symbol}: Take Profit será gerenciado dinamicamente pelo Trailing Stop`);
+        Logger.info(`ℹ️ [FAILSAFE] ${position.symbol}: Take Profit será gerenciado dinamicamente pelo Trailing Stop`);
       } else if (takeProfitResult && !takeProfitResult.error) {
-        console.log(`✅ [FAILSAFE] ${position.symbol}: Take Profit criado - OrderID: ${takeProfitResult.id || 'N/A'}`);
+        Logger.info(`✅ [FAILSAFE] ${position.symbol}: Take Profit criado - OrderID: ${takeProfitResult.id || 'N/A'}`);
         successCount++;
       } else if (takeProfitResult && takeProfitResult.error) {
         const error = takeProfitResult.error || 'desconhecido';
-        console.log(`❌ [FAILSAFE] ${position.symbol}: Take Profit FALHOU - Motivo: ${error}`);
+        Logger.info(`❌ [FAILSAFE] ${position.symbol}: Take Profit FALHOU - Motivo: ${error}`);
         errorMessages.push(`Take Profit: ${error}`);
       }
 
@@ -2834,32 +2817,32 @@ class OrderController {
       if (enableTrailingStop) {
         // Quando Trailing Stop está ativo, só precisamos do Stop Loss
         if (successCount === 1) {
-          console.log(`🛡️ [FAILSAFE] ${position.symbol}: Ordem de segurança criada com sucesso!`);
-          console.log(`   • Stop Loss em $${stopLossPrice.toFixed(6)}`);
-          console.log(`   • Take Profit será gerenciado dinamicamente pelo Trailing Stop`);
+          Logger.info(`🛡️ [FAILSAFE] ${position.symbol}: Ordem de segurança criada com sucesso!`);
+          Logger.info(`   • Stop Loss em $${stopLossPrice.toFixed(6)}`);
+          Logger.info(`   • Take Profit será gerenciado dinamicamente pelo Trailing Stop`);
           return { success: true, stopLossResult, takeProfitResult: null };
         } else {
-          console.log(`❌ [FAILSAFE] ${position.symbol}: Falha ao criar Stop Loss`);
+          Logger.info(`❌ [FAILSAFE] ${position.symbol}: Falha ao criar Stop Loss`);
           return { error: errorMessages.join(', ') };
         }
       } else {
         // Quando Trailing Stop está desabilitado, precisamos de ambas as ordens
         if (successCount === 2) {
-          console.log(`🛡️ [FAILSAFE] ${position.symbol}: Ordens de segurança criadas com sucesso!`);
-          console.log(`   • Stop Loss em $${stopLossPrice.toFixed(6)}`);
-          console.log(`   • Take Profit em $${takeProfitPrice.toFixed(6)}`);
+          Logger.info(`🛡️ [FAILSAFE] ${position.symbol}: Ordens de segurança criadas com sucesso!`);
+          Logger.info(`   • Stop Loss em $${stopLossPrice.toFixed(6)}`);
+          Logger.info(`   • Take Profit em $${takeProfitPrice.toFixed(6)}`);
           return { success: true, stopLossResult, takeProfitResult };
         } else if (successCount === 1) {
-          console.log(`⚠️ [FAILSAFE] ${position.symbol}: Apenas uma ordem de segurança foi criada`);
+          Logger.info(`⚠️ [FAILSAFE] ${position.symbol}: Apenas uma ordem de segurança foi criada`);
           return { partial: true, stopLossResult, takeProfitResult, errors: errorMessages };
         } else {
-          console.log(`❌ [FAILSAFE] ${position.symbol}: Falha ao criar ordens de segurança`);
+          Logger.info(`❌ [FAILSAFE] ${position.symbol}: Falha ao criar ordens de segurança`);
           return { error: errorMessages.join(', ') };
         }
       }
 
     } catch (error) {
-      console.error(`❌ [FAILSAFE] Erro ao criar ordens de segurança para ${position.symbol}:`, error.message);
+      Logger.error(`❌ [FAILSAFE] Erro ao criar ordens de segurança para ${position.symbol}:`, error.message);
       return { error: error.message };
     }
   }
@@ -2882,11 +2865,11 @@ class OrderController {
       const position = positions?.find(p => p.symbol === market && Math.abs(Number(p.netQuantity)) > 0);
 
       if (!position) {
-        console.log(`⚠️ [FAILSAFE] ${market}: Posição não encontrada após abertura`);
+        Logger.info(`⚠️ [FAILSAFE] ${market}: Posição não encontrada após abertura`);
         return { error: 'Posição não encontrada' };
       }
 
-      console.log(`🎯 [FAILSAFE] ${market}: Posição detectada, criando ordens de segurança...`);
+      Logger.info(`🎯 [FAILSAFE] ${market}: Posição detectada, criando ordens de segurança...`);
 
       if (orderResult && orderResult.botName) {
         try {
@@ -2905,15 +2888,15 @@ class OrderController {
 
             if (orderResult.botName === 'AlphaFlowStrategy' && orderResult.target) {
               trailingState.takeProfitPrice = orderResult.target;
-              console.log(`📋 [STRATEGY_TAG] ${market}: Bot marcado como "${orderResult.botName}" com alvo $${orderResult.target}`);
+              Logger.info(`📋 [STRATEGY_TAG] ${market}: Bot marcado como "${orderResult.botName}" com alvo $${orderResult.target}`);
             } else {
-              console.log(`📋 [STRATEGY_TAG] ${market}: Bot marcado como "${orderResult.botName}"`);
+              Logger.info(`📋 [STRATEGY_TAG] ${market}: Bot marcado como "${orderResult.botName}"`);
             }
 
-            await TrailingStop.saveStateToDB(market, trailingState, config?.id);
+            await TrailingStop.saveStateToDB(market, trailingState, config?.id, config);
           }
         } catch (trailingError) {
-          console.warn(`⚠️ [FAILSAFE] ${market}: Erro ao atualizar estado do trailing stop:`, trailingError.message);
+          Logger.warn(`⚠️ [FAILSAFE] ${market}: Erro ao atualizar estado do trailing stop:`, trailingError.message);
         }
       }
 
@@ -2921,17 +2904,17 @@ class OrderController {
       const failsafeResult = await OrderController.createFailsafeOrders(position, botName, config);
 
       if (failsafeResult.success) {
-        console.log(`🛡️ [FAILSAFE] ${market}: Rede de segurança ativada com sucesso!`);
+        Logger.info(`🛡️ [FAILSAFE] ${market}: Rede de segurança ativada com sucesso!`);
       } else if (failsafeResult.partial) {
-        console.log(`⚠️ [FAILSAFE] ${market}: Rede de segurança parcialmente ativada`);
+        Logger.info(`⚠️ [FAILSAFE] ${market}: Rede de segurança parcialmente ativada`);
       } else {
-        console.log(`❌ [FAILSAFE] ${market}: Falha ao ativar rede de segurança`);
+        Logger.info(`❌ [FAILSAFE] ${market}: Falha ao ativar rede de segurança`);
       }
 
       return failsafeResult;
 
     } catch (error) {
-      console.error(`❌ [FAILSAFE] Erro ao detectar posição aberta para ${market}:`, error.message);
+      Logger.error(`❌ [FAILSAFE] Erro ao detectar posição aberta para ${market}:`, error.message);
       return { error: error.message };
     }
   }
@@ -2969,11 +2952,11 @@ class OrderController {
       });
 
       if (failsafeOrders.length === 0) {
-        console.log(`ℹ️ [FAILSAFE] ${symbol}: Nenhuma ordem de segurança encontrada para cancelar`);
+        Logger.info(`ℹ️ [FAILSAFE] ${symbol}: Nenhuma ordem de segurança encontrada para cancelar`);
         return true;
       }
 
-      console.log(`🛡️ [FAILSAFE] ${symbol}: Cancelando ${failsafeOrders.length} ordem(ns) de segurança...`);
+      Logger.info(`🛡️ [FAILSAFE] ${symbol}: Cancelando ${failsafeOrders.length} ordem(ns) de segurança...`);
 
       // Cancela todas as ordens de segurança
       const cancelPromises = failsafeOrders.map(async (order) => {
@@ -3000,15 +2983,15 @@ class OrderController {
       const successfulCancels = cancelResults.filter(result => result !== null && !result.error).length;
 
       if (successfulCancels > 0) {
-        console.log(`✅ [FAILSAFE] ${symbol}: ${successfulCancels} ordem(ns) de segurança cancelada(s) com sucesso`);
+        Logger.info(`✅ [FAILSAFE] ${symbol}: ${successfulCancels} ordem(ns) de segurança cancelada(s) com sucesso`);
         return true;
       } else {
-        console.log(`❌ [FAILSAFE] ${symbol}: Falha ao cancelar ordens de segurança`);
+        Logger.info(`❌ [FAILSAFE] ${symbol}: Falha ao cancelar ordens de segurança`);
         return false;
       }
 
     } catch (error) {
-      console.error(`❌ [FAILSAFE] Erro ao cancelar ordens de segurança para ${symbol}:`, error.message);
+      Logger.error(`❌ [FAILSAFE] Erro ao cancelar ordens de segurança para ${symbol}:`, error.message);
       return false;
     }
   }
@@ -3051,7 +3034,7 @@ class OrderController {
       return { hasStopLoss, hasTakeProfit, orders: failsafeOrders };
 
     } catch (error) {
-      console.error(`❌ [FAILSAFE] Erro ao verificar ordens de segurança para ${symbol}:`, error.message);
+      Logger.error(`❌ [FAILSAFE] Erro ao verificar ordens de segurança para ${symbol}:`, error.message);
       return { hasStopLoss: false, hasTakeProfit: false, orders: [] };
     }
   }
@@ -3093,35 +3076,35 @@ class OrderController {
         const hasStopLossOrders = await OrderController.hasExistingStopLoss(symbol, position, config);
 
         if (hasStopLossOrders && failsafeStatus.hasStopLoss) {
-          console.log(`✅ [FAILSAFE] ${symbol}: Stop loss já existe, não recriando`);
+          Logger.info(`✅ [FAILSAFE] ${symbol}: Stop loss já existe, não recriando`);
           continue;
         }
 
         if (!failsafeStatus.hasStopLoss || !failsafeStatus.hasTakeProfit) {
-          console.log(`⚠️ [FAILSAFE] ${symbol}: Ordens de segurança incompletas detectadas`);
-          console.log(`   • Stop Loss: ${failsafeStatus.hasStopLoss ? '✅' : '❌'}`);
-          console.log(`   • Take Profit: ${failsafeStatus.hasTakeProfit ? '✅' : '❌'}`);
+          Logger.info(`⚠️ [FAILSAFE] ${symbol}: Ordens de segurança incompletas detectadas`);
+          Logger.info(`   • Stop Loss: ${failsafeStatus.hasStopLoss ? '✅' : '❌'}`);
+          Logger.info(`   • Take Profit: ${failsafeStatus.hasTakeProfit ? '✅' : '❌'}`);
 
           // Recria ordens de segurança
           const recreateResult = await OrderController.createFailsafeOrders(position, botName, config);
 
           if (recreateResult.success) {
-            console.log(`✅ [FAILSAFE] ${symbol}: Ordens de segurança recriadas com sucesso`);
+            Logger.info(`✅ [FAILSAFE] ${symbol}: Ordens de segurança recriadas com sucesso`);
             recreated++;
           } else {
-            console.log(`❌ [FAILSAFE] ${symbol}: Falha ao recriar ordens de segurança`);
+            Logger.info(`❌ [FAILSAFE] ${symbol}: Falha ao recriar ordens de segurança`);
           }
         }
       }
 
       if (checked > 0) {
-        console.log(`🛡️ [FAILSAFE] Monitoramento concluído: ${checked} posições verificadas, ${recreated} redes de segurança recriadas`);
+        Logger.info(`🛡️ [FAILSAFE] Monitoramento concluído: ${checked} posições verificadas, ${recreated} redes de segurança recriadas`);
       }
 
       return { checked, recreated };
 
     } catch (error) {
-      console.error(`❌ [FAILSAFE] Erro no monitoramento de ordens de segurança:`, error.message);
+      Logger.error(`❌ [FAILSAFE] Erro no monitoramento de ordens de segurança:`, error.message);
       return { checked: 0, recreated: 0, error: error.message };
     }
   }
@@ -3133,7 +3116,7 @@ class OrderController {
    */
   static debug(message, config = null) {
     if (config?.logType === 'debug') {
-      console.log(message);
+      Logger.info(message);
     }
   }
 
@@ -3264,7 +3247,7 @@ class OrderController {
       }
 
     } catch (error) {
-      console.warn(`⚠️ [MONITOR-${botName}] Falha ao verificar posições não monitoradas:`, error.message);
+      Logger.warn(`⚠️ [MONITOR-${botName}] Falha ao verificar posições não monitoradas:`, error.message);
     }
   }
 
@@ -3366,7 +3349,7 @@ class OrderController {
 
       return hasStopLossOrders;
     } catch (error) {
-      console.error(`❌ [STOP_LOSS_CHECK] Erro ao verificar stop loss existente para ${symbol}:`, error.message);
+      Logger.error(`❌ [STOP_LOSS_CHECK] Erro ao verificar stop loss existente para ${symbol}:`, error.message);
       return false;
     }
   }
@@ -3388,7 +3371,7 @@ class OrderController {
     });
 
     if (keysToDelete.length > 0) {
-      console.log(`🧹 [CACHE] Cache de stop loss limpo para ${symbol} (${keysToDelete.length} entradas)`);
+      Logger.info(`🧹 [CACHE] Cache de stop loss limpo para ${symbol} (${keysToDelete.length} entradas)`);
     }
   }
 
@@ -3409,24 +3392,19 @@ class OrderController {
     });
 
     if (keysToDelete.length > 0) {
-      console.log(`🧹 [CACHE] Cache de take profit limpo para ${symbol} (${keysToDelete.length} entradas)`);
+      Logger.info(`🧹 [CACHE] Cache de take profit limpo para ${symbol} (${keysToDelete.length} entradas)`);
     }
   }
 
   /**
-   * 🧹 ÚNICO MÉTODO para monitorar e limpar ordens órfãs
-   *
-   * Detecta e cancela ordens de stop loss/take profit que ficaram órfãs
-   * após posições serem fechadas. Consolidado em um único método para
-   * evitar duplicação de lógica entre sistemas single-bot e multi-bot.
-   *
-   * @param {string} botName - Nome do bot para monitorar
-   * @param {object} config - Configurações específicas do bot (apiKey, apiSecret, etc.)
-   * @returns {object} Resultado da operação: { orphaned, cancelled, errors }
+   * Monitor e limpeza de ordens órfãs (stop loss + take profit)
+   * Remove ordens reduceOnly órfãs quando a posição foi fechada
+   * @param {string} botName - Nome do bot
+   * @param {object} config - Configuração do bot com credenciais
+   * @returns {Promise<object>} Resultado da limpeza
    */
-  static async monitorAndCleanupOrphanedStopLoss(botName, config = null) {
+  static async monitorAndCleanupOrphanedOrders(botName, config = null) {
     try {
-      // SEMPRE usa credenciais do config - lança exceção se não disponível
       if (!config?.apiKey || !config?.apiSecret) {
         throw new Error('API_KEY e API_SECRET são obrigatórios - deve ser passado da config do bot');
       }
@@ -3443,8 +3421,9 @@ class OrderController {
         apiSecret,
         strategy: config?.strategyName || 'DEFAULT'
       });
-      const configuredSymbols = Account.markets.map(m => m.symbol);
-      Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] Verificando ${configuredSymbols.length} símbolos configurados: ${configuredSymbols.join(', ')}`);
+
+      const configuredSymbols = config.authorizedTokens || [];
+      Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] Verificando ${configuredSymbols.length} símbolos autorizados: ${configuredSymbols.join(', ')}`);
 
       let totalOrphanedOrders = 0;
       let totalCancelledOrders = 0;
@@ -3468,61 +3447,47 @@ class OrderController {
           totalOrdersChecked += openOrders.length;
           Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: ${openOrders.length} ordens abertas encontradas`);
 
-          // Identifica ordens de stop loss com detecção melhorada
-          const stopLossOrders = openOrders.filter(order => {
-            // Verifica se é uma ordem de stop loss
-            const isReduceOnly = order.reduceOnly;
-            const hasStopLossTrigger = order.stopLossTriggerPrice || order.stopLossLimitPrice;
-            const hasTakeProfitTrigger = order.takeProfitTriggerPrice || order.takeProfitLimitPrice;
-
-            // Se tem trigger de stop loss, é uma ordem de stop loss
-            if (hasStopLossTrigger) {
-              Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Ordem ${order.id} identificada como stop loss (trigger detectado)`);
-              return true;
-            }
-
-            // Se tem trigger de take profit, não é stop loss
-            if (hasTakeProfitTrigger) {
-              return false;
-            }
-
-            // Se não tem trigger, verifica se está posicionada corretamente como stop loss
-            if (isReduceOnly && order.limitPrice) {
-              const position = positions.find(p => p.symbol === symbol);
-              if (position && Math.abs(Number(position.netQuantity)) > 0) {
-                const isCorrectStopLoss = OrderController.isOrderCorrectlyPositionedAsStopLoss(order, position);
-                if (isCorrectStopLoss) {
-                  Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Ordem ${order.id} identificada como stop loss (posicionamento correto)`);
-                }
-                return isCorrectStopLoss;
-              }
-            }
-
-            return false;
+          // 🔧 MELHORIA: Identifica TODAS as ordens reduceOnly órfãs (stop loss + take profit)
+          const orphanedOrders = openOrders.filter(order => {
+            // Só considera ordens reduceOnly como potenciais órfãs
+            return order.reduceOnly === true;
           });
 
-          if (stopLossOrders.length === 0) {
-            Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Nenhuma ordem de stop loss encontrada`);
+          if (orphanedOrders.length === 0) {
+            Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Nenhuma ordem reduceOnly encontrada`);
             continue;
           }
 
-          Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: ${stopLossOrders.length} ordens de stop loss encontradas`);
+          // Categoriza as ordens órfãs por tipo para logging melhor
+          const stopLossOrders = orphanedOrders.filter(order => {
+            const hasStopLossTrigger = order.stopLossTriggerPrice || order.stopLossLimitPrice;
+            return hasStopLossTrigger || (!order.takeProfitTriggerPrice && !order.takeProfitLimitPrice);
+          });
+
+          const takeProfitOrders = orphanedOrders.filter(order => {
+            return order.takeProfitTriggerPrice || order.takeProfitLimitPrice;
+          });
+
+          Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: ${orphanedOrders.length} ordens reduceOnly (${stopLossOrders.length} SL + ${takeProfitOrders.length} TP)`);
 
           const position = positions.find(p => p.symbol === symbol);
 
           // Verifica se posição está fechada (órfã)
           if (!position || Math.abs(Number(position.netQuantity)) === 0) {
-            Logger.info(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: POSIÇÃO FECHADA - ${stopLossOrders.length} ordens de stop loss órfãs detectadas`);
+            Logger.info(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: POSIÇÃO FECHADA - ${orphanedOrders.length} ordens órfãs detectadas (${stopLossOrders.length} SL + ${takeProfitOrders.length} TP)`);
 
-            totalOrphanedOrders += stopLossOrders.length;
+            totalOrphanedOrders += orphanedOrders.length;
 
             // Log detalhado das ordens órfãs
-            for (const order of stopLossOrders) {
-              Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Ordem órfã - ID: ${order.id}, Tipo: ${order.orderType}, Preço: ${order.limitPrice || order.stopLossTriggerPrice}, ReduceOnly: ${order.reduceOnly}`);
+            for (const order of orphanedOrders) {
+              const orderType = order.stopLossTriggerPrice || order.stopLossLimitPrice ? 'STOP_LOSS' :
+                               order.takeProfitTriggerPrice || order.takeProfitLimitPrice ? 'TAKE_PROFIT' : 'REDUCE_ONLY';
+              const triggerPrice = order.stopLossTriggerPrice || order.takeProfitTriggerPrice || order.limitPrice;
+              Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Ordem órfã ${orderType} - ID: ${order.id}, Preço: ${triggerPrice}, ReduceOnly: ${order.reduceOnly}`);
             }
 
             // Cancela as ordens órfãs
-            for (const order of stopLossOrders) {
+            for (const order of orphanedOrders) {
               const orderId = order.id;
 
               try {
@@ -3570,7 +3535,7 @@ class OrderController {
               }
             }
           } else {
-            Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Posição ativa (${position.netQuantity}), ordens de stop loss são válidas`);
+            Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Posição ativa (${position.netQuantity}), ${orphanedOrders.length} ordens reduceOnly são válidas`);
           }
         } catch (error) {
           // Verifica se é erro de rate limit no nível do símbolo
@@ -3619,10 +3584,9 @@ class OrderController {
   }
 
   /**
-   * 🧹 MÉTODO OTIMIZADO para detectar e cancelar ordens órfãs diretamente da corretora
-   *
-   * Este método busca TODAS as ordens abertas na corretora e cancela qualquer ordem
-   * reduceOnly que não tenha posição ativa correspondente, independente da configuração local.
+   * Método para escanear e limpar TODAS as ordens órfãs na corretora (global).
+   * Este método verifica na corretora todas as ordens abertas e cancela aquelas
+   * que não possuem mais uma posição ativa correspondente.
    *
    * @param {string} botName - Nome do bot para monitorar
    * @param {object} config - Configurações específicas do bot (apiKey, apiSecret, etc.)
@@ -3636,9 +3600,18 @@ class OrderController {
       const apiKey = config.apiKey;
       const apiSecret = config.apiSecret;
 
-      Logger.info(`🔍 [${config.botName}][SCAN_CLEANUP] Iniciando busca completa de ordens órfãs na corretora`);
+      Logger.debug(`🔍 [${config.botName}][SCAN_CLEANUP] Iniciando limpeza de ordens órfãs na corretora`);
 
-      // 1. Busca TODAS as posições abertas na corretora
+      // 1. Busca TODAS as ordens abertas na corretora (sem especificar símbolo)
+      const allOpenOrders = await Order.getOpenOrders(null, "PERP", apiKey, apiSecret) || [];
+      Logger.debug(`🔍 [${config.botName}][SCAN_CLEANUP] Encontradas ${allOpenOrders.length} ordens abertas na corretora`);
+
+      if (allOpenOrders.length === 0) {
+        Logger.info(`✅ [${config.botName}][SCAN_CLEANUP] Nenhuma ordem aberta encontrada`);
+        return { orphaned: 0, cancelled: 0, errors: [], ordersScanned: 0 };
+      }
+
+      // 2. Busca TODAS as posições abertas na corretora
       const positions = await Futures.getOpenPositions(apiKey, apiSecret) || [];
       const activeSymbols = new Set();
 
@@ -3649,174 +3622,95 @@ class OrderController {
         }
       }
 
-      Logger.info(`🔍 [${config.botName}][SCAN_CLEANUP] Encontradas ${positions.length} posições, ${activeSymbols.size} com quantidade > 0`);
-      Logger.info(`🔍 [${config.botName}][SCAN_CLEANUP] Símbolos ativos: ${Array.from(activeSymbols).join(', ') || 'nenhum'}`);
+      Logger.debug(`🔍 [${config.botName}][SCAN_CLEANUP] Encontradas ${positions.length} posições, ${activeSymbols.size} símbolos com posição ativa`);
+      Logger.debug(`🔍 [${config.botName}][SCAN_CLEANUP] Símbolos com posição: ${Array.from(activeSymbols).join(', ') || 'nenhum'}`);
 
-      // 2. Busca TODOS os símbolos que têm ordens abertas na corretora
-      // Vamos varrer todos os símbolos possíveis (PERP markets)
-      const allSymbolsWithOrders = new Set();
+      // 3. Identifica ordens órfãs: ordens reduceOnly que não possuem posição ativa correspondente
+      const orphanedOrders = [];
 
-      // Primeiro, verifica símbolos configurados
-      try {
-        const Account = await AccountController.get({
-          apiKey,
-          apiSecret,
-          strategy: config?.strategyName || 'DEFAULT'
-        });
-        const configuredSymbols = Account.markets.map(m => m.symbol);
+      for (const order of allOpenOrders) {
+        const isReduceOnly = order.reduceOnly === true;
+        const hasActivePosition = activeSymbols.has(order.symbol);
 
-        for (const symbol of configuredSymbols) {
-          const orders = await Order.getOpenOrders(symbol, "PERP", apiKey, apiSecret);
-          if (orders && orders.length > 0) {
-            allSymbolsWithOrders.add(symbol);
-          }
-          // Delay para evitar rate limit
-          await new Promise(resolve => setTimeout(resolve, 100));
+        // Se é reduceOnly E não há posição ativa para este símbolo, a ordem é órfã
+        if (isReduceOnly && !hasActivePosition) {
+          orphanedOrders.push(order);
+          Logger.debug(`🔍 [${config.botName}][SCAN_CLEANUP] Ordem órfã detectada: ${order.symbol} - ID: ${order.id}, Tipo: ${order.orderType}, ReduceOnly: ${order.reduceOnly}`);
         }
-      } catch (error) {
-        Logger.warn(`⚠️ [${config.botName}][SCAN_CLEANUP] Erro ao buscar símbolos configurados: ${error.message}`);
       }
 
-      // 3. Para cada símbolo encontrado, verifica ordens órfãs
-      let totalOrphanedOrders = 0;
+      if (orphanedOrders.length === 0) {
+        Logger.info(`✅ [${config.botName}][SCAN_CLEANUP] Nenhuma ordem órfã encontrada`);
+        return { orphaned: 0, cancelled: 0, errors: [], ordersScanned: allOpenOrders.length };
+      }
+
+      Logger.info(`🧹 [${config.botName}][SCAN_CLEANUP] ${orphanedOrders.length} ordens órfãs detectadas`);
+
+      // 4. Cancela as ordens órfãs encontradas
       let totalCancelledOrders = 0;
       const errors = [];
-      const detailedResults = [];
 
-      for (const symbol of allSymbolsWithOrders) {
+      for (const order of orphanedOrders) {
         try {
-          Logger.debug(`🔍 [${config.botName}][SCAN_CLEANUP] Verificando ${symbol}...`);
+          await new Promise(resolve => setTimeout(resolve, 150)); // Delay entre cancelamentos
 
-          // Delay para evitar rate limit
-          await new Promise(resolve => setTimeout(resolve, 200));
+          Logger.debug(`🧹 [${config.botName}][SCAN_CLEANUP] Cancelando ordem órfã ${order.symbol} - ID: ${order.id}`);
 
-          const openOrders = await Order.getOpenOrders(symbol, "PERP", apiKey, apiSecret);
+          const cancelResult = await Order.cancelOpenOrder(order.symbol, order.id, null, apiKey, apiSecret);
 
-          if (!openOrders || openOrders.length === 0) {
-            continue;
-          }
+          if (cancelResult && !cancelResult.error) {
+            totalCancelledOrders++;
+            Logger.info(`✅ [${config.botName}][SCAN_CLEANUP] Ordem órfã cancelada: ${order.symbol} - ID: ${order.id}`);
 
-          // Identifica ordens órfãs: reduceOnly sem posição ativa no símbolo
-          const orphanedOrders = [];
-
-          for (const order of openOrders) {
-            const isReduceOnly = order.reduceOnly === true;
-            const hasActivePosition = activeSymbols.has(symbol);
-
-            // Se é reduceOnly E não há posição ativa, é órfã
-            if (isReduceOnly && !hasActivePosition) {
-              orphanedOrders.push(order);
-              Logger.debug(`🔍 [${config.botName}][SCAN_CLEANUP] ${symbol}: Ordem órfã detectada - ID: ${order.id}, Tipo: ${order.orderType}, ReduceOnly: ${order.reduceOnly}`);
-            }
-          }
-
-          if (orphanedOrders.length === 0) {
-            Logger.debug(`🔍 [${config.botName}][SCAN_CLEANUP] ${symbol}: Nenhuma ordem órfã encontrada`);
-            continue;
-          }
-
-          Logger.info(`🧹 [${config.botName}][SCAN_CLEANUP] ${symbol}: ${orphanedOrders.length} ordens órfãs detectadas`);
-          totalOrphanedOrders += orphanedOrders.length;
-
-          // 4. Cancela as ordens órfãs encontradas
-          let cancelledInSymbol = 0;
-          const errorsInSymbol = [];
-
-          for (const order of orphanedOrders) {
+            // Atualiza status no banco de dados se existir
             try {
-              await new Promise(resolve => setTimeout(resolve, 150)); // Delay entre cancelamentos
-
-              Logger.debug(`🧹 [${config.botName}][SCAN_CLEANUP] ${symbol}: Cancelando ordem órfã ${order.id}`);
-
-              const cancelResult = await Order.cancelOpenOrder(symbol, order.id, null, apiKey, apiSecret);
-
-              if (cancelResult && !cancelResult.error) {
-                cancelledInSymbol++;
-                totalCancelledOrders++;
-                Logger.info(`✅ [${config.botName}][SCAN_CLEANUP] ${symbol}: Ordem órfã ${order.id} cancelada com sucesso`);
-
-                // Atualiza status no banco de dados
-                try {
-                  await BotOrdersManager.updateOrder(order.id, {
-                    status: 'CANCELLED',
-                    closeTime: new Date().toISOString(),
-                    closeType: 'SCAN_ORPHAN_CLEANUP'
-                  });
-                  Logger.debug(`📝 [${config.botName}][SCAN_CLEANUP] ${symbol}: Status da ordem ${order.id} atualizado no banco para CANCELLED`);
-                } catch (dbError) {
-                  Logger.warn(`⚠️ [${config.botName}][SCAN_CLEANUP] ${symbol}: Erro ao atualizar status da ordem ${order.id} no banco: ${dbError.message}`);
-                }
-              } else {
-                const errorMsg = cancelResult?.error || 'desconhecido';
-                errorsInSymbol.push(`${order.id}: ${errorMsg}`);
-                Logger.warn(`❌ [${config.botName}][SCAN_CLEANUP] ${symbol}: Falha ao cancelar ordem órfã ${order.id}: ${errorMsg}`);
-              }
-            } catch (error) {
-              if (error?.response?.status === 429 || String(error).includes('rate limit')) {
-                Logger.warn(`⚠️ [${config.botName}][SCAN_CLEANUP] ${symbol}: Rate limit detectado, pausando 2s`);
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                errorsInSymbol.push(`${order.id}: Rate limit`);
-                break; // Para de cancelar ordens deste símbolo
-              } else {
-                errorsInSymbol.push(`${order.id}: ${error.message}`);
-                Logger.error(`❌ [${config.botName}][SCAN_CLEANUP] ${symbol}: Erro ao cancelar ordem ${order.id}:`, error.message);
-              }
+              await BotOrdersManager.updateOrder(order.id, {
+                status: 'CANCELLED',
+                closeTime: new Date().toISOString(),
+                closeType: 'ORPHAN_CLEANUP'
+              });
+            } catch (dbError) {
+              // Ignora erros de banco (ordem pode não estar registrada localmente)
+              Logger.debug(`📝 [${config.botName}][SCAN_CLEANUP] Ordem ${order.id} não encontrada no banco local (normal para ordens externas)`);
             }
+          } else {
+            const errorMsg = cancelResult?.error || 'desconhecido';
+            errors.push(`${order.symbol}:${order.id} - ${errorMsg}`);
+            Logger.warn(`❌ [${config.botName}][SCAN_CLEANUP] Falha ao cancelar ordem órfã ${order.symbol}:${order.id} - ${errorMsg}`);
           }
-
-          // Registra resultado detalhado por símbolo
-          detailedResults.push({
-            symbol,
-            orphanedFound: orphanedOrders.length,
-            cancelled: cancelledInSymbol,
-            errors: errorsInSymbol
-          });
-
-          if (errorsInSymbol.length > 0) {
-            errors.push(`${symbol}: ${errorsInSymbol.join(', ')}`);
-          }
-
         } catch (error) {
           if (error?.response?.status === 429 || String(error).includes('rate limit')) {
-            Logger.warn(`⚠️ [${config.botName}][SCAN_CLEANUP] ${symbol}: Rate limit no símbolo`);
-            errors.push(`${symbol}: Rate limit`);
+            Logger.warn(`⚠️ [${config.botName}][SCAN_CLEANUP] Rate limit detectado, pausando 2s`);
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            errors.push(`${order.symbol}:${order.id} - Rate limit`);
           } else {
-            Logger.error(`❌ [${config.botName}][SCAN_CLEANUP] ${symbol}: Erro ao processar símbolo:`, error.message);
-            errors.push(`${symbol}: ${error.message}`);
+            errors.push(`${order.symbol}:${order.id} - ${error.message}`);
+            Logger.error(`❌ [${config.botName}][SCAN_CLEANUP] Erro ao cancelar ordem ${order.symbol}:${order.id}:`, error.message);
           }
         }
       }
 
       // Log do resultado final
-      Logger.info(`🧹 [${config.botName}][SCAN_CLEANUP] Varredura completa finalizada:`);
-      Logger.info(`   • Símbolos verificados: ${allSymbolsWithOrders.size}`);
-      Logger.info(`   • Ordens órfãs detectadas: ${totalOrphanedOrders}`);
+      Logger.info(`🧹 [${config.botName}][SCAN_CLEANUP] Limpeza finalizada:`);
+      Logger.info(`   • Ordens verificadas: ${allOpenOrders.length}`);
+      Logger.info(`   • Ordens órfãs detectadas: ${orphanedOrders.length}`);
       Logger.info(`   • Ordens canceladas: ${totalCancelledOrders}`);
       Logger.info(`   • Erros: ${errors.length}`);
-
-      // Log detalhado por símbolo
-      if (detailedResults.length > 0) {
-        Logger.info(`📊 [${config.botName}][SCAN_CLEANUP] Resultados por símbolo:`);
-        for (const result of detailedResults) {
-          Logger.info(`   • ${result.symbol}: ${result.orphanedFound} órfãs → ${result.cancelled} canceladas`);
-        }
-      }
 
       if (errors.length > 0) {
         Logger.warn(`   • Detalhes dos erros: ${errors.join(', ')}`);
       }
 
       return {
-        orphaned: totalOrphanedOrders,
+        orphaned: orphanedOrders.length,
         cancelled: totalCancelledOrders,
         errors,
-        symbolsScanned: allSymbolsWithOrders.size,
-        detailedResults
+        ordersScanned: allOpenOrders.length
       };
 
     } catch (error) {
-      Logger.error(`❌ [${config.botName}][SCAN_CLEANUP] Erro na varredura completa:`, error.message);
-      return { orphaned: 0, cancelled: 0, errors: [error.message], symbolsScanned: 0 };
+      Logger.error(`❌ [${config.botName}][SCAN_CLEANUP] Erro na limpeza de ordens órfãs:`, error.message);
+      return { orphaned: 0, cancelled: 0, errors: [error.message], ordersScanned: 0 };
     }
   }
 
@@ -3851,7 +3745,9 @@ class OrderController {
         apiSecret,
         strategy: config?.strategyName || 'DEFAULT'
       });
-      const configuredSymbols = Account.markets.map(m => m.symbol);
+
+      // 🔧 CORREÇÃO: Usa authorizedTokens ao invés de Account.markets
+      const configuredSymbols = config.authorizedTokens || [];
 
       let totalOrphanedOrders = 0;
       let totalCancelledOrders = 0;
@@ -4032,12 +3928,12 @@ class OrderController {
       };
 
       // Debug: Verifica a quantidade antes da formatação
-      console.log(`🔍 [DEBUG] Valores na createLimitOrderWithTriggers:`);
-      console.log(`   • Quantity (raw): ${quantity}`);
-      console.log(`   • Quantity (formatted): ${formatQuantity(quantity)}`);
-      console.log(`   • Entry (raw): ${entry}`);
-      console.log(`   • Entry (formatted): ${formatPrice(entry)}`);
-      console.log(`   • Market decimals: quantity=${decimal_quantity}, price=${decimal_price}`);
+      Logger.info(`🔍 [DEBUG] Valores na createLimitOrderWithTriggers:`);
+      Logger.info(`   • Quantity (raw): ${quantity}`);
+      Logger.info(`   • Quantity (formatted): ${formatQuantity(quantity)}`);
+      Logger.info(`   • Entry (raw): ${entry}`);
+      Logger.info(`   • Entry (formatted): ${formatPrice(entry)}`);
+      Logger.info(`   • Market decimals: quantity=${decimal_quantity}, price=${decimal_price}`);
 
       // Valida se a quantidade é positiva
       if (quantity <= 0) {
@@ -4051,7 +3947,7 @@ class OrderController {
 
       // Calcula o valor da ordem para verificar margem
       const orderValue = quantity * entry;
-      console.log(`   💰 [DEBUG] Valor da ordem: $${orderValue.toFixed(2)}`);
+      Logger.info(`   💰 [DEBUG] Valor da ordem: $${orderValue.toFixed(2)}`);
 
       // Verifica se o preço está muito próximo do preço atual (pode causar "Order would immediately match")
       const currentPrice = await this.getCurrentPrice(market);
@@ -4060,7 +3956,7 @@ class OrderController {
         const minSpreadPercent = 0.001; // 0.1% de spread mínimo (reduzido para compatibilidade)
 
         if (priceDiff < minSpreadPercent) {
-          console.log(`   ⚠️  ${market}: Preço muito próximo do atual (${priceDiff.toFixed(4)}), ajustando...`);
+          Logger.info(`   ⚠️  ${market}: Preço muito próximo do atual (${priceDiff.toFixed(4)}), ajustando...`);
           // Ajusta o preço para ter pelo menos 0.1% de spread
           const minSpread = currentPrice * minSpreadPercent;
           if (action === 'long') {
@@ -4068,7 +3964,7 @@ class OrderController {
           } else {
             entry = currentPrice + minSpread;
           }
-          console.log(`   ✅ ${market}: Preço ajustado para ${formatPrice(entry)} (spread: ${(minSpreadPercent * 100).toFixed(1)}%)`);
+          Logger.info(`   ✅ ${market}: Preço ajustado para ${formatPrice(entry)} (spread: ${(minSpreadPercent * 100).toFixed(1)}%)`);
         }
       }
 
@@ -4090,7 +3986,7 @@ class OrderController {
         orderBody.stopLossTriggerBy = 'LastPrice';
         orderBody.stopLossTriggerPrice = formatPrice(stop);
         orderBody.stopLossLimitPrice = formatPrice(stop);
-        console.log(`🛑 Stop Loss configurado: ${market} @ ${formatPrice(stop)}`);
+        Logger.info(`🛑 Stop Loss configurado: ${market} @ ${formatPrice(stop)}`);
       }
 
       // Adiciona parâmetros de take profit se fornecido
@@ -4098,11 +3994,11 @@ class OrderController {
         orderBody.takeProfitTriggerBy = 'LastPrice';
         orderBody.takeProfitTriggerPrice = formatPrice(target);
         orderBody.takeProfitLimitPrice = formatPrice(target);
-        console.log(`🎯 Take Profit configurado: ${market} @ ${formatPrice(target)}`);
+        Logger.info(`🎯 Take Profit configurado: ${market} @ ${formatPrice(target)}`);
       }
 
-      console.log(`🚀 [${botName}] Criando ordem LIMIT: ${market} ${action.toUpperCase()} @ $${formatPrice(entry)}`);
-      console.log(`   📋 Detalhes da ordem:`, {
+      Logger.info(`🚀 [${botName}] Criando ordem LIMIT: ${market} ${action.toUpperCase()} @ $${formatPrice(entry)}`);
+      Logger.info(`   📋 Detalhes da ordem:`, {
         symbol: market,
         side: orderBody.side,
         quantity: formatQuantity(quantity),
@@ -4117,7 +4013,7 @@ class OrderController {
 
         if (response && (response.orderId || response.id)) {
           const orderId = response.orderId || response.id;
-          console.log(`✅ [${botName}] Ordem criada com sucesso: ${market} (ID: ${orderId})`);
+          Logger.info(`✅ [${botName}] Ordem criada com sucesso: ${market} (ID: ${orderId})`);
 
           // Registra a ordem para monitoramento (apenas para estratégia PRO_MAX)
           if (botName === 'PRO_MAX') {
@@ -4159,7 +4055,7 @@ class OrderController {
           formattedEntry: formatPrice(entry)
         };
 
-        console.error(`❌ [ORDER_FAIL] Falha ao criar ordem para ${market}. Detalhes: ${JSON.stringify(errorDetails)}. Erro: ${error.message}`);
+        Logger.error(`❌ [ORDER_FAIL] Falha ao criar ordem para ${market}. Detalhes: ${JSON.stringify(errorDetails)}. Erro: ${error.message}`);
 
         return {
           success: false,
@@ -4169,7 +4065,7 @@ class OrderController {
       }
 
     } catch (error) {
-      console.error(`❌ Erro ao criar ordem LIMIT com triggers: ${error.message}`);
+      Logger.error(`❌ Erro ao criar ordem LIMIT com triggers: ${error.message}`);
       return {
         success: false,
         error: error.message
@@ -4188,13 +4084,13 @@ class OrderController {
       const markets = new Markets();
       const ticker = await markets.getTicker(market);
 
-      if (ticker && ticker.last) {
-        return parseFloat(ticker.last);
+      if (ticker && ticker?.lastPrice) {
+        return parseFloat(ticker?.lastPrice);
       }
 
       return null;
     } catch (error) {
-      console.warn(`⚠️  [PRICE] Erro ao obter preço atual para ${market}:`, error.message);
+      Logger.warn(`⚠️  [PRICE] Erro ao obter preço atual para ${market}:`, error.message);
       return null;
     }
   }
@@ -4263,7 +4159,7 @@ class OrderController {
 
       return false;
     } catch (error) {
-      console.error(`❌ [STOP_LOSS_CHECK] Erro ao verificar stop loss para ${symbol}:`, error.message);
+      Logger.error(`❌ [STOP_LOSS_CHECK] Erro ao verificar stop loss para ${symbol}:`, error.message);
       return false;
     }
   }
@@ -4285,11 +4181,22 @@ class OrderController {
         return;
       }
 
-      Logger.debug(`🔍 [TP_MONITOR] Verificando ${positions.length} posições para Take Profit...`);
+      // 🔧 CORREÇÃO: Filtra posições realmente abertas (netQuantity > 0)
+      const activePositions = positions.filter(position => {
+        const netQuantity = parseFloat(position.netQuantity || 0);
+        const isActive = Math.abs(netQuantity) > 0;
 
-      for (const position of positions) {
+        if (!isActive) {
+          Logger.debug(`⏭️ [TP_MONITOR] ${position.symbol}: Posição fechada (netQuantity: ${netQuantity}) - pulando`);
+        }
+
+        return isActive;
+      });
+
+      Logger.debug(`🔍 [TP_MONITOR] Verificando ${activePositions.length} posições ativas para Take Profit (${positions.length - activePositions.length} posições fechadas filtradas)...`);
+
+      for (const position of activePositions) {
         try {
-          // 🔧 NOVO: Valida se a posição foi criada pelo bot
           const isBotPosition = await OrderController.isPositionCreatedByBot(position, config);
           if (!isBotPosition) {
             Logger.debug(`⏭️ [TP_MONITOR] ${position.symbol}: Posição não criada pelo bot - pulando`);
@@ -4310,34 +4217,17 @@ class OrderController {
    * Cria Take Profit para uma posição específica
    * @param {object} position - Dados da posição
    * @param {object} config - Configuração do bot
-   * @returns {Promise<void>}
+   * @returns {Promise<{success: boolean, message: string}>}
    */
   static async createTakeProfitForPosition(position, config) {
     try {
       const symbol = position.symbol;
-      const netQuantity = parseFloat(position.netQuantity || 0);
+      const netQuantity = parseFloat(position.netQuantity);
 
       if (Math.abs(netQuantity) === 0) {
-        return { success: false, message: 'Posição fechada' }; // Posição fechada
+        return { success: false, message: 'Posição fechada' };
       }
 
-      const enableTrailingStop = config?.enableTrailingStop === true;
-      if (enableTrailingStop) {
-        Logger.debug(`⏭️ [TP_CREATE] ${symbol}: Trailing Stop ativo - NÃO criando Take Profit fixo`);
-        Logger.debug(`ℹ️ [TP_CREATE] ${symbol}: Take Profit será gerenciado dinamicamente pelo Trailing Stop`);
-        return { success: false, message: 'Trailing Stop ativo' }; // Não cria TP fixo quando trailing stop está ativo
-      }
-
-      // Verifica se já existe ordem de Take Profit
-      const hasTakeProfit = await OrderController.hasTakeProfitOrder(symbol, position, config);
-      if (hasTakeProfit) {
-        Logger.debug(`ℹ️ [TP_CREATE] ${symbol}: Take Profit já existe, pulando criação`);
-        return { success: false, message: 'Take Profit já existe' }; // Já existe TP
-      }
-
-      Logger.info(`🎯 [TP_CREATE] ${symbol}: Criando Take Profit...`);
-
-      // Obtém informações do mercado para formatação correta
       let Account;
       try {
         Account = await AccountController.get({
@@ -4347,18 +4237,35 @@ class OrderController {
         });
       } catch (error) {
         Logger.error(`❌ [TP_CREATE] ${symbol}: Erro ao obter Account:`, error.message);
-        return { error: `Erro ao obter Account: ${error.message}` };
+        return { success: false, message: `Erro ao obter Account: ${error.message}` };
       }
 
       if (!Account || !Account.markets) {
         Logger.error(`❌ [TP_CREATE] ${symbol}: Account inválido ou sem markets:`, Account);
-        return { error: 'Account inválido ou sem markets' };
+        return { success: false, message: 'Account inválido ou sem markets' };
       }
+
+      let enableTrailingStop = config?.enableTrailingStop === true;
+      let enableHybridStopStrategy = config?.enableHybridStopStrategy === true;
+
+      if (enableTrailingStop && !enableHybridStopStrategy) {
+        Logger.debug(`⏭️ [TP_CREATE] ${symbol}: Trailing Stop ativo sem opção de saída parcial - Take Profit vai ser monitorado pelo Trailing Stop`);
+        return { success: false, message: 'Trailing Stop ativo' };
+      }
+
+      // Verifica se já existe ordem de Take Profit
+      const hasTakeProfit = await OrderController.hasTakeProfitOrder(symbol, position, config);
+      if (hasTakeProfit) {
+        Logger.debug(`ℹ️ [TP_CREATE] ${symbol}: Take Profit já existe, pulando criação`);
+        return { success: false, message: 'Take Profit já existe' };
+      }
+
+      Logger.info(`🎯 [TP_CREATE] ${symbol}: Criando Take Profit...`);
 
       const marketInfo = Account.markets.find(m => m.symbol === symbol);
       if (!marketInfo) {
         Logger.error(`❌ [TP_CREATE] ${symbol}: Market info não encontrada`);
-        return { error: 'Market info não encontrada' };
+        return { success: false, message: 'Error: Market info não encontrada' };
       }
 
       const decimal_quantity = marketInfo.decimal_quantity || 6;
@@ -4371,28 +4278,27 @@ class OrderController {
       try {
         currentPositions = await Futures.getOpenPositions(config.apiKey, config.apiSecret);
       } catch (error) {
-        console.error(`❌ [TP_CREATE] ${symbol}: Erro ao obter posições:`, error.message);
-        return;
+        Logger.error(`❌ [TP_CREATE] ${symbol}: Erro ao obter posições:`, error.message);
+        return { success: false, message: `Erro ao obter posições: ${error.message}`};
       }
 
       if (!currentPositions || !Array.isArray(currentPositions)) {
-        console.error(`❌ [TP_CREATE] ${symbol}: Posições inválidas:`, currentPositions);
-        return;
+        Logger.error(`❌ [TP_CREATE] ${symbol}: Posições inválidas:`, currentPositions);
+        return { success: false, message: `Posições inválidas: ${currentPositions}`};
       }
 
       const currentPosition = currentPositions.find(p => p.symbol === symbol);
-      if (!currentPosition || Math.abs(parseFloat(currentPosition.netQuantity || 0)) === 0) {
-        console.warn(`⚠️ [TP_CREATE] ${symbol}: Posição não encontrada ou já fechada`);
-        return;
+      if (!currentPosition || Math.abs(parseFloat(currentPosition.netQuantity)) === 0) {
+        Logger.warn(`⚠️ [TP_CREATE] ${symbol}: Posição não encontrada ou já fechada`);
+        return { success: false, message: `Posição não encontrada ou já fechada`};
       }
 
-      const currentNetQuantity = parseFloat(currentPosition.netQuantity || 0);
+      const currentNetQuantity = parseFloat(currentPosition.netQuantity);
       const currentIsLong = currentNetQuantity > 0;
-      const entryPrice = parseFloat(currentPosition.entryPrice || 0);
+      const entryPrice = parseFloat(currentPosition.entryPrice);
 
-      let enableHybridStopStrategy = config?.enableHybridStopStrategy || false;
       let takeProfitPrice = null;
-      let takeProfitQuantity = Math.abs(currentNetQuantity); // Será ajustado baseado na estratégia
+      let takeProfitQuantity;
 
       if (enableHybridStopStrategy) {
         // Modo Híbrido: Usa ATR para calcular TP parcial
@@ -4400,24 +4306,20 @@ class OrderController {
         const atrValue = await OrderController.getAtrValue(symbol);
 
         if (atrValue && atrValue > 0) {
-          const atrMultiplier = Number(config?.takeProfitPartialAtrMultiplier || 1.5);
+          const atrMultiplier = Number(config?.partialTakeProfitAtrMultiplier || 1.5);
           takeProfitPrice = OrderController.calculateAtrTakeProfitPrice(currentPosition, atrValue, atrMultiplier);
           takeProfitQuantity = (Math.abs(currentNetQuantity) * partialTakeProfitPercentage) / 100;
 
-          console.log(`📊 [TP_HYBRID] ${symbol}: TP Parcial ${partialTakeProfitPercentage}% - Preço: $${takeProfitPrice?.toFixed(4)}, Qty: ${takeProfitQuantity.toFixed(6)}`);
+          Logger.info(`📊 [TP_HYBRID] ${symbol}: TP Parcial ${partialTakeProfitPercentage}% - Preço: $${takeProfitPrice?.toFixed(4)}, Qty: ${takeProfitQuantity.toFixed(6)}`);
         } else {
-          console.log(`⚠️ [TP_HYBRID] ${symbol}: ATR não disponível ou inválido (${atrValue}), usando TP total`);
-          enableHybridStopStrategy = false; // Fallback para TP total
-          takeProfitQuantity = Math.abs(currentNetQuantity); // Quantidade total para fallback
+          Logger.info(`⚠️ [TP_HYBRID] ${symbol}: ATR não disponível ou inválido (${atrValue}), usando TP total`);
+          enableHybridStopStrategy = false;
+          takeProfitQuantity = Math.abs(currentNetQuantity);
         }
-      }
+      } else {
+        const minProfitPercentage = Number(config?.minProfitPercentage);
 
-      if (!enableHybridStopStrategy) {
-        // Modo Tradicional: TP total baseado em minProfitPercentage
-        const minProfitPercentage = Number(config?.minProfitPercentage || 10);
-
-        // 🔧 CORREÇÃO CRÍTICA: Obtém a alavancagem da conta para calcular o TP correto
-        let leverage = 1; // Default
+        let leverage = 1;
         try {
           const Account = await AccountController.get({
             apiKey: config.apiKey,
@@ -4426,18 +4328,17 @@ class OrderController {
           });
           if (Account && Account.leverage) {
             const rawLeverage = parseFloat(Account.leverage);
-            // Aplica validação de alavancagem por símbolo (50x para BTC/ETH/SOL, 10x para outros)
             leverage = validateLeverageForSymbol(symbol, rawLeverage);
-            console.log(`🔧 [TP_TRADITIONAL] ${symbol}: Alavancagem ${leverage}x (validada, original: ${rawLeverage}x)`);
+            Logger.info(`🔧 [TP_TRADITIONAL] ${symbol}: Alavancagem ${leverage}x (validada, original: ${rawLeverage}x)`);
           }
         } catch (error) {
-          console.warn(`⚠️ [TP_TRADITIONAL] ${symbol}: Erro ao obter alavancagem, usando 1x: ${error.message}`);
+          Logger.warn(`⚠️ [TP_TRADITIONAL] ${symbol}: Erro ao obter alavancagem, usando 1x: ${error.message}`);
         }
 
         // 🔧 CORREÇÃO CRÍTICA: Calcula o TP real considerando a alavancagem
         const actualProfitPct = minProfitPercentage / leverage;
 
-        console.log(`🔧 [TP_TRADITIONAL] ${symbol}: TP - Bruto: ${minProfitPercentage}%, Real: ${actualProfitPct.toFixed(2)}% (leverage ${leverage}x)`);
+        Logger.info(`🔧 [TP_TRADITIONAL] ${symbol}: TP - Bruto: ${minProfitPercentage}%, Real: ${actualProfitPct.toFixed(2)}% (leverage ${leverage}x)`);
 
         // Calcula o preço de TP considerando a alavancagem
         if (currentIsLong) {
@@ -4451,12 +4352,12 @@ class OrderController {
         // 🔧 CORREÇÃO: Garante que a quantidade seja total quando não é híbrido
         takeProfitQuantity = Math.abs(currentNetQuantity);
 
-        console.log(`📊 [TP_TRADITIONAL] ${symbol}: TP Total ${minProfitPercentage}% (efetivo ${actualProfitPct.toFixed(2)}%) - Preço: $${takeProfitPrice?.toFixed(4)}, Qty: ${takeProfitQuantity.toFixed(6)}`);
+        Logger.info(`📊 [TP_TRADITIONAL] ${symbol}: TP Total ${minProfitPercentage}% (efetivo ${actualProfitPct.toFixed(2)}%) - Preço: $${takeProfitPrice?.toFixed(4)}, Qty: ${takeProfitQuantity.toFixed(6)}`);
       }
 
       if (!takeProfitPrice || takeProfitPrice <= 0 || isNaN(takeProfitPrice)) {
-        console.error(`❌ [TP_CREATE] ${symbol}: Preço de TP inválido: ${takeProfitPrice} (entryPrice=${entryPrice}, isLong=${isLong})`);
-        return;
+        Logger.error(`❌ [TP_CREATE] ${symbol}: Preço de TP inválido: ${takeProfitPrice} (entryPrice=${entryPrice}, isLong=${config?.isLong})`);
+        return { success: false, message: `Preço de TP inválido: ${takeProfitPrice} (entryPrice=${entryPrice}, isLong=${config?.isLong})`};
       }
 
       // Função para formatar quantidade corretamente
@@ -4471,7 +4372,6 @@ class OrderController {
         return formatted.toString();
       };
 
-      // Verificar ordens abertas para evitar duplicidade de TPs (parciais ou totais)
       try {
         const OrderModule = await import('../Backpack/Authenticated/Order.js');
         const openOrders = await OrderModule.default.getOpenOrders(symbol, 'PERP', config.apiKey, config.apiSecret);
@@ -4479,28 +4379,27 @@ class OrderController {
           const closeSide = currentIsLong ? 'Ask' : 'Bid';
           const existingReduceOnly = openOrders.filter(o =>
             o.symbol === symbol &&
-            o.orderType === 'Limit' &&
             o.reduceOnly === true &&
             o.side === closeSide
           );
 
-          console.log(`🔍 [TP_CREATE] ${symbol}: Ordens reduceOnly encontradas: ${existingReduceOnly.length}`);
+          Logger.info(`🔍 [TP_CREATE] ${symbol}: Ordens reduceOnly encontradas: ${existingReduceOnly.length}`);
           existingReduceOnly.forEach((order, index) => {
-            console.log(`🔍 [TP_CREATE] ${symbol}: Ordem ${index + 1} - ID: ${order.id}, Side: ${order.side}, Qty: ${order.quantity}, Price: ${order.price}`);
+            Logger.info(`🔍 [TP_CREATE] ${symbol}: Ordem ${index + 1} - ID: ${order.id}, Side: ${order.side}, Qty: ${order.triggerQuantity}, Price: ${order.price}`);
           });
 
-          const existingQty = existingReduceOnly.reduce((sum, o) => sum + Math.abs(parseFloat(o.quantity || 0)), 0);
+          const existingQty = existingReduceOnly.reduce((sum, o) => sum + Math.abs(parseFloat(o.triggerQuantity)), 0);
 
           // Se já existe qualquer TP parcial aberto, não criar outro (evita duplicados)
           if (existingQty > 0) {
-            console.log(`🔍 [TP_CREATE] ${symbol}: Verificando TPs existentes - Qty existente: ${existingQty}, enableHybrid: ${enableHybridStopStrategy}`);
+            Logger.info(`🔍 [TP_CREATE] ${symbol}: Verificando TPs existentes - Qty existente: ${existingQty}, enableHybrid: ${enableHybridStopStrategy}`);
 
             if (enableHybridStopStrategy) {
               const partialPercentage = Number(config?.partialTakeProfitPercentage || 50);
               const desiredPartial = Math.abs(currentNetQuantity) * (partialPercentage / 100);
               const tolerance = desiredPartial * 0.95;
 
-              console.log(`🔍 [TP_CREATE] ${symbol}: TP Parcial - Posição: ${currentNetQuantity}, %: ${partialPercentage}%, Desejado: ${desiredPartial}, Tolerância: ${tolerance}`);
+              Logger.info(`🔍 [TP_CREATE] ${symbol}: TP Parcial - Posição: ${currentNetQuantity}, %: ${partialPercentage}%, Desejado: ${desiredPartial}, Tolerância: ${tolerance}`);
 
               // Verifica se as ordens existentes são realmente TPs parciais (não totais)
               const isPartialTP = existingReduceOnly.some(order => {
@@ -4508,84 +4407,81 @@ class OrderController {
                 const positionQty = Math.abs(currentNetQuantity);
                 const isPartial = orderQty < positionQty * 0.99; // 99% da posição = parcial
 
-                console.log(`🔍 [TP_CREATE] ${symbol}: Ordem ${order.id} - Qty: ${orderQty}, Posição: ${positionQty}, É parcial: ${isPartial}`);
+                Logger.info(`🔍 [TP_CREATE] ${symbol}: Ordem ${order.id} - Qty: ${orderQty}, Posição: ${positionQty}, É parcial: ${isPartial}`);
                 return isPartial;
               });
 
               if (existingQty >= tolerance && isPartialTP) {
-                console.log(`ℹ️ [TP_CREATE] ${symbol}: TP parcial já existe cobrindo ${existingQty} >= desejado ${desiredPartial}. Ignorando.`);
-                console.log(`✅ [TP_CREATE] ${symbol}: Saindo da função - TP parcial já existe.`);
-                return;
+                Logger.info(`ℹ️ [TP_CREATE] ${symbol}: TP parcial já existe cobrindo ${existingQty} >= desejado ${desiredPartial}. Ignorando.`);
+                Logger.info(`✅ [TP_CREATE] ${symbol}: Saindo da função - TP parcial já existe.`);
+                return { success: true, message: `TP parcial já existe cobrindo ${existingQty} >= desejado ${desiredPartial}. Ignorando.`};
               } else if (existingQty >= tolerance && !isPartialTP) {
-                console.log(`⚠️ [TP_CREATE] ${symbol}: TP total existe (${existingQty}) mas queremos parcial. Continuando criação.`);
+                Logger.info(`⚠️ [TP_CREATE] ${symbol}: TP total existe (${existingQty}) mas queremos parcial. Continuando criação.`);
               } else {
-                console.log(`ℹ️ [TP_CREATE] ${symbol}: TP existente insuficiente (${existingQty} < ${tolerance}). Continuando criação.`);
+                Logger.info(`ℹ️ [TP_CREATE] ${symbol}: TP existente insuficiente (${existingQty} < ${tolerance}). Continuando criação.`);
               }
             } else {
-              // 🔧 CORREÇÃO: Verifica se o TP existente é realmente total (não parcial)
               const isTotalTP = existingReduceOnly.some(order => {
-                const orderQty = Math.abs(parseFloat(order.quantity || 0));
+                const orderQty = Math.abs(parseFloat(order.quantity));
                 const positionQty = Math.abs(currentNetQuantity);
                 const isTotal = orderQty >= positionQty * 0.99; // 99% da posição = total
 
-                console.log(`🔍 [TP_CREATE] ${symbol}: Ordem ${order.id} - Qty: ${orderQty}, Posição: ${positionQty}, É total: ${isTotal}`);
+                Logger.info(`🔍 [TP_CREATE] ${symbol}: Ordem ${order.id} - Qty: ${orderQty}, Posição: ${positionQty}, É total: ${isTotal}`);
                 return isTotal;
               });
 
               if (isTotalTP) {
-                console.log(`ℹ️ [TP_CREATE] ${symbol}: Já existe TP total aberto (${existingQty}). Ignorando para evitar duplicidade.`);
-                console.log(`✅ [TP_CREATE] ${symbol}: Saindo da função - TP total já existe.`);
-                return;
+                Logger.info(`ℹ️ [TP_CREATE] ${symbol}: Já existe TP total aberto (${existingQty}). Ignorando para evitar duplicidade.`);
+                Logger.info(`✅ [TP_CREATE] ${symbol}: Saindo da função - TP total já existe.`);
+                return { success: true, message: `Já existe TP total aberto (${existingQty}). Ignorando para evitar duplicidade.`};
               } else {
-                console.log(`⚠️ [TP_CREATE] ${symbol}: TP existente é parcial (${existingQty}) mas queremos total. Continuando criação.`);
+                Logger.info(`⚠️ [TP_CREATE] ${symbol}: TP existente é parcial (${existingQty}) mas queremos total. Continuando criação.`);
               }
             }
           }
         }
       } catch (dupErr) {
-        console.warn(`⚠️ [TP_CREATE] ${symbol}: Falha ao verificar TPs existentes: ${dupErr.message}`);
+        Logger.warn(`⚠️ [TP_CREATE] ${symbol}: Falha ao verificar TPs existentes: ${dupErr.message}`);
       }
 
-      console.log(`📊 [TP_CREATE] ${symbol}: Posição atual: ${currentNetQuantity}, TP Qty: ${takeProfitQuantity}`);
+      Logger.info(`📊 [TP_CREATE] ${symbol}: Posição atual: ${currentNetQuantity}, TP Qty: ${takeProfitQuantity}`);
 
       // Verifica se a quantidade é válida
       if (takeProfitQuantity <= 0) {
-        console.error(`❌ [TP_CREATE] ${symbol}: Quantidade de TP inválida: ${takeProfitQuantity}`);
-        return;
+        Logger.error(`❌ [TP_CREATE] ${symbol}: Quantidade de TP inválida: ${takeProfitQuantity}`);
+        return { success: true, message: `Quantidade de TP inválida: ${takeProfitQuantity}`};
       }
 
       // Verifica se a quantidade não excede a posição atual
       const maxQuantity = Math.abs(currentNetQuantity);
       if (takeProfitQuantity > maxQuantity) {
-        console.error(`❌ [TP_CREATE] ${symbol}: Quantidade de TP (${takeProfitQuantity}) excede posição atual (${maxQuantity})`);
-        return;
+        Logger.error(`❌ [TP_CREATE] ${symbol}: Quantidade de TP (${takeProfitQuantity}) excede posição atual (${maxQuantity})`);
+        return { success: true, message: `Quantidade de TP (${takeProfitQuantity}) excede posição atual (${maxQuantity}`};
       }
 
       // Verifica se o preço é válido
       if (!takeProfitPrice || takeProfitPrice <= 0) {
-        console.error(`❌ [TP_CREATE] ${symbol}: Preço de TP inválido: ${takeProfitPrice}`);
-        return;
+        Logger.error(`❌ [TP_CREATE] ${symbol}: Preço de TP inválido: ${takeProfitPrice}`);
+        return { success: true, message: `Preço de TP inválido: ${takeProfitPrice}`};
       }
 
-      // Cria a ordem de Take Profit como ordem de Take Profit com gatilho (compatível com PRO_MAX)
       const formattedLimitPrice = OrderController.formatPriceSafely(takeProfitPrice, decimal_price, tickSize);
+
+      const quantity = formatQuantity(takeProfitQuantity);
+
       const takeProfitOrder = {
         symbol: symbol,
         side: currentIsLong ? 'Ask' : 'Bid',
-        orderType: 'Limit',
-        postOnly: true,
+        orderType: 'Market',
         reduceOnly: true,
-        quantity: formatQuantity(takeProfitQuantity),
-        price: formattedLimitPrice,
-        takeProfitTriggerBy: 'LastPrice',
-        takeProfitTriggerPrice: formattedLimitPrice,
-        takeProfitLimitPrice: formattedLimitPrice,
+        quantity: quantity,
+        triggerPrice: formattedLimitPrice,
+        triggerQuantity: quantity,
         timeInForce: 'GTC',
-        selfTradePrevention: 'RejectTaker',
         clientId: await OrderController.generateUniqueOrderId(config)
       };
 
-      console.log(`📊 [TP_CREATE] ${symbol}: Enviando ordem TP - Side: ${takeProfitOrder.side}, Qty: ${takeProfitOrder.quantity}, Price: ${takeProfitOrder.price}, Current Position: ${currentNetQuantity}`);
+      Logger.info(`📊 [TP_CREATE] ${symbol}: Enviando ordem TP - Side: ${takeProfitOrder.side}, Qty: ${takeProfitOrder.quantity}, Price: ${takeProfitOrder.price}, Current Position: ${currentNetQuantity}`);
 
       const OrderModule = await import('../Backpack/Authenticated/Order.js');
       const result = await OrderModule.default.executeOrder(
@@ -4595,7 +4491,7 @@ class OrderController {
       );
 
       if (result && result.id) {
-        console.log(`✅ [TP_CREATE] ${symbol}: Take Profit criado com sucesso - ID: ${result.id}`);
+        Logger.info(`✅ [TP_CREATE] ${symbol}: Take Profit criado com sucesso - ID: ${result.id}`);
 
         // Registra a ordem no sistema de persistência
         await BotOrdersManager.addOrder(
@@ -4609,15 +4505,15 @@ class OrderController {
           result.exchangeCreatedAt || null,
           takeProfitOrder.clientId // Passa o clientId gerado
         );
-        return { success: true, orderId: result.id };
+        return { success: true, message: 'Sucesso.' };
       } else {
-        console.error(`❌ [TP_CREATE] ${symbol}: Falha ao criar Take Profit - Result:`, result);
-        return { error: result?.error || 'Resposta inválida da API', result };
+        Logger.error(`❌ [TP_CREATE] ${symbol}: Falha ao criar Take Profit - Result:`, result);
+        return { success: false, message: `Falha ao criar Take Profit - Error: ${result?.error}`};
       }
 
     } catch (error) {
-      console.error(`❌ [TP_CREATE] Erro ao criar Take Profit para ${position.symbol}:`, error.message);
-      return { error: error.message };
+      Logger.error(`❌ [TP_CREATE] Erro ao criar Take Profit para ${position.symbol}:`, error.message);
+      return { success: false, message: `Falha ao criar Take Profit - Error: ${error.message}`};
     }
   }
 
@@ -4642,7 +4538,7 @@ class OrderController {
 
       const OrderModule = await import('../Backpack/Authenticated/Order.js');
       const orders = await OrderModule.default.getOpenOrders(symbol, "PERP", config.apiKey, config.apiSecret);
-      const netQuantity = parseFloat(position.netQuantity || 0);
+      const netQuantity = parseFloat(position.netQuantity);
       const isLong = netQuantity > 0;
 
       Logger.debug(`🔍 [TP_CHECK] ${symbol}: Verificando TP existente - Posição: ${netQuantity} (${isLong ? 'LONG' : 'SHORT'})`);
@@ -4651,19 +4547,23 @@ class OrderController {
       let hasTakeProfit = false;
 
       if (orders && orders.length > 0) {
-        const relevantOrders = orders.filter(order =>
-          order.symbol === symbol &&
-          order.orderType === 'Limit' &&
-          order.reduceOnly === true &&
-          (order.status === 'Pending' || order.status === 'New' || order.status === 'TriggerPending')
-        );
+        const relevantOrders = orders.filter(order => {
+          let isReducePrice;
+          if(isLong) {
+            isReducePrice = parseFloat(order.triggerPrice || order.price) > parseFloat(position.entryPrice);
+          } else {
+            isReducePrice = parseFloat(order.triggerPrice || order.price) < parseFloat(position.entryPrice);
+          }
+
+          return order.reduceOnly === true && isReducePrice;
+        });
 
         Logger.debug(`🔍 [TP_CHECK] ${symbol}: Ordens relevantes (Limit + reduceOnly + ativas): ${relevantOrders.length}`);
 
         for (const order of relevantOrders) {
           const orderSide = order.side;
           const expectedSide = isLong ? 'Ask' : 'Bid';
-          const orderQty = parseFloat(order.quantity || 0);
+          const orderQty = parseFloat(order.quantity);
           const positionQty = Math.abs(netQuantity);
 
           // Aceita qualquer ordem reduce-only no lado correto (seja TP parcial ou total)
@@ -4680,7 +4580,6 @@ class OrderController {
         }
       }
 
-      // Atualiza cache
       OrderController.takeProfitCheckCache.set(cacheKey, {
         lastCheck: now,
         hasTakeProfit: hasTakeProfit
@@ -4703,19 +4602,19 @@ class OrderController {
    */
   static calculateAtrTakeProfitPrice(position, atrValue, multiplier = 1.5) {
     try {
-      const entryPrice = parseFloat(position.entryPrice || 0);
-      const netQuantity = parseFloat(position.netQuantity || 0);
+      const entryPrice = parseFloat(position.entryPrice);
+      const netQuantity = parseFloat(position.netQuantity);
       const isLong = netQuantity > 0;
 
       if (!entryPrice || entryPrice <= 0 || !atrValue || atrValue <= 0 || isNaN(atrValue)) {
-        console.warn(`⚠️ [TP_ATR] Valores inválidos para cálculo: entryPrice=${entryPrice}, atrValue=${atrValue}`);
+        Logger.warn(`⚠️ [TP_ATR] Valores inválidos para cálculo: entryPrice=${entryPrice}, atrValue=${atrValue}`);
         return null;
       }
 
       const atrDistance = atrValue * multiplier;
 
       if (isNaN(atrDistance)) {
-        console.warn(`⚠️ [TP_ATR] ATR distance é NaN: atrValue=${atrValue}, multiplier=${multiplier}`);
+        Logger.warn(`⚠️ [TP_ATR] ATR distance é NaN: atrValue=${atrValue}, multiplier=${multiplier}`);
         return null;
       }
 
@@ -4724,13 +4623,13 @@ class OrderController {
         : entryPrice - atrDistance;
 
       if (isNaN(takeProfitPrice) || takeProfitPrice <= 0) {
-        console.warn(`⚠️ [TP_ATR] Preço de TP calculado é inválido: ${takeProfitPrice} (entryPrice=${entryPrice}, atrDistance=${atrDistance})`);
+        Logger.warn(`⚠️ [TP_ATR] Preço de TP calculado é inválido: ${takeProfitPrice} (entryPrice=${entryPrice}, atrDistance=${atrDistance})`);
         return null;
       }
 
       return takeProfitPrice;
     } catch (error) {
-      console.error(`❌ [TP_ATR] Erro ao calcular TP ATR:`, error.message);
+      Logger.error(`❌ [TP_ATR] Erro ao calcular TP ATR:`, error.message);
       return null;
     }
   }
@@ -4755,7 +4654,7 @@ class OrderController {
       const fills = await History.getFillHistory(symbol, null, null, null, 100, 0, null, "PERP", null, config.apiKey, config.apiSecret);
 
       if (!fills || fills.length === 0) {
-        console.log(`⚠️ [BOT_VALIDATION] ${symbol}: Nenhum fill encontrado`);
+        Logger.info(`⚠️ [BOT_VALIDATION] ${symbol}: Nenhum fill encontrado`);
         return false;
       }
 
@@ -4798,7 +4697,7 @@ class OrderController {
       const candles = await markets.getKLines(symbol, timeframe, 30);
 
       if (!candles || candles.length < 14) {
-        console.warn(`⚠️ [TP_ATR] ${symbol}: Candles insuficientes (${candles?.length || 0} < 14)`);
+        Logger.warn(`⚠️ [TP_ATR] ${symbol}: Candles insuficientes (${candles?.length || 0} < 14)`);
         return null;
       }
 
@@ -4808,14 +4707,14 @@ class OrderController {
       const atrValue = indicators.atr?.atr || indicators.atr?.value || null;
 
       if (!atrValue || atrValue <= 0 || isNaN(atrValue)) {
-        console.warn(`⚠️ [TP_ATR] ${symbol}: ATR inválido: ${atrValue}`);
+        Logger.warn(`⚠️ [TP_ATR] ${symbol}: ATR inválido: ${atrValue}`);
         return null;
       }
 
-      console.log(`📊 [TP_ATR] ${symbol}: ATR válido: ${atrValue}`);
+      Logger.info(`📊 [TP_ATR] ${symbol}: ATR válido: ${atrValue}`);
       return atrValue;
     } catch (error) {
-      console.error(`❌ [TP_ATR] Erro ao obter ATR para ${symbol}:`, error.message);
+      Logger.error(`❌ [TP_ATR] Erro ao obter ATR para ${symbol}:`, error.message);
       return null;
     }
   }
@@ -4835,11 +4734,11 @@ class OrderController {
       // 1. Busca ordens abertas na exchange via API
       const { default: Order } = await import('../Backpack/Authenticated/Order.js');
       const orderInstance = new Order();
-      
+
       // Busca ordens regulares e condicionais
       const regularOrders = await orderInstance.getOpenOrders(symbol, "PERP", config.apiKey, config.apiSecret);
       const triggerOrders = await orderInstance.getOpenTriggerOrders(symbol, "PERP", config.apiKey, config.apiSecret);
-      
+
       // Unifica todas as ordens da exchange
       const allExchangeOrders = [
         ...(regularOrders || []),
@@ -4872,7 +4771,7 @@ class OrderController {
 
       // 4. Verifica se excede o limite
       const limitExceeded = totalOpenAndPendingOrders >= maxOrdersPerSymbol;
-      
+
       if (limitExceeded) {
         Logger.warn(`⚠️ [ORDER_LIMIT_CHECK] ${symbol}: Limite atingido! ${totalOpenAndPendingOrders}/${maxOrdersPerSymbol} ordens`);
       }

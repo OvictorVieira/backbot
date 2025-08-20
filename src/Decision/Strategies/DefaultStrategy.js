@@ -14,7 +14,7 @@ export class DefaultStrategy extends BaseStrategy {
    * @param {string} btcTrend - Tendência do BTC (BULLISH/BEARISH/NEUTRAL)
    * @returns {object|null} - Objeto com decisão de trading ou null se não houver sinal
    */
-  
+
   /**
    * NOVO: Método de auditoria que executa todas as validações e retorna pacote completo
    * @param {number} fee - Taxa da exchange
@@ -31,7 +31,7 @@ export class DefaultStrategy extends BaseStrategy {
       timestamp: new Date().toISOString(),
       symbol: data.market.symbol
     };
-    
+
     const inputData = {
       currentPrice: data.marketPrice,
       indicators: {
@@ -43,10 +43,10 @@ export class DefaultStrategy extends BaseStrategy {
         stoch: data.stoch
       }
     };
-    
+
     const validationTrace = [];
     let finalDecision = { decision: 'REJECTED', rejectionLayer: null };
-    
+
     // 1. VALIDAÇÃO INICIAL DOS DADOS
     const dataValidation = this.validateData(data);
     validationTrace.push({
@@ -54,27 +54,27 @@ export class DefaultStrategy extends BaseStrategy {
       status: dataValidation ? 'PASS' : 'FAIL',
       evaluation: dataValidation ? 'Dados válidos' : 'Dados inválidos ou incompletos'
     });
-    
+
     if (!dataValidation) {
       finalDecision.rejectionLayer = 'Validação Inicial dos Dados';
       return this.buildAuditPackage(auditInfo, finalDecision, inputData, validationTrace);
     }
-    
+
     // 2. ANÁLISE DE SINAIS
     const signals = this.analyzeSignals(data);
     validationTrace.push({
       layer: '2. Análise de Sinais',
       status: signals.hasSignal ? 'PASS' : 'FAIL',
-      evaluation: signals.hasSignal ? 
-        `Sinal ${signals.signalType} detectado (${signals.isLong ? 'LONG' : 'SHORT'})` : 
+      evaluation: signals.hasSignal ?
+        `Sinal ${signals.signalType} detectado (${signals.isLong ? 'LONG' : 'SHORT'})` :
         'Nenhum sinal de entrada detectado'
     });
-    
+
     if (!signals.hasSignal) {
       finalDecision.rejectionLayer = 'Análise de Sinais';
       return this.buildAuditPackage(auditInfo, finalDecision, inputData, validationTrace);
     }
-    
+
     // 3. FILTRO DE CONFIRMAÇÃO MONEY FLOW
     const moneyFlowValidation = this.validateMoneyFlowConfirmation(data, signals.isLong, data.market.symbol === 'BTC_USDC_PERP');
     validationTrace.push({
@@ -82,12 +82,12 @@ export class DefaultStrategy extends BaseStrategy {
       status: moneyFlowValidation.isValid ? 'PASS' : 'FAIL',
       evaluation: moneyFlowValidation.details
     });
-    
+
     if (!moneyFlowValidation.isValid) {
       finalDecision.rejectionLayer = 'Money Flow Filter';
       return this.buildAuditPackage(auditInfo, finalDecision, inputData, validationTrace);
     }
-    
+
     // 4. FILTRO DE TENDÊNCIA VWAP
     const vwapValidation = this.validateVWAPTrend(data, signals.isLong, data.market.symbol === 'BTC_USDC_PERP');
     validationTrace.push({
@@ -95,16 +95,16 @@ export class DefaultStrategy extends BaseStrategy {
       status: vwapValidation.isValid ? 'PASS' : 'FAIL',
       evaluation: vwapValidation.details
     });
-    
+
     if (!vwapValidation.isValid) {
       finalDecision.rejectionLayer = 'VWAP Filter';
       return this.buildAuditPackage(auditInfo, finalDecision, inputData, validationTrace);
     }
-    
+
     // 5. FILTRO DE TENDÊNCIA DO BTC
     if (data.market.symbol !== 'BTC_USDC_PERP') {
       let btcValidation = { isValid: true, details: 'BTC não é o ativo analisado' };
-      
+
       if (btcTrend === 'NEUTRAL') {
         btcValidation = { isValid: false, details: 'BTC em tendência NEUTRAL (não permite operações em altcoins)' };
       } else if (signals.isLong && btcTrend === 'BEARISH') {
@@ -114,13 +114,13 @@ export class DefaultStrategy extends BaseStrategy {
       } else {
         btcValidation = { isValid: true, details: `BTC em tendência ${btcTrend} (favorável para ${signals.isLong ? 'LONG' : 'SHORT'})` };
       }
-      
+
       validationTrace.push({
         layer: '5. BTC Trend Filter',
         status: btcValidation.isValid ? 'PASS' : 'FAIL',
         evaluation: btcValidation.details
       });
-      
+
       if (!btcValidation.isValid) {
         finalDecision.rejectionLayer = 'BTC Trend Filter';
         return this.buildAuditPackage(auditInfo, finalDecision, inputData, validationTrace);
@@ -132,15 +132,15 @@ export class DefaultStrategy extends BaseStrategy {
         evaluation: 'BTC é o ativo analisado (não aplicável)'
       });
     }
-    
+
     // 6. CÁLCULO DE STOP E TARGET
     const action = signals.isLong ? 'long' : 'short';
     const price = parseFloat(data.marketPrice);
-    
+
       // Carrega configurações do bot
       const stopLossPct = Number(config?.maxNegativePnlStopPct || -10);
       const takeProfitPct = Number(config?.minProfitPercentage || 0.5);
-      
+
       // Valida se as configurações do bot existem
       if (!config?.maxNegativePnlStopPct) {
         console.error('❌ [DEFAULT_STRATEGY] maxNegativePnlStopPct não definida na config do bot');
@@ -150,48 +150,48 @@ export class DefaultStrategy extends BaseStrategy {
         console.error('❌ [DEFAULT_STRATEGY] minProfitPercentage não definida na config do bot');
         return null;
       }
-    
-    const stopTarget = await this.calculateStopAndTarget(data, price, signals.isLong, stopLossPct, takeProfitPct);
-    
+
+    const stopTarget = await this.calculateStopAndTarget(data, price, signals.isLong, stopLossPct, takeProfitPct, config);
+
     validationTrace.push({
       layer: '6. Cálculo de Stop e Target',
       status: stopTarget ? 'PASS' : 'FAIL',
-      evaluation: stopTarget ? 
-        `Stop: $${stopTarget.stop.toFixed(6)}, Target: $${stopTarget.target.toFixed(6)}` : 
+      evaluation: stopTarget ?
+        `Stop: $${stopTarget.stop.toFixed(6)}, Target: $${stopTarget.target.toFixed(6)}` :
         'Falha no cálculo de stop/target'
     });
-    
+
     if (!stopTarget) {
       finalDecision.rejectionLayer = 'Cálculo de Stop e Target';
       return this.buildAuditPackage(auditInfo, finalDecision, inputData, validationTrace);
     }
-    
+
     // 7. CÁLCULO DE PNL E RISCO
     const { pnl, risk } = this.calculatePnLAndRisk(action, price, stopTarget.stop, stopTarget.target, investmentUSD, fee);
-    
+
     validationTrace.push({
       layer: '7. Cálculo de PnL e Risco',
       status: 'PASS',
       evaluation: `PnL esperado: $${pnl.toFixed(2)}, Risco: $${risk.toFixed(2)}`
     });
-    
+
     // 8. VALIDAÇÃO FINAL
     validationTrace.push({
       layer: '8. Validação Final',
       status: 'PASS',
       evaluation: 'Todas as validações passaram - SINAL APROVADO'
     });
-    
+
     // Se chegou até aqui, todas as validações passaram
-    finalDecision = { 
-      decision: 'APPROVED', 
-      rejectionLayer: null 
+    finalDecision = {
+      decision: 'APPROVED',
+      rejectionLayer: null
     };
-    
+
     // Retorna o pacote de auditoria com a decisão aprovada
     return this.buildAuditPackage(auditInfo, finalDecision, inputData, validationTrace);
   }
-  
+
   /**
    * Constrói o pacote de auditoria
    */
@@ -212,35 +212,35 @@ export class DefaultStrategy extends BaseStrategy {
 
       // NOVO: Modo de Auditoria - executa todas as validações mesmo se falhar
       const isAuditing = config && config.isAuditing === true;
-      
+
       if (isAuditing) {
         return this.analyzeTradeWithAudit(fee, data, investmentUSD, media_rsi, config, btcTrend);
       }
 
       // COMPORTAMENTO NORMAL (alta performance) - retorna null no primeiro filtro que falhar
       const signals = this.analyzeSignals(data);
-      
+
       if (!signals.hasSignal) {
         return null;
       }
 
       // FILTRO DE CONFIRMAÇÃO MONEY FLOW
       const moneyFlowValidation = this.validateMoneyFlowConfirmation(data, signals.isLong, data.market.symbol === 'BTC_USDC_PERP');
-      
+
       if (!moneyFlowValidation.isValid) {
-        Logger.debug(`❌ ${data.market.symbol}: Sinal ${signals.signalType} rejeitado - ${moneyFlowValidation.reason}`);
-        Logger.debug(`   💰 Money Flow: ${moneyFlowValidation.details}`);
+        Logger.info(`❌ ${data.market.symbol}: Sinal ${signals.signalType} rejeitado - ${moneyFlowValidation.reason}`);
+        Logger.info(`   💰 Money Flow: ${moneyFlowValidation.details}`);
         return null;
       }
 
-              Logger.debug(`✅ ${data.market.symbol}: Money Flow confirma ${signals.isLong ? 'LONG' : 'SHORT'} - ${moneyFlowValidation.details}`);
+      Logger.info(`✅ ${data.market.symbol}: Money Flow confirma ${signals.isLong ? 'LONG' : 'SHORT'} - ${moneyFlowValidation.details}`);
 
       // FILTRO DE TENDÊNCIA VWAP (sentimento intradiário)
       const vwapValidation = this.validateVWAPTrend(data, signals.isLong, data.market.symbol === 'BTC_USDC_PERP');
-      
+
       if (!vwapValidation.isValid) {
-        Logger.debug(`❌ ${data.market.symbol}: Sinal ${signals.signalType} rejeitado - ${vwapValidation.reason}`);
-        Logger.debug(`   📊 VWAP: ${vwapValidation.details}`);
+        Logger.info(`❌ ${data.market.symbol}: Sinal ${signals.signalType} rejeitado - ${vwapValidation.reason}`);
+        Logger.info(`   📊 VWAP: ${vwapValidation.details}`);
         return null;
       }
 
@@ -255,12 +255,12 @@ export class DefaultStrategy extends BaseStrategy {
 
         // Validação restritiva: só permite operações alinhadas com a tendência do BTC
         if (signals.isLong && btcTrend === 'BEARISH') {
-          Logger.debug(`❌ ${data.market.symbol}: Sinal ${signals.signalType} rejeitado - BTC em tendência BEARISH (não permite LONG em altcoins)`);
+          Logger.info(`❌ ${data.market.symbol}: Sinal ${signals.signalType} rejeitado - BTC em tendência BEARISH (não permite LONG em altcoins)`);
           return null; // BTC em baixa - não entrar LONG em altcoins
         }
 
         if (!signals.isLong && btcTrend === 'BULLISH') {
-          Logger.debug(`❌ ${data.market.symbol}: Sinal ${signals.signalType} rejeitado - BTC em tendência BULLISH (não permite SHORT em altcoins)`);
+          Logger.info(`❌ ${data.market.symbol}: Sinal ${signals.signalType} rejeitado - BTC em tendência BULLISH (não permite SHORT em altcoins)`);
           return null; // BTC em alta - não entrar SHORT em altcoins
         }
       }
@@ -271,7 +271,7 @@ export class DefaultStrategy extends BaseStrategy {
       // Carrega configurações do bot
       const stopLossPct = Number(config?.maxNegativePnlStopPct || -10);
       const takeProfitPct = Number(config?.minProfitPercentage || 0.5);
-      
+
       // Valida se as configurações do bot existem
       if (!config?.maxNegativePnlStopPct) {
         console.error('❌ [DEFAULT_STRATEGY] maxNegativePnlStopPct não definida na config do bot');
@@ -283,14 +283,14 @@ export class DefaultStrategy extends BaseStrategy {
       }
 
       // Cálculo de stop e target usando configurações do .env
-      const stopTarget = await this.calculateStopAndTarget(data, price, signals.isLong, stopLossPct, takeProfitPct);
+      const stopTarget = await this.calculateStopAndTarget(data, price, signals.isLong, stopLossPct, takeProfitPct, config);
       if (!stopTarget) {
         return null;
       }
 
       const { stop, target } = stopTarget;
       const entry = price;
-      
+
       // Log detalhado dos valores calculados
       Logger.info(`\n📊 [DEFAULT] ${data.market.symbol}: Entry: ${entry.toFixed(6)}, Stop: ${stop.toFixed(6)} (${((Math.abs(entry - stop) / entry) * 100).toFixed(2)}%), Target: ${target.toFixed(6)} (${((Math.abs(target - entry) / entry) * 100).toFixed(2)}%)`);
 
@@ -310,7 +310,7 @@ export class DefaultStrategy extends BaseStrategy {
       } else {
         btcTrendMsg = `BTC: ${btcTrend}`;
       }
-      
+
       Logger.info(`✅ ${data.market.symbol}: ${action.toUpperCase()} - Tendência: ${btcTrendMsg} - Sinal: ${signals.signalType} - Money Flow: ${moneyFlowValidation.reason} - VWAP: ${vwapValidation.reason}`);
 
       // Retorna decisão de trading (a execução será feita pelo Decision.js)
@@ -370,7 +370,7 @@ export class DefaultStrategy extends BaseStrategy {
       if (!hasStoch) missingIndicators.push('StochK/StochD');
       if (!hasMacd) missingIndicators.push('MACD');
       if (!hasAdx) missingIndicators.push('ADX/D+/D-');
-      
+
       if (missingIndicators.length > 0) {
         Logger.debug(`   ℹ️ BTC: Indicadores opcionais faltando: ${missingIndicators.join(', ')} - continuando análise`);
       }
@@ -383,16 +383,16 @@ export class DefaultStrategy extends BaseStrategy {
 
     // 1. ANÁLISE DE MOMENTUM (WaveTrend) - NOVA ESTRUTURA
     const momentum = data.momentum;
-    
+
     if (momentum && momentum.current && momentum.current.wt1 !== null && momentum.current.wt2 !== null) {
       const currentMomentum = momentum.current;
       const previousMomentum = momentum.previous;
-      
+
       // Log detalhado do Momentum para debug
       if (isBTCAnalysis) {
         console.log(`      • Momentum Debug: WT1=${(currentMomentum.wt1 || 0).toFixed(3)}, WT2=${(currentMomentum.wt2 || 0).toFixed(3)}, Cross=${currentMomentum.cross || 'NONE'}, Direction=${currentMomentum.direction}, Bullish=${currentMomentum.isBullish}, Bearish=${currentMomentum.isBearish}`);
       }
-      
+
       // SINAL DE LONG (Compra) - NOVA LÓGICA WAVETREND
       // Condição A (Cruzamento BULLISH): momentum.current.cross === 'BULLISH'
       // Condição B (Direção UP): momentum.current.direction === 'UP'
@@ -407,7 +407,7 @@ export class DefaultStrategy extends BaseStrategy {
       } else if (currentMomentum.direction === 'UP') {
         analysisDetails.push(`Momentum: Direção UP (WT1=${(currentMomentum.wt1 || 0).toFixed(3)}, WT2=${(currentMomentum.wt2 || 0).toFixed(3)}) (tendência de alta, mas sem confirmação bullish)`);
       }
-      
+
       // SINAL DE SHORT (Venda) - NOVA LÓGICA WAVETREND
       // Condição A (Cruzamento BEARISH): momentum.current.cross === 'BEARISH'
       // Condição B (Direção DOWN): momentum.current.direction === 'DOWN'
@@ -422,7 +422,7 @@ export class DefaultStrategy extends BaseStrategy {
       } else if (currentMomentum.direction === 'DOWN') {
         analysisDetails.push(`Momentum: Direção DOWN (WT1=${(currentMomentum.wt1 || 0).toFixed(3)}, WT2=${(currentMomentum.wt2 || 0).toFixed(3)}) (tendência de baixa, mas sem confirmação bearish)`);
       }
-      
+
       // CASO NEUTRO
       else {
         analysisDetails.push(`Momentum: WT1=${(currentMomentum.wt1 || 0).toFixed(3)}, WT2=${(currentMomentum.wt2 || 0).toFixed(3)} (neutro)`);
@@ -437,12 +437,12 @@ export class DefaultStrategy extends BaseStrategy {
       const stochD = stoch.d;
       const stochKPrev = stoch.kPrev;
       const stochDPrev = stoch.dPrev;
-      
+
       // Slow Stochastic Sobrevendido para LONG (D cruzando acima do K estando sobrevendido)
       if (stochK <= 20 && stochD <= 20) {
         // Verifica se D está cruzando acima do K (reversão de sobrevendido)
-        if (stochDPrev !== null && stochDPrev !== undefined && 
-            stochKPrev !== null && stochKPrev !== undefined && 
+        if (stochDPrev !== null && stochDPrev !== undefined &&
+            stochKPrev !== null && stochKPrev !== undefined &&
             stochDPrev <= stochKPrev && stochD > stochK) {
           isLong = true;
           signalType = 'Stochastic Sobrevendido + Cruzamento D>K';
@@ -450,12 +450,12 @@ export class DefaultStrategy extends BaseStrategy {
         } else {
           analysisDetails.push(`Stoch: K=${(stochK || 0).toFixed(1)}, D=${(stochD || 0).toFixed(1)} (sobrevendido, mas sem cruzamento)`);
         }
-      } 
+      }
       // Slow Stochastic Sobrecomprado para SHORT (K cruzando acima do D estando sobrevendido)
       else if (stochK >= 80 && stochD >= 80) {
         // Verifica se K está cruzando acima do D (reversão de sobrecomprado)
-        if (stochDPrev !== null && stochDPrev !== undefined && 
-            stochKPrev !== null && stochKPrev !== undefined && 
+        if (stochDPrev !== null && stochDPrev !== undefined &&
+            stochKPrev !== null && stochKPrev !== undefined &&
             stochKPrev <= stochDPrev && stochK > stochD) {
           isShort = true;
           signalType = 'Stochastic Sobrecomprado + Cruzamento K>D';
@@ -487,16 +487,16 @@ export class DefaultStrategy extends BaseStrategy {
       // NOVA LÓGICA: MACD como indicador de momentum e tendência (NÃO sobrecompra/sobrevenda)
       if (macdSignal !== null && macdSignal !== undefined) {
         // MACD BULLISH: Histograma positivo (momentum de alta) + cruzamento de baixo para cima
-        if (macdHistogram > 0 && macdValue > macdSignal && 
-            macdHistogramPrev !== null && macdHistogramPrev !== undefined && 
+        if (macdHistogram > 0 && macdValue > macdSignal &&
+            macdHistogramPrev !== null && macdHistogramPrev !== undefined &&
             macdHistogramPrev < macdHistogram) {
           isLong = true;
           signalType = 'MACD Bullish + Cruzamento';
           analysisDetails.push(`MACD: Hist=${(macdHistogram || 0).toFixed(3)} > HistPrev=${(macdHistogramPrev || 0).toFixed(3)} (bullish + momentum crescente)`);
         }
         // MACD BEARISH: Histograma negativo (momentum de baixa) + cruzamento de cima para baixo
-        else if (macdHistogram < 0 && macdValue < macdSignal && 
-                 macdHistogramPrev !== null && macdHistogramPrev !== undefined && 
+        else if (macdHistogram < 0 && macdValue < macdSignal &&
+                 macdHistogramPrev !== null && macdHistogramPrev !== undefined &&
                  macdHistogramPrev > macdHistogram) {
           isShort = true;
           signalType = 'MACD Bearish + Cruzamento';
@@ -518,16 +518,16 @@ export class DefaultStrategy extends BaseStrategy {
         }
       } else {
         // Usa apenas o histograma sem signal (com cruzamento)
-        if (macdHistogram > 0.3 && 
-            macdHistogramPrev !== null && macdHistogramPrev !== undefined && 
+        if (macdHistogram > 0.3 &&
+            macdHistogramPrev !== null && macdHistogramPrev !== undefined &&
             macdHistogramPrev < macdHistogram) {
           isLong = true;
           signalType = 'MACD Bullish + Cruzamento';
           analysisDetails.push(`MACD: Hist=${(macdHistogram || 0).toFixed(3)} > HistPrev=${(macdHistogramPrev || 0).toFixed(3)} (bullish + momentum crescente - sem signal)`);
         }
         // MACD BEARISH (histograma negativo) - sem cruzamento
-        else if (macdHistogram < -0.3 && 
-                 macdHistogramPrev !== null && macdHistogramPrev !== undefined && 
+        else if (macdHistogram < -0.3 &&
+                 macdHistogramPrev !== null && macdHistogramPrev !== undefined &&
                  macdHistogramPrev > macdHistogram) {
           isShort = true;
           signalType = 'MACD Bearish + Cruzamento';
@@ -625,7 +625,7 @@ export class DefaultStrategy extends BaseStrategy {
   validateVWAPTrend(data, isLong, isBTCAnalysis = false) {
     const vwap = data.vwap;
     const currentPrice = parseFloat(data.marketPrice);
-    
+
     // Verifica se o VWAP está disponível
     if (!vwap || vwap.vwap === null || vwap.vwap === undefined) {
       if (isBTCAnalysis) {
@@ -698,7 +698,7 @@ export class DefaultStrategy extends BaseStrategy {
    */
   validateMoneyFlowConfirmation(data, isLong, isBTCAnalysis = false) {
     const moneyFlow = data.moneyFlow;
-    
+
     // Verifica se o Money Flow está disponível
     if (!moneyFlow || moneyFlow.mfi === null || moneyFlow.mfi === undefined) {
       if (isBTCAnalysis) {
@@ -791,10 +791,10 @@ export class DefaultStrategy extends BaseStrategy {
 
       // Calcula indicadores do BTC
               const btcIndicators = await calculateIndicators(btcCandles, config?.time || '5m', 'BTC_USDC_PERP');
-      
+
       // Análise de tendência do BTC usando a mesma lógica da estratégia
       const btcSignals = this.analyzeSignals(btcIndicators, true);
-      
+
       // Determina tendência do BTC
       let btcTrend = 'NEUTRAL';
       if (btcSignals.isLong) {
@@ -805,18 +805,18 @@ export class DefaultStrategy extends BaseStrategy {
 
       // Validação mais restritiva: só permite operações alinhadas com a tendência do BTC
       if (isLong && btcTrend === 'BEARISH') {
-        return { 
-          isValid: false, 
-          btcTrend, 
-          reason: 'BTC em tendência de baixa - não entrar LONG em altcoins' 
+        return {
+          isValid: false,
+          btcTrend,
+          reason: 'BTC em tendência de baixa - não entrar LONG em altcoins'
         };
       }
 
       if (!isLong && btcTrend === 'BULLISH') {
-        return { 
-          isValid: false, 
-          btcTrend, 
-          reason: 'BTC em tendência de alta - não entrar SHORT em altcoins' 
+        return {
+          isValid: false,
+          btcTrend,
+          reason: 'BTC em tendência de alta - não entrar SHORT em altcoins'
         };
       }
 
@@ -824,18 +824,18 @@ export class DefaultStrategy extends BaseStrategy {
       // Se BTC está bullish, só permite LONG
       // Se BTC está bearish, só permite SHORT
       if (btcTrend === 'BULLISH' && !isLong) {
-        return { 
-          isValid: false, 
-          btcTrend, 
-          reason: 'BTC em tendência de alta - só permitir LONG em altcoins' 
+        return {
+          isValid: false,
+          btcTrend,
+          reason: 'BTC em tendência de alta - só permitir LONG em altcoins'
         };
       }
 
       if (btcTrend === 'BEARISH' && isLong) {
-        return { 
-          isValid: false, 
-          btcTrend, 
-          reason: 'BTC em tendência de baixa - só permitir SHORT em altcoins' 
+        return {
+          isValid: false,
+          btcTrend,
+          reason: 'BTC em tendência de baixa - só permitir SHORT em altcoins'
         };
       }
 
@@ -847,4 +847,4 @@ export class DefaultStrategy extends BaseStrategy {
       return { isValid: true, btcTrend: 'ERROR', reason: 'Erro na análise do BTC' };
     }
   }
-} 
+}

@@ -129,8 +129,8 @@ class AccountConfig {
       enableHybridStopStrategy: config.enableHybridStopStrategy === true,
       trailingStopDistance: Number(config.trailingStopDistance) || 2.0,
       initialStopAtrMultiplier: Number(config.initialStopAtrMultiplier) || 2.0,
-      takeProfitPartialAtrMultiplier: Number(config.takeProfitPartialAtrMultiplier) || 1.5,
-      partialProfitPercentage: Number(config.partialProfitPercentage) || 50,
+      takeProfitPartialAtrMultiplier: Number(config.partialTakeProfitAtrMultiplier) || 1.5,
+      partialProfitPercentage: Number(config.partialTakeProfitPercentage) || 50,
       maxNegativePnlStopPct: Number(config.maxNegativePnlStopPct) || -10,
       minProfitPercentage: Number(config.minProfitPercentage) || 0.5,
       
