@@ -14,7 +14,6 @@ class TrailingStop {
 
   constructor(strategyType = null, config = null, ordersService = null) {
     const finalStrategyType = strategyType || 'DEFAULT';
-    Logger.debug(`🔧 [TRAILING_INIT] Inicializando TrailingStop com estratégia: ${finalStrategyType}`);
     this.strategyType = finalStrategyType;
     this.config = config; // Armazena a configuração do bot
     this.ordersService = ordersService; // Injeção de dependência para gerenciar ordens
@@ -30,7 +29,6 @@ class TrailingStop {
   async initializeStopLoss() {
     if (!this.stopLossStrategy) {
       this.stopLossStrategy = await StopLossFactory.createStopLoss(this.strategyType, this.config);
-      Logger.debug(`🔧 [TRAILING_INIT] Stop loss strategy criada: ${this.stopLossStrategy.constructor.name}`);
     }
     return this.stopLossStrategy;
   }
@@ -231,16 +229,16 @@ class TrailingStop {
           if(trailingStopIsBetterThanSL) {
             // 2. Compara o preço do stop ATUAL (em memória) com o preço do estado SALVO
             //    Só atualiza se o trailing stop melhorou E o preço mudou significativamente
-            const priceChangedSignificantly = foundState ? 
+            const priceChangedSignificantly = foundState ?
               Math.abs(state.trailingStopPrice - foundState.trailingStopPrice) > 0.0001 : true;
-            
+
             if (foundState && trailingStopIsBetterThanSL && priceChangedSignificantly) {
               Logger.info(`🔄 Trailing stop price for ${symbol} has changed from ${foundState.trailingStopPrice} to ${state.trailingStopPrice}. Replacing order.`);
             } else if (foundState && trailingStopIsBetterThanSL && !priceChangedSignificantly) {
               Logger.debug(`⏭️ [TRAILING_SKIP] ${symbol}: Trailing stop melhorou mas mudança insignificante (${Math.abs(state.trailingStopPrice - foundState.trailingStopPrice).toFixed(8)}), mantendo ordem atual`);
               return; // Não atualiza ordem nem estado
             }
-            
+
             if (foundState && trailingStopIsBetterThanSL && priceChangedSignificantly) {
 
               const apiKey = config.apiKey;
@@ -369,7 +367,10 @@ class TrailingStop {
       const apiSecret = config.apiSecret;
 
       const positions = await Futures.getOpenPositions(apiKey, apiSecret);
-      const openSymbols = positions ? positions.map(p => p.symbol) : [];
+      
+      // 🔧 CORREÇÃO: Filtra apenas posições realmente abertas (netQuantity > 0)
+      const activePositions = positions ? positions.filter(p => Math.abs(parseFloat(p.netQuantity || 0)) > 0) : [];
+      const openSymbols = activePositions.map(p => p.symbol);
 
       let cleanedStates = 0;
       const statesToRemove = [];
@@ -1033,12 +1034,12 @@ class TrailingStop {
         Logger.debug(`🔍 [HYBRID_DEBUG] FASE 2: Entrando em INITIAL_RISK`);
         const enableHybridStrategy = this.config?.enableHybridStopStrategy || false;
 
-        Logger.debug(`🔍 [HYBRID_DEBUG] FASE 2: enableHybridStrategy = ${enableHybridStrategy}`);
+        Logger.debug(`🔍 [HYBRID_DEBUG] FASE 2: ${position.symbol} - enableHybridStrategy = ${enableHybridStrategy}`);
         if (enableHybridStrategy) {
-          Logger.debug(`🔍 [HYBRID_DEBUG] FASE 2: Verificando ordem de take profit parcial`);
+          Logger.debug(`🔍 [HYBRID_DEBUG] FASE 2: ${position.symbol} - Verificando ordem de take profit parcial`);
           // Verifica se a ordem LIMIT de take profit parcial existe
-          const hasPartialOrder = await OrderController.hasPartialTakeProfitOrder(position.symbol, position, account, this.config);
-          Logger.debug(`🔍 [HYBRID_DEBUG] FASE 2: hasPartialOrder = ${hasPartialOrder}`);
+          const hasPartialOrder = await OrderController.hasPartialTakeProfitOrder(position, this.config);
+          Logger.debug(`🔍 [HYBRID_DEBUG] FASE 2: ${position.symbol} - hasPartialOrder = ${hasPartialOrder}`);
 
           if (!hasPartialOrder) {
             Logger.info(`⚠️ [TP_LIMIT_MONITOR] ${position.symbol}: Ordem de TP parcial não encontrada, criando automaticamente...`);
@@ -1759,7 +1760,18 @@ class TrailingStop {
         return;
       }
 
-      TrailingStop.debug(`🔍 [TRAILING_MONITOR] Verificando ${positions.length} posições abertas...`);
+      // 🔧 CORREÇÃO: Filtra apenas posições realmente abertas (netQuantity > 0)
+      const activePositions = positions.filter(position => {
+        const netQuantity = parseFloat(position.netQuantity || 0);
+        return Math.abs(netQuantity) > 0;
+      });
+
+      if (activePositions.length === 0) {
+        TrailingStop.debug(`🔍 [TRAILING_MONITOR] Todas as ${positions.length} posições estão fechadas (netQuantity = 0) - nada para monitorar`);
+        return;
+      }
+
+      TrailingStop.debug(`🔍 [TRAILING_MONITOR] Verificando ${activePositions.length} posições ativas abertas (${positions.length - activePositions.length} posições fechadas filtradas)...`);
 
       const Account = await AccountController.get({
         apiKey,
@@ -1767,7 +1779,7 @@ class TrailingStop {
         strategy: this.strategyType
       });
 
-      for (const position of positions) {
+      for (const position of activePositions) {
         const stopLossStrategy = await this.initializeStopLoss();
         const stopLossDecision = stopLossStrategy.shouldClosePosition(position, Account, null, this.config);
 
@@ -1995,16 +2007,6 @@ class TrailingStop {
    */
   static logTrailingStopConfig(config = null) {
     const configStatus = TrailingStop.getTrailingStopConfig(config);
-
-    if (configStatus.isValid) {
-      TrailingStop.colorLogger.trailingConfig(`Trailing Stop configurado corretamente:`);
-      TrailingStop.colorLogger.trailingConfig(`   - Habilitado: ${configStatus.enabled}`);
-      TrailingStop.colorLogger.trailingConfig(`   - Distância: ${configStatus.distance}%`);
-    } else {
-      TrailingStop.colorLogger.trailingConfig(`Trailing Stop não configurado ou inválido:`);
-      TrailingStop.colorLogger.trailingConfig(`   - ENABLE_TRAILING_STOP: ${configStatus.config.ENABLE_TRAILING_STOP}`);
-      TrailingStop.colorLogger.trailingConfig(`   - TRAILING_STOP_DISTANCE: ${configStatus.config.TRAILING_STOP_DISTANCE}`);
-    }
   }
 
   /**
