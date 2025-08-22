@@ -14,12 +14,12 @@ class TrailingStop {
 
   // Cache estático para controlar symbols que devem ser skipados (posição fechada)
   static skippedSymbols = new Map();
-  
+
   // Limpa entries do cache que são mais antigas que 24 horas
   static cleanupSkippedSymbolsCache() {
     const now = Date.now();
     const maxAge = 24 * 60 * 60 * 1000; // 24 horas
-    
+
     for (const [key, timestamp] of TrailingStop.skippedSymbols.entries()) {
       if (now - timestamp > maxAge) {
         TrailingStop.skippedSymbols.delete(key);
@@ -188,12 +188,12 @@ class TrailingStop {
         const trailingStateMap = TrailingStop.trailingStateByBot.get(botKey);
         trailingStateMap.set(symbol, state);
 
-        Logger.info(`📂 [PERSISTENCE] Estado do trailing stop carregado para ${botKey} - ${symbol}`);
+        Logger.debug(`📂 [PERSISTENCE] Estado do trailing stop carregado para ${botKey} - ${symbol}`);
 
         // 4. Retorna o estado para uso imediato
         return state;
       } else {
-        Logger.info(`[PERSISTENCE] Nenhum estado de trailing stop salvo encontrado para botId: ${botId}, symbol: ${symbol}.`);
+        Logger.debug(`[PERSISTENCE] Nenhum estado de trailing stop salvo encontrado para botId: ${botId}, symbol: ${symbol}.`);
         return null; // Retorna null se nenhum estado for encontrado
       }
 
@@ -221,7 +221,7 @@ class TrailingStop {
       if (activeOrders && activeOrders.length > 0) {
         // Busca tanto stop loss quanto take profit orders para trailing stop
         const stopLossOrder = activeOrders.find(order =>
-            order.status === 'TriggerPending' && 
+            order.status === 'TriggerPending' &&
             (order.triggerPrice !== null || order.takeProfitTriggerPrice !== null || order.price !== null)
         );
 
@@ -232,10 +232,10 @@ class TrailingStop {
           const foundState = await TrailingStop.loadStateForBot(TrailingStop.dbService, botId, symbol);
 
           let trailingStopIsBetterThanSL = false;
-          
+
           // Determina o preço atual da ordem (stop loss, take profit ou price)
-          const currentOrderPrice = stopLossOrder.triggerPrice !== null ? 
-            parseFloat(stopLossOrder.triggerPrice) : 
+          const currentOrderPrice = stopLossOrder.triggerPrice !== null ?
+            parseFloat(stopLossOrder.triggerPrice) :
             stopLossOrder.takeProfitTriggerPrice !== null ?
             parseFloat(stopLossOrder.takeProfitTriggerPrice) :
             parseFloat(stopLossOrder.price);
@@ -288,7 +288,7 @@ class TrailingStop {
               const isStopLossOrder = stopLossOrder.triggerPrice !== null;
               const isTakeProfitOrder = stopLossOrder.takeProfitTriggerPrice !== null;
               const isPriceOrder = stopLossOrder.price !== null && !isStopLossOrder && !isTakeProfitOrder;
-              
+
               const bodyPayload = {
                 symbol: symbol,
                 side: state.isLong ? 'Ask' : 'Bid',
@@ -298,7 +298,7 @@ class TrailingStop {
                 apiKey: apiKey,
                 apiSecret: apiSecret,
               }
-              
+
               // Define o tipo de trigger baseado na ordem existente
               if (isStopLossOrder) {
                 bodyPayload.stopLossTriggerPrice = formatPrice(state.trailingStopPrice);
@@ -320,7 +320,7 @@ class TrailingStop {
 
               // 4. Se a nova ordem foi criada, cancela a ANTIGA (apenas se existir)
               if (stopResult && stopResult.id) {
-                const orderType = isStopLossOrder ? 'stop loss' : 
+                const orderType = isStopLossOrder ? 'stop loss' :
                   isTakeProfitOrder ? 'take profit' : 'limit';
                 if (foundState.activeStopOrderId && foundState.activeStopOrderId !== 'undefined') {
                   Logger.info(`✅ New ${orderType} order ${stopResult.id} created. Cancelling old order ${foundState.activeStopOrderId}.`);
@@ -998,18 +998,18 @@ class TrailingStop {
   async updateTrailingStopHybrid(position, trailingState, account, pnl, pnlPct, currentPrice, entryPrice, isLong, isShort) {
     try {
       Logger.debug(`🔍 [HYBRID_DEBUG] INÍCIO updateTrailingStopHybrid para ${position.symbol}`);
-      
+
       // Verifica se este symbol está na lista de skip (posição fechada)
       const symbolKey = `${position.symbol}_${this.config.botName}`;
       if (TrailingStop.skippedSymbols.has(symbolKey)) {
         Logger.debug(`⏭️ [TRAILING_SKIP] Symbol ${position.symbol} está sendo skipado (posição fechada)`);
         return null;
       }
-      
+
       // Valida se a posição ainda existe na exchange
       const exchangePositions = await Futures.getOpenPositions(this.config.apiKey, this.config.apiSecret) || [];
       const activePosition = exchangePositions.find(pos => pos.symbol === position.symbol && pos.netQuantity !== '0');
-      
+
       if (!activePosition) {
         Logger.warn(`⚠️ [POSITION_VALIDATION] Posição ${position.symbol} não encontrada na exchange ou quantidade zero. Skipping até reabertura.`);
         TrailingStop.skippedSymbols.set(symbolKey, Date.now());
@@ -1144,22 +1144,14 @@ class TrailingStop {
                 Logger.info(`📊 [TP_LIMIT_MONITOR] ${position.symbol}: TP calculado via % - Preço: $${takeProfitPrice.toFixed(6)} (${minProfitPercentage}% / ${leverage}x = ${actualProfitPct.toFixed(2)}%)`);
               }
 
-              if (takeProfitPrice && takeProfitPrice > 0) {
-                const result = await OrderController.createPartialTakeProfitOrder(
-                  position,
-                  takeProfitPrice,
-                  partialPercentage,
-                  account,
-                  this.config
-                );
+              // ✅ REMOVIDO: Take profit agora é gerenciado APENAS pelo monitor dedicado (startTakeProfitMonitor)
+              // Evita duplicação de ordens. O monitor dedicado criará TP automaticamente para posições sem TP
+              Logger.debug(`⏭️ [TP_LIMIT_MONITOR] ${position.symbol}: Criação de TP delegada ao monitor dedicado`);
 
-                if (result) {
-                  Logger.info(`✅ [TP_LIMIT_MONITOR] ${position.symbol}: Ordem de TP parcial criada automaticamente! Preço: $${takeProfitPrice.toFixed(6)} (${partialPercentage}%)`);
-                } else {
-                  Logger.info(`❌ [TP_LIMIT_MONITOR] ${position.symbol}: Falha ao criar ordem de TP parcial automaticamente`);
-                }
+              if (takeProfitPrice && takeProfitPrice > 0) {
+                Logger.debug(`📊 [TP_LIMIT_MONITOR] ${position.symbol}: TP seria criado com preço: $${takeProfitPrice.toFixed(6)} (${partialPercentage}%)`);
               } else {
-                Logger.info(`❌ [TP_LIMIT_MONITOR] ${position.symbol}: Preço de TP inválido calculado: ${takeProfitPrice}`);
+                Logger.debug(`❌ [TP_LIMIT_MONITOR] ${position.symbol}: Preço de TP inválido calculado: ${takeProfitPrice}`);
               }
             } catch (error) {
               Logger.error(`❌ [TP_LIMIT_MONITOR] ${position.symbol}: Erro ao criar TP parcial:`, error.message);
@@ -1878,7 +1870,7 @@ class TrailingStop {
           if (enableTrailingStop) {
             const trailingModeLogged = this.getTrailingModeLogged();
             if (!trailingModeLogged.has(position.symbol)) {
-              Logger.info(`🎯 [TRAILING_MODE] ${position.symbol}: Modo Trailing Stop ativo`);
+              Logger.debug(`🎯 [TRAILING_MODE] ${position.symbol}: Modo Trailing Stop ativo`);
               trailingModeLogged.add(position.symbol);
             }
 
@@ -1887,17 +1879,6 @@ class TrailingStop {
             const trailingState = trailingStateMap.get(position.symbol);
 
             if (trailingState && trailingState.activated) {
-              // TrailingStop.colorLogger.trailingActiveCheck(`${position.symbol}: Trailing Stop ativo - verificando gatilho`);
-
-              // const trailingDecision = this.checkTrailingStopTrigger(position, trailingState);
-              //
-              // if (trailingDecision && trailingDecision.shouldClose) {
-              //   TrailingStop.colorLogger.positionClosed(`🚨 [TRAILING_EXECUTION] ${position.symbol}: Executando fechamento por Trailing Stop. Motivo: ${trailingDecision.reason}`);
-              //   await OrderController.forceClose(position, Account, this.config);
-              //   await TrailingStop.onPositionClosed(position, 'trailing_stop');
-              //   continue;
-              // }
-
               const priceType = position.markPrice ? 'Current Price' : 'Last Price';
               const distance = trailingState.isLong
                 ? ((currentPrice - (trailingState.trailingStopPrice || 0)) / currentPrice * 100).toFixed(2)

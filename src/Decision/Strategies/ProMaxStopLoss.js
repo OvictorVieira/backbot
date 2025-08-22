@@ -23,13 +23,8 @@ export class ProMaxStopLoss extends BaseStopLoss {
       // Usa a função calculatePnL do TrailingStop
       const { pnl } = TrailingStop.calculatePnL(position, account);
       
-      if (ENABLE_TP_VALIDATION && pnl > 0) {
-        const takeProfitMonitoring = this.monitorTakeProfitMinimum(position, account);
-        
-        if (takeProfitMonitoring && takeProfitMonitoring.shouldTakePartialProfit) {
-          return takeProfitMonitoring;
-        }
-      }
+      // ✅ REMOVIDO: Take profit agora é gerenciado APENAS pelo monitor dedicado (startTakeProfitMonitor)
+      // Evita duplicação de lógica de take profit
 
       return null;
 

@@ -91,14 +91,8 @@ export class DefaultStopLoss extends BaseStopLoss {
         };
       }
 
-      // Monitoramento de take profit mínimo em tempo real (se habilitada)
-      if (ENABLE_TP_VALIDATION && pnl > 0 && !enableTrailingStop) {
-        const takeProfitMonitoring = this.monitorTakeProfitMinimum(position, account);
-        
-        if (takeProfitMonitoring && takeProfitMonitoring.shouldTakePartialProfit) {
-          return takeProfitMonitoring;
-        }
-      }
+      // ✅ REMOVIDO: Take profit agora é gerenciado APENAS pelo monitor dedicado (startTakeProfitMonitor)
+      // Evita duplicação de lógica de take profit
 
       return null;
 

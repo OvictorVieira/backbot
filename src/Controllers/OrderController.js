@@ -403,12 +403,8 @@ class OrderController {
           const monitoredMarkets = Object.keys(accountOrders || {});
           const unmonitoredPositions = positions.filter(pos => !monitoredMarkets.includes(pos.symbol));
 
-          if (unmonitoredPositions.length > 0) {
-            // Força criação de alvos para posições não monitoradas
-            for (const position of unmonitoredPositions) {
-              await OrderController.validateAndCreateTakeProfit(position, botName, config);
-            }
-          }
+          // ✅ REMOVIDO: Take profit agora é gerenciado APENAS pelo monitor dedicado (startTakeProfitMonitor)
+          // Evita duplicação de ordens. Posições órfãs serão tratadas pelo monitor dedicado de TP
         }
       } catch (error) {
         Logger.warn(`⚠️ [MONITOR-${botName}] Falha ao obter posições, continuando monitoramento...`);
@@ -499,19 +495,8 @@ class OrderController {
           // Log de debug para monitoramento
           OrderController.debug(`🛡️ [MONITOR] ${position.symbol}: Stop loss validado/criado`);
 
-          // Verifica se já existem ordens de take profit para esta posição
-          const existingOrders = await Order.getOpenOrders(position.symbol);
-          const hasTakeProfitOrders = existingOrders && existingOrders.some(order =>
-            order.takeProfitTriggerPrice || order.takeProfitLimitPrice
-          );
-
-          if (!hasTakeProfitOrders) {
-            // Cria take profit orders apenas se não existirem
-            await OrderController.validateAndCreateTakeProfit(position, botName, config);
-            OrderController.debug(`💰 [MONITOR] ${position.symbol}: Take profit orders criados`);
-          } else {
-            OrderController.debug(`💰 [MONITOR] ${position.symbol}: Take profit orders já existem`);
-          }
+          // ✅ REMOVIDO: Take profit agora é gerenciado APENAS pelo monitor dedicado (startTakeProfitMonitor)
+          // Evita duplicação de ordens de take profit
         }
       }
 
@@ -3230,19 +3215,8 @@ class OrderController {
           // Log de debug para monitoramento
           OrderController.debug(`🛡️ [MONITOR] ${position.symbol}: Stop loss validado/criado`);
 
-          // Verifica se já existem ordens de take profit para esta posição
-          const existingOrders = await Order.getOpenOrders(position.symbol, "PERP", config?.apiKey, config?.apiSecret);
-          const hasTakeProfitOrders = existingOrders && existingOrders.some(order =>
-            order.takeProfitTriggerPrice || order.takeProfitLimitPrice
-          );
-
-          if (!hasTakeProfitOrders) {
-            // Cria take profit orders apenas se não existirem
-            await OrderController.validateAndCreateTakeProfit(position, botName, config);
-            OrderController.debug(`💰 [MONITOR] ${position.symbol}: Take profit orders criados`);
-          } else {
-            OrderController.debug(`💰 [MONITOR] ${position.symbol}: Take profit orders já existem`);
-          }
+          // ✅ REMOVIDO: Take profit agora é gerenciado APENAS pelo monitor dedicado (startTakeProfitMonitor)
+          // Evita duplicação de ordens de take profit
         }
       }
 
@@ -3255,9 +3229,10 @@ class OrderController {
    * Verifica se já existe uma ordem de stop loss para uma posição
    * @param {string} symbol - Símbolo do mercado
    * @param {object} position - Dados da posição
+   * @param config
    * @returns {boolean} - True se já existe stop loss
    */
-  static async hasExistingStopLoss(symbol, position, config = null) {
+  static async hasExistingStopLoss(symbol, position, config) {
     try {
       // Verifica cache primeiro
       const cacheKey = `${symbol}_${position.netQuantity > 0 ? 'LONG' : 'SHORT'}`;
@@ -3317,12 +3292,10 @@ class OrderController {
           }
         }
 
-        // CORREÇÃO: Para ordens condicionais (TriggerPending), considera como stop loss se for reduceOnly e lado correto
         const isConditionalStopLoss = isReduceOnly && correctSide && (order.status === 'TriggerPending' || order.status === 'Pending');
 
         const isStopLossOrder = hasStopLossTrigger || isCorrectlyPositioned || isConditionalStopLoss;
 
-        // Log detalhado para debug
         if (isPending) {
           const orderPrice = order.limitPrice ? parseFloat(order.limitPrice) : 'N/A';
           const positionType = isLong ? 'LONG' : 'SHORT';
@@ -3334,7 +3307,7 @@ class OrderController {
         }
 
         // Log para TODAS as ordens (não apenas pending)
-                  Logger.debug(`🔍 [STOP_LOSS_CHECK] ${symbol}: Ordem ${order.id} - Status: ${order.status}, ReduceOnly: ${isReduceOnly}, Side: ${order.side}, HasTrigger: ${hasStopLossTrigger}, IsPending: ${isPending}, IsConditionalStopLoss: ${isConditionalStopLoss}, IsStopLoss: ${isStopLossOrder}`);
+        Logger.debug(`🔍 [STOP_LOSS_CHECK] ${symbol}: Ordem ${order.id} - Status: ${order.status}, ReduceOnly: ${isReduceOnly}, Side: ${order.side}, HasTrigger: ${hasStopLossTrigger}, IsPending: ${isPending}, IsConditionalStopLoss: ${isConditionalStopLoss}, IsStopLoss: ${isStopLossOrder}`);
 
         return (isPending || order.status === 'TriggerPending') && isStopLossOrder;
       });
@@ -4383,7 +4356,7 @@ class OrderController {
             o.side === closeSide
           );
 
-          Logger.info(`🔍 [TP_CREATE] ${symbol}: Ordens reduceOnly encontradas: ${existingReduceOnly.length}`);
+          Logger.debug(`🔍 [TP_CREATE] ${symbol}: Ordens reduceOnly encontradas: ${existingReduceOnly.length}`);
           existingReduceOnly.forEach((order, index) => {
             Logger.info(`🔍 [TP_CREATE] ${symbol}: Ordem ${index + 1} - ID: ${order.id}, Side: ${order.side}, Qty: ${order.triggerQuantity}, Price: ${order.price}`);
           });
@@ -4392,50 +4365,33 @@ class OrderController {
 
           // Se já existe qualquer TP parcial aberto, não criar outro (evita duplicados)
           if (existingQty > 0) {
-            Logger.info(`🔍 [TP_CREATE] ${symbol}: Verificando TPs existentes - Qty existente: ${existingQty}, enableHybrid: ${enableHybridStopStrategy}`);
+            Logger.debug(`🔍 [TP_CREATE] ${symbol}: Verificando TPs existentes - Qty existente: ${existingQty}, enableHybrid: ${enableHybridStopStrategy}`);
 
             if (enableHybridStopStrategy) {
               const partialPercentage = Number(config?.partialTakeProfitPercentage || 50);
               const desiredPartial = Math.abs(currentNetQuantity) * (partialPercentage / 100);
               const tolerance = desiredPartial * 0.95;
 
-              Logger.info(`🔍 [TP_CREATE] ${symbol}: TP Parcial - Posição: ${currentNetQuantity}, %: ${partialPercentage}%, Desejado: ${desiredPartial}, Tolerância: ${tolerance}`);
+              Logger.debug(`🔍 [TP_CREATE] ${symbol}: TP Parcial - Posição: ${currentNetQuantity}, %: ${partialPercentage}%, Desejado: ${desiredPartial}, Tolerância: ${tolerance}`);
 
               // Verifica se as ordens existentes são realmente TPs parciais (não totais)
               const isPartialTP = existingReduceOnly.some(order => {
-                const orderQty = Math.abs(parseFloat(order.quantity || 0));
+                const orderQty = Math.abs(parseFloat(order.triggerQuantity));
                 const positionQty = Math.abs(currentNetQuantity);
                 const isPartial = orderQty < positionQty * 0.99; // 99% da posição = parcial
 
-                Logger.info(`🔍 [TP_CREATE] ${symbol}: Ordem ${order.id} - Qty: ${orderQty}, Posição: ${positionQty}, É parcial: ${isPartial}`);
+                Logger.debug(`🔍 [TP_CREATE] ${symbol}: Ordem ${order.id} - Qty: ${orderQty}, Posição: ${positionQty}, É parcial: ${isPartial}`);
                 return isPartial;
               });
 
               if (existingQty >= tolerance && isPartialTP) {
-                Logger.info(`ℹ️ [TP_CREATE] ${symbol}: TP parcial já existe cobrindo ${existingQty} >= desejado ${desiredPartial}. Ignorando.`);
-                Logger.info(`✅ [TP_CREATE] ${symbol}: Saindo da função - TP parcial já existe.`);
+                Logger.debug(`ℹ️ [TP_CREATE] ${symbol}: TP parcial já existe cobrindo ${existingQty} >= desejado ${desiredPartial}. Ignorando.`);
+                Logger.debug(`✅ [TP_CREATE] ${symbol}: Saindo da função - TP parcial já existe.`);
                 return { success: true, message: `TP parcial já existe cobrindo ${existingQty} >= desejado ${desiredPartial}. Ignorando.`};
               } else if (existingQty >= tolerance && !isPartialTP) {
-                Logger.info(`⚠️ [TP_CREATE] ${symbol}: TP total existe (${existingQty}) mas queremos parcial. Continuando criação.`);
+                Logger.debug(`⚠️ [TP_CREATE] ${symbol}: TP total existe (${existingQty}) mas queremos parcial. Continuando criação.`);
               } else {
-                Logger.info(`ℹ️ [TP_CREATE] ${symbol}: TP existente insuficiente (${existingQty} < ${tolerance}). Continuando criação.`);
-              }
-            } else {
-              const isTotalTP = existingReduceOnly.some(order => {
-                const orderQty = Math.abs(parseFloat(order.quantity));
-                const positionQty = Math.abs(currentNetQuantity);
-                const isTotal = orderQty >= positionQty * 0.99; // 99% da posição = total
-
-                Logger.info(`🔍 [TP_CREATE] ${symbol}: Ordem ${order.id} - Qty: ${orderQty}, Posição: ${positionQty}, É total: ${isTotal}`);
-                return isTotal;
-              });
-
-              if (isTotalTP) {
-                Logger.info(`ℹ️ [TP_CREATE] ${symbol}: Já existe TP total aberto (${existingQty}). Ignorando para evitar duplicidade.`);
-                Logger.info(`✅ [TP_CREATE] ${symbol}: Saindo da função - TP total já existe.`);
-                return { success: true, message: `Já existe TP total aberto (${existingQty}). Ignorando para evitar duplicidade.`};
-              } else {
-                Logger.info(`⚠️ [TP_CREATE] ${symbol}: TP existente é parcial (${existingQty}) mas queremos total. Continuando criação.`);
+                Logger.debug(`ℹ️ [TP_CREATE] ${symbol}: TP existente insuficiente (${existingQty} < ${tolerance}). Continuando criação.`);
               }
             }
           }
@@ -4444,7 +4400,7 @@ class OrderController {
         Logger.warn(`⚠️ [TP_CREATE] ${symbol}: Falha ao verificar TPs existentes: ${dupErr.message}`);
       }
 
-      Logger.info(`📊 [TP_CREATE] ${symbol}: Posição atual: ${currentNetQuantity}, TP Qty: ${takeProfitQuantity}`);
+      Logger.debug(`📊 [TP_CREATE] ${symbol}: Posição atual: ${currentNetQuantity}, TP Qty: ${takeProfitQuantity}`);
 
       // Verifica se a quantidade é válida
       if (takeProfitQuantity <= 0) {
@@ -4481,7 +4437,7 @@ class OrderController {
         clientId: await OrderController.generateUniqueOrderId(config)
       };
 
-      Logger.info(`📊 [TP_CREATE] ${symbol}: Enviando ordem TP - Side: ${takeProfitOrder.side}, Qty: ${takeProfitOrder.quantity}, Price: ${takeProfitOrder.price}, Current Position: ${currentNetQuantity}`);
+      Logger.debug(`📊 [TP_CREATE] ${symbol}: Enviando ordem TP - Side: ${takeProfitOrder.side}, Qty: ${takeProfitOrder.quantity}, Price: ${takeProfitOrder.price || takeProfitOrder.triggerPrice}, Current Position: ${currentNetQuantity}`);
 
       const OrderModule = await import('../Backpack/Authenticated/Order.js');
       const result = await OrderModule.default.executeOrder(
@@ -4548,34 +4504,105 @@ class OrderController {
 
       if (orders && orders.length > 0) {
         const relevantOrders = orders.filter(order => {
-          let isReducePrice;
-          if(isLong) {
-            isReducePrice = parseFloat(order.triggerPrice || order.price) > parseFloat(position.entryPrice);
-          } else {
-            isReducePrice = parseFloat(order.triggerPrice || order.price) < parseFloat(position.entryPrice);
+          // Filtra apenas ordens reduceOnly
+          if (order.reduceOnly !== true) return false;
+
+          // Extrai preço dos campos principais
+          const orderPrice = parseFloat(order.price || order.triggerPrice);
+          const entryPrice = parseFloat(position.entryPrice);
+
+          Logger.debug(`🔍 [TP_CHECK] ${symbol}: Ordem ${order.id} - Side: ${order.side}, Preço: ${orderPrice}, Entrada: ${entryPrice}, Campos: {price: ${order.price}, triggerPrice: ${order.triggerPrice}}`);
+
+          // Se não conseguir extrair preço ou entrada, assume que é TP válido baseado no side
+          // Isso acontece com ordens market que não têm trigger price
+          if (!orderPrice || !entryPrice) {
+            const expectedSide = isLong ? 'Ask' : 'Bid';
+            const isCorrectSide = order.side === expectedSide;
+            Logger.debug(`🔍 [TP_CHECK] ${symbol}: Sem preço válido, validando por side - Expected: ${expectedSide}, Atual: ${order.side}, Válido: ${isCorrectSide}`);
+            return isCorrectSide;
           }
 
-          return order.reduceOnly === true && isReducePrice;
+          let isTakeProfitPrice;
+          if (isLong) {
+            // Para LONG: TP deve ter preço MAIOR que entrada (vender com lucro)
+            isTakeProfitPrice = orderPrice > entryPrice;
+          } else {
+            // Para SHORT: TP deve ter preço MENOR que entrada (comprar com lucro)
+            isTakeProfitPrice = orderPrice < entryPrice;
+          }
+
+          Logger.debug(`🔍 [TP_CHECK] ${symbol}: Validação por preço - ${isLong ? 'LONG' : 'SHORT'}, É TP: ${isTakeProfitPrice}`);
+
+          return isTakeProfitPrice;
         });
 
         Logger.debug(`🔍 [TP_CHECK] ${symbol}: Ordens relevantes (Limit + reduceOnly + ativas): ${relevantOrders.length}`);
 
+        // Calcula quantidade total de TP existente primeiro
+        const positionQty = Math.abs(netQuantity);
+        const expectedSide = isLong ? 'Ask' : 'Bid';
+        let existingTpQty = 0;
+
+        const validTpOrders = [];
+
         for (const order of relevantOrders) {
           const orderSide = order.side;
-          const expectedSide = isLong ? 'Ask' : 'Bid';
-          const orderQty = parseFloat(order.quantity);
-          const positionQty = Math.abs(netQuantity);
-
-          // Aceita qualquer ordem reduce-only no lado correto (seja TP parcial ou total)
+          const orderQty = parseFloat(order.triggerQuantity);
           const isCorrectSide = orderSide === expectedSide;
-          const hasValidQuantity = orderQty > 0 && orderQty <= positionQty * 1.01; // 1% tolerância
 
-          Logger.debug(`🔍 [TP_CHECK] ${symbol}: Ordem ${order.id} - Side: ${orderSide} (esperado: ${expectedSide}), Qty: ${orderQty} (posição: ${positionQty}), Válida: ${isCorrectSide && hasValidQuantity}`);
+          Logger.debug(`🔍 [TP_CHECK] ${symbol}: Ordem ${order.id} - Side: ${orderSide} (esperado: ${expectedSide}), Qty: ${orderQty}, Válido: ${isCorrectSide && orderQty > 0}`);
 
-          if (isCorrectSide && hasValidQuantity) {
-            Logger.debug(`✅ [TP_CHECK] ${symbol}: TP encontrado - Ordem ${order.id}`);
-            hasTakeProfit = true;
-            break;
+          if (isCorrectSide && orderQty > 0) {
+            existingTpQty += orderQty;
+            validTpOrders.push(order);
+          }
+        }
+
+        Logger.debug(`🔍 [TP_CREATE] ${symbol}: Ordens reduceOnly encontradas: ${validTpOrders.length}`);
+        validTpOrders.forEach((order, i) => {
+          Logger.debug(`🔍 [TP_CREATE] ${symbol}: Ordem ${i + 1} - ID: ${order.id}, Side: ${order.side}, Qty: ${order.triggerQuantity}, Price: ${order.price || order.triggerPrice}`);
+        });
+
+        const enableHybridStopStrategy = config?.enableHybridStopStrategy === true;
+
+        Logger.debug(`🔍 [TP_CREATE] ${symbol}: Verificando TPs existentes - Qty existente: ${existingTpQty}, enableHybrid: ${enableHybridStopStrategy}`);
+        Logger.debug(`🔍 [TP_CREATE] ${symbol}: Coverage ratio: ${(existingTpQty / positionQty).toFixed(2)}x (${existingTpQty} / ${positionQty})`);
+
+        if (existingTpQty > 0) {
+          if (enableHybridStopStrategy) {
+            // Modo Híbrido: Aceita TP parcial baseado na configuração do usuário
+            const partialTakeProfitPercentage = Number(config?.partialTakeProfitPercentage || 50);
+            const expectedPartialQty = (positionQty * partialTakeProfitPercentage) / 100;
+            const minPartialThreshold = expectedPartialQty * 0.8; // 80% do esperado como mínimo
+
+            Logger.debug(`🔍 [TP_CHECK] ${symbol}: TP Híbrido - Esperado: ${expectedPartialQty.toFixed(6)} (${partialTakeProfitPercentage}%), Mínimo: ${minPartialThreshold.toFixed(6)}, Existente: ${existingTpQty.toFixed(6)}`);
+
+            if (existingTpQty >= minPartialThreshold) {
+              Logger.debug(`✅ [TP_CHECK] ${symbol}: TP parcial suficiente encontrado (${existingTpQty.toFixed(6)} >= ${minPartialThreshold.toFixed(6)})`);
+              hasTakeProfit = true;
+            }
+          } else {
+            // Modo Total: Verifica se já tem cobertura adequada
+            const coverageRatio = existingTpQty / positionQty;
+
+            validTpOrders.forEach((order, i) => {
+              const orderQty = parseFloat(order.triggerQuantity);
+              const isTotal = orderQty >= positionQty * 0.99; // 99% ou mais = total
+              Logger.debug(`🔍 [TP_CREATE] ${symbol}: Ordem ${order.id} - Qty: ${orderQty}, Posição: ${positionQty}, É total: ${isTotal}`);
+            });
+
+            if (coverageRatio >= 2.0) {
+              // Se já tem 200% ou mais da posição em TP, está definitivamente duplicado
+              Logger.warn(`⚠️ [TP_CREATE] ${symbol}: TP duplicado detectado (${existingTpQty} vs posição ${positionQty}). Bloqueando criação.`);
+              hasTakeProfit = true;
+            } else if (coverageRatio >= 0.9) {
+              // Se já tem 90% ou mais da posição em TP, considera suficiente
+              Logger.debug(`✅ [TP_CHECK] ${symbol}: TP total suficiente encontrado (${existingTpQty.toFixed(6)} >= ${(positionQty * 0.9).toFixed(6)})`);
+              hasTakeProfit = true;
+            } else {
+              // TP existente é insuficiente no modo total, permite criação
+              Logger.warn(`⚠️ [TP_CREATE] ${symbol}: TP existente é parcial (${existingTpQty}) mas queremos total. Continuando criação.`);
+            }
           }
         }
       }

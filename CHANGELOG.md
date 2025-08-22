@@ -5,6 +5,31 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.6.2] - 2025-08-21
+
+### 🚨 **CRITICAL FIX: Correção de Duplicação de Take Profit**
+
+#### 🎯 **Eliminação de Monitores Duplicados**
+**Alterações:** Centralização completa da lógica de take profit para eliminar ordens duplicadas no modo default.
+
+**Problemas corrigidos:**
+- ✅ **Múltiplos monitores** - Removidos 4+ pontos de criação duplicada de TP
+- ✅ **Validação de preço** - Filtro correto por direção (LONG: preço > entrada, SHORT: preço < entrada)  
+- ✅ **Threshold dinâmico** - Usa `config.partialTakeProfitPercentage` em vez de 30% hardcoded
+- ✅ **Coverage ratio** - Detecta TP duplicado quando ≥ 200% da posição
+- ✅ **Side validation** - Fallback para ordens market sem trigger price
+
+**Monitores removidos:**
+- `validateAndCreateTakeProfit` em `monitorPendingEntryOrders` (2x)
+- `validateAndCreateTakeProfit` em `checkForUnmonitoredPositions` (1x)
+- `monitorTakeProfitMinimum` em estratégias Default/ProMax
+- `createPartialTakeProfitOrder` em TrailingStop híbrido
+
+**Monitor mantido:** 
+- `startTakeProfitMonitor` (30s) - Único responsável por TP
+
+**Impacto:** Elimina completamente ordens duplicadas de take profit no modo default, mantendo funcionalidade híbrida intacta.
+
 ## [1.6.1] - 2025-08-20
 
 ### 🔧 **FIX: Correções no Sistema de Limpeza de Ordens Órfãs**

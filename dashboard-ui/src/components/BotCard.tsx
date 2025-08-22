@@ -246,7 +246,7 @@ export const BotCard: React.FC<BotCardProps> = ({
   };
 
   return (
-    <Card className={`w-full min-w-[280px] max-w-xs sm:max-w-sm ${isRestarting ? 'ring-2 ring-orange-500 ring-opacity-50 animate-pulse' : ''}`}>
+    <Card className={`w-full min-w-[280px] max-w-xs sm:max-w-sm h-full flex flex-col ${isRestarting ? 'ring-2 ring-orange-500 ring-opacity-50 animate-pulse' : ''}`}>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex-1 min-w-0">
@@ -259,7 +259,7 @@ export const BotCard: React.FC<BotCardProps> = ({
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-3 flex-1">
         {/* Status de Reinicialização */}
         {isRestarting && (
           <div className="bg-orange-50 border border-orange-200 rounded-md p-3 mb-3">
@@ -424,7 +424,7 @@ export const BotCard: React.FC<BotCardProps> = ({
 
       </CardContent>
 
-      <CardFooter className="pt-2">
+      <CardFooter className="pt-2 mt-auto">
         <div className="flex gap-1 sm:gap-2 w-full">
           {getActionButton()}
           <Button
