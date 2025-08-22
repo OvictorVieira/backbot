@@ -11,6 +11,7 @@ import Semaphore from '../Utils/Semaphore.js';
 import {calculateIndicators} from '../Decision/Indicators.js';
 import {ProMaxStrategy} from '../Decision/Strategies/ProMaxStrategy.js';
 import OrdersService from '../Services/OrdersService.js';
+import RiskManager from '../Risk/RiskManager.js';
 
 class OrderController {
 
@@ -1494,7 +1495,10 @@ class OrderController {
 
       // Reanalisa o trade com dados atualizados
       const fee = marketInfo.fee || config?.fee || 0.0004;
-      const investmentUSD = config?.investmentUSD || 5;
+
+      // ✅ USA RISKMANAGER: Calcula investimento baseado no capitalPercentage
+      const investmentUSD = RiskManager.calculateInvestmentAmount(Account.capitalAvailable, config);
+
       const media_rsi = config?.mediaRsi || 50;
 
       Logger.info(`🔍 [${botName}] ${market}: Revalidando com dados atualizados - Preço atual: $${currentPrice.toFixed(6)}, Fee: ${fee}, Investment: $${investmentUSD}`);
@@ -1550,16 +1554,6 @@ class OrderController {
   static async openHybridOrder({ entry, stop, target, action, market, volume, decimal_quantity, decimal_price, stepSize_quantity, botName = 'DEFAULT', originalSignalData, config = null }) {
     try {
       const formatPrice = (value) => parseFloat(value).toFixed(decimal_price).toString();
-      const formatQuantity = (value) => {
-        if (value <= 0) {
-          throw new Error(`Quantidade deve ser positiva: ${value}`);
-        }
-        let formatted = parseFloat(value).toFixed(decimal_quantity);
-        if (parseFloat(formatted) === 0 && stepSize_quantity > 0) {
-          return stepSize_quantity.toString();
-        }
-        return formatted.toString();
-      };
 
       // Validações básicas
       if (!entry || !stop || !target || !action || !market || !volume) {
@@ -1567,8 +1561,16 @@ class OrderController {
       }
 
       const entryPrice = parseFloat(entry);
-      const quantity = formatQuantity(volume / entryPrice);
-      const orderValue = entryPrice * (volume / entryPrice);
+
+      // ✅ CÁLCULO SIMPLES: Volume já vem validado do Decision.js via calculateInvestmentAmount
+      const desiredQuantity = volume / entryPrice;
+      const quantity = desiredQuantity.toFixed(decimal_quantity);
+
+      if (parseFloat(quantity) <= 0) {
+        Logger.error(`❌ [QUANTITY_ERROR] ${market}: Quantidade inválida ${quantity}`);
+        return { error: 'Quantidade calculada inválida' };
+      }
+      const orderValue = entryPrice * parseFloat(quantity);
       const side = action === 'long' ? 'Bid' : 'Ask';
       const finalPrice = formatPrice(entryPrice);
 
@@ -3297,10 +3299,10 @@ class OrderController {
         const isStopLossOrder = hasStopLossTrigger || isCorrectlyPositioned || isConditionalStopLoss;
 
         if (isPending) {
-          const orderPrice = order.limitPrice ? parseFloat(order.limitPrice) : 'N/A';
+          const orderPrice = order.triggerPrice ? parseFloat(order.triggerPrice) : 'N/A';
           const positionType = isLong ? 'LONG' : 'SHORT';
           const expectedPosition = isLong ? 'ABAIXO' : 'ACIMA';
-          const isCorrectlyPositioned = order.limitPrice ?
+          const isCorrectlyPositioned = order.triggerPrice ?
             (isLong ? orderPrice < entryPrice : orderPrice > entryPrice) : 'N/A';
 
           Logger.debug(`🔍 [STOP_LOSS_CHECK] ${symbol}: Ordem ${order.id} - Status: ${order.status}, ReduceOnly: ${isReduceOnly}, Side: ${order.side}, Preço: ${orderPrice}, Tipo: ${positionType}, Entrada: ${entryPrice}, Posicionamento: ${isCorrectlyPositioned} (esperado: ${expectedPosition}), HasTrigger: ${hasStopLossTrigger}, IsStopLoss: ${isStopLossOrder}`);
@@ -3309,7 +3311,7 @@ class OrderController {
         // Log para TODAS as ordens (não apenas pending)
         Logger.debug(`🔍 [STOP_LOSS_CHECK] ${symbol}: Ordem ${order.id} - Status: ${order.status}, ReduceOnly: ${isReduceOnly}, Side: ${order.side}, HasTrigger: ${hasStopLossTrigger}, IsPending: ${isPending}, IsConditionalStopLoss: ${isConditionalStopLoss}, IsStopLoss: ${isStopLossOrder}`);
 
-        return (isPending || order.status === 'TriggerPending') && isStopLossOrder;
+        return isStopLossOrder;
       });
 
       // Atualiza cache
@@ -3850,12 +3852,12 @@ class OrderController {
       }
 
       // TRAVA DE SEGURANÇA: Verifica limite de ordens antes de criar nova ordem de abertura
-      const maxOrdersPerSymbol = config.maxOrdersPerSymbol || 3; // Default 3 se não especificado
-      if (await OrderController.checkOrderLimit(market, config, maxOrdersPerSymbol)) {
-        Logger.warn(`[ORDER_REJECTED] Limite de ordens (${maxOrdersPerSymbol}) para ${market} já atingido. Nenhuma nova ordem será criada.`);
+      const maxOpenOrders = config.maxOpenOrders || 3;
+      if (await OrderController.checkOrderLimit(market, config, maxOpenOrders)) {
+        Logger.warn(`[ORDER_REJECTED] Limite de ordens (${maxOpenOrders}) para ${market} já atingido. Nenhuma nova ordem será criada.`);
         return {
           success: false,
-          error: `Limite de ${maxOrdersPerSymbol} ordens por símbolo atingido`,
+          error: `Limite de ${maxOpenOrders} ordens por símbolo atingido`,
           ordersRejected: true
         };
       }
@@ -3868,6 +3870,21 @@ class OrderController {
       }
 
       const formatPrice = (value) => parseFloat(value).toFixed(decimal_price).toString();
+
+      const formattedQuantity = parseFloat(quantity).toFixed(decimal_quantity);
+
+      if (parseFloat(formattedQuantity) <= 0) {
+        Logger.error(`❌ [QUANTITY_ERROR] ${market}: Quantidade inválida ${formattedQuantity}`);
+        return {
+          success: false,
+          error: 'Quantidade calculada inválida',
+          ordersRejected: true
+        };
+      }
+
+      const finalQuantity = parseFloat(formattedQuantity);
+      Logger.debug(`✅ [FORMAT] ${market}: Quantidade formatada: ${quantity} → ${finalQuantity}`);
+
       const formatQuantity = (value) => {
         // Garante que a quantidade seja sempre positiva
         if (value <= 0) {
@@ -3903,23 +3920,19 @@ class OrderController {
       // Debug: Verifica a quantidade antes da formatação
       Logger.info(`🔍 [DEBUG] Valores na createLimitOrderWithTriggers:`);
       Logger.info(`   • Quantity (raw): ${quantity}`);
-      Logger.info(`   • Quantity (formatted): ${formatQuantity(quantity)}`);
+      Logger.info(`   • Quantity (validated): ${finalQuantity}`);
+      Logger.info(`   • Quantity (formatted): ${formatQuantity(finalQuantity)}`);
       Logger.info(`   • Entry (raw): ${entry}`);
       Logger.info(`   • Entry (formatted): ${formatPrice(entry)}`);
       Logger.info(`   • Market decimals: quantity=${decimal_quantity}, price=${decimal_price}`);
 
       // Valida se a quantidade é positiva
-      if (quantity <= 0) {
-        throw new Error(`Quantidade inválida: ${quantity}. Quantity: ${orderData.quantity}, Entry: ${entry}`);
-      }
-
-      // Valida se a quantidade é menor que o mínimo permitido
-      if (orderData.min_quantity && quantity < orderData.min_quantity) {
-        throw new Error(`Quantidade abaixo do mínimo: ${quantity} < ${orderData.min_quantity}`);
+      if (finalQuantity <= 0) {
+        throw new Error(`Quantidade inválida: ${finalQuantity}. Original: ${quantity}, Entry: ${entry}`);
       }
 
       // Calcula o valor da ordem para verificar margem
-      const orderValue = quantity * entry;
+      const orderValue = finalQuantity * entry;
       Logger.info(`   💰 [DEBUG] Valor da ordem: $${orderValue.toFixed(2)}`);
 
       // Verifica se o preço está muito próximo do preço atual (pode causar "Order would immediately match")
@@ -3947,7 +3960,7 @@ class OrderController {
         side: action === 'long' ? 'Bid' : 'Ask',
         orderType: 'Limit',
         postOnly: true,
-        quantity: formatQuantity(quantity),
+        quantity: formatQuantity(finalQuantity),
         price: formatPrice(entry),
         timeInForce: 'GTC',
         selfTradePrevention: 'RejectTaker',
@@ -3974,11 +3987,11 @@ class OrderController {
       Logger.info(`   📋 Detalhes da ordem:`, {
         symbol: market,
         side: orderBody.side,
-        quantity: formatQuantity(quantity),
+        quantity: formatQuantity(finalQuantity),
         price: formatPrice(entry),
         stopLoss: stop ? formatPrice(stop) : 'N/A',
         takeProfit: target ? formatPrice(target) : 'N/A',
-        orderValue: (quantity * entry).toFixed(2)
+        orderValue: (finalQuantity * entry).toFixed(2)
       });
 
       try {
@@ -4018,13 +4031,14 @@ class OrderController {
           action: action,
           entry: entry,
           quantity: quantity,
+          validatedQuantity: finalQuantity,
           stop: stop,
           target: target,
           decimal_quantity: decimal_quantity,
           decimal_price: decimal_price,
           stepSize_quantity: stepSize_quantity,
-          orderValue: (quantity * entry).toFixed(2),
-          formattedQuantity: formatQuantity(quantity),
+          orderValue: (finalQuantity * entry).toFixed(2),
+          formattedQuantity: formatQuantity(finalQuantity),
           formattedEntry: formatPrice(entry)
         };
 
@@ -4751,12 +4765,12 @@ class OrderController {
    * Combina ordens abertas na exchange + ordens PENDING/SENT no banco local
    * @param {string} symbol - Símbolo da moeda
    * @param {Object} config - Configuração do bot com credenciais
-   * @param {number} maxOrdersPerSymbol - Limite máximo de ordens por símbolo
+   * @param {number} maxOpenOrders - Limite máximo de ordens por símbolo
    * @returns {Promise<boolean>} True se limite atingido, false caso contrário
    */
-  static async checkOrderLimit(symbol, config, maxOrdersPerSymbol) {
+  static async checkOrderLimit(symbol, config, maxOpenOrders) {
     try {
-      Logger.debug(`[ORDER_LIMIT_CHECK] Verificando limite para ${symbol} (máx: ${maxOrdersPerSymbol})`);
+      Logger.debug(`[ORDER_LIMIT_CHECK] Verificando limite para ${symbol} (máx: ${maxOpenOrders})`);
 
       // 1. Busca ordens abertas na exchange via API
       const { default: Order } = await import('../Backpack/Authenticated/Order.js');
@@ -4794,13 +4808,13 @@ class OrderController {
       const localPendingCount = localPendingOrders.length;
       const totalOpenAndPendingOrders = exchangeOrdersCount + localPendingCount;
 
-      Logger.debug(`[ORDER_LIMIT_CHECK] ${symbol}: Exchange=${exchangeOrdersCount}, Local=${localPendingCount}, Total=${totalOpenAndPendingOrders}, Limite=${maxOrdersPerSymbol}`);
+      Logger.debug(`[ORDER_LIMIT_CHECK] ${symbol}: Exchange=${exchangeOrdersCount}, Local=${localPendingCount}, Total=${totalOpenAndPendingOrders}, Limite=${maxOpenOrders}`);
 
       // 4. Verifica se excede o limite
-      const limitExceeded = totalOpenAndPendingOrders >= maxOrdersPerSymbol;
+      const limitExceeded = totalOpenAndPendingOrders >= maxOpenOrders;
 
       if (limitExceeded) {
-        Logger.warn(`⚠️ [ORDER_LIMIT_CHECK] ${symbol}: Limite atingido! ${totalOpenAndPendingOrders}/${maxOrdersPerSymbol} ordens`);
+        Logger.warn(`⚠️ [ORDER_LIMIT_CHECK] ${symbol}: Limite atingido! ${totalOpenAndPendingOrders}/${maxOpenOrders} ordens`);
       }
 
       return limitExceeded;
