@@ -5,6 +5,30 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.6.3] - 2025-08-23
+
+### 🛡️ **FIX: Implementação de RiskManager Centralizado**
+
+#### 🎯 **Controle Rigoroso de Capital por Operação**
+**Alterações:** Nova classe RiskManager para garantir que todas as ordens respeitem o `capitalPercentage` configurado.
+
+**Problemas corrigidos:**
+- ✅ **Ordens sem controle de risco** - Todas as ordens agora passam pelo RiskManager obrigatoriamente
+- ✅ **Limite de capital ignorado** - `capitalPercentage` é respeitado em 100% das operações
+- ✅ **Validação complexa desnecessária** - Removidos métodos redundantes e confusos
+- ✅ **Imports incorretos** - Corrigidas chamadas dinâmicas e variáveis duplicadas
+- ✅ **Formatação redundante** - Simplificado para usar apenas `toFixed()` direto
+
+**Arquivos modificados:**
+- `src/Risk/RiskManager.js` - Nova classe centralizada para cálculo de investimento
+- `src/Controllers/OrderController.js` - Integração obrigatória do RiskManager
+- `src/Decision/Decision.js` - Usa RiskManager no ponto de entrada
+
+**Fluxo garantido:** 
+Decision.js → `calculateInvestmentAmount()` → Strategy → OrderController → Exchange
+
+**Impacto:** Com $35.25 na conta e 20% de `capitalPercentage`, ordens nunca excedem $7.05, garantindo controle rigoroso de risco por operação.
+
 ## [1.6.2] - 2025-08-21
 
 ### 🚨 **CRITICAL FIX: Correção de Duplicação de Take Profit**
