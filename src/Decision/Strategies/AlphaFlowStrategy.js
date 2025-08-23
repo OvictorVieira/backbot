@@ -1,6 +1,7 @@
 import { BaseStrategy } from './BaseStrategy.js';
 import Logger from '../../Utils/Logger.js';
 import { validateLeverageForSymbol } from '../../Utils/Utils.js';
+import RiskManager from '../../Risk/RiskManager.js';
 
 export class AlphaFlowStrategy extends BaseStrategy {
   /**
@@ -433,88 +434,62 @@ export class AlphaFlowStrategy extends BaseStrategy {
       return [];
     }
 
-    // Função para formatar quantidade baseada nos dados de mercado
-    const formatQuantity = (value) => {
-      const decimals = Math.max(market.decimal_quantity, 1);
-      
-      // Para valores muito pequenos, usa mais casas decimais
-      if (value > 0 && value < 0.001) {
-        const extendedDecimals = Math.max(decimals, 6);
-        return parseFloat(value).toFixed(extendedDecimals);
-      }
-      
-      let formatted = parseFloat(value).toFixed(decimals);
-      
-      // Se ainda resultar em 0.0, tenta com mais casas decimais
-      if (parseFloat(formatted) === 0 && value > 0) {
-        formatted = parseFloat(value).toFixed(Math.max(decimals, 6));
-      }
-      
-      // Limita o número de casas decimais para evitar "decimal too long"
-      const maxDecimals = Math.min(decimals, 6);
-      return parseFloat(formatted).toFixed(maxDecimals);
-    };
-
     // Função para formatar preço baseada nos dados de mercado
     const formatPrice = (value) => {
       return parseFloat(value).toFixed(market.decimal_price).toString();
     };
     
-    // Calcula o capital baseado na convicção
-    // CORREÇÃO: Usa o investmentUSD diretamente, pois ele já representa o capital disponível para este token
-    const adjustedCapital = investmentUSD; // Usa o investmentUSD total, sem aplicar porcentagem novamente
-    
+    // ✅ NOVA IMPLEMENTAÇÃO COM RISKMANAGER: Gerencia posição baseada no capitalPercentage
     const weights = [
       Number(config?.order1WeightPct) || 50,
       Number(config?.order2WeightPct) || 30,
       Number(config?.order3WeightPct) || 20
     ];
-    for (let i = 0; i < 3; i++) {
 
-      const weight = weights[i];
+    // Calcula preços de entrada para todas as ordens
+    const entryPrices = [];
+    for (let i = 0; i < 3; i++) {
       let entryPrice;
-      let spreadMultiplier;
       
       if (i === 0) {
         // PRIMEIRA ORDEM: SEMPRE A MERCADO (preço atual)
-        entryPrice = currentPrice; // Ordem a mercado = preço atual
-        spreadMultiplier = 0; // Não usa ATR para primeira ordem
+        entryPrice = currentPrice;
       } else {
         // SEGUNDA E TERCEIRA ORDEM: Usam ATR com escalonamento
         const atrMultipliers = [1.0, 1.5]; // Para ordem 2 e 3
         const atrMultiplier = atrMultipliers[i - 1];
-        const spread = atr * atrMultiplier * (i + 1); // Mantém escalonamento
+        const spread = atr * atrMultiplier * (i + 1);
         
         entryPrice = action === 'long' 
           ? currentPrice - spread
           : currentPrice + spread;
-        spreadMultiplier = atrMultiplier;
       }
+      entryPrices.push(entryPrice);
+    }
 
-      // Calcula quantidade baseada no peso (dos 2% do capital)
-      const orderCapital = (adjustedCapital * weight) / 100; // weight já é em porcentagem
-      const rawQuantity = orderCapital / entryPrice;
+    // ✅ USA RISKMANAGER: Distribui capital e calcula quantidades com validação de risco
+    const riskValidatedOrders = RiskManager.distributeCapitalAcrossOrders(
+      investmentUSD, 
+      weights, 
+      entryPrices, 
+      market, 
+      symbol
+    );
+
+    if (!riskValidatedOrders || riskValidatedOrders.length === 0) {
+      Logger.warn(`⚠️ [ALPHA_FLOW] ${symbol}: Nenhuma ordem válida após validação de risco`);
+      return [];
+    }
+
+    // Processa ordens validadas pelo RiskManager
+    for (let i = 0; i < riskValidatedOrders.length; i++) {
+      const riskOrder = riskValidatedOrders[i];
+      const entryPrice = riskOrder.price;
+      const finalQuantity = parseFloat(riskOrder.quantity);
+      const weight = riskOrder.weight;
       
-      // Formata a quantidade usando os dados de mercado
-      const formattedQuantity = formatQuantity(rawQuantity);
-      const finalQuantity = parseFloat(formattedQuantity);
-      
-      // Valida se a quantidade é válida
-      if (finalQuantity <= 0) {
-        console.log(`         ⚠️  Quantidade inválida (${finalQuantity}), pulando ordem ${i + 1}`);
-        continue;
-      }
-      
-      // Validação adicional para quantidade mínima do mercado
-      if (market.min_quantity && finalQuantity < market.min_quantity) {
-        console.log(`         ⚠️  Quantidade (${finalQuantity}) abaixo do mínimo (${market.min_quantity}), pulando ordem ${i + 1}`);
-        continue;
-      }
-      
-      // Calcula o valor da ordem para log
-      const orderValue = finalQuantity * entryPrice;
-      console.log(`            • Order Value: $${orderValue.toFixed(4)}`);
-      
+      Logger.debug(`💰 [ALPHA_FLOW] ${symbol} Ordem ${i + 1}: Quantidade ${finalQuantity}, Valor $${riskOrder.value.toFixed(2)}`);
+
       // Calcula stop loss e take profit baseados em multiplicadores de ATR
       const initialStopAtrMultiplier = Number(config?.initialStopAtrMultiplier || 2.0);
       const takeProfitAtrMultiplier = Number(config?.partialTakeProfitAtrMultiplier || 3.0);
@@ -551,16 +526,16 @@ export class AlphaFlowStrategy extends BaseStrategy {
       }
       
       const order = {
-        market: symbol, // Adiciona o market à ordem (compatibilidade com o sistema)
-        symbol: symbol, // Mantém symbol para compatibilidade
-        orderNumber: i + 1,
+        market: symbol,
+        symbol: symbol,
+        orderNumber: riskOrder.orderNumber,
         action: action,
         entryPrice: entryPrice,
         quantity: finalQuantity,
         stopLoss: stopLoss,
         takeProfit: takeProfit,
         weight: weight / 100, // Converte de porcentagem para decimal
-        spreadMultiplier: spreadMultiplier,
+        spreadMultiplier: i === 0 ? 0 : [1.0, 1.5][i - 1], // Para compatibilidade
         // Adiciona dados de mercado para o OrderController
         decimal_quantity: market.decimal_quantity,
         decimal_price: market.decimal_price,
@@ -568,14 +543,8 @@ export class AlphaFlowStrategy extends BaseStrategy {
         min_quantity: market.min_quantity
       };
       
-      // Validação adicional para garantir que o market está presente
-      if (!order.market) {
-        console.log(`         ❌ Ordem ${i + 1}: Market não definido, pulando...`);
-        continue;
-      }
-      
       console.log(`         📋 Ordem ${i + 1} para ${symbol}: ${action.toUpperCase()} @ $${formatPrice(entryPrice)}`);
-      console.log(`         ✅ Adicionando ordem ${i + 1} ao array (total: ${orders.length + 1})`);
+      console.log(`         ✅ Quantidade validada pelo RiskManager: ${finalQuantity} (Valor: $${riskOrder.value.toFixed(2)})`);
       orders.push(order);
     }
     
