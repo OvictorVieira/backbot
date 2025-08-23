@@ -12,6 +12,7 @@ import {calculateIndicators} from '../Decision/Indicators.js';
 import {ProMaxStrategy} from '../Decision/Strategies/ProMaxStrategy.js';
 import OrdersService from '../Services/OrdersService.js';
 import RiskManager from '../Risk/RiskManager.js';
+import Account from "../Backpack/Authenticated/Account.js";
 
 class OrderController {
 
@@ -40,6 +41,7 @@ class OrderController {
   // Cache de verificação de take profit para evitar múltiplas chamadas desnecessárias
   static takeProfitCheckCache = new Map(); // { symbol: { lastCheck: timestamp, hasTakeProfit: boolean } }
   static takeProfitCheckCacheTimeout = 30000; // 30 segundos de cache
+  static marketInfo;
 
   /**
    * Formata preço de forma segura, limitando a 6 casas decimais para evitar erro "Price decimal too long"
@@ -451,7 +453,7 @@ class OrderController {
           continue; // Pula criação de ordens para pares não autorizados
         }
 
-        const fee = marketInfo.fee || config?.fee || 0.0004;
+        const fee = this.marketInfo.fee || config?.fee || 0.0004;
         const entryPrice = parseFloat(position.avgEntryPrice || position.entryPrice || position.markPrice);
         const currentPrice = parseFloat(position.markPrice);
         const quantity = Math.abs(Number(position.netQuantity));
@@ -495,9 +497,6 @@ class OrderController {
 
           // Log de debug para monitoramento
           OrderController.debug(`🛡️ [MONITOR] ${position.symbol}: Stop loss validado/criado`);
-
-          // ✅ REMOVIDO: Take profit agora é gerenciado APENAS pelo monitor dedicado (startTakeProfitMonitor)
-          // Evita duplicação de ordens de take profit
         }
       }
 

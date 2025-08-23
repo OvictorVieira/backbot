@@ -36,10 +36,10 @@ let globalTimerInterval = null;
 let isMultiBotMode = false;
 
 // Variável para controle do intervalo do trailing stop
-let trailingStopInterval = 1000; // começa em 1s
+let trailingStopInterval = 30000; // começa em 30s (aumentado de 1s)
 let trailingStopErrorCount = 0;
-let trailingStopMaxInterval = 10000; // máximo 10s
-let trailingStopMinInterval = 500;   // mínimo 0.5s
+let trailingStopMaxInterval = 120000; // máximo 120s (aumentado de 10s)
+let trailingStopMinInterval = 15000;   // mínimo 15s (aumentado de 0.5s)
 let trailingStopLastErrorTime = null;
 
 // Variáveis para controle do intervalo dos monitores

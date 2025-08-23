@@ -6,6 +6,7 @@ import Markets from '../Backpack/Public/Markets.js';
 import { calculateIndicators } from './Indicators.js';
 import { StrategyFactory } from './Strategies/StrategyFactory.js';
 import Logger from '../Utils/Logger.js';
+import RiskManager from '../Risk/RiskManager.js';
 
 class Decision {
   constructor(strategyType = null) {
@@ -373,23 +374,9 @@ class Decision {
       }
     }
 
-    // Usa configuração passada como parâmetro ou valor padrão
-    // Correção: trata capitalPercentage=0 como valor válido
-    const CAPITAL_PERCENTAGE = (config?.capitalPercentage !== null && config?.capitalPercentage !== undefined)
-      ? config.capitalPercentage
-      : 20;
+    const investmentUSD = RiskManager.calculateInvestmentAmount(Account.capitalAvailable, config);
 
-    let investmentUSD;
-
-    // Usa porcentagem do capital disponível
-    if (CAPITAL_PERCENTAGE > 0) {
-      investmentUSD = (Account.capitalAvailable * CAPITAL_PERCENTAGE) / 100;
-      Logger.debug(`💰 Capital: ${CAPITAL_PERCENTAGE}%`);
-    } else {
-      // Fallback para valor padrão
-      investmentUSD = 100;
-      Logger.debug(`💰 Capital: $${investmentUSD.toFixed(2)} (padrão)`);
-    }
+    Logger.debug(`💰 Capital: ${config?.capitalPercentage || 'padrão'}%, Valor calculado: $${investmentUSD.toFixed(2)}`);
 
     // Log resumido do capital (apenas uma vez)
     if (!this.operationSummaryLogged) {
@@ -418,7 +405,7 @@ class Decision {
     Logger.debug(`🔄 Processando ${rows.length} ordens sequencialmente (1 por vez)...`);
 
     const orderResults = [];
-    
+
     // Processa cada ordem individualmente de forma sequencial
     for (let index = 0; index < rows.length; index++) {
       const row = rows[index];
@@ -618,7 +605,7 @@ class Decision {
         orderResults.push({ index, market: marketSymbol, result: { error: error.message } });
       }
     }
-    
+
     // ✅ CORREÇÃO: Processamento sequencial concluído
 
     // Ordena os resultados pelo índice original e mostra logs

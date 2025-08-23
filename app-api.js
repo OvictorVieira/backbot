@@ -904,7 +904,7 @@ async function startTrailingStopSyncMonitor(botId) {
 function setupBotMonitors(botId, config) {
   Logger.info(`🚀 [MONITORS] Iniciando TODOS os monitores para bot ${botId} (${config.botName})...`);
 
-  // Monitor de ordens pendentes - 15 segundos
+  // Monitor de ordens pendentes - 90 segundos (aumentado de 15s)
   const runPendingOrdersMonitor = async () => {
     try {
       Logger.debug(`🔄 [PENDING_ORDERS] Executando para bot ${botId}`);
@@ -912,11 +912,11 @@ function setupBotMonitors(botId, config) {
     } catch (error) {
       Logger.error(`❌ [${config.botName}][PENDING_ORDERS] Erro no monitoramento do bot ${botId}:`, error.message);
     }
-    setTimeout(runPendingOrdersMonitor, 15000);
+    setTimeout(runPendingOrdersMonitor, 90000);
   };
-  setTimeout(runPendingOrdersMonitor, 15000);
+  setTimeout(runPendingOrdersMonitor, 90000);
 
-  // Monitor de ordens órfãs - 60 segundos
+  // Monitor de ordens órfãs - 120 segundos (aumentado de 60s)
   const runOrphanOrdersMonitor = async () => {
     try {
       Logger.debug(`🔄 [ORPHAN_MONITOR] Executando para bot ${botId}`);
@@ -924,11 +924,11 @@ function setupBotMonitors(botId, config) {
     } catch (error) {
       Logger.error(`❌ [${config.botName}][ORPHAN_MONITOR] Erro no monitoramento do bot ${botId}:`, error.message);
     }
-    setTimeout(runOrphanOrdersMonitor, 60000);
+    setTimeout(runOrphanOrdersMonitor, 120000);
   };
-  setTimeout(runOrphanOrdersMonitor, 60000);
+  setTimeout(runOrphanOrdersMonitor, 120000);
 
-  // Monitor de take profit - 30 segundos
+  // Monitor de take profit - 120 segundos (aumentado de 30s)
   const runTakeProfitMonitor = async () => {
     try {
       Logger.debug(`🔄 [TAKE_PROFIT] Executando para bot ${botId}`);
@@ -936,9 +936,9 @@ function setupBotMonitors(botId, config) {
     } catch (error) {
       Logger.error(`❌ [${config.botName}][TAKE_PROFIT] Erro no monitoramento do bot ${botId}:`, error.message);
     }
-    setTimeout(runTakeProfitMonitor, 30000);
+    setTimeout(runTakeProfitMonitor, 120000);
   };
-  setTimeout(runTakeProfitMonitor, 30000);
+  setTimeout(runTakeProfitMonitor, 120000);
 
   // Monitor de trailing stops órfãos - 5 minutos inicialmente
   const runTrailingStopsCleanerMonitor = async () => {
@@ -953,7 +953,7 @@ function setupBotMonitors(botId, config) {
   // Inicia com delay de 2 segundos para não sobrecarregar
   setTimeout(runTrailingStopsCleanerMonitor, 2000);
 
-  // Monitor de sincronização trailing stop - 2 minutos
+  // Monitor de sincronização trailing stop - 5 minutos (aumentado de 2 minutos)
   const runTrailingStopSyncMonitor = async () => {
     try {
       Logger.debug(`🔄 [TRAILING_SYNC] Executando para bot ${botId}`);
@@ -961,9 +961,9 @@ function setupBotMonitors(botId, config) {
     } catch (error) {
       Logger.error(`❌ [${config.botName}][TRAILING_SYNC] Erro no monitoramento do bot ${botId}:`, error.message);
     }
-    setTimeout(runTrailingStopSyncMonitor, 120000); // 2 minutos
+    setTimeout(runTrailingStopSyncMonitor, 300000); // 5 minutos
   };
-  setTimeout(runTrailingStopSyncMonitor, 30000); // Inicia após 30 segundos
+  setTimeout(runTrailingStopSyncMonitor, 60000); // Inicia após 1 minuto
 
   Logger.info(`✅ [MONITORS] Todos os monitores iniciados para bot ${botId} (${config.botName})`);
 
