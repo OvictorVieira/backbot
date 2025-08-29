@@ -3,7 +3,6 @@ import { auth } from './Authentication.js';
 import Logger from '../../Utils/Logger.js';
 
 class Account {
-
   async getAccount(strategy = null, apiKey = null, apiSecret = null) {
     const timestamp = Date.now();
 
@@ -12,7 +11,7 @@ class Account {
       timestamp,
       params: {},
       apiKey,
-      apiSecret
+      apiSecret,
     });
 
     try {
@@ -41,13 +40,13 @@ class Account {
       timestamp,
       params: { symbol },
       apiKey,
-      apiSecret
+      apiSecret,
     });
 
     try {
       const response = await axios.get(`${process.env.API_URL}/api/v1/account/limits/borrow`, {
         headers,
-        params: { symbol }, 
+        params: { symbol },
       });
 
       return response.data;
@@ -56,17 +55,17 @@ class Account {
       return null;
     }
   }
-	
+
   //side: "Bid" "Ask"
   async getMaxOrderQuantity(symbol, side, apiKey = null, apiSecret = null) {
     const timestamp = Date.now();
 
-     if (!symbol) {
+    if (!symbol) {
       Logger.error('symbol required');
       return null;
     }
 
-     if (!side) {
+    if (!side) {
       Logger.error('side required');
       return null;
     }
@@ -74,15 +73,15 @@ class Account {
     const headers = auth({
       instruction: 'maxOrderQuantity',
       timestamp,
-      params: {symbol, side},
+      params: { symbol, side },
       apiKey,
-      apiSecret
+      apiSecret,
     });
 
     try {
       const response = await axios.get(`${process.env.API_URL}/api/v1/account/limits/order`, {
         headers,
-        params: {symbol, side},
+        params: { symbol, side },
       });
 
       return response.data;
@@ -92,7 +91,13 @@ class Account {
     }
   }
 
-  async getMaxWithdrawalQuantity(symbol, autoBorrow = true, autoLendRedeem = true, apiKey = null, apiSecret = null) {
+  async getMaxWithdrawalQuantity(
+    symbol,
+    autoBorrow = true,
+    autoLendRedeem = true,
+    apiKey = null,
+    apiSecret = null
+  ) {
     const timestamp = Date.now();
 
     if (!symbol) {
@@ -103,15 +108,15 @@ class Account {
     const headers = auth({
       instruction: 'maxWithdrawalQuantity',
       timestamp,
-      params: {symbol, autoBorrow, autoLendRedeem},
+      params: { symbol, autoBorrow, autoLendRedeem },
       apiKey,
-      apiSecret
+      apiSecret,
     });
 
     try {
       const response = await axios.get(`${process.env.API_URL}/api/v1/account/limits/withdrawal`, {
         headers,
-        params: {symbol, autoBorrow, autoLendRedeem}
+        params: { symbol, autoBorrow, autoLendRedeem },
       });
       return response.data;
     } catch (error) {
@@ -169,7 +174,6 @@ class Account {
     }
   }
   */
-
 }
 
 export default new Account();

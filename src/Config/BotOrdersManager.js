@@ -125,7 +125,17 @@ class BotOrdersManager {
    * @param {number} price - Preço
    * @param {string} orderType - Tipo da ordem (MARKET/LIMIT)
    */
-  async addOrder(botId, externalOrderId, symbol, side, quantity, price, orderType, exchangeCreatedAt = null, clientId = null) {
+  async addOrder(
+    botId,
+    externalOrderId,
+    symbol,
+    side,
+    quantity,
+    price,
+    orderType,
+    exchangeCreatedAt = null,
+    clientId = null
+  ) {
     const order = {
       botId,
       externalOrderId,
@@ -145,19 +155,23 @@ class BotOrdersManager {
       closeTime: null, // Timestamp de fechamento
       closeQuantity: null, // Quantidade fechada
       closeType: null, // Tipo de fechamento (MANUAL, AUTO, STOP_LOSS, TAKE_PROFIT)
-      pnl: null // PnL da ordem (quando fechada)
+      pnl: null, // PnL da ordem (quando fechada)
     };
 
     try {
       // Tenta salvar no SQLite primeiro
       if (OrdersService.dbService && OrdersService.dbService.isInitialized()) {
         await OrdersService.addOrder(order);
-        console.log(`📝 [BOT_ORDERS] Ordem registrada no SQLite: Bot ${botId} -> Order ${externalOrderId} (${symbol} ${side} ${quantity})`);
+        console.log(
+          `📝 [BOT_ORDERS] Ordem registrada no SQLite: Bot ${botId} -> Order ${externalOrderId} (${symbol} ${side} ${quantity})`
+        );
       } else {
         // Fallback para JSON se SQLite não estiver disponível
         this.orders.orders.push(order);
         this.saveOrdersToJson();
-        console.log(`📝 [BOT_ORDERS] Ordem registrada no JSON: Bot ${botId} -> Order ${externalOrderId} (${symbol} ${side} ${quantity})`);
+        console.log(
+          `📝 [BOT_ORDERS] Ordem registrada no JSON: Bot ${botId} -> Order ${externalOrderId} (${symbol} ${side} ${quantity})`
+        );
       }
     } catch (error) {
       console.error('❌ Erro ao adicionar ordem:', error.message);
@@ -178,14 +192,20 @@ class BotOrdersManager {
       if (OrdersService.dbService && OrdersService.dbService.isInitialized()) {
         console.log(`🔍 [BOT_ORDERS] Buscando ordens do SQLite para Bot ${botId}`);
         const orders = await OrdersService.getOrdersByBotId(botId);
-        console.log(`🔍 [BOT_ORDERS] Ordens encontradas no SQLite para Bot ${botId}: ${orders.length}`);
+        console.log(
+          `🔍 [BOT_ORDERS] Ordens encontradas no SQLite para Bot ${botId}: ${orders.length}`
+        );
         return orders;
       } else {
         // Fallback para JSON se SQLite não estiver disponível
         console.log(`🔍 [BOT_ORDERS] Buscando ordens do JSON para Bot ${botId}`);
-        console.log(`🔍 [BOT_ORDERS] Total de ordens no sistema JSON: ${this.orders.orders.length}`);
+        console.log(
+          `🔍 [BOT_ORDERS] Total de ordens no sistema JSON: ${this.orders.orders.length}`
+        );
         const botOrders = this.orders.orders.filter(order => order.botId === botId);
-        console.log(`🔍 [BOT_ORDERS] Ordens encontradas no JSON para Bot ${botId}: ${botOrders.length}`);
+        console.log(
+          `🔍 [BOT_ORDERS] Ordens encontradas no JSON para Bot ${botId}: ${botOrders.length}`
+        );
         return botOrders;
       }
     } catch (error) {
@@ -241,21 +261,29 @@ class BotOrdersManager {
         console.log(`🗑️ [BOT_ORDERS] Ordem removida do SQLite: ${externalOrderId}`);
       } else {
         // Fallback para JSON
-        const index = this.orders.orders.findIndex(order => order.externalOrderId === externalOrderId);
+        const index = this.orders.orders.findIndex(
+          order => order.externalOrderId === externalOrderId
+        );
         if (index !== -1) {
           const removedOrder = this.orders.orders.splice(index, 1)[0];
           this.saveOrdersToJson();
-          console.log(`🗑️ [BOT_ORDERS] Ordem removida do JSON: ${externalOrderId} (Bot ${removedOrder.botId})`);
+          console.log(
+            `🗑️ [BOT_ORDERS] Ordem removida do JSON: ${externalOrderId} (Bot ${removedOrder.botId})`
+          );
         }
       }
     } catch (error) {
       console.error('❌ Erro ao remover ordem:', error.message);
       // Fallback para JSON
-      const index = this.orders.orders.findIndex(order => order.externalOrderId === externalOrderId);
+      const index = this.orders.orders.findIndex(
+        order => order.externalOrderId === externalOrderId
+      );
       if (index !== -1) {
         const removedOrder = this.orders.orders.splice(index, 1)[0];
         this.saveOrdersToJson();
-        console.log(`🗑️ [BOT_ORDERS] Ordem removida do JSON (fallback): ${externalOrderId} (Bot ${removedOrder.botId})`);
+        console.log(
+          `🗑️ [BOT_ORDERS] Ordem removida do JSON (fallback): ${externalOrderId} (Bot ${removedOrder.botId})`
+        );
       }
     }
   }
@@ -306,11 +334,13 @@ class BotOrdersManager {
       // Separa ordens por status
       // CORREÇÃO: Ordens PENDING no banco não são necessariamente ordens abertas na corretora
       // Devemos contar apenas ordens que realmente estão abertas (FILLED que ainda não fecharam)
-      const openOrders = botOrders.filter(order =>
-        order.status === 'FILLED' && (!order.closeTime || order.closeTime === '')
+      const openOrders = botOrders.filter(
+        order => order.status === 'FILLED' && (!order.closeTime || order.closeTime === '')
       );
-      const closedOrders = botOrders.filter(order =>
-        order.status === 'CLOSED' || (order.status === 'FILLED' && order.closeTime && order.closeTime !== '')
+      const closedOrders = botOrders.filter(
+        order =>
+          order.status === 'CLOSED' ||
+          (order.status === 'FILLED' && order.closeTime && order.closeTime !== '')
       );
 
       // Calcula PnL total
@@ -340,7 +370,7 @@ class BotOrdersManager {
         winningTrades: winningTrades,
         losingTrades: losingTrades,
         winRate: totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0, // CORRIGIDO: usa totalTrades
-        averagePnl: totalTrades > 0 ? totalPnl / totalTrades : 0 // CORRIGIDO: usa totalTrades
+        averagePnl: totalTrades > 0 ? totalPnl / totalTrades : 0, // CORRIGIDO: usa totalTrades
       };
     } catch (error) {
       console.error('❌ Erro ao obter estatísticas:', error.message);
@@ -358,7 +388,7 @@ class BotOrdersManager {
         winningTrades: 0,
         losingTrades: 0,
         winRate: 0,
-        averagePnl: 0
+        averagePnl: 0,
       };
     }
   }
@@ -422,7 +452,9 @@ class BotOrdersManager {
         return 0;
       }
 
-      console.log(`🚀 [MIGRATION] Iniciando migração de ${orders.length} ordens do JSON para SQLite`);
+      console.log(
+        `🚀 [MIGRATION] Iniciando migração de ${orders.length} ordens do JSON para SQLite`
+      );
 
       let migratedCount = 0;
       let errorCount = 0;
@@ -435,19 +467,29 @@ class BotOrdersManager {
             await OrdersService.addOrder(order);
             migratedCount++;
           } else {
-            console.log(`ℹ️ [MIGRATION] Ordem ${order.externalOrderId} já existe no SQLite, pulando`);
+            console.log(
+              `ℹ️ [MIGRATION] Ordem ${order.externalOrderId} já existe no SQLite, pulando`
+            );
           }
         } catch (error) {
-          console.error(`❌ [MIGRATION] Erro ao migrar ordem ${order.externalOrderId}:`, error.message);
+          console.error(
+            `❌ [MIGRATION] Erro ao migrar ordem ${order.externalOrderId}:`,
+            error.message
+          );
           errorCount++;
         }
       }
 
-      console.log(`✅ [MIGRATION] Migração concluída: ${migratedCount} ordens migradas, ${errorCount} erros`);
+      console.log(
+        `✅ [MIGRATION] Migração concluída: ${migratedCount} ordens migradas, ${errorCount} erros`
+      );
 
       if (migratedCount > 0) {
         // Cria backup do arquivo JSON original
-        const backupFile = this.ordersFile.replace('.json', '_backup_' + new Date().toISOString().replace(/[:.]/g, '-') + '.json');
+        const backupFile = this.ordersFile.replace(
+          '.json',
+          '_backup_' + new Date().toISOString().replace(/[:.]/g, '-') + '.json'
+        );
         fs.copyFileSync(this.ordersFile, backupFile);
         console.log(`💾 [MIGRATION] Backup do JSON criado: ${backupFile}`);
       }

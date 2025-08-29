@@ -39,14 +39,14 @@ let isMultiBotMode = false;
 let trailingStopInterval = 30000; // começa em 30s (aumentado de 1s)
 let trailingStopErrorCount = 0;
 let trailingStopMaxInterval = 120000; // máximo 120s (aumentado de 10s)
-let trailingStopMinInterval = 15000;   // mínimo 15s (aumentado de 0.5s)
+let trailingStopMinInterval = 15000; // mínimo 15s (aumentado de 0.5s)
 let trailingStopLastErrorTime = null;
 
 // Variáveis para controle do intervalo dos monitores
 let pendingOrdersInterval = 15000; // começa em 15s
 let pendingOrdersErrorCount = 0;
 let pendingOrdersMaxInterval = 120000; // máximo 2min
-let pendingOrdersMinInterval = 15000;  // mínimo 15s
+let pendingOrdersMinInterval = 15000; // mínimo 15s
 let pendingOrdersLastErrorTime = null;
 
 // Ordens órfãs agora são gerenciadas pelo sistema multi-bot do app-api.js
@@ -78,7 +78,9 @@ function initializeTrailingStop(ordersService = null) {
   if (ordersService) {
     Logger.info(`✅ [TRAILING_INIT] TrailingStop inicializado com sistema ATIVO de ordens`);
   } else {
-    Logger.info(`✅ [TRAILING_INIT] TrailingStop inicializado com sistema PASSIVO (modo tradicional)`);
+    Logger.info(
+      `✅ [TRAILING_INIT] TrailingStop inicializado com sistema PASSIVO (modo tradicional)`
+    );
   }
 }
 
@@ -95,24 +97,21 @@ function showGlobalTimer(waitTimeMs = null) {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-    hour12: false
+    hour12: false,
   });
 
   // Função para calcular o progresso baseado no tempo real decorrido
   const calculateProgress = () => {
     // Usa o timeframe passado como parâmetro ou fallback para activeBotConfig
-    const timeframeMs = waitTimeMs || TimeframeConfig.parseTimeframeToMs(activeBotConfig?.time || '5m');
+    const timeframeMs =
+      waitTimeMs || TimeframeConfig.parseTimeframeToMs(activeBotConfig?.time || '5m');
     const now = Date.now();
     const currentPeriodStart = Math.floor(now / timeframeMs) * timeframeMs;
     const elapsedInPeriod = now - currentPeriodStart;
     const progress = Math.min((elapsedInPeriod / timeframeMs) * 100, 100);
 
-
-
     return Math.floor(progress);
   };
-
-
 
   // Intercepta console.log para manter o progresso no rodapé
   const originalLog = console.log;
@@ -140,9 +139,10 @@ function showGlobalTimer(waitTimeMs = null) {
   console.log = (...args) => {
     // Filtra logs que podem quebrar a barra de progresso
     const message = args.join(' ');
-    const isSpamLog = message.includes('Stop loss já existe') ||
-                     message.includes('ℹ️ [CONTA') ||
-                     message.includes('⚠️ [CONTA');
+    const isSpamLog =
+      message.includes('Stop loss já existe') ||
+      message.includes('ℹ️ [CONTA') ||
+      message.includes('⚠️ [CONTA');
 
     // Se for log de spam, não mostra para não quebrar a barra
     if (isSpamLog) {
@@ -236,7 +236,9 @@ async function startDecision() {
 
   // Verifica se o bot está habilitado
   if (!activeBotConfig.enabled) {
-    console.log(`⏸️ Bot ${activeBotConfig.botName} está pausado. Ative-o no dashboard para continuar.`);
+    console.log(
+      `⏸️ Bot ${activeBotConfig.botName} está pausado. Ative-o no dashboard para continuar.`
+    );
     return;
   }
 
@@ -252,14 +254,20 @@ async function startDecision() {
   if (executionMode === 'ON_CANDLE_CLOSE') {
     // Modo ON_CANDLE_CLOSE: Aguarda o próximo fechamento de vela
     nextInterval = timeframeConfig.getTimeUntilNextCandleClose(activeBotConfig.time);
-          Logger.debug(`⏰ [${activeBotConfig.botName}][ON_CANDLE_CLOSE] Próxima análise em ${Math.floor(nextInterval / 1000)}s`);
+    Logger.debug(
+      `⏰ [${activeBotConfig.botName}][ON_CANDLE_CLOSE] Próxima análise em ${Math.floor(nextInterval / 1000)}s`
+    );
   } else {
     // Modo REALTIME: Análise a cada 60 segundos
     nextInterval = 60000;
-          Logger.debug(`⏰ [${activeBotConfig.botName}][REALTIME] Próxima análise em ${Math.floor(nextInterval / 1000)}s`);
+    Logger.debug(
+      `⏰ [${activeBotConfig.botName}][REALTIME] Próxima análise em ${Math.floor(nextInterval / 1000)}s`
+    );
   }
 
-  console.log(`🔧 [${activeBotConfig.botName}][DEBUG] Execution Mode: ${executionMode}, Next Interval: ${nextInterval}ms`);
+  console.log(
+    `🔧 [${activeBotConfig.botName}][DEBUG] Execution Mode: ${executionMode}, Next Interval: ${nextInterval}ms`
+  );
 
   // Inicia o timer geral após cada análise
   showGlobalTimer();
@@ -271,11 +279,17 @@ async function startStops() {
   try {
     // Verifica se há configuração do bot ativo
     if (!activeBotConfig || !activeBotConfig.apiKey || !activeBotConfig.apiSecret) {
-      console.warn(`⚠️ [${activeBotConfig.botName}][TRAILING] Configuração do bot não encontrada ou credenciais ausentes`);
+      console.warn(
+        `⚠️ [${activeBotConfig.botName}][TRAILING] Configuração do bot não encontrada ou credenciais ausentes`
+      );
       return;
     }
 
-    const trailingStopInstance = new TrailingStop(activeBotConfig.strategyName || 'DEFAULT', activeBotConfig, globalOrdersService);
+    const trailingStopInstance = new TrailingStop(
+      activeBotConfig.strategyName || 'DEFAULT',
+      activeBotConfig,
+      globalOrdersService
+    );
     await trailingStopInstance.stopLoss();
     // Se sucesso, reduz gradualmente o intervalo até o mínimo
     if (trailingStopInterval > trailingStopMinInterval) {
@@ -287,14 +301,23 @@ async function startStops() {
     trailingStopErrorCount = 0;
   } catch (error) {
     // Detecta erro de rate limit (HTTP 429 ou mensagem)
-    if (error?.response?.status === 429 || String(error).includes('rate limit') || String(error).includes('429')) {
+    if (
+      error?.response?.status === 429 ||
+      String(error).includes('rate limit') ||
+      String(error).includes('429')
+    ) {
       trailingStopErrorCount++;
       trailingStopLastErrorTime = Date.now();
       // Aumenta o intervalo exponencialmente até o máximo
       trailingStopInterval = Math.min(trailingStopMaxInterval, trailingStopInterval * 2);
-      console.warn(`⚠️ [${activeBotConfig.botName}][TRAILING] Rate limit detectado! Aumentando intervalo para ${trailingStopInterval}ms`);
+      console.warn(
+        `⚠️ [${activeBotConfig.botName}][TRAILING] Rate limit detectado! Aumentando intervalo para ${trailingStopInterval}ms`
+      );
     } else {
-      console.error(`❌ [${activeBotConfig.botName}][TRAILING] Erro inesperado no trailing stop:`, error.message || error);
+      console.error(
+        `❌ [${activeBotConfig.botName}][TRAILING] Erro inesperado no trailing stop:`,
+        error.message || error
+      );
     }
   }
   setTimeout(startStops, trailingStopInterval);
@@ -316,7 +339,9 @@ async function startPendingOrdersMonitor() {
   try {
     // Verifica se há configuração do bot ativo
     if (!activeBotConfig || !activeBotConfig.apiKey || !activeBotConfig.apiSecret) {
-      console.warn(`⚠️ [${activeBotConfig.botName}][PENDING_ORDERS] Configuração do bot não encontrada ou credenciais ausentes`);
+      console.warn(
+        `⚠️ [${activeBotConfig.botName}][PENDING_ORDERS] Configuração do bot não encontrada ou credenciais ausentes`
+      );
       return;
     }
 
@@ -329,19 +354,27 @@ async function startPendingOrdersMonitor() {
     pendingOrdersErrorCount = 0;
   } catch (error) {
     // Detecta erro de rate limit (HTTP 429 ou mensagem)
-    if (error?.response?.status === 429 || String(error).includes('rate limit') || String(error).includes('429')) {
+    if (
+      error?.response?.status === 429 ||
+      String(error).includes('rate limit') ||
+      String(error).includes('429')
+    ) {
       pendingOrdersErrorCount++;
       pendingOrdersLastErrorTime = Date.now();
       // Aumenta o intervalo exponencialmente até o máximo
       pendingOrdersInterval = Math.min(pendingOrdersMaxInterval, pendingOrdersInterval * 2);
-      console.warn(`⚠️ [${activeBotConfig.botName}][PENDING_ORDERS] Rate limit detectado! Aumentando intervalo para ${Math.floor(pendingOrdersInterval / 1000)}s`);
+      console.warn(
+        `⚠️ [${activeBotConfig.botName}][PENDING_ORDERS] Rate limit detectado! Aumentando intervalo para ${Math.floor(pendingOrdersInterval / 1000)}s`
+      );
     } else {
-      console.error(`❌ [${activeBotConfig.botName}][PENDING_ORDERS] Erro inesperado no monitoramento de ordens pendentes:`, error.message || error);
+      console.error(
+        `❌ [${activeBotConfig.botName}][PENDING_ORDERS] Erro inesperado no monitoramento de ordens pendentes:`,
+        error.message || error
+      );
     }
   }
   setTimeout(startPendingOrdersMonitor, pendingOrdersInterval);
 }
-
 
 // Função para inicializar ou re-inicializar a estratégia do Decision
 function initializeDecisionStrategy(strategyType) {
@@ -444,7 +477,9 @@ async function startBot() {
     initializeTrailingStop(globalOrdersService);
 
     // Log da estratégia selecionada
-    console.log(`🔑 Estratégia ${activeBotConfig.strategyName}: usando credenciais do bot ${activeBotConfig.botName}`);
+    console.log(
+      `🔑 Estratégia ${activeBotConfig.strategyName}: usando credenciais do bot ${activeBotConfig.botName}`
+    );
 
     // Log do modo de execução
     const executionMode = activeBotConfig.executionMode || 'REALTIME';
@@ -459,7 +494,10 @@ async function startBot() {
     try {
       await PnlController.run(24, activeBotConfig);
     } catch (pnlError) {
-      console.warn(`⚠️ [APP] Erro no PnL Controller para bot ${activeBotConfig.botName}:`, pnlError.message);
+      console.warn(
+        `⚠️ [APP] Erro no PnL Controller para bot ${activeBotConfig.botName}:`,
+        pnlError.message
+      );
     }
 
     // Inicia os serviços
@@ -478,7 +516,9 @@ async function startBot() {
     console.log(`🔧 [DEBUG] Wait Check:`, waitCheck);
 
     if (waitCheck.shouldWait) {
-      console.log(`⏰ [ON_CANDLE_CLOSE] Próxima análise em ${Math.floor(waitCheck.waitTime / 1000)}s (fechamento de vela)`);
+      console.log(
+        `⏰ [ON_CANDLE_CLOSE] Próxima análise em ${Math.floor(waitCheck.waitTime / 1000)}s (fechamento de vela)`
+      );
 
       // Inicia o timer geral para mostrar progresso
       showGlobalTimer(waitCheck.waitTime);
@@ -501,7 +541,6 @@ async function startBot() {
     console.log(`🔧 Estratégia: ${activeBotConfig.strategyName}`);
     console.log(`💰 Capital: ${activeBotConfig.capitalPercentage}%`);
     console.log(`⏰ Timeframe: ${activeBotConfig.time}`);
-
   } catch (error) {
     console.error('❌ Erro ao iniciar BackBot:', error.message);
     process.exit(1);
@@ -512,10 +551,10 @@ async function startBot() {
 function setupInteractiveCommands() {
   const rl = readline.createInterface({
     input: process.stdin,
-    output: process.stdout
+    output: process.stdout,
   });
 
-  rl.on('line', (input) => {
+  rl.on('line', input => {
     const command = input.trim().toLowerCase();
 
     switch (command) {
@@ -525,8 +564,13 @@ function setupInteractiveCommands() {
       case 'cleanup':
         console.log('🧹 Iniciando limpeza manual de ordens órfãs...');
         import('./src/Controllers/OrderController.js').then(({ default: OrderController }) => {
-          OrderController.monitorAndCleanupOrphanedOrders(activeBotConfig.botName, activeBotConfig).then(result => {
-            console.log(`🧹 Limpeza concluída: ${result.orphaned} ordens órfãs detectadas, ${result.cancelled} canceladas`);
+          OrderController.monitorAndCleanupOrphanedOrders(
+            activeBotConfig.botName,
+            activeBotConfig
+          ).then(result => {
+            console.log(
+              `🧹 Limpeza concluída: ${result.orphaned} ordens órfãs detectadas, ${result.cancelled} canceladas`
+            );
             if (result.errors.length > 0) {
               console.log(`❌ Erros: ${result.errors.join(', ')}`);
             }
@@ -535,10 +579,17 @@ function setupInteractiveCommands() {
         break;
       case 'force-cleanup':
         console.log('🧹 Iniciando limpeza AGRESSIVA de ordens órfãs...');
-        console.log('⚠️ ATENÇÃO: Este comando cancela TODAS as ordens reduceOnly sem posição ativa!');
+        console.log(
+          '⚠️ ATENÇÃO: Este comando cancela TODAS as ordens reduceOnly sem posição ativa!'
+        );
         import('./src/Controllers/OrderController.js').then(({ default: OrderController }) => {
-          OrderController.forceCleanupAllOrphanedOrders(activeBotConfig.botName, activeBotConfig).then(result => {
-            console.log(`🧹 Limpeza agressiva concluída: ${result.orphaned} ordens órfãs detectadas, ${result.cancelled} canceladas`);
+          OrderController.forceCleanupAllOrphanedOrders(
+            activeBotConfig.botName,
+            activeBotConfig
+          ).then(result => {
+            console.log(
+              `🧹 Limpeza agressiva concluída: ${result.orphaned} ordens órfãs detectadas, ${result.cancelled} canceladas`
+            );
             if (result.errors.length > 0) {
               console.log(`❌ Erros: ${result.errors.join(', ')}`);
             }
@@ -549,7 +600,10 @@ function setupInteractiveCommands() {
         console.log('🔍 Iniciando varredura COMPLETA de ordens órfãs na corretora...');
         console.log('⚠️ Este comando verifica TODOS os símbolos na corretora!');
         import('./src/Controllers/OrderController.js').then(({ default: OrderController }) => {
-          OrderController.scanAndCleanupAllOrphanedOrders(activeBotConfig.botName, activeBotConfig).then(result => {
+          OrderController.scanAndCleanupAllOrphanedOrders(
+            activeBotConfig.botName,
+            activeBotConfig
+          ).then(result => {
             console.log(`🔍 Varredura completa concluída:`);
             console.log(`   • Símbolos verificados: ${result.symbolsScanned}`);
             console.log(`   • Ordens órfãs detectadas: ${result.orphaned}`);
@@ -560,7 +614,9 @@ function setupInteractiveCommands() {
             if (result.detailedResults && result.detailedResults.length > 0) {
               console.log('\n📊 Resultados detalhados:');
               result.detailedResults.forEach(r => {
-                console.log(`   • ${r.symbol}: ${r.orphanedFound} órfãs → ${r.cancelled} canceladas`);
+                console.log(
+                  `   • ${r.symbol}: ${r.orphanedFound} órfãs → ${r.cancelled} canceladas`
+                );
               });
             }
           });
@@ -570,8 +626,12 @@ function setupInteractiveCommands() {
         console.log('\n💡 Comandos disponíveis:');
         console.log('   • "status" - Ver status do stop loss dinâmico');
         console.log('   • "cleanup" - Limpar ordens de stop loss órfãs');
-        console.log('   • "force-cleanup" - Limpeza agressiva (cancela TODAS as ordens reduceOnly órfãs)');
-        console.log('   • "scan-cleanup" - Varredura completa da corretora (verifica TODOS os símbolos)');
+        console.log(
+          '   • "force-cleanup" - Limpeza agressiva (cancela TODAS as ordens reduceOnly órfãs)'
+        );
+        console.log(
+          '   • "scan-cleanup" - Varredura completa da corretora (verifica TODOS os símbolos)'
+        );
         console.log('   • "exit" - Sair do bot');
         console.log('   • "help" - Ver esta ajuda\n');
         break;
@@ -604,7 +664,6 @@ async function gracefulShutdown(signal) {
 
     console.log('✅ [SHUTDOWN] BackBot encerrado com sucesso');
     process.exit(0);
-
   } catch (error) {
     console.error('❌ [SHUTDOWN] Erro durante shutdown:', error.message);
     process.exit(1);
@@ -616,7 +675,7 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
 // Handler para erros não capturados
-process.on('uncaughtException', (error) => {
+process.on('uncaughtException', error => {
   console.error('❌ [UNCAUGHT_EXCEPTION] Erro não capturado:', error);
   gracefulShutdown('UNCAUGHT_EXCEPTION');
 });

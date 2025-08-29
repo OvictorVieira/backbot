@@ -2,12 +2,12 @@ import { jest } from '@jest/globals';
 
 // Mock dos módulos usando ES modules
 const mockAccountController = {
-  get: jest.fn()
+  get: jest.fn(),
 };
 
 // Mock dos módulos ANTES da importação
 jest.unstable_mockModule('../../Controllers/AccountController.js', () => ({
-  default: mockAccountController
+  default: mockAccountController,
 }));
 
 // Importa o BaseStrategy após o mock
@@ -26,8 +26,8 @@ describe('BaseStrategy', () => {
         vwap: {
           vwap: 50000,
           lowerBands: [49000, 48000, 47000],
-          upperBands: [51000, 52000, 53000]
-        }
+          upperBands: [51000, 52000, 53000],
+        },
       };
 
       const result = baseStrategy.validateData(data);
@@ -43,7 +43,7 @@ describe('BaseStrategy', () => {
 
     test('should return false for data without vwap', () => {
       const data = {
-        rsi: { value: 50 }
+        rsi: { value: 50 },
       };
 
       const result = baseStrategy.validateData(data);
@@ -54,8 +54,8 @@ describe('BaseStrategy', () => {
       const data = {
         vwap: {
           vwap: 50000,
-          upperBands: [51000, 52000, 53000]
-        }
+          upperBands: [51000, 52000, 53000],
+        },
       };
 
       const result = baseStrategy.validateData(data);
@@ -66,8 +66,8 @@ describe('BaseStrategy', () => {
       const data = {
         vwap: {
           vwap: 50000,
-          lowerBands: [49000, 48000, 47000]
-        }
+          lowerBands: [49000, 48000, 47000],
+        },
       };
 
       const result = baseStrategy.validateData(data);
@@ -79,8 +79,8 @@ describe('BaseStrategy', () => {
         vwap: {
           vwap: null,
           lowerBands: [49000, 48000, 47000],
-          upperBands: [51000, 52000, 53000]
-        }
+          upperBands: [51000, 52000, 53000],
+        },
       };
 
       const result = baseStrategy.validateData(data);
@@ -97,7 +97,14 @@ describe('BaseStrategy', () => {
       const investmentUSD = 100;
       const fee = 0.0004;
 
-      const result = baseStrategy.validateTakeProfit(action, entry, stop, target, investmentUSD, fee);
+      const result = baseStrategy.validateTakeProfit(
+        action,
+        entry,
+        stop,
+        target,
+        investmentUSD,
+        fee
+      );
 
       expect(result.isValid).toBe(true);
       expect(result.pnl).toBeGreaterThan(0);
@@ -114,7 +121,14 @@ describe('BaseStrategy', () => {
       const investmentUSD = 100;
       const fee = 0.0004;
 
-      const result = baseStrategy.validateTakeProfit(action, entry, stop, target, investmentUSD, fee);
+      const result = baseStrategy.validateTakeProfit(
+        action,
+        entry,
+        stop,
+        target,
+        investmentUSD,
+        fee
+      );
 
       expect(result.isValid).toBe(true);
       expect(result.pnl).toBeGreaterThan(0);
@@ -135,7 +149,14 @@ describe('BaseStrategy', () => {
       const investmentUSD = 100;
       const fee = 0.0004;
 
-      const result = baseStrategy.validateTakeProfit(action, entry, stop, target, investmentUSD, fee);
+      const result = baseStrategy.validateTakeProfit(
+        action,
+        entry,
+        stop,
+        target,
+        investmentUSD,
+        fee
+      );
 
       expect(result.isValid).toBe(false);
       expect(result.reasons.pct).toContain('TP 0.50% < mínimo 1.0%');
@@ -154,7 +175,14 @@ describe('BaseStrategy', () => {
       const investmentUSD = 100;
       const fee = 0.0004;
 
-      const result = baseStrategy.calculatePnLAndRisk(action, entry, stop, target, investmentUSD, fee);
+      const result = baseStrategy.calculatePnLAndRisk(
+        action,
+        entry,
+        stop,
+        target,
+        investmentUSD,
+        fee
+      );
 
       expect(result.pnl).toBeGreaterThan(0);
       expect(result.risk).toBeGreaterThan(0);
@@ -170,7 +198,14 @@ describe('BaseStrategy', () => {
       const investmentUSD = 100;
       const fee = 0.0004;
 
-      const result = baseStrategy.calculatePnLAndRisk(action, entry, stop, target, investmentUSD, fee);
+      const result = baseStrategy.calculatePnLAndRisk(
+        action,
+        entry,
+        stop,
+        target,
+        investmentUSD,
+        fee
+      );
 
       expect(result.pnl).toBeGreaterThan(0);
       expect(result.risk).toBeGreaterThan(0);
@@ -186,7 +221,14 @@ describe('BaseStrategy', () => {
       const investmentUSD = 100;
       const fee = 0;
 
-      const result = baseStrategy.calculatePnLAndRisk(action, entry, stop, target, investmentUSD, fee);
+      const result = baseStrategy.calculatePnLAndRisk(
+        action,
+        entry,
+        stop,
+        target,
+        investmentUSD,
+        fee
+      );
 
       expect(result.pnl).toBeGreaterThan(0);
       expect(result.risk).toBeGreaterThan(0);
@@ -198,20 +240,26 @@ describe('BaseStrategy', () => {
       // Simula o retorno de AccountController.get()
       mockAccountController.get.mockResolvedValue({
         leverage: 10,
-        markets: [{ symbol: 'BTC_USDC_PERP', decimal_quantity: 4 }]
+        markets: [{ symbol: 'BTC_USDC_PERP', decimal_quantity: 4 }],
       });
 
       const data = {
         market: {
-          symbol: 'BTC_USDC_PERP'
-        }
+          symbol: 'BTC_USDC_PERP',
+        },
       };
       const price = 50000;
       const isLong = true;
       const stopLossPct = 4.0;
       const takeProfitPct = 0.5;
 
-      const result = await baseStrategy.calculateStopAndTarget(data, price, isLong, stopLossPct, takeProfitPct);
+      const result = await baseStrategy.calculateStopAndTarget(
+        data,
+        price,
+        isLong,
+        stopLossPct,
+        takeProfitPct
+      );
 
       expect(result).not.toBeNull();
       expect(result.stop).toBeLessThan(price);
@@ -224,20 +272,26 @@ describe('BaseStrategy', () => {
       // Simula o retorno de AccountController.get()
       mockAccountController.get.mockResolvedValue({
         leverage: 10,
-        markets: [{ symbol: 'BTC_USDC_PERP', decimal_quantity: 4 }]
+        markets: [{ symbol: 'BTC_USDC_PERP', decimal_quantity: 4 }],
       });
 
       const data = {
         market: {
-          symbol: 'BTC_USDC_PERP'
-        }
+          symbol: 'BTC_USDC_PERP',
+        },
       };
       const price = 50000;
       const isLong = false;
       const stopLossPct = 4.0;
       const takeProfitPct = 0.5;
 
-      const result = await baseStrategy.calculateStopAndTarget(data, price, isLong, stopLossPct, takeProfitPct);
+      const result = await baseStrategy.calculateStopAndTarget(
+        data,
+        price,
+        isLong,
+        stopLossPct,
+        takeProfitPct
+      );
 
       expect(result).not.toBeNull();
       expect(result.stop).toBeGreaterThan(price);
@@ -249,15 +303,21 @@ describe('BaseStrategy', () => {
     test('should return null for invalid stopLossPct', async () => {
       const data = {
         market: {
-          symbol: 'BTC_USDC_PERP'
-        }
+          symbol: 'BTC_USDC_PERP',
+        },
       };
       const price = 50000;
       const isLong = true;
       const stopLossPct = 0; // Invalid
       const takeProfitPct = 0.5;
 
-      const result = await baseStrategy.calculateStopAndTarget(data, price, isLong, stopLossPct, takeProfitPct);
+      const result = await baseStrategy.calculateStopAndTarget(
+        data,
+        price,
+        isLong,
+        stopLossPct,
+        takeProfitPct
+      );
 
       expect(result).toBeNull();
     });
@@ -265,15 +325,21 @@ describe('BaseStrategy', () => {
     test('should return null for invalid takeProfitPct', async () => {
       const data = {
         market: {
-          symbol: 'BTC_USDC_PERP'
-        }
+          symbol: 'BTC_USDC_PERP',
+        },
       };
       const price = 50000;
       const isLong = true;
       const stopLossPct = 4.0;
       const takeProfitPct = 0; // Invalid
 
-      const result = await baseStrategy.calculateStopAndTarget(data, price, isLong, stopLossPct, takeProfitPct);
+      const result = await baseStrategy.calculateStopAndTarget(
+        data,
+        price,
+        isLong,
+        stopLossPct,
+        takeProfitPct
+      );
 
       expect(result).toBeNull();
     });
@@ -286,8 +352,8 @@ describe('BaseStrategy', () => {
         vwap: {
           vwap: 50000,
           lowerBands: [49000, 48000, 47000],
-          upperBands: [51000, 52000, 53000]
-        }
+          upperBands: [51000, 52000, 53000],
+        },
       };
       const investmentUSD = 100;
       const media_rsi = 50;
@@ -297,4 +363,4 @@ describe('BaseStrategy', () => {
       }).toThrow('analyzeTrade must be implemented by subclass');
     });
   });
-}); 
+});

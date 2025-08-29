@@ -42,12 +42,11 @@ class RateLimiter {
 
     // Aumenta o delay exponencialmente, mas limitado pelo máximo
     const oldDelay = this.currentDelay;
-    this.currentDelay = Math.min(
-      this.currentDelay * this.increaseMultiplier,
-      this.maxDelay
-    );
+    this.currentDelay = Math.min(this.currentDelay * this.increaseMultiplier, this.maxDelay);
 
-    Logger.warn(`⚠️ [RATE_LIMITER] Rate limit #${this.consecutiveRateLimits} - Delay: ${oldDelay}ms → ${this.currentDelay}ms`);
+    Logger.warn(
+      `⚠️ [RATE_LIMITER] Rate limit #${this.consecutiveRateLimits} - Delay: ${oldDelay}ms → ${this.currentDelay}ms`
+    );
   }
 
   /**
@@ -58,24 +57,25 @@ class RateLimiter {
     this.successfulRequests++;
 
     // Se não houve rate limits recentes e tivemos várias requests bem-sucedidas
-    const timeSinceLastRateLimit = this.lastRateLimitTime ?
-      Date.now() - this.lastRateLimitTime : Infinity;
+    const timeSinceLastRateLimit = this.lastRateLimitTime
+      ? Date.now() - this.lastRateLimitTime
+      : Infinity;
 
     // Só reduz delay se:
     // 1. Passou tempo suficiente desde o último rate limit (30s)
     // 2. Tivemos requisições bem-sucedidas suficientes
     // 3. O delay atual está acima do mínimo
-    if (timeSinceLastRateLimit > 30000 &&
-        this.successfulRequests >= this.resetThreshold &&
-        this.currentDelay > this.minDelay) {
-
+    if (
+      timeSinceLastRateLimit > 30000 &&
+      this.successfulRequests >= this.resetThreshold &&
+      this.currentDelay > this.minDelay
+    ) {
       const oldDelay = this.currentDelay;
-      this.currentDelay = Math.max(
-        this.currentDelay * this.decreaseMultiplier,
-        this.minDelay
-      );
+      this.currentDelay = Math.max(this.currentDelay * this.decreaseMultiplier, this.minDelay);
 
-      Logger.debug(`✅ [RATE_LIMITER] Reduzindo delay após ${this.successfulRequests} sucessos: ${oldDelay}ms → ${this.currentDelay}ms`);
+      Logger.debug(
+        `✅ [RATE_LIMITER] Reduzindo delay após ${this.successfulRequests} sucessos: ${oldDelay}ms → ${this.currentDelay}ms`
+      );
 
       // Reset para próximo ciclo
       this.successfulRequests = 0;
@@ -100,8 +100,7 @@ class RateLimiter {
       currentDelay: this.currentDelay,
       consecutiveRateLimits: this.consecutiveRateLimits,
       successfulRequests: this.successfulRequests,
-      timeSinceLastRateLimit: this.lastRateLimitTime ?
-        Date.now() - this.lastRateLimitTime : null
+      timeSinceLastRateLimit: this.lastRateLimitTime ? Date.now() - this.lastRateLimitTime : null,
     };
   }
 

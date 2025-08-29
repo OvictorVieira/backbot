@@ -10,7 +10,7 @@ class ColorLogger {
     this.strategy = strategy;
     this.prefix = `\n🤖 [${botName}-${strategy}]`;
     this.pauseLogs = false; // Controle de pausa de logs
-    
+
     // Cores para diferentes bots
     this.colors = {
       CONTA1: '\x1b[36m', // Cyan
@@ -19,7 +19,7 @@ class ColorLogger {
       CONTA4: '\x1b[32m', // Green
       DEFAULT: '\x1b[37m', // White
     };
-    
+
     this.resetColor = '\x1b[0m';
     this.color = this.colors[botName] || this.colors.DEFAULT;
   }
@@ -264,4 +264,4 @@ class ColorLogger {
   }
 }
 
-export default ColorLogger; 
+export default ColorLogger;

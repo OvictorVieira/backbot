@@ -29,11 +29,13 @@ class GlobalRequestQueue {
         description,
         resolve,
         reject,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       });
 
-      Logger.debug(`📋 [GLOBAL_QUEUE] Request enfileirada: ${description} (fila: ${this.queue.length})`);
-      
+      Logger.debug(
+        `📋 [GLOBAL_QUEUE] Request enfileirada: ${description} (fila: ${this.queue.length})`
+      );
+
       // Inicia processamento se não estiver processando
       if (!this.isProcessing) {
         this.processQueue();
@@ -50,17 +52,21 @@ class GlobalRequestQueue {
     }
 
     this.isProcessing = true;
-    Logger.debug(`🔄 [GLOBAL_QUEUE] Iniciando processamento da fila (${this.queue.length} requests)`);
+    Logger.debug(
+      `🔄 [GLOBAL_QUEUE] Iniciando processamento da fila (${this.queue.length} requests)`
+    );
 
     while (this.queue.length > 0) {
       const request = this.queue.shift();
-      
+
       try {
         // Aguarda delay mínimo entre requests
         const timeSinceLastRequest = Date.now() - this.lastRequestTime;
         if (timeSinceLastRequest < this.adaptiveDelay) {
           const waitTime = this.adaptiveDelay - timeSinceLastRequest;
-          Logger.debug(`⏳ [GLOBAL_QUEUE] Aguardando ${waitTime}ms antes de: ${request.description}`);
+          Logger.debug(
+            `⏳ [GLOBAL_QUEUE] Aguardando ${waitTime}ms antes de: ${request.description}`
+          );
           await this.delay(waitTime);
         }
 
@@ -70,13 +76,12 @@ class GlobalRequestQueue {
 
         // Executa a request
         const result = await request.requestFunction();
-        
+
         // Request bem-sucedida
         this.onSuccess();
         request.resolve(result);
-        
-        Logger.debug(`✅ [GLOBAL_QUEUE] Sucesso: ${request.description}`);
 
+        Logger.debug(`✅ [GLOBAL_QUEUE] Sucesso: ${request.description}`);
       } catch (error) {
         // Verifica se é rate limit
         if (this.isRateLimitError(error)) {
@@ -96,10 +101,12 @@ class GlobalRequestQueue {
    * Verifica se o erro é de rate limit
    */
   isRateLimitError(error) {
-    return error?.response?.status === 429 || 
-           String(error).includes('TOO_MANY_REQUESTS') || 
-           String(error).includes('rate limit') ||
-           String(error).includes('too many requests');
+    return (
+      error?.response?.status === 429 ||
+      String(error).includes('TOO_MANY_REQUESTS') ||
+      String(error).includes('rate limit') ||
+      String(error).includes('too many requests')
+    );
   }
 
   /**
@@ -107,13 +114,15 @@ class GlobalRequestQueue {
    */
   onRateLimit(request) {
     this.rateLimitCount++;
-    
+
     // Aumenta delay drasticamente
     this.adaptiveDelay = Math.min(this.adaptiveDelay * 2, this.maxDelay);
-    
-    Logger.warn(`⏰ [GLOBAL_QUEUE] Rate limit #${this.rateLimitCount} detectado! Delay aumentado para ${this.adaptiveDelay}ms`);
+
+    Logger.warn(
+      `⏰ [GLOBAL_QUEUE] Rate limit #${this.rateLimitCount} detectado! Delay aumentado para ${this.adaptiveDelay}ms`
+    );
     Logger.warn(`🔄 [GLOBAL_QUEUE] Recolocando request na fila: ${request.description}`);
-    
+
     // Recoloca no início da fila para tentar novamente
     this.queue.unshift(request);
   }
@@ -146,7 +155,7 @@ class GlobalRequestQueue {
       requestCount: this.requestCount,
       adaptiveDelay: this.adaptiveDelay,
       rateLimitCount: this.rateLimitCount,
-      lastRequestTime: this.lastRequestTime
+      lastRequestTime: this.lastRequestTime,
     };
   }
 

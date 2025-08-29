@@ -20,7 +20,7 @@ class UpdatePrompt {
   createInterface() {
     this.rl = readline.createInterface({
       input: process.stdin,
-      output: process.stdout
+      output: process.stdout,
     });
   }
 
@@ -38,8 +38,8 @@ class UpdatePrompt {
    * Faz uma pergunta ao usuário e retorna a resposta
    */
   async askQuestion(question) {
-    return new Promise((resolve) => {
-      this.rl.question(question, (answer) => {
+    return new Promise(resolve => {
+      this.rl.question(question, answer => {
         resolve(answer.trim().toLowerCase());
       });
     });
@@ -51,14 +51,14 @@ class UpdatePrompt {
   async runUpdate() {
     return new Promise((resolve, reject) => {
       console.log('\n🔄 Iniciando processo de atualização...\n');
-      
+
       const updateScript = path.join(__dirname, '../../update.js');
       const child = spawn('node', [updateScript], {
         stdio: 'inherit',
-        shell: true
+        shell: true,
       });
 
-      child.on('close', (code) => {
+      child.on('close', code => {
         if (code === 0) {
           console.log('\n✅ Atualização concluída com sucesso!');
           resolve(true);
@@ -68,7 +68,7 @@ class UpdatePrompt {
         }
       });
 
-      child.on('error', (error) => {
+      child.on('error', error => {
         reject(new Error(`Erro ao executar atualização: ${error.message}`));
       });
     });
@@ -80,9 +80,9 @@ class UpdatePrompt {
   async checkAndPromptUpdate() {
     try {
       console.log('🔍 Verificando se há atualizações disponíveis...\n');
-      
+
       const versionInfo = await this.versionChecker.getVersionInfo();
-      
+
       if (!versionInfo.success) {
         console.log('⚠️ Não foi possível verificar atualizações');
         console.log('📋 Continuando com a execução normal...\n');
@@ -90,10 +90,10 @@ class UpdatePrompt {
       }
 
       const { localVersion, remoteVersion, hasUpdate } = versionInfo;
-      
+
       console.log(`📦 Versão atual: ${localVersion}`);
       console.log(`🌐 Versão disponível: ${remoteVersion}`);
-      
+
       if (!hasUpdate) {
         console.log('✅ Você está na versão mais recente!\n');
         return false;
@@ -102,23 +102,24 @@ class UpdatePrompt {
       // Há atualização disponível
       console.log(`\n🎉 NOVA VERSÃO DISPONÍVEL: v${remoteVersion}`);
       console.log('════════════════════════════════════════');
-      
+
       // Determina o tipo de atualização
       if (versionInfo.difference) {
         const updateType = this.getUpdateTypeDescription(versionInfo.difference);
         console.log(`🔄 Tipo de atualização: ${updateType}`);
       }
-      
+
       this.createInterface();
-      
+
       console.log('\n📋 Para ver as novidades, consulte o CHANGELOG.md');
       const answer = await this.askQuestion('\n❓ Deseja atualizar agora? (Y/n): ');
-      
+
       this.closeInterface();
-      
+
       // Trata a resposta (Y/yes/sim são aceitos como sim, qualquer outra coisa é não)
-      const shouldUpdate = answer === '' || answer === 'y' || answer === 'yes' || answer === 'sim' || answer === 's';
-      
+      const shouldUpdate =
+        answer === '' || answer === 'y' || answer === 'yes' || answer === 'sim' || answer === 's';
+
       if (shouldUpdate) {
         await this.runUpdate();
         console.log('\n🎯 Reinicie o comando npm start para usar a nova versão');
@@ -127,7 +128,6 @@ class UpdatePrompt {
         console.log('\n⏭️ Atualização ignorada, continuando com a versão atual...\n');
         return false;
       }
-      
     } catch (error) {
       console.error('❌ Erro ao verificar atualizações:', error.message);
       console.log('📋 Continuando com a execução normal...\n');
@@ -158,7 +158,7 @@ class UpdatePrompt {
    */
   static async checkForUpdates() {
     const prompt = new UpdatePrompt();
-    
+
     try {
       await prompt.checkAndPromptUpdate();
     } catch (error) {

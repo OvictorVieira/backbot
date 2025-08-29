@@ -50,7 +50,6 @@ class PositionSyncService {
       Logger.debug(`✅ [POSITION_SYNC] Sincronização concluída para bot ${botId} (${duration}ms)`);
 
       this.lastSyncTimes.set(botId, new Date());
-
     } catch (error) {
       Logger.error(`❌ [POSITION_SYNC] Erro na sincronização do bot ${botId}:`, error.message);
     }
@@ -65,7 +64,7 @@ class PositionSyncService {
     try {
       // Busca fills das últimas 24 horas
       const now = Date.now();
-      const oneDayAgo = now - (24 * 60 * 60 * 1000);
+      const oneDayAgo = now - 24 * 60 * 60 * 1000;
 
       const fills = await History.getFillHistory(
         null, // symbol
@@ -88,10 +87,11 @@ class PositionSyncService {
       // Filtra fills do bot específico
       const botFills = this.filterBotFills(fills, config.botClientOrderId);
 
-      Logger.debug(`📊 [POSITION_SYNC] Encontrados ${botFills.length} fills recentes para bot ${botId}`);
+      Logger.debug(
+        `📊 [POSITION_SYNC] Encontrados ${botFills.length} fills recentes para bot ${botId}`
+      );
 
       return botFills;
-
     } catch (error) {
       Logger.error(`❌ [POSITION_SYNC] Erro ao buscar fills para bot ${botId}:`, error.message);
       return [];
@@ -109,7 +109,9 @@ class PositionSyncService {
    * @param {object} config - Configuração do bot
    */
   async getOpenPositions(config) {
-    Logger.warn('⚠️ [POSITION_SYNC] getOpenPositions foi desabilitado - usando apenas posições do bot');
+    Logger.warn(
+      '⚠️ [POSITION_SYNC] getOpenPositions foi desabilitado - usando apenas posições do bot'
+    );
     return [];
 
     // Código original comentado:
@@ -140,9 +142,11 @@ class PositionSyncService {
       });
 
       return openOrders;
-
     } catch (error) {
-      Logger.error(`❌ [POSITION_SYNC] Erro ao buscar ordens abertas do bot ${botId}:`, error.message);
+      Logger.error(
+        `❌ [POSITION_SYNC] Erro ao buscar ordens abertas do bot ${botId}:`,
+        error.message
+      );
       return [];
     }
   }
@@ -163,7 +167,9 @@ class PositionSyncService {
       const closedPositionsData = reconstructedPositions.filter(pos => pos.isClosed);
 
       if (closedPositionsData.length > 0) {
-        Logger.info(`🔍 [POSITION_SYNC] Bot ${botId}: ${closedPositionsData.length} posições fechadas detectadas`);
+        Logger.info(
+          `🔍 [POSITION_SYNC] Bot ${botId}: ${closedPositionsData.length} posições fechadas detectadas`
+        );
       } else {
         Logger.debug(`🔍 [POSITION_SYNC] Bot ${botId}: Nenhuma posição fechada detectada`);
       }
@@ -182,20 +188,26 @@ class PositionSyncService {
             closeQuantity: position.closeQuantity,
             closeTime: position.closeTime,
             pnl: position.pnl,
-            pnlPct: position.pnlPct
+            pnlPct: position.pnlPct,
           });
-
         } catch (error) {
-          Logger.error(`❌ [POSITION_SYNC] Erro ao processar posição fechada ${position.symbol}:`, error.message);
+          Logger.error(
+            `❌ [POSITION_SYNC] Erro ao processar posição fechada ${position.symbol}:`,
+            error.message
+          );
         }
       }
 
       if (closedPositions.length > 0) {
-        Logger.info(`✅ [POSITION_SYNC] Bot ${botId}: ${closedPositions.length} posições processadas`);
+        Logger.info(
+          `✅ [POSITION_SYNC] Bot ${botId}: ${closedPositions.length} posições processadas`
+        );
       }
-
     } catch (error) {
-      Logger.error(`❌ [POSITION_SYNC] Erro ao detectar posições fechadas (novo sistema) para bot ${botId}:`, error.message);
+      Logger.error(
+        `❌ [POSITION_SYNC] Erro ao detectar posições fechadas (novo sistema) para bot ${botId}:`,
+        error.message
+      );
     }
 
     return closedPositions;
@@ -233,17 +245,21 @@ class PositionSyncService {
             closureType: positionStatus.closureType,
             closePrice: positionStatus.closePrice,
             closeQuantity: positionStatus.closeQuantity,
-            closeTime: positionStatus.closeTime
+            closeTime: positionStatus.closeTime,
           });
         }
       }
 
       if (closedPositions.length > 0) {
-        Logger.info(`🔍 [POSITION_SYNC] Bot ${botId}: ${closedPositions.length} posições fechadas automaticamente`);
+        Logger.info(
+          `🔍 [POSITION_SYNC] Bot ${botId}: ${closedPositions.length} posições fechadas automaticamente`
+        );
       }
-
     } catch (error) {
-      Logger.error(`❌ [POSITION_SYNC] Erro ao detectar posições fechadas para bot ${botId}:`, error.message);
+      Logger.error(
+        `❌ [POSITION_SYNC] Erro ao detectar posições fechadas para bot ${botId}:`,
+        error.message
+      );
     }
 
     return closedPositions;
@@ -268,14 +284,14 @@ class PositionSyncService {
     const sortedFills = symbolFills.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
     for (const fill of sortedFills) {
-      const fillSide = fill.side === 'Bid' ? 'BUY' : (fill.side === 'Ask' ? 'SELL' : fill.side);
+      const fillSide = fill.side === 'Bid' ? 'BUY' : fill.side === 'Ask' ? 'SELL' : fill.side;
       const fillQuantity = parseFloat(fill.quantity);
       const fillPrice = parseFloat(fill.price);
 
       // Se é direção oposta à nossa posição
       if (fillSide !== side) {
         totalFilledQuantity += fillQuantity;
-        totalFilledValue += (fillQuantity * fillPrice);
+        totalFilledValue += fillQuantity * fillPrice;
         closePrice = fillPrice;
         closeTime = new Date(fill.timestamp);
 
@@ -287,7 +303,7 @@ class PositionSyncService {
             closePrice: closePrice,
             closeQuantity: orderQuantity,
             closeTime: closeTime,
-            remainingQuantity: 0
+            remainingQuantity: 0,
           };
         }
       } else {
@@ -299,7 +315,7 @@ class PositionSyncService {
     // Posição ainda aberta
     return {
       isClosed: false,
-      remainingQuantity: orderQuantity - totalFilledQuantity
+      remainingQuantity: orderQuantity - totalFilledQuantity,
     };
   }
 
@@ -310,9 +326,21 @@ class PositionSyncService {
    */
   async handleClosedPositionNew(botId, position) {
     try {
-      const { symbol, side, originalOrder, closePrice, closeTime, closeQuantity, closeType, pnl, pnlPct } = position;
+      const {
+        symbol,
+        side,
+        originalOrder,
+        closePrice,
+        closeTime,
+        closeQuantity,
+        closeType,
+        pnl,
+        pnlPct,
+      } = position;
 
-      Logger.info(`🔍 [POSITION_SYNC] NOVO SISTEMA: Posição fechada: ${symbol} ${side} ${closeQuantity}`);
+      Logger.info(
+        `🔍 [POSITION_SYNC] NOVO SISTEMA: Posição fechada: ${symbol} ${side} ${closeQuantity}`
+      );
 
       // Atualiza a ordem no banco com status fechado
       await BotOrdersManager.updateOrder(originalOrder.externalOrderId, {
@@ -322,13 +350,17 @@ class PositionSyncService {
         closeQuantity: closeQuantity,
         closeType: closeType,
         pnl: pnl,
-        pnlPct: pnlPct
+        pnlPct: pnlPct,
       });
 
-      Logger.info(`💰 [POSITION_SYNC] NOVO SISTEMA: PnL: $${pnl.toFixed(2)} (${pnlPct.toFixed(2)}%) para ${symbol}`);
-
+      Logger.info(
+        `💰 [POSITION_SYNC] NOVO SISTEMA: PnL: $${pnl.toFixed(2)} (${pnlPct.toFixed(2)}%) para ${symbol}`
+      );
     } catch (error) {
-      Logger.error(`❌ [POSITION_SYNC] Erro ao manipular posição fechada (novo sistema):`, error.message);
+      Logger.error(
+        `❌ [POSITION_SYNC] Erro ao manipular posição fechada (novo sistema):`,
+        error.message
+      );
     }
   }
 
@@ -340,7 +372,9 @@ class PositionSyncService {
    */
   async handleClosedPosition(botId, order, positionStatus) {
     try {
-      Logger.info(`🔍 [POSITION_SYNC] Posição fechada automaticamente: ${order.symbol} ${order.side} ${order.quantity}`);
+      Logger.info(
+        `🔍 [POSITION_SYNC] Posição fechada automaticamente: ${order.symbol} ${order.side} ${order.quantity}`
+      );
 
       // Atualiza a ordem no banco com status fechado
       await BotOrdersManager.updateOrder(order.externalOrderId, {
@@ -348,14 +382,13 @@ class PositionSyncService {
         closePrice: positionStatus.closePrice,
         closeTime: positionStatus.closeTime,
         closeQuantity: positionStatus.closeQuantity,
-        closeType: positionStatus.closureType
+        closeType: positionStatus.closureType,
       });
 
       // Calcula PnL
       const pnl = this.calculatePnL(order, positionStatus);
 
       Logger.info(`💰 [POSITION_SYNC] PnL calculado: $${pnl.toFixed(2)} para ${order.symbol}`);
-
     } catch (error) {
       Logger.error(`❌ [POSITION_SYNC] Erro ao manipular posição fechada:`, error.message);
     }
@@ -396,12 +429,16 @@ class PositionSyncService {
       const trackingResult = await positionTracker.trackBotPositions(botId, config);
       const { performanceMetrics } = trackingResult;
 
-      Logger.debug(`📊 [POSITION_SYNC] Bot ${botId}: Estatísticas - ${performanceMetrics.closedPositions}/${performanceMetrics.totalPositions} posições, WR: ${performanceMetrics.winRate.toFixed(1)}%, PnL: $${performanceMetrics.totalPnl.toFixed(2)}`);
+      Logger.debug(
+        `📊 [POSITION_SYNC] Bot ${botId}: Estatísticas - ${performanceMetrics.closedPositions}/${performanceMetrics.totalPositions} posições, WR: ${performanceMetrics.winRate.toFixed(1)}%, PnL: $${performanceMetrics.totalPnl.toFixed(2)}`
+      );
 
       // TODO: Salvar estatísticas no banco de dados
-
     } catch (error) {
-      Logger.error(`❌ [POSITION_SYNC] Erro ao atualizar estatísticas do bot ${botId}:`, error.message);
+      Logger.error(
+        `❌ [POSITION_SYNC] Erro ao atualizar estatísticas do bot ${botId}:`,
+        error.message
+      );
     }
   }
 
@@ -466,7 +503,7 @@ class PositionSyncService {
     for (const [botId, intervalId] of this.syncIntervals.entries()) {
       status[botId] = {
         isActive: true,
-        lastSync: this.lastSyncTimes.get(botId) || null
+        lastSync: this.lastSyncTimes.get(botId) || null,
       };
     }
 

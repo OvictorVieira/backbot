@@ -15,11 +15,13 @@ export function auth({ instruction, params = {}, timestamp, window = 30000, apiK
     } catch (error) {
       throw new Error(`API_SECRET inválido: deve ser um base64 válido. Erro: ${error.message}`);
     }
-    
+
     if (privateKeySeed.length !== 32) {
-      throw new Error(`API_SECRET deve ter 32 bytes quando decodificado. Tamanho atual: ${privateKeySeed.length} bytes`);
+      throw new Error(
+        `API_SECRET deve ter 32 bytes quando decodificado. Tamanho atual: ${privateKeySeed.length} bytes`
+      );
     }
-    
+
     const keyPair = nacl.sign.keyPair.fromSeed(privateKeySeed);
 
     // Ordena e constrói os parâmetros
@@ -42,7 +44,7 @@ export function auth({ instruction, params = {}, timestamp, window = 30000, apiK
       'X-Signature': Buffer.from(signature).toString('base64'),
       'X-Timestamp': timestamp.toString(),
       'X-Window': window.toString(),
-      'Content-Type': 'application/json; charset=utf-8'
+      'Content-Type': 'application/json; charset=utf-8',
     };
   } catch (error) {
     Logger.debug(error.stack);

@@ -55,8 +55,10 @@ class ConfigManagerSQLite {
 
       // Verifica cache
       const now = Date.now();
-      if (ConfigManagerSQLite.configsCache &&
-          (now - ConfigManagerSQLite.lastLoadTime) < ConfigManagerSQLite.cacheTimeout) {
+      if (
+        ConfigManagerSQLite.configsCache &&
+        now - ConfigManagerSQLite.lastLoadTime < ConfigManagerSQLite.cacheTimeout
+      ) {
         Logger.debug('🔍 [CONFIG_SQLITE] Retornando configurações do cache');
         return ConfigManagerSQLite.configsCache;
       }
@@ -65,28 +67,35 @@ class ConfigManagerSQLite {
         'SELECT botId, config, createdAt, updatedAt FROM bot_configs ORDER BY botId'
       );
 
-      const configs = results.map(row => {
-        try {
-          const config = JSON.parse(row.config);
-          return {
-            id: row.botId,
-            ...config,
-            createdAt: row.createdAt,
-            updatedAt: row.updatedAt
-          };
-        } catch (parseError) {
-          Logger.error(`❌ [CONFIG_SQLITE] Erro ao fazer parse do JSON para botId ${row.botId}:`, parseError.message);
-          return null;
-        }
-      }).filter(config => config !== null);
+      const configs = results
+        .map(row => {
+          try {
+            const config = JSON.parse(row.config);
+            return {
+              id: row.botId,
+              ...config,
+              createdAt: row.createdAt,
+              updatedAt: row.updatedAt,
+            };
+          } catch (parseError) {
+            Logger.error(
+              `❌ [CONFIG_SQLITE] Erro ao fazer parse do JSON para botId ${row.botId}:`,
+              parseError.message
+            );
+            return null;
+          }
+        })
+        .filter(config => config !== null);
 
       // Atualiza cache
       ConfigManagerSQLite.configsCache = configs;
       ConfigManagerSQLite.lastLoadTime = now;
 
-      Logger.infoOnce('config-load', `✅ [CONFIG_SQLITE] ${configs.length} configurações carregadas`);
+      Logger.infoOnce(
+        'config-load',
+        `✅ [CONFIG_SQLITE] ${configs.length} configurações carregadas`
+      );
       return configs;
-
     } catch (error) {
       Logger.error('❌ [CONFIG_SQLITE] Erro ao carregar configurações:', error.message);
       throw error;
@@ -162,7 +171,7 @@ class ConfigManagerSQLite {
         id: result.botId,
         ...config,
         createdAt: result.createdAt,
-        updatedAt: result.updatedAt
+        updatedAt: result.updatedAt,
       };
     } catch (error) {
       console.error(`❌ [CONFIG_SQLITE] Erro ao buscar bot ${botId}:`, error.message);
@@ -202,7 +211,10 @@ class ConfigManagerSQLite {
         ...newConfig,
         // Garante que os campos de rastreamento sejam preservados
         botClientOrderId: newConfig.botClientOrderId || currentConfig.botClientOrderId,
-        orderCounter: newConfig.orderCounter !== undefined ? newConfig.orderCounter : currentConfig.orderCounter
+        orderCounter:
+          newConfig.orderCounter !== undefined
+            ? newConfig.orderCounter
+            : currentConfig.orderCounter,
       };
 
       const configJson = JSON.stringify(updatedConfig);
@@ -239,7 +251,7 @@ class ConfigManagerSQLite {
         botClientOrderId: config.botClientOrderId || Math.floor(Math.random() * 10000),
         orderCounter: config.orderCounter || 0,
         status: 'stopped', // Status inicial
-        nextValidationAt: new Date(Date.now() + 60000).toISOString() // Próxima validação em 60s
+        nextValidationAt: new Date(Date.now() + 60000).toISOString(), // Próxima validação em 60s
       };
 
       const configJson = JSON.stringify(newBotConfig);
@@ -250,7 +262,9 @@ class ConfigManagerSQLite {
         [botId, configJson, now, now]
       );
 
-      console.log(`✅ [CONFIG_SQLITE] Bot criado com ID: ${botId} e botClientOrderId: ${newBotConfig.botClientOrderId}`);
+      console.log(
+        `✅ [CONFIG_SQLITE] Bot criado com ID: ${botId} e botClientOrderId: ${newBotConfig.botClientOrderId}`
+      );
 
       // Invalida cache após criação
       ConfigManagerSQLite.invalidateCache();
@@ -279,12 +293,16 @@ class ConfigManagerSQLite {
       );
 
       if (result.changes > 0) {
-        console.log(`✅ [CONFIG_SQLITE] Bot ${botId} removido com sucesso (${removedOrdersCount} ordens removidas)`);
+        console.log(
+          `✅ [CONFIG_SQLITE] Bot ${botId} removido com sucesso (${removedOrdersCount} ordens removidas)`
+        );
 
         // Invalida cache após remoção
         ConfigManagerSQLite.invalidateCache();
       } else {
-        console.log(`ℹ️ [CONFIG_SQLITE] Bot ${botId} não encontrado para remoção (${removedOrdersCount} ordens removidas)`);
+        console.log(
+          `ℹ️ [CONFIG_SQLITE] Bot ${botId} não encontrado para remoção (${removedOrdersCount} ordens removidas)`
+        );
       }
     } catch (error) {
       console.error(`❌ [CONFIG_SQLITE] Erro ao remover bot ${botId}:`, error.message);
@@ -308,7 +326,7 @@ class ConfigManagerSQLite {
       const updatedConfig = {
         ...currentConfig,
         status: status,
-        startTime: startTime || currentConfig.startTime
+        startTime: startTime || currentConfig.startTime,
       };
 
       await this.updateBotConfigById(botId, updatedConfig);
@@ -351,7 +369,10 @@ class ConfigManagerSQLite {
 
       return newCounter;
     } catch (error) {
-      console.error(`❌ [CONFIG_SQLITE] Erro ao incrementar contador do bot ${botId}:`, error.message);
+      console.error(
+        `❌ [CONFIG_SQLITE] Erro ao incrementar contador do bot ${botId}:`,
+        error.message
+      );
       throw error;
     }
   }
@@ -371,7 +392,10 @@ class ConfigManagerSQLite {
       const newCounter = await this.incrementOrderCounter(botId);
       return this.generateOrderId(botId, currentConfig.botClientOrderId, newCounter);
     } catch (error) {
-      console.error(`❌ [CONFIG_SQLITE] Erro ao obter próximo ID de ordem para bot ${botId}:`, error.message);
+      console.error(
+        `❌ [CONFIG_SQLITE] Erro ao obter próximo ID de ordem para bot ${botId}:`,
+        error.message
+      );
       throw error;
     }
   }
@@ -410,7 +434,10 @@ class ConfigManagerSQLite {
       // Verifica se o bot está habilitado e não está rodando
       return config.enabled && config.status !== 'running';
     } catch (error) {
-      console.error(`❌ [CONFIG_SQLITE] Erro ao verificar se bot ${botId} pode ser iniciado:`, error.message);
+      console.error(
+        `❌ [CONFIG_SQLITE] Erro ao verificar se bot ${botId} pode ser iniciado:`,
+        error.message
+      );
       return false;
     }
   }
@@ -449,10 +476,13 @@ class ConfigManagerSQLite {
         status: config.status || 'stopped',
         startTime: config.startTime,
         isRunning: config.status === 'running',
-        config: config
+        config: config,
       };
     } catch (error) {
-      console.error(`❌ [CONFIG_SQLITE] Erro ao obter status completo do bot ${botId}:`, error.message);
+      console.error(
+        `❌ [CONFIG_SQLITE] Erro ao obter status completo do bot ${botId}:`,
+        error.message
+      );
       return null;
     }
   }
@@ -471,7 +501,10 @@ class ConfigManagerSQLite {
         console.log(`✅ [CONFIG_SQLITE] Status de erro do bot ${botId} limpo`);
       }
     } catch (error) {
-      console.error(`❌ [CONFIG_SQLITE] Erro ao limpar status de erro do bot ${botId}:`, error.message);
+      console.error(
+        `❌ [CONFIG_SQLITE] Erro ao limpar status de erro do bot ${botId}:`,
+        error.message
+      );
     }
   }
 
@@ -565,7 +598,7 @@ class ConfigManagerSQLite {
       authorizedTokens: [], // Lista de tokens autorizados (vazio = todos os tokens)
       botClientOrderId: Math.floor(Math.random() * 10000),
       orderCounter: 0,
-      status: 'stopped'
+      status: 'stopped',
     };
   }
 }

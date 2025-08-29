@@ -39,7 +39,9 @@ export class DefaultStopLoss extends BaseStopLoss {
 
       // Validação inicial dos dados
       if (!this.validateData(position, account)) {
-        Logger.error(`❌ [STOP_LOSS_DEBUG] ${position.symbol}: Dados inválidos - position: ${!!position}, account: ${!!account}, symbol: ${position?.symbol}, netQuantity: ${position?.netQuantity}`);
+        Logger.error(
+          `❌ [STOP_LOSS_DEBUG] ${position.symbol}: Dados inválidos - position: ${!!position}, account: ${!!account}, symbol: ${position?.symbol}, netQuantity: ${position?.netQuantity}`
+        );
         return null;
       }
 
@@ -47,24 +49,28 @@ export class DefaultStopLoss extends BaseStopLoss {
       const MAX_NEGATIVE_PNL_STOP_PCT = Number(this.config?.maxNegativePnlStopPct || -10);
 
       const ENABLE_TP_VALIDATION = this.config?.enableTpValidation === 'true';
-      
+
       // Verifica se os valores são válidos
       if (isNaN(MAX_NEGATIVE_PNL_STOP_PCT)) {
         Logger.error(`❌ [STOP_LOSS_ERROR] Valor inválido detectado:`);
-        Logger.error(`   MAX_NEGATIVE_PNL_STOP_PCT: ${MAX_NEGATIVE_PNL_STOP_PCT} (isNaN: ${isNaN(MAX_NEGATIVE_PNL_STOP_PCT)})`);
+        Logger.error(
+          `   MAX_NEGATIVE_PNL_STOP_PCT: ${MAX_NEGATIVE_PNL_STOP_PCT} (isNaN: ${isNaN(MAX_NEGATIVE_PNL_STOP_PCT)})`
+        );
         return null;
       }
-      
+
       // Verifica se os valores são números finitos
       if (!isFinite(MAX_NEGATIVE_PNL_STOP_PCT)) {
         Logger.error(`❌ [STOP_LOSS_ERROR] Valor não finito detectado:`);
-        Logger.error(`   MAX_NEGATIVE_PNL_STOP_PCT: ${MAX_NEGATIVE_PNL_STOP_PCT} (isFinite: ${isFinite(MAX_NEGATIVE_PNL_STOP_PCT)})`);
+        Logger.error(
+          `   MAX_NEGATIVE_PNL_STOP_PCT: ${MAX_NEGATIVE_PNL_STOP_PCT} (isFinite: ${isFinite(MAX_NEGATIVE_PNL_STOP_PCT)})`
+        );
         return null;
       }
 
       // Calcula PnL
       const { pnl, pnlPct } = TrailingStop.calculatePnL(position, account);
-      
+
       // Verifica se o PnL é válido
       if (isNaN(pnl) || isNaN(pnlPct)) {
         Logger.error(`❌ [STOP_LOSS_ERROR] PnL inválido detectado:`);
@@ -76,7 +82,7 @@ export class DefaultStopLoss extends BaseStopLoss {
       // Verifica se o PnL está abaixo do limite negativo
       // Para valores negativos: -10% <= -4% = true (deve fechar)
       const shouldCloseByPercentage = pnlPct <= MAX_NEGATIVE_PNL_STOP_PCT;
-      
+
       if (shouldCloseByPercentage) {
         Logger.info(`🚨 [STOP_LOSS] ${position.symbol}: Fechando por stop loss em %`);
         Logger.info(`   • PnL atual: ${pnlPct.toFixed(2)}%`);
@@ -87,7 +93,7 @@ export class DefaultStopLoss extends BaseStopLoss {
           reason: `PERCENTAGE: PnL ${pnlPct}% <= limite ${MAX_NEGATIVE_PNL_STOP_PCT}%`,
           type: 'PERCENTAGE',
           pnl,
-          pnlPct
+          pnlPct,
         };
       }
 
@@ -95,11 +101,9 @@ export class DefaultStopLoss extends BaseStopLoss {
       // Evita duplicação de lógica de take profit
 
       return null;
-
     } catch (error) {
       console.error('DefaultStopLoss.shouldClosePosition - Error:', error);
       return null;
     }
   }
-
-} 
+}

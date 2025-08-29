@@ -19,18 +19,17 @@ export class ProMaxStopLoss extends BaseStopLoss {
 
       // Usa config.enableTpValidation se disponível, senão assume false
       const ENABLE_TP_VALIDATION = config?.enableTpValidation === true;
-      
+
       // Usa a função calculatePnL do TrailingStop
       const { pnl } = TrailingStop.calculatePnL(position, account);
-      
+
       // ✅ REMOVIDO: Take profit agora é gerenciado APENAS pelo monitor dedicado (startTakeProfitMonitor)
       // Evita duplicação de lógica de take profit
 
       return null;
-
     } catch (error) {
       console.error('ProMaxStopLoss.shouldClosePosition - Error:', error);
       return null;
     }
   }
-} 
+}

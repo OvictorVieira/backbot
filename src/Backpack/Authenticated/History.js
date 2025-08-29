@@ -8,74 +8,102 @@ import RateLimiter from '../../Utils/RateLimiter.js';
 import GlobalRequestQueue from '../../Utils/GlobalRequestQueue.js';
 
 class History {
-
-  async getBorrowHistory(symbol, type, limit, offset, sortDirection, positionId, sources, apiKey = null, apiSecret = null) {
+  async getBorrowHistory(
+    symbol,
+    type,
+    limit,
+    offset,
+    sortDirection,
+    positionId,
+    sources,
+    apiKey = null,
+    apiSecret = null
+  ) {
     const timestamp = Date.now();
 
-     const params = {};
-      if (symbol) params.symbol = symbol;
-      if (type) params.type = type;
-      if (limit) params.limit = limit;
-      if (offset) params.offset = offset;
-      if (sortDirection) params.sortDirection = sortDirection;
-      if (positionId) params.positionId = positionId;
-      if (sources) params.sources = sources;
+    const params = {};
+    if (symbol) params.symbol = symbol;
+    if (type) params.type = type;
+    if (limit) params.limit = limit;
+    if (offset) params.offset = offset;
+    if (sortDirection) params.sortDirection = sortDirection;
+    if (positionId) params.positionId = positionId;
+    if (sources) params.sources = sources;
 
     const headers = auth({
       instruction: 'borrowHistoryQueryAll',
       timestamp,
       params: params,
       apiKey,
-      apiSecret
+      apiSecret,
     });
 
     try {
       const response = await axios.get(`${process.env.API_URL}/wapi/v1/history/borrowLend`, {
         headers,
-        params
+        params,
       });
 
-      return response.data
+      return response.data;
     } catch (error) {
       Logger.error('getBorrowHistory - ERROR!', error.response?.data || error.message);
-      return null
+      return null;
     }
   }
 
-  async getInterestHistory(symbol, type, limit, offset, sortDirection, positionId, sources, apiKey = null, apiSecret = null) {
+  async getInterestHistory(
+    symbol,
+    type,
+    limit,
+    offset,
+    sortDirection,
+    positionId,
+    sources,
+    apiKey = null,
+    apiSecret = null
+  ) {
     const timestamp = Date.now();
 
-     const params = {};
-      if (symbol) params.symbol = symbol;
-      if (type) params.type = type;
-      if (limit) params.limit = limit;
-      if (offset) params.offset = offset;
-      if (sortDirection) params.sortDirection = sortDirection;
-      if (positionId) params.positionId = positionId;
-      if (sources) params.sources = sources;
+    const params = {};
+    if (symbol) params.symbol = symbol;
+    if (type) params.type = type;
+    if (limit) params.limit = limit;
+    if (offset) params.offset = offset;
+    if (sortDirection) params.sortDirection = sortDirection;
+    if (positionId) params.positionId = positionId;
+    if (sources) params.sources = sources;
 
     const headers = auth({
       instruction: 'interestHistoryQueryAll',
       timestamp,
       params: params,
       apiKey,
-      apiSecret
+      apiSecret,
     });
 
     try {
       const response = await axios.get(`${process.env.API_URL}/wapi/v1/history/interest`, {
         headers,
-        params
+        params,
       });
 
-      return response.data
+      return response.data;
     } catch (error) {
       Logger.error('getInterestHistory - ERROR!', error.response?.data || error.message);
-      return null
+      return null;
     }
   }
 
-  async getBorrowPositionHistory(symbol, side, state, limit, offset, sortDirection, apiKey = null, apiSecret = null) {
+  async getBorrowPositionHistory(
+    symbol,
+    side,
+    state,
+    limit,
+    offset,
+    sortDirection,
+    apiKey = null,
+    apiSecret = null
+  ) {
     const timestamp = Date.now();
 
     const params = {};
@@ -91,23 +119,38 @@ class History {
       timestamp,
       params: params,
       apiKey,
-      apiSecret
+      apiSecret,
     });
 
     try {
-      const response = await axios.get(`${process.env.API_URL}/wapi/v1/history/borrowLend/positions`, {
-        headers,
-        params
-      });
+      const response = await axios.get(
+        `${process.env.API_URL}/wapi/v1/history/borrowLend/positions`,
+        {
+          headers,
+          params,
+        }
+      );
 
-      return response.data
+      return response.data;
     } catch (error) {
       Logger.error('getBorrowPositionHistory - ERROR!', error.response?.data || error.message);
-      return null
+      return null;
     }
   }
 
-  async getFillHistory(symbol, orderId, from, to, limit, offset, fillType, marketType, sortDirection, apiKey = null, apiSecret = null) {
+  async getFillHistory(
+    symbol,
+    orderId,
+    from,
+    to,
+    limit,
+    offset,
+    fillType,
+    marketType,
+    sortDirection,
+    apiKey = null,
+    apiSecret = null
+  ) {
     // Usa fila global para coordenar todas as requests
     return await GlobalRequestQueue.enqueue(async () => {
       const timestamp = Date.now();
@@ -128,7 +171,7 @@ class History {
         timestamp,
         params,
         apiKey,
-        apiSecret
+        apiSecret,
       });
 
       const response = await axios.get(`${process.env.API_URL}/wapi/v1/history/fills`, {
@@ -154,7 +197,7 @@ class History {
       timestamp,
       params,
       apiKey,
-      apiSecret
+      apiSecret,
     });
 
     try {
@@ -170,7 +213,16 @@ class History {
     }
   }
 
-  async getOrderHistory(orderId, symbol, limit, offset, marketType, sortDirection, apiKey = null, apiSecret = null) {
+  async getOrderHistory(
+    orderId,
+    symbol,
+    limit,
+    offset,
+    marketType,
+    sortDirection,
+    apiKey = null,
+    apiSecret = null
+  ) {
     // Usa fila global para coordenar todas as requests
     return await GlobalRequestQueue.enqueue(async () => {
       const timestamp = Date.now();
@@ -188,7 +240,7 @@ class History {
         timestamp,
         params,
         apiKey,
-        apiSecret
+        apiSecret,
       });
 
       const response = await axios.get(`${process.env.API_URL}/wapi/v1/history/orders`, {
@@ -200,7 +252,15 @@ class History {
     }, `getOrderHistory(orderId=${orderId}, symbol=${symbol})`);
   }
 
-  async getProfitAndLossHistory(botName, symbol, limit, offset, sortDirection, apiKey = null, apiSecret = null) {
+  async getProfitAndLossHistory(
+    botName,
+    symbol,
+    limit,
+    offset,
+    sortDirection,
+    apiKey = null,
+    apiSecret = null
+  ) {
     const timestamp = Date.now();
 
     const params = {};
@@ -215,7 +275,7 @@ class History {
       timestamp,
       params,
       apiKey,
-      apiSecret
+      apiSecret,
     });
 
     try {
@@ -232,7 +292,14 @@ class History {
   }
 
   //source: "BackstopLiquidation" "CulledBorrowInterest" "CulledRealizePnl" "CulledRealizePnlBookUtilization" "FundingPayment" "RealizePnl" "TradingFees" "TradingFeesSystem"
-  async getSettlementHistory(limit, offset, source, sortDirection, apiKey = null, apiSecret = null) {
+  async getSettlementHistory(
+    limit,
+    offset,
+    source,
+    sortDirection,
+    apiKey = null,
+    apiSecret = null
+  ) {
     const timestamp = Date.now();
 
     const params = {};
@@ -246,7 +313,7 @@ class History {
       timestamp,
       params,
       apiKey,
-      apiSecret
+      apiSecret,
     });
 
     try {
@@ -282,11 +349,23 @@ class History {
       if (apiKey && apiSecret) {
         try {
           Logger.debug(`🔍 [ANALYZE] Buscando fills da Backpack...`);
-          const fillsData = await this.getFillHistory(null, null, null, null, limit, null, null, null, null, apiKey, apiSecret);
+          const fillsData = await this.getFillHistory(
+            null,
+            null,
+            null,
+            null,
+            limit,
+            null,
+            null,
+            null,
+            null,
+            apiKey,
+            apiSecret
+          );
 
           Logger.debug(`🔍 [ANALYZE] Fills brutos recebidos da Backpack:`, {
             total: fillsData ? fillsData.length : 0,
-            sample: fillsData && fillsData.length > 0 ? fillsData[0] : null
+            sample: fillsData && fillsData.length > 0 ? fillsData[0] : null,
           });
 
           if (fillsData && Array.isArray(fillsData)) {
@@ -295,7 +374,7 @@ class History {
             fills = this.filterBotFillsByClientId(fillsData, botClientOrderId);
             Logger.debug(`🔍 [ANALYZE] Fills filtrados para o bot:`, {
               total: fills.length,
-              sample: fills.length > 0 ? fills[0] : null
+              sample: fills.length > 0 ? fills[0] : null,
             });
           }
         } catch (error) {
@@ -303,7 +382,9 @@ class History {
           fills = [];
         }
       } else {
-        Logger.debug(`ℹ️ [ANALYZE] Sem credenciais da API, não é possível buscar dados da Backpack`);
+        Logger.debug(
+          `ℹ️ [ANALYZE] Sem credenciais da API, não é possível buscar dados da Backpack`
+        );
         fills = [];
       }
 
@@ -329,7 +410,9 @@ class History {
       const closedPositions = positions.filter(pos => pos.isClosed);
       const openPositions = positions.filter(pos => !pos.isClosed);
 
-      Logger.debug(`✅ Posições fechadas: ${closedPositions.length}, Abertas: ${openPositions.length}`);
+      Logger.debug(
+        `✅ Posições fechadas: ${closedPositions.length}, Abertas: ${openPositions.length}`
+      );
       Logger.debug(`📊 [ANALYSIS] Total de posições: ${positions.length}`);
       Logger.debug(`📊 [ANALYSIS] Posições fechadas: ${closedPositions.length}`);
       Logger.debug(`📊 [ANALYSIS] Posições abertas: ${openPositions.length}`);
@@ -349,20 +432,19 @@ class History {
           averagePnl: performance.averagePnl,
           maxDrawdown: performance.maxDrawdown,
           openTrades: activePositions.length, // Usa posições reais da Backpack
-          totalVolume: performance.totalVolume
+          totalVolume: performance.totalVolume,
         },
         positions: {
           closed: closedPositions.length,
           open: activePositions.length, // Usa posições reais da Backpack
-          total: closedPositions.length + activePositions.length
+          total: closedPositions.length + activePositions.length,
         },
         lastAnalyzed: new Date().toISOString(),
         analysisPeriod: {
           startDate: fills.length > 0 ? this.getEarliestFillDate(fills) : null,
-          endDate: fills.length > 0 ? this.getLatestFillDate(fills) : null
-        }
+          endDate: fills.length > 0 ? this.getLatestFillDate(fills) : null,
+        },
       };
-
     } catch (error) {
       console.error(`❌ Erro na análise de performance: ${error.message}`);
       throw error;
@@ -407,7 +489,7 @@ class History {
           quantity: fill.quantity,
           price: fill.price,
           clientId: clientIdStr,
-          botClientOrderId: botClientOrderIdStr
+          botClientOrderId: botClientOrderIdStr,
         });
       }
     }
@@ -417,7 +499,7 @@ class History {
       fillsWithClientId,
       fillsWithoutClientId,
       fillsMatched,
-      filteredFills: filteredFills.length
+      filteredFills: filteredFills.length,
     });
 
     return filteredFills;
@@ -445,21 +527,36 @@ class History {
     let positionImportCount = 0;
 
     // Primeiro, vamos listar todas as ordens POSITION_IMPORT
-    const positionImportOrders = orders.filter(order => order.orderType === 'POSITION_IMPORT' && order.quantity > 0);
-    Logger.debug(`📊 [CREATE_POSITIONS] Ordens POSITION_IMPORT encontradas:`, positionImportOrders.map(o => ({ symbol: o.symbol, quantity: o.quantity, side: o.side })));
-    Logger.debug(`📊 [CREATE_POSITIONS] Todas as ordens:`, orders.map(o => ({ orderType: o.orderType, symbol: o.symbol, quantity: o.quantity, side: o.side })));
+    const positionImportOrders = orders.filter(
+      order => order.orderType === 'POSITION_IMPORT' && order.quantity > 0
+    );
+    Logger.debug(
+      `📊 [CREATE_POSITIONS] Ordens POSITION_IMPORT encontradas:`,
+      positionImportOrders.map(o => ({ symbol: o.symbol, quantity: o.quantity, side: o.side }))
+    );
+    Logger.debug(
+      `📊 [CREATE_POSITIONS] Todas as ordens:`,
+      orders.map(o => ({
+        orderType: o.orderType,
+        symbol: o.symbol,
+        quantity: o.quantity,
+        side: o.side,
+      }))
+    );
 
     for (const order of orders) {
       Logger.debug(`🔍 [CREATE_POSITIONS] Processando ordem:`, {
         orderType: order.orderType,
         symbol: order.symbol,
         quantity: order.quantity,
-        side: order.side
+        side: order.side,
       });
 
       if (order.orderType === 'POSITION_IMPORT' && order.quantity > 0) {
         positionImportCount++;
-        Logger.debug(`✅ [CREATE_POSITIONS] Encontrada ordem POSITION_IMPORT #${positionImportCount}: ${order.symbol}`);
+        Logger.debug(
+          `✅ [CREATE_POSITIONS] Encontrada ordem POSITION_IMPORT #${positionImportCount}: ${order.symbol}`
+        );
 
         // Cria uma posição separada para cada ordem
         const position = {
@@ -468,27 +565,36 @@ class History {
           totalQuantity: order.quantity,
           totalValue: order.quantity * order.price,
           averagePrice: order.price,
-          fills: [{
-            side: order.side,
-            quantity: order.quantity,
-            price: order.price,
-            timestamp: new Date(order.timestamp),
-            value: order.quantity * order.price
-          }],
+          fills: [
+            {
+              side: order.side,
+              quantity: order.quantity,
+              price: order.price,
+              timestamp: new Date(order.timestamp),
+              value: order.quantity * order.price,
+            },
+          ],
           startTime: new Date(order.timestamp),
           lastUpdateTime: new Date(order.timestamp),
-          isClosed: false
+          isClosed: false,
         };
 
         openPositions.push(position);
-        Logger.debug(`✅ [CREATE_POSITIONS] Posição criada: ${order.symbol} - ${order.quantity} @ ${order.price}`);
+        Logger.debug(
+          `✅ [CREATE_POSITIONS] Posição criada: ${order.symbol} - ${order.quantity} @ ${order.price}`
+        );
       }
     }
 
-    Logger.debug(`📊 [CREATE_POSITIONS] Total de ordens POSITION_IMPORT processadas: ${positionImportCount}`);
+    Logger.debug(
+      `📊 [CREATE_POSITIONS] Total de ordens POSITION_IMPORT processadas: ${positionImportCount}`
+    );
 
     Logger.debug(`📊 [CREATE_POSITIONS] Total de posições criadas: ${openPositions.length}`);
-    Logger.debug(`📊 [CREATE_POSITIONS] Símbolos das posições:`, openPositions.map(p => p.symbol));
+    Logger.debug(
+      `📊 [CREATE_POSITIONS] Símbolos das posições:`,
+      openPositions.map(p => p.symbol)
+    );
 
     return openPositions;
   }
@@ -508,7 +614,7 @@ class History {
     for (const fill of sortedFills) {
       const symbol = fill.symbol;
       // Converte Ask/Bid para BUY/SELL
-      const side = fill.side === 'Bid' ? 'BUY' : (fill.side === 'Ask' ? 'SELL' : fill.side);
+      const side = fill.side === 'Bid' ? 'BUY' : fill.side === 'Ask' ? 'SELL' : fill.side;
       const quantity = parseFloat(fill.quantity);
       const price = parseFloat(fill.price);
       const timestamp = new Date(fill.timestamp);
@@ -524,7 +630,7 @@ class History {
           fills: [],
           startTime: timestamp,
           lastUpdateTime: timestamp,
-          isClosed: false
+          isClosed: false,
         });
       }
 
@@ -534,13 +640,13 @@ class History {
         quantity,
         price,
         timestamp,
-        value: quantity * price
+        value: quantity * price,
       });
 
       // Se é a mesma direção, soma à posição
       if (position.side === side) {
         position.totalQuantity += quantity;
-        position.totalValue += (quantity * price);
+        position.totalValue += quantity * price;
         position.averagePrice = position.totalValue / position.totalQuantity;
       } else {
         // Direção oposta - fecha ou reduz a posição
@@ -548,8 +654,10 @@ class History {
           // VALIDAÇÃO CRÍTICA: Só fecha se realmente for uma ordem de fechamento
           const closeQuantity = position.totalQuantity;
           const closeValue = closeQuantity * price;
-          const pnl = (side === 'SELL' ? closeValue - (closeQuantity * position.averagePrice) :
-                                      (closeQuantity * position.averagePrice) - closeValue);
+          const pnl =
+            side === 'SELL'
+              ? closeValue - closeQuantity * position.averagePrice
+              : closeQuantity * position.averagePrice - closeValue;
 
           // VALIDAÇÃO MELHORADA: Só pula fechamentos se PnL for exatamente zero E preços forem iguais
           // Isso indica realmente um erro de cálculo, não um trade com pequeno loss/gain
@@ -557,11 +665,15 @@ class History {
           const isPnlExactlyZero = Math.abs(pnl) < 0.0001;
 
           if (isPnlExactlyZero && isPriceIdentical) {
-            Logger.warn(`⚠️ [POSITION_CLOSE] Fill suspeito detectado para ${symbol}: PnL=$${pnl.toFixed(4)}, preços idênticos - Possível erro`);
-            Logger.warn(`⚠️ [POSITION_CLOSE] Detalhes: closePrice=$${price}, averagePrice=$${position.averagePrice}, quantity=${closeQuantity}`);
+            Logger.warn(
+              `⚠️ [POSITION_CLOSE] Fill suspeito detectado para ${symbol}: PnL=$${pnl.toFixed(4)}, preços idênticos - Possível erro`
+            );
+            Logger.warn(
+              `⚠️ [POSITION_CLOSE] Detalhes: closePrice=$${price}, averagePrice=$${position.averagePrice}, quantity=${closeQuantity}`
+            );
             // Reduz parcialmente a posição em vez de fechar completamente
             position.totalQuantity -= quantity;
-            position.totalValue -= (quantity * position.averagePrice);
+            position.totalValue -= quantity * position.averagePrice;
             if (position.totalQuantity > 0) {
               position.averagePrice = position.totalValue / position.totalQuantity;
             }
@@ -571,7 +683,9 @@ class History {
 
           // Log detalhado para PnL pequeno mas válido
           if (Math.abs(pnl) < 1) {
-            Logger.debug(`💸 [POSITION_CLOSE] PnL pequeno mas válido para ${symbol}: $${pnl.toFixed(4)} (${pnl > 0 ? 'gain' : 'loss'})`);
+            Logger.debug(
+              `💸 [POSITION_CLOSE] PnL pequeno mas válido para ${symbol}: $${pnl.toFixed(4)} (${pnl > 0 ? 'gain' : 'loss'})`
+            );
           }
 
           position.pnl = pnl;
@@ -583,7 +697,7 @@ class History {
           // Adiciona à lista de posições fechadas
           positions.push({
             ...position,
-            closeType: 'FULL'
+            closeType: 'FULL',
           });
 
           // Remove da lista de posições abertas
@@ -598,26 +712,30 @@ class History {
               totalQuantity: remainingQuantity,
               totalValue: remainingQuantity * price,
               averagePrice: price,
-              fills: [{
-                side,
-                quantity: remainingQuantity,
-                price,
-                timestamp,
-                value: remainingQuantity * price
-              }],
+              fills: [
+                {
+                  side,
+                  quantity: remainingQuantity,
+                  price,
+                  timestamp,
+                  value: remainingQuantity * price,
+                },
+              ],
               startTime: timestamp,
               lastUpdateTime: timestamp,
-              isClosed: false
+              isClosed: false,
             });
           }
         } else {
           // Reduz parcialmente a posição
           const closeValue = quantity * price;
-          const pnl = (side === 'SELL' ? closeValue - (quantity * position.averagePrice) :
-                                      (quantity * position.averagePrice) - closeValue);
+          const pnl =
+            side === 'SELL'
+              ? closeValue - quantity * position.averagePrice
+              : quantity * position.averagePrice - closeValue;
 
           position.totalQuantity -= quantity;
-          position.totalValue -= (quantity * position.averagePrice);
+          position.totalValue -= quantity * position.averagePrice;
 
           // Atualiza preço médio se ainda há quantidade
           if (position.totalQuantity > 0) {
@@ -652,7 +770,7 @@ class History {
         totalPnl: 0,
         averagePnl: 0,
         maxDrawdown: 0,
-        totalVolume: 0
+        totalVolume: 0,
       };
     }
 
@@ -696,7 +814,7 @@ class History {
       totalPnl: Math.round(totalPnl * 100) / 100,
       averagePnl: Math.round(averagePnl * 100) / 100,
       maxDrawdown: Math.round(maxDrawdown * 100) / 100,
-      totalVolume: Math.round(totalVolume * 100) / 100
+      totalVolume: Math.round(totalVolume * 100) / 100,
     };
   }
 
@@ -716,18 +834,18 @@ class History {
         averagePnl: 0,
         maxDrawdown: 0,
         openTrades: 0,
-        totalVolume: 0
+        totalVolume: 0,
       },
       positions: {
         closed: 0,
         open: 0,
-        total: 0
+        total: 0,
       },
       lastAnalyzed: new Date().toISOString(),
       analysisPeriod: {
         startDate: null,
-        endDate: null
-      }
+        endDate: null,
+      },
     };
   }
 
@@ -757,7 +875,19 @@ class History {
       const { includeOpen = false } = options;
 
       // Buscar fills
-      const fillsData = await this.getFillHistory(null, null, null, null, 1000, null, null, null, null, apiKey, apiSecret);
+      const fillsData = await this.getFillHistory(
+        null,
+        null,
+        null,
+        null,
+        1000,
+        null,
+        null,
+        null,
+        null,
+        apiKey,
+        apiSecret
+      );
 
       // A API retorna diretamente um array de fills, não um objeto com propriedade fills
       if (!fillsData || !Array.isArray(fillsData)) {
@@ -769,9 +899,9 @@ class History {
           positions: [],
           analysisPeriod: {
             startDate: null,
-            endDate: null
+            endDate: null,
           },
-          lastAnalyzed: new Date().toISOString()
+          lastAnalyzed: new Date().toISOString(),
         };
       }
 
@@ -780,9 +910,7 @@ class History {
       const positions = this.reconstructPositions(botFills);
 
       // Filtrar posições baseado no parâmetro includeOpen
-      const filteredPositions = includeOpen
-        ? positions
-        : positions.filter(pos => pos.isClosed);
+      const filteredPositions = includeOpen ? positions : positions.filter(pos => pos.isClosed);
 
       // Formatar posições para resposta
       const formattedPositions = filteredPositions.map(pos => ({
@@ -803,8 +931,8 @@ class History {
           quantity: fill.quantity,
           price: fill.price,
           value: fill.value,
-          timestamp: fill.timestamp
-        }))
+          timestamp: fill.timestamp,
+        })),
       }));
 
       return {
@@ -815,17 +943,15 @@ class History {
         positions: formattedPositions,
         analysisPeriod: {
           startDate: this.getEarliestFillDate(botFills),
-          endDate: this.getLatestFillDate(botFills)
+          endDate: this.getLatestFillDate(botFills),
         },
-        lastAnalyzed: new Date().toISOString()
+        lastAnalyzed: new Date().toISOString(),
       };
-
     } catch (error) {
       console.error(`❌ Erro ao buscar detalhes de performance: ${error.message}`);
       throw error;
     }
   }
-
 }
 
 export default new History();

@@ -33,7 +33,13 @@ class OrdersService {
       throw new Error('Parâmetros obrigatórios faltando: symbol, apiKey, apiSecret');
     }
     try {
-      const openOrder = await this.orderClient.getOpenOrder(symbol, externalOrderId, null, apiKey, apiSecret);
+      const openOrder = await this.orderClient.getOpenOrder(
+        symbol,
+        externalOrderId,
+        null,
+        apiKey,
+        apiSecret
+      );
       if (!openOrder) {
         throw new Error('Ordem não encontrada');
       }
@@ -59,15 +65,7 @@ class OrdersService {
    */
   async createMarketOrder(params) {
     try {
-      const {
-        symbol,
-        side,
-        quantity,
-        clientId,
-        apiKey,
-        apiSecret,
-        additionalParams = {}
-      } = params;
+      const { symbol, side, quantity, clientId, apiKey, apiSecret, additionalParams = {} } = params;
 
       if (!symbol || !side || !quantity || !clientId) {
         throw new Error('Parâmetros obrigatórios faltando: symbol, side, quantity, clientId');
@@ -81,7 +79,7 @@ class OrdersService {
         clientId,
         timeInForce: 'IOC', // Immediate or Cancel para market orders
         selfTradePrevention: 'RejectTaker',
-        ...additionalParams
+        ...additionalParams,
       };
 
       Logger.info(`📦 [ORDERS_SERVICE] Criando ordem MARKET: ${symbol} ${side} ${quantity}`);
@@ -89,7 +87,9 @@ class OrdersService {
       const result = await this.orderClient.executeOrder(orderBody, apiKey, apiSecret);
 
       if (result && !result.error) {
-        Logger.info(`✅ [ORDERS_SERVICE] Ordem MARKET criada com sucesso: ${result.id || result.orderId}`);
+        Logger.info(
+          `✅ [ORDERS_SERVICE] Ordem MARKET criada com sucesso: ${result.id || result.orderId}`
+        );
 
         // Persiste a ordem no banco se dbService estiver disponível
         await this._persistOrder({
@@ -99,7 +99,7 @@ class OrdersService {
           quantity,
           orderType: 'MARKET',
           status: 'EXECUTED',
-          clientId
+          clientId,
         });
       } else {
         Logger.error(`❌ [ORDERS_SERVICE] Falha ao criar ordem MARKET: ${result?.error}`);
@@ -135,11 +135,13 @@ class OrdersService {
         clientId,
         apiKey,
         apiSecret,
-        additionalParams = {}
+        additionalParams = {},
       } = params;
 
       if (!symbol || !side || !quantity || !price || !clientId) {
-        throw new Error('Parâmetros obrigatórios faltando: symbol, side, quantity, price, clientId');
+        throw new Error(
+          'Parâmetros obrigatórios faltando: symbol, side, quantity, price, clientId'
+        );
       }
 
       const orderBody = {
@@ -152,15 +154,19 @@ class OrdersService {
         timeInForce: 'GTC',
         postOnly: true,
         selfTradePrevention: 'RejectTaker',
-        ...additionalParams
+        ...additionalParams,
       };
 
-      Logger.info(`📦 [ORDERS_SERVICE] Criando ordem LIMIT: ${symbol} ${side} ${quantity} @ ${price}`);
+      Logger.info(
+        `📦 [ORDERS_SERVICE] Criando ordem LIMIT: ${symbol} ${side} ${quantity} @ ${price}`
+      );
 
       const result = await this.orderClient.executeOrder(orderBody, apiKey, apiSecret);
 
       if (result && !result.error) {
-        Logger.info(`✅ [ORDERS_SERVICE] Ordem LIMIT criada com sucesso: ${result.id || result.orderId}`);
+        Logger.info(
+          `✅ [ORDERS_SERVICE] Ordem LIMIT criada com sucesso: ${result.id || result.orderId}`
+        );
 
         // Persiste a ordem no banco se dbService estiver disponível
         await this._persistOrder({
@@ -171,7 +177,7 @@ class OrdersService {
           price,
           orderType: 'LIMIT',
           status: 'PENDING',
-          clientId
+          clientId,
         });
       } else {
         Logger.error(`❌ [ORDERS_SERVICE] Falha ao criar ordem LIMIT: ${result?.error}`);
@@ -209,45 +215,69 @@ class OrdersService {
         clientId,
         apiKey,
         apiSecret,
-        additionalParams = {}
+        additionalParams = {},
       } = params;
 
-      if (!symbol || !side || !quantity || !takeProfitTriggerPrice || !takeProfitLimitPrice || !clientId) {
-        throw new Error('Parâmetros obrigatórios faltando: symbol, side, quantity, takeProfitTriggerPrice, takeProfitLimitPrice, clientId');
+      if (
+        !symbol ||
+        !side ||
+        !quantity ||
+        !takeProfitTriggerPrice ||
+        !takeProfitLimitPrice ||
+        !clientId
+      ) {
+        throw new Error(
+          'Parâmetros obrigatórios faltando: symbol, side, quantity, takeProfitTriggerPrice, takeProfitLimitPrice, clientId'
+        );
       }
 
       // 🔍 PRIMEIRA VERIFICAÇÃO: Consulta a exchange para verificar se já existe ordem de take profit
-      Logger.debug(`🔍 [ORDERS_SERVICE] Verificando ordens existentes na exchange para ${symbol}...`);
+      Logger.debug(
+        `🔍 [ORDERS_SERVICE] Verificando ordens existentes na exchange para ${symbol}...`
+      );
 
       try {
-        const existingOrders = await this.orderClient.getOpenOrders(symbol, null, apiKey, apiSecret);
+        const existingOrders = await this.orderClient.getOpenOrders(
+          symbol,
+          null,
+          apiKey,
+          apiSecret
+        );
 
         if (existingOrders && Array.isArray(existingOrders)) {
           // Filtra ordens de take profit existentes
-          const existingTakeProfit = existingOrders.filter(order =>
-            order.takeProfitTriggerPrice &&
-            order.status === 'Pending' &&
-            order.reduceOnly === true
+          const existingTakeProfit = existingOrders.filter(
+            order =>
+              order.takeProfitTriggerPrice &&
+              order.status === 'Pending' &&
+              order.reduceOnly === true
           );
 
           if (existingTakeProfit.length > 0) {
-            Logger.info(`⚠️ [ORDERS_SERVICE] ${symbol}: Já existe(m) ${existingTakeProfit.length} ordem(ns) de take profit na exchange. Cancelando criação.`);
-            Logger.debug(`📋 [ORDERS_SERVICE] Ordens existentes:`, existingTakeProfit.map(o => ({
-              id: o.id,
-              triggerPrice: o.takeProfitTriggerPrice,
-              limitPrice: o.takeProfitLimitPrice,
-              quantity: o.quantity
-            })));
+            Logger.info(
+              `⚠️ [ORDERS_SERVICE] ${symbol}: Já existe(m) ${existingTakeProfit.length} ordem(ns) de take profit na exchange. Cancelando criação.`
+            );
+            Logger.debug(
+              `📋 [ORDERS_SERVICE] Ordens existentes:`,
+              existingTakeProfit.map(o => ({
+                id: o.id,
+                triggerPrice: o.takeProfitTriggerPrice,
+                limitPrice: o.takeProfitLimitPrice,
+                quantity: o.quantity,
+              }))
+            );
 
             return {
               success: false,
               message: 'Take profit já existe na exchange',
-              existingOrders: existingTakeProfit.length
+              existingOrders: existingTakeProfit.length,
             };
           }
         }
       } catch (exchangeError) {
-        Logger.warn(`⚠️ [ORDERS_SERVICE] Erro ao verificar ordens existentes na exchange: ${exchangeError.message}. Continuando com criação...`);
+        Logger.warn(
+          `⚠️ [ORDERS_SERVICE] Erro ao verificar ordens existentes na exchange: ${exchangeError.message}. Continuando com criação...`
+        );
       }
 
       const orderBody = {
@@ -262,15 +292,19 @@ class OrdersService {
         takeProfitTriggerPrice: takeProfitTriggerPrice.toString(),
         takeProfitLimitPrice: takeProfitLimitPrice.toString(),
         takeProfitTriggerBy: 'MarkPrice',
-        ...additionalParams
+        ...additionalParams,
       };
 
-      Logger.info(`📦 [ORDERS_SERVICE] Criando ordem TAKE PROFIT: ${symbol} ${side} ${quantity} @ trigger: ${takeProfitTriggerPrice}, limit: ${takeProfitLimitPrice}`);
+      Logger.info(
+        `📦 [ORDERS_SERVICE] Criando ordem TAKE PROFIT: ${symbol} ${side} ${quantity} @ trigger: ${takeProfitTriggerPrice}, limit: ${takeProfitLimitPrice}`
+      );
 
       const result = await this.orderClient.executeOrder(orderBody, apiKey, apiSecret);
 
       if (result && !result.error) {
-        Logger.info(`✅ [ORDERS_SERVICE] Ordem TAKE PROFIT criada com sucesso: ${result.id || result.orderId}`);
+        Logger.info(
+          `✅ [ORDERS_SERVICE] Ordem TAKE PROFIT criada com sucesso: ${result.id || result.orderId}`
+        );
 
         // Persiste a ordem no banco se dbService estiver disponível
         await this._persistOrder({
@@ -281,7 +315,7 @@ class OrdersService {
           price: takeProfitLimitPrice,
           orderType: 'TAKE_PROFIT',
           status: 'PENDING',
-          clientId
+          clientId,
         });
       } else {
         Logger.error(`❌ [ORDERS_SERVICE] Falha ao criar ordem TAKE PROFIT: ${result?.error}`);
@@ -309,7 +343,9 @@ class OrdersService {
       } = params;
 
       if (!symbol || !side || !quantity || !stopLossTriggerPrice || !clientId) {
-        throw new Error('Parâmetros obrigatórios faltando: symbol, side, quantity, stopLossTriggerPrice, clientId');
+        throw new Error(
+          'Parâmetros obrigatórios faltando: symbol, side, quantity, stopLossTriggerPrice, clientId'
+        );
       }
 
       const orderBody = {
@@ -321,15 +357,19 @@ class OrdersService {
         triggerPrice: stopLossTriggerPrice.toString(),
         triggerQuantity: quantity.toString(),
         timeInForce: 'GTC',
-        clientId
+        clientId,
       };
 
-      Logger.info(`📦 [ORDERS_SERVICE] Criando ordem STOP LOSS: ${symbol} ${side} ${quantity} @ trigger: ${stopLossTriggerPrice}${stopLossLimitPrice ? `, limit: ${stopLossLimitPrice}` : ' (MARKET)'}`);
+      Logger.info(
+        `📦 [ORDERS_SERVICE] Criando ordem STOP LOSS: ${symbol} ${side} ${quantity} @ trigger: ${stopLossTriggerPrice}${stopLossLimitPrice ? `, limit: ${stopLossLimitPrice}` : ' (MARKET)'}`
+      );
 
       const result = await this.orderClient.executeOrder(orderBody, apiKey, apiSecret);
 
       if (result && !result.error) {
-        Logger.info(`✅ [ORDERS_SERVICE] Ordem STOP LOSS criada com sucesso: ${result.id || result.orderId}`);
+        Logger.info(
+          `✅ [ORDERS_SERVICE] Ordem STOP LOSS criada com sucesso: ${result.id || result.orderId}`
+        );
 
         // Persiste a ordem no banco se dbService estiver disponível
         await this._persistOrder({
@@ -340,7 +380,7 @@ class OrdersService {
           price: stopLossLimitPrice || stopLossTriggerPrice,
           orderType: 'STOP_LOSS',
           status: 'PENDING',
-          clientId
+          clientId,
         });
       } else {
         Logger.error(`❌ [ORDERS_SERVICE] Falha ao criar ordem STOP LOSS: ${result?.error}`);
@@ -360,7 +400,7 @@ class OrdersService {
         orderId,
         cancelReason = 'Trailing Stop Atualizado',
         apiKey,
-        apiSecret
+        apiSecret,
       } = params;
 
       // 1. Validação dos parâmetros essenciais
@@ -368,29 +408,35 @@ class OrdersService {
         throw new Error('Parâmetros obrigatórios faltando: symbol, orderId');
       }
 
-      Logger.info(`📦 [ORDERS_SERVICE] Solicitando cancelamento da ordem: ${orderId} para o símbolo ${symbol}`);
+      Logger.info(
+        `📦 [ORDERS_SERVICE] Solicitando cancelamento da ordem: ${orderId} para o símbolo ${symbol}`
+      );
 
       // 2. Chama o método do cliente de baixo nível para interagir com a API
-      const result = await this.orderClient.cancelOpenOrder(symbol, orderId, null, apiKey, apiSecret);
+      const result = await this.orderClient.cancelOpenOrder(
+        symbol,
+        orderId,
+        null,
+        apiKey,
+        apiSecret
+      );
 
       if (result && !result.error) {
         Logger.info(`✅ [ORDERS_SERVICE] Ordem ${orderId} cancelada com sucesso na corretora.`);
 
         // 3. Persiste a mudança de status no seu banco de dados usando o método estático
-        await OrdersService.updateOrderStatus(
-            orderId,
-            'CANCELLED',
-            cancelReason
-        );
+        await OrdersService.updateOrderStatus(orderId, 'CANCELLED', cancelReason);
       } else {
         const errorMessage = result?.error || 'Erro desconhecido da API';
         Logger.error(`❌ [ORDERS_SERVICE] Falha ao cancelar ordem ${orderId}:`, errorMessage);
       }
 
       return result;
-
     } catch (error) {
-      Logger.error(`❌ [ORDERS_SERVICE] Erro crítico ao cancelar ordem ${params.orderId}:`, error.message);
+      Logger.error(
+        `❌ [ORDERS_SERVICE] Erro crítico ao cancelar ordem ${params.orderId}:`,
+        error.message
+      );
       return { error: error.message };
     }
   }
@@ -418,7 +464,7 @@ class OrdersService {
         clientId,
         apiKey,
         apiSecret,
-        additionalParams = {}
+        additionalParams = {},
       } = params;
 
       if (!symbol || !side || !quantity || !clientId) {
@@ -434,7 +480,7 @@ class OrdersService {
         timeInForce: price ? 'GTC' : 'IOC',
         reduceOnly: true,
         selfTradePrevention: 'RejectTaker',
-        ...additionalParams
+        ...additionalParams,
       };
 
       // Adiciona preço apenas se fornecido
@@ -443,12 +489,16 @@ class OrdersService {
         orderBody.postOnly = true; // Para minimizar taxas em ordens limit
       }
 
-      Logger.info(`📦 [ORDERS_SERVICE] Criando ordem FECHAMENTO PARCIAL: ${symbol} ${side} ${quantity}${price ? ` @ ${price}` : ' (MARKET)'}`);
+      Logger.info(
+        `📦 [ORDERS_SERVICE] Criando ordem FECHAMENTO PARCIAL: ${symbol} ${side} ${quantity}${price ? ` @ ${price}` : ' (MARKET)'}`
+      );
 
       const result = await this.orderClient.executeOrder(orderBody, apiKey, apiSecret);
 
       if (result && !result.error) {
-        Logger.info(`✅ [ORDERS_SERVICE] Ordem FECHAMENTO PARCIAL criada com sucesso: ${result.id || result.orderId}`);
+        Logger.info(
+          `✅ [ORDERS_SERVICE] Ordem FECHAMENTO PARCIAL criada com sucesso: ${result.id || result.orderId}`
+        );
 
         // Persiste a ordem no banco se dbService estiver disponível
         await this._persistOrder({
@@ -459,10 +509,12 @@ class OrdersService {
           price: price,
           orderType: 'PARTIAL_CLOSE',
           status: price ? 'PENDING' : 'EXECUTED',
-          clientId
+          clientId,
         });
       } else {
-        Logger.error(`❌ [ORDERS_SERVICE] Falha ao criar ordem FECHAMENTO PARCIAL: ${result?.error}`);
+        Logger.error(
+          `❌ [ORDERS_SERVICE] Falha ao criar ordem FECHAMENTO PARCIAL: ${result?.error}`
+        );
       }
 
       return result;
@@ -494,7 +546,7 @@ class OrdersService {
         status: orderData.status,
         clientId: orderData.clientId,
         timestamp: new Date().toISOString(),
-        exchangeCreatedAt: new Date().toISOString()
+        exchangeCreatedAt: new Date().toISOString(),
       };
 
       await this.addOrder(orderToSave);
@@ -549,11 +601,13 @@ class OrdersService {
           order.closeQuantity || null,
           order.closeType || null,
           order.pnl || null,
-          order.pnlPct || null
+          order.pnlPct || null,
         ]
       );
 
-      console.log(`✅ [ORDERS_SERVICE] Ordem adicionada: ${order.symbol} ${order.side} ${order.quantity}`);
+      console.log(
+        `✅ [ORDERS_SERVICE] Ordem adicionada: ${order.symbol} ${order.side} ${order.quantity}`
+      );
       return { ...order, id: result.lastID };
     } catch (error) {
       console.error(`❌ [ORDERS_SERVICE] Erro ao adicionar ordem:`, error.message);
@@ -613,7 +667,10 @@ class OrdersService {
 
       return order || null;
     } catch (error) {
-      console.error(`❌ [ORDERS_SERVICE] Erro ao obter ordem por externalOrderId ${externalOrderId}:`, error.message);
+      console.error(
+        `❌ [ORDERS_SERVICE] Erro ao obter ordem por externalOrderId ${externalOrderId}:`,
+        error.message
+      );
       return null;
     }
   }
@@ -635,7 +692,8 @@ class OrdersService {
       const values = [];
 
       for (const [key, value] of Object.entries(updates)) {
-        if (key !== 'id' && key !== 'externalOrderId') { // Protege campos que não devem ser atualizados
+        if (key !== 'id' && key !== 'externalOrderId') {
+          // Protege campos que não devem ser atualizados
           updateFields.push(`${key} = ?`);
           values.push(value);
         }
@@ -657,7 +715,10 @@ class OrdersService {
 
       return result.changes;
     } catch (error) {
-      console.error(`❌ [ORDERS_SERVICE] Erro ao atualizar ordem ${externalOrderId}:`, error.message);
+      console.error(
+        `❌ [ORDERS_SERVICE] Erro ao atualizar ordem ${externalOrderId}:`,
+        error.message
+      );
       return 0;
     }
   }
@@ -676,7 +737,10 @@ class OrdersService {
 
       return orders;
     } catch (error) {
-      console.error(`❌ [ORDERS_SERVICE] Erro ao obter ordens do símbolo ${symbol}:`, error.message);
+      console.error(
+        `❌ [ORDERS_SERVICE] Erro ao obter ordens do símbolo ${symbol}:`,
+        error.message
+      );
       return [];
     }
   }
@@ -725,10 +789,9 @@ class OrdersService {
         throw new Error('Database service not initialized');
       }
 
-      const result = await OrdersService.dbService.run(
-        'DELETE FROM bot_orders WHERE botId = ?',
-        [botId]
-      );
+      const result = await OrdersService.dbService.run('DELETE FROM bot_orders WHERE botId = ?', [
+        botId,
+      ]);
 
       console.log(`🧹 [ORDERS_SERVICE] ${result.changes} ordens do bot ${botId} removidas`);
       return result.changes;
@@ -771,14 +834,19 @@ class OrdersService {
       );
 
       if (result.changes > 0) {
-        Logger.debug(`✅ [ORDERS_SERVICE] Status da ordem ${externalOrderId} atualizado para ${newStatus}`);
+        Logger.debug(
+          `✅ [ORDERS_SERVICE] Status da ordem ${externalOrderId} atualizado para ${newStatus}`
+        );
         return true;
       } else {
         Logger.warn(`⚠️ [ORDERS_SERVICE] Ordem ${externalOrderId} não encontrada para atualização`);
         return false;
       }
     } catch (error) {
-      Logger.error(`❌ [ORDERS_SERVICE] Erro ao atualizar status da ordem ${externalOrderId}:`, error.message);
+      Logger.error(
+        `❌ [ORDERS_SERVICE] Erro ao atualizar status da ordem ${externalOrderId}:`,
+        error.message
+      );
       return false;
     }
   }
@@ -796,14 +864,23 @@ class OrdersService {
         return 0;
       }
 
-      Logger.info(`🔄 [ORDERS_SYNC] Iniciando sincronização completa com corretora para bot ${botId}`);
+      Logger.info(
+        `🔄 [ORDERS_SYNC] Iniciando sincronização completa com corretora para bot ${botId}`
+      );
 
       // ETAPA 1: Buscar TODAS as ordens ativas na corretora (fonte da verdade)
       const { default: Order } = await import('../Backpack/Authenticated/Order.js');
-      const exchangeOrders = await Order.getOpenOrders(null, "PERP", config.apiKey, config.apiSecret);
+      const exchangeOrders = await Order.getOpenOrders(
+        null,
+        'PERP',
+        config.apiKey,
+        config.apiSecret
+      );
 
       if (!exchangeOrders) {
-        Logger.warn(`⚠️ [ORDERS_SYNC] Não foi possível buscar ordens da corretora para bot ${botId}`);
+        Logger.warn(
+          `⚠️ [ORDERS_SYNC] Não foi possível buscar ordens da corretora para bot ${botId}`
+        );
         return 0;
       }
 
@@ -814,11 +891,15 @@ class OrdersService {
         return clientId.startsWith(botClientOrderId);
       });
 
-      Logger.debug(`📊 [ORDERS_SYNC] Encontradas ${botExchangeOrders.length} ordens ativas na corretora para bot ${botId}`);
+      Logger.debug(
+        `📊 [ORDERS_SYNC] Encontradas ${botExchangeOrders.length} ordens ativas na corretora para bot ${botId}`
+      );
 
       // Log das ordens encontradas na corretora para debug
       botExchangeOrders.forEach(order => {
-        Logger.debug(`🔍 [EXCHANGE] Ordem: ${order.id}, ClientId: ${order.clientId}, Symbol: ${order.symbol}, Status: ${order.status}`);
+        Logger.debug(
+          `🔍 [EXCHANGE] Ordem: ${order.id}, ClientId: ${order.clientId}, Symbol: ${order.symbol}, Status: ${order.status}`
+        );
       });
 
       // ETAPA 2: Buscar todas as ordens do bot no nosso banco que não estão CLOSED
@@ -829,11 +910,15 @@ class OrdersService {
         [botId]
       );
 
-      Logger.debug(`📊 [ORDERS_SYNC] Encontradas ${ourOrders.length} ordens não-CLOSED no nosso banco para bot ${botId}`);
+      Logger.debug(
+        `📊 [ORDERS_SYNC] Encontradas ${ourOrders.length} ordens não-CLOSED no nosso banco para bot ${botId}`
+      );
 
       // Log das ordens do nosso banco para debug
       ourOrders.forEach(order => {
-        Logger.debug(`🔍 [OUR_DB] Ordem: ${order.externalOrderId}, ClientId: ${order.clientId}, Symbol: ${order.symbol}, Status: ${order.status}`);
+        Logger.debug(
+          `🔍 [OUR_DB] Ordem: ${order.externalOrderId}, ClientId: ${order.clientId}, Symbol: ${order.symbol}, Status: ${order.status}`
+        );
       });
 
       let syncedCount = 0;
@@ -851,14 +936,23 @@ class OrdersService {
         }
       });
 
-      Logger.debug(`🔍 [ORDERS_SYNC] Mapeadas ${exchangeOrdersMapById.size} ordens por ID e ${exchangeOrdersMapByClientId.size} por clientId`);
+      Logger.debug(
+        `🔍 [ORDERS_SYNC] Mapeadas ${exchangeOrdersMapById.size} ordens por ID e ${exchangeOrdersMapByClientId.size} por clientId`
+      );
 
       // ETAPA 4: Sincronizar ordens do nosso banco com a corretora
-      Logger.info(`🔄 [ORDERS_SYNC] Iniciando sincronização de ${ourOrders.length} ordens com delays para evitar rate limiting`);
+      Logger.info(
+        `🔄 [ORDERS_SYNC] Iniciando sincronização de ${ourOrders.length} ordens com delays para evitar rate limiting`
+      );
 
-      const closedPositionsCount = await OrdersService.syncPositionsFromExchangeFills(botId, config);
+      const closedPositionsCount = await OrdersService.syncPositionsFromExchangeFills(
+        botId,
+        config
+      );
 
-      Logger.info(`📊 [ORDERS_SYNC] Bot ${botId}: ${syncedCount} ordens sincronizadas, ${closedPositionsCount} posições fechadas`);
+      Logger.info(
+        `📊 [ORDERS_SYNC] Bot ${botId}: ${syncedCount} ordens sincronizadas, ${closedPositionsCount} posições fechadas`
+      );
 
       for (let i = 0; i < ourOrders.length; i++) {
         const ourOrder = ourOrders[i];
@@ -870,7 +964,9 @@ class OrdersService {
             exchangeOrder = exchangeOrdersMapByClientId.get(ourOrder.clientId.toString());
           }
 
-          Logger.debug(`🔍 [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId} (clientId: ${ourOrder.clientId}): ${exchangeOrder ? 'Encontrada' : 'Não encontrada'} na corretora`);
+          Logger.debug(
+            `🔍 [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId} (clientId: ${ourOrder.clientId}): ${exchangeOrder ? 'Encontrada' : 'Não encontrada'} na corretora`
+          );
 
           if (exchangeOrder) {
             // Ordem existe na corretora - sincronizar status
@@ -897,18 +993,27 @@ class OrdersService {
 
             // Atualizar se houver diferença
             if (ourOrder.status !== ourStatus) {
-              await OrdersService.updateOrderStatus(ourOrder.externalOrderId, ourStatus, 'EXCHANGE_SYNC');
-              Logger.info(`🔄 [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId}: ${ourOrder.status} → ${ourStatus}`);
+              await OrdersService.updateOrderStatus(
+                ourOrder.externalOrderId,
+                ourStatus,
+                'EXCHANGE_SYNC'
+              );
+              Logger.info(
+                `🔄 [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId}: ${ourOrder.status} → ${ourStatus}`
+              );
               syncedCount++;
             }
-
           } else {
             // Ordem NÃO existe na corretora - pode ter sido executada ou cancelada
-            Logger.debug(`❌ [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId} não encontrada nas ordens abertas da corretora`);
+            Logger.debug(
+              `❌ [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId} não encontrada nas ordens abertas da corretora`
+            );
 
             // NOVA LÓGICA: Se a ordem já está FILLED, não alterar (posição já aberta)
             if (ourOrder.status === 'FILLED') {
-              Logger.debug(`ℹ️ [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId} já está FILLED - mantendo status (posição aberta)`);
+              Logger.debug(
+                `ℹ️ [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId} já está FILLED - mantendo status (posição aberta)`
+              );
               continue;
             }
 
@@ -930,7 +1035,9 @@ class OrdersService {
 
             // Se retornou null, a fila global já lidou com rate limiting
             if (orderHistory === null) {
-              Logger.warn(`⚠️ [ORDERS_SYNC] Histórico não disponível para ordem ${ourOrder.externalOrderId} - mantendo PENDING`);
+              Logger.warn(
+                `⚠️ [ORDERS_SYNC] Histórico não disponível para ordem ${ourOrder.externalOrderId} - mantendo PENDING`
+              );
               continue;
             }
 
@@ -938,30 +1045,55 @@ class OrdersService {
               const orderRecord = orderHistory.find(order => order.id === ourOrder.externalOrderId);
 
               if (orderRecord) {
-                Logger.debug(`🔍 [ORDERS_SYNC] Status real da ordem ${ourOrder.externalOrderId} na corretora: ${orderRecord.status}`);
+                Logger.debug(
+                  `🔍 [ORDERS_SYNC] Status real da ordem ${ourOrder.externalOrderId} na corretora: ${orderRecord.status}`
+                );
 
                 // Sincronizar nosso status com o da corretora
                 if (orderRecord.status === 'Filled' || orderRecord.status === 'PartiallyFilled') {
-                  await OrdersService.updateOrderStatus(ourOrder.externalOrderId, 'FILLED', 'EXCHANGE_EXECUTED');
-                  Logger.info(`✅ [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId}: PENDING → FILLED`);
+                  await OrdersService.updateOrderStatus(
+                    ourOrder.externalOrderId,
+                    'FILLED',
+                    'EXCHANGE_EXECUTED'
+                  );
+                  Logger.info(
+                    `✅ [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId}: PENDING → FILLED`
+                  );
                   syncedCount++;
-                } else if (orderRecord.status === 'Cancelled' || orderRecord.status === 'Rejected') {
-                  await OrdersService.updateOrderStatus(ourOrder.externalOrderId, 'CANCELLED', 'EXCHANGE_CANCELLED');
-                  Logger.info(`❌ [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId}: PENDING → CANCELLED`);
+                } else if (
+                  orderRecord.status === 'Cancelled' ||
+                  orderRecord.status === 'Rejected'
+                ) {
+                  await OrdersService.updateOrderStatus(
+                    ourOrder.externalOrderId,
+                    'CANCELLED',
+                    'EXCHANGE_CANCELLED'
+                  );
+                  Logger.info(
+                    `❌ [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId}: PENDING → CANCELLED`
+                  );
                   syncedCount++;
                 }
                 // Se for 'Open' ou 'New', mantém PENDING (está correto)
               } else {
-                Logger.warn(`⚠️ [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId} não encontrada no histórico da corretora`);
+                Logger.warn(
+                  `⚠️ [ORDERS_SYNC] Ordem ${ourOrder.externalOrderId} não encontrada no histórico da corretora`
+                );
               }
             } else if (orderHistory === null) {
-              Logger.warn(`⚠️ [ORDERS_SYNC] Erro ao buscar histórico da ordem ${ourOrder.externalOrderId} - mantendo PENDING`);
+              Logger.warn(
+                `⚠️ [ORDERS_SYNC] Erro ao buscar histórico da ordem ${ourOrder.externalOrderId} - mantendo PENDING`
+              );
             } else {
-              Logger.warn(`⚠️ [ORDERS_SYNC] Histórico vazio para ordem ${ourOrder.externalOrderId}`);
+              Logger.warn(
+                `⚠️ [ORDERS_SYNC] Histórico vazio para ordem ${ourOrder.externalOrderId}`
+              );
             }
           }
         } catch (orderError) {
-          Logger.warn(`⚠️ [ORDERS_SYNC] Erro ao sincronizar ordem ${ourOrder.externalOrderId}: ${orderError.message}`);
+          Logger.warn(
+            `⚠️ [ORDERS_SYNC] Erro ao sincronizar ordem ${ourOrder.externalOrderId}: ${orderError.message}`
+          );
         }
 
         // Fila global agora coordena os delays - removemos delays manuais
@@ -969,7 +1101,6 @@ class OrdersService {
       }
 
       return syncedCount + closedPositionsCount;
-
     } catch (error) {
       Logger.error(`❌ [ORDERS_SYNC] Erro na sincronização do bot ${botId}:`, error.message);
       return 0;
@@ -985,13 +1116,20 @@ class OrdersService {
     try {
       Logger.debug(`🔍 [POSITION_CLOSE] Iniciando detecção de posições fechadas para bot ${botId}`);
 
-      const openPositionsFromExchange = await Futures.getOpenPositions(config.apiKey, config.apiSecret);
+      const openPositionsFromExchange = await Futures.getOpenPositions(
+        config.apiKey,
+        config.apiSecret
+      );
       if (!openPositionsFromExchange) {
-        Logger.warn(`⚠️ [POSITION_CLOSE] Não foi possível buscar posições abertas da corretora para bot ${botId}`);
+        Logger.warn(
+          `⚠️ [POSITION_CLOSE] Não foi possível buscar posições abertas da corretora para bot ${botId}`
+        );
         return 0;
       }
 
-      Logger.debug(`📊 [POSITION_CLOSE] Posições abertas na corretora: ${openPositionsFromExchange.length}`);
+      Logger.debug(
+        `📊 [POSITION_CLOSE] Posições abertas na corretora: ${openPositionsFromExchange.length}`
+      );
       openPositionsFromExchange.forEach(pos => {
         Logger.debug(`🔍 [EXCHANGE_POS] ${pos.symbol}: ${pos.size} @ ${pos.averageEntryPrice}`);
       });
@@ -1017,8 +1155,12 @@ class OrdersService {
         positionGroups.get(order.symbol).push(order);
       });
 
-      Logger.debug(`📊 [POSITION_CLOSE] Símbolos com ordens FILLED: ${Array.from(positionGroups.keys()).join(', ')}`);
-      Logger.debug(`📊 [POSITION_CLOSE] Símbolos com posições abertas: ${Array.from(exchangeSymbolsWithPositions).join(', ')}`);
+      Logger.debug(
+        `📊 [POSITION_CLOSE] Símbolos com ordens FILLED: ${Array.from(positionGroups.keys()).join(', ')}`
+      );
+      Logger.debug(
+        `📊 [POSITION_CLOSE] Símbolos com posições abertas: ${Array.from(exchangeSymbolsWithPositions).join(', ')}`
+      );
 
       let closedCount = 0;
 
@@ -1030,16 +1172,26 @@ class OrdersService {
           continue;
         }
 
-        Logger.debug(`🔍 [POSITION_CLOSE] ${symbol} NÃO tem posição aberta - verificando se pode fechar`);
+        Logger.debug(
+          `🔍 [POSITION_CLOSE] ${symbol} NÃO tem posição aberta - verificando se pode fechar`
+        );
 
         const position = OrdersService.calculatePositionPnL(orders);
-        Logger.debug(`📊 [POSITION_CLOSE] ${symbol} - Quantidade: ${position.totalQuantity}, P&L: ${position.totalPnL}, Fechada: ${position.isClosed}`);
+        Logger.debug(
+          `📊 [POSITION_CLOSE] ${symbol} - Quantidade: ${position.totalQuantity}, P&L: ${position.totalPnL}, Fechada: ${position.isClosed}`
+        );
 
         if (position.isClosed) {
-          Logger.info(`✅ [POSITION_CLOSE] Fechando posição ${symbol} - P&L: ${position.totalPnL.toFixed(4)} USDC`);
+          Logger.info(
+            `✅ [POSITION_CLOSE] Fechando posição ${symbol} - P&L: ${position.totalPnL.toFixed(4)} USDC`
+          );
 
           for (const order of orders) {
-            const pnlForOrder = orders.length > 1 ? (position.totalPnL * parseFloat(order.quantity)) / Math.abs(position.totalQuantity) : position.totalPnL;
+            const pnlForOrder =
+              orders.length > 1
+                ? (position.totalPnL * parseFloat(order.quantity)) /
+                  Math.abs(position.totalQuantity)
+                : position.totalPnL;
 
             await OrdersService.dbService.run(
               `UPDATE bot_orders 
@@ -1048,18 +1200,21 @@ class OrdersService {
               [pnlForOrder, new Date().toISOString(), order.externalOrderId]
             );
 
-            Logger.debug(`📊 [POSITION_CLOSE] Ordem ${order.externalOrderId} marcada como CLOSED com P&L: ${pnlForOrder}`);
+            Logger.debug(
+              `📊 [POSITION_CLOSE] Ordem ${order.externalOrderId} marcada como CLOSED com P&L: ${pnlForOrder}`
+            );
           }
 
           closedCount++;
         } else {
-          Logger.debug(`ℹ️ [POSITION_CLOSE] ${symbol} não está fechada (quantidade: ${position.totalQuantity})`);
+          Logger.debug(
+            `ℹ️ [POSITION_CLOSE] ${symbol} não está fechada (quantidade: ${position.totalQuantity})`
+          );
         }
       }
 
       Logger.info(`📊 [POSITION_CLOSE] Bot ${botId}: ${closedCount} posições fechadas`);
       return closedCount;
-
     } catch (error) {
       Logger.error(`❌ [POSITION_CLOSE] Erro ao detectar posições fechadas:`, error.message);
       return 0;
@@ -1098,23 +1253,29 @@ class OrdersService {
         } else {
           totalCost = 0;
         }
-        Logger.debug(`  SELL: -${quantity}, avgCost: ${avgCostPrice}, sellPrice: ${price}, pnl: ${pnlFromSell}, netQty: ${netQuantity}`);
+        Logger.debug(
+          `  SELL: -${quantity}, avgCost: ${avgCostPrice}, sellPrice: ${price}, pnl: ${pnlFromSell}, netQty: ${netQuantity}`
+        );
       }
     }
 
     const result = {
       totalQuantity: netQuantity,
       totalPnL,
-      isClosed: Math.abs(netQuantity) < 0.01
+      isClosed: Math.abs(netQuantity) < 0.01,
     };
 
-    Logger.debug(`🔢 [PNL_CALC] Resultado: netQty: ${result.totalQuantity}, P&L: ${result.totalPnL}, fechada: ${result.isClosed}`);
+    Logger.debug(
+      `🔢 [PNL_CALC] Resultado: netQty: ${result.totalQuantity}, P&L: ${result.totalPnL}, fechada: ${result.isClosed}`
+    );
     return result;
   }
 
   static async syncPositionsFromExchangeFills(botId, config) {
     try {
-      Logger.debug(`📊 [FILLS_SYNC] Iniciando sincronização baseada em fills da corretora para bot ${botId}`);
+      Logger.debug(
+        `📊 [FILLS_SYNC] Iniciando sincronização baseada em fills da corretora para bot ${botId}`
+      );
 
       const botClientOrderId = config.botClientOrderId?.toString() || '';
       const botCreationDate = config.createdAt || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -1146,11 +1307,17 @@ class OrdersService {
       });
 
       // Identifica fills de fechamento potenciais (sem clientId) para posições abertas
-      const orphanFills = await OrdersService.identifyOrphanFills(botId, allFills, botFillsWithClientId);
+      const orphanFills = await OrdersService.identifyOrphanFills(
+        botId,
+        allFills,
+        botFillsWithClientId
+      );
 
       const botFills = [...botFillsWithClientId, ...orphanFills];
 
-      Logger.debug(`📊 [FILLS_SYNC] Encontrados ${botFillsWithClientId.length} fills com clientId + ${orphanFills.length} fills órfãos = ${botFills.length} fills totais do bot`);
+      Logger.debug(
+        `📊 [FILLS_SYNC] Encontrados ${botFillsWithClientId.length} fills com clientId + ${orphanFills.length} fills órfãos = ${botFills.length} fills totais do bot`
+      );
 
       const symbolPositions = new Map();
 
@@ -1164,7 +1331,7 @@ class OrdersService {
           quantity: parseFloat(fill.quantity),
           price: parseFloat(fill.price),
           timestamp: fill.timestamp,
-          orderId: fill.orderId
+          orderId: fill.orderId,
         });
       });
 
@@ -1176,7 +1343,9 @@ class OrdersService {
         const position = OrdersService.calculatePositionFromFills(fills);
 
         if (position.isClosed) {
-          Logger.debug(`✅ [FILLS_SYNC] Posição ${symbol} fechada baseada em fills - P&L: ${position.totalPnL.toFixed(4)} USDC`);
+          Logger.debug(
+            `✅ [FILLS_SYNC] Posição ${symbol} fechada baseada em fills - P&L: ${position.totalPnL.toFixed(4)} USDC`
+          );
 
           const ourOrders = await OrdersService.dbService.getAll(
             `SELECT * FROM bot_orders WHERE botId = ? AND symbol = ? AND status = 'FILLED'`,
@@ -1184,9 +1353,11 @@ class OrdersService {
           );
 
           for (const order of ourOrders) {
-            const pnlForOrder = ourOrders.length > 1 ?
-              (position.totalPnL * parseFloat(order.quantity)) / Math.abs(position.totalQuantityProcessed) :
-              position.totalPnL;
+            const pnlForOrder =
+              ourOrders.length > 1
+                ? (position.totalPnL * parseFloat(order.quantity)) /
+                  Math.abs(position.totalQuantityProcessed)
+                : position.totalPnL;
 
             await OrdersService.dbService.run(
               `UPDATE bot_orders 
@@ -1195,18 +1366,23 @@ class OrdersService {
               [pnlForOrder, new Date().toISOString(), order.externalOrderId]
             );
 
-            Logger.debug(`📊 [FILLS_SYNC] Ordem ${order.externalOrderId} marcada como CLOSED com P&L: ${pnlForOrder}`);
+            Logger.debug(
+              `📊 [FILLS_SYNC] Ordem ${order.externalOrderId} marcada como CLOSED com P&L: ${pnlForOrder}`
+            );
           }
 
           closedCount++;
         } else {
-          Logger.debug(`ℹ️ [FILLS_SYNC] ${symbol} ainda tem posição aberta (quantidade: ${position.totalQuantity})`);
+          Logger.debug(
+            `ℹ️ [FILLS_SYNC] ${symbol} ainda tem posição aberta (quantidade: ${position.totalQuantity})`
+          );
         }
       }
 
-      Logger.debug(`📊 [FILLS_SYNC] Bot ${botId}: ${closedCount} posições fechadas baseado em fills`);
+      Logger.debug(
+        `📊 [FILLS_SYNC] Bot ${botId}: ${closedCount} posições fechadas baseado em fills`
+      );
       return closedCount;
-
     } catch (error) {
       Logger.error(`❌ [FILLS_SYNC] Erro na sincronização baseada em fills:`, error.message);
       return 0;
@@ -1237,7 +1413,9 @@ class OrdersService {
         return [];
       }
 
-      Logger.debug(`🔍 [ORPHAN_FILLS] Bot ${botId} tem ${openFilledOrders.length} ordens FILLED em aberto`);
+      Logger.debug(
+        `🔍 [ORPHAN_FILLS] Bot ${botId} tem ${openFilledOrders.length} ordens FILLED em aberto`
+      );
 
       // 2. Para cada posição aberta, busca fills de fechamento potenciais
       const orphanFills = [];
@@ -1270,21 +1448,30 @@ class OrdersService {
 
         // Se encontrou fills de fechamento potenciais
         if (potentialCloseFills.length > 0) {
-          Logger.info(`🔍 [ORPHAN_FILLS] Encontrados ${potentialCloseFills.length} fills órfãos potenciais para ${symbol} ${side} ${quantity}`);
+          Logger.info(
+            `🔍 [ORPHAN_FILLS] Encontrados ${potentialCloseFills.length} fills órfãos potenciais para ${symbol} ${side} ${quantity}`
+          );
 
           // Calcula se esses fills podem fechar nossa posição
-          const validCloseFills = OrdersService.validateOrphanFills(order, potentialCloseFills, botFillsMap.get(symbol) || []);
+          const validCloseFills = OrdersService.validateOrphanFills(
+            order,
+            potentialCloseFills,
+            botFillsMap.get(symbol) || []
+          );
 
           if (validCloseFills.length > 0) {
-            Logger.info(`✅ [ORPHAN_FILLS] ${validCloseFills.length} fills órfãos validados para ${symbol}`);
+            Logger.info(
+              `✅ [ORPHAN_FILLS] ${validCloseFills.length} fills órfãos validados para ${symbol}`
+            );
             orphanFills.push(...validCloseFills);
           }
         }
       }
 
-      Logger.info(`📊 [ORPHAN_FILLS] Total de ${orphanFills.length} fills órfãos identificados para bot ${botId}`);
+      Logger.info(
+        `📊 [ORPHAN_FILLS] Total de ${orphanFills.length} fills órfãos identificados para bot ${botId}`
+      );
       return orphanFills;
-
     } catch (error) {
       Logger.error(`❌ [ORPHAN_FILLS] Erro ao identificar fills órfãos:`, error.message);
       return [];
@@ -1302,14 +1489,18 @@ class OrdersService {
     const validFills = [];
     const orderQuantity = parseFloat(order.quantity);
 
-    Logger.debug(`🔍 [ORPHAN_VALIDATE] Validando fills órfãos para ordem ${order.symbol} ${order.side} ${orderQuantity}`);
+    Logger.debug(
+      `🔍 [ORPHAN_VALIDATE] Validando fills órfãos para ordem ${order.symbol} ${order.side} ${orderQuantity}`
+    );
 
     // Para ordens FILLED simples, assume que a quantidade da ordem precisa ser fechada
     // Se não há fills existentes do bot, toda a quantidade precisa ser fechada
     let quantityToClose = orderQuantity;
 
     if (existingFills.length > 0) {
-      Logger.debug(`🔍 [ORPHAN_VALIDATE] Existem ${existingFills.length} fills existentes para análise`);
+      Logger.debug(
+        `🔍 [ORPHAN_VALIDATE] Existem ${existingFills.length} fills existentes para análise`
+      );
       // Calcula quantidade já processada nos fills existentes
       let processedQuantity = 0;
       existingFills.forEach(fill => {
@@ -1335,40 +1526,55 @@ class OrdersService {
     }
 
     // Ordena fills por timestamp
-    const sortedFills = potentialFills.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    const sortedFills = potentialFills.sort(
+      (a, b) => new Date(a.timestamp) - new Date(b.timestamp)
+    );
 
     let remainingToClose = quantityToClose;
 
     for (const fill of sortedFills) {
       const fillQuantity = parseFloat(fill.quantity);
 
-      Logger.debug(`🔍 [ORPHAN_VALIDATE] Testando fill: ${fill.side} ${fillQuantity} @ ${fill.price}`);
-      Logger.debug(`🔍 [ORPHAN_VALIDATE] Remaining to close: ${remainingToClose}, Fill quantity: ${fillQuantity}`);
+      Logger.debug(
+        `🔍 [ORPHAN_VALIDATE] Testando fill: ${fill.side} ${fillQuantity} @ ${fill.price}`
+      );
+      Logger.debug(
+        `🔍 [ORPHAN_VALIDATE] Remaining to close: ${remainingToClose}, Fill quantity: ${fillQuantity}`
+      );
 
       // Aceita o fill se pode fechar total ou parcialmente a posição
-      if (remainingToClose > 0.01 && fillQuantity <= remainingToClose + 0.1) { // Tolerância aumentada
+      if (remainingToClose > 0.01 && fillQuantity <= remainingToClose + 0.1) {
+        // Tolerância aumentada
         validFills.push({
           ...fill,
           side: fill.side === 'Bid' ? 'BUY' : 'SELL', // Normaliza formato
           quantity: fillQuantity,
           price: parseFloat(fill.price),
-          isOrphan: true // Marca como órfão para logging
+          isOrphan: true, // Marca como órfão para logging
         });
 
         remainingToClose -= fillQuantity;
-        Logger.info(`✅ [ORPHAN_VALIDATE] Fill órfão validado: ${fill.symbol} ${fill.side} ${fillQuantity} @ ${fill.price}`);
+        Logger.info(
+          `✅ [ORPHAN_VALIDATE] Fill órfão validado: ${fill.symbol} ${fill.side} ${fillQuantity} @ ${fill.price}`
+        );
 
         // Se fechou completamente, para de buscar
         if (remainingToClose <= 0.01) {
-          Logger.info(`✅ [ORPHAN_VALIDATE] Posição ${order.symbol} totalmente fechada por fills órfãos`);
+          Logger.info(
+            `✅ [ORPHAN_VALIDATE] Posição ${order.symbol} totalmente fechada por fills órfãos`
+          );
           break;
         }
       } else {
-        Logger.debug(`🔍 [ORPHAN_VALIDATE] Fill rejeitado: quantidade ${fillQuantity} > remaining ${remainingToClose}`);
+        Logger.debug(
+          `🔍 [ORPHAN_VALIDATE] Fill rejeitado: quantidade ${fillQuantity} > remaining ${remainingToClose}`
+        );
       }
     }
 
-    Logger.info(`📊 [ORPHAN_VALIDATE] ${validFills.length} fills órfãos validados para ${order.symbol}`);
+    Logger.info(
+      `📊 [ORPHAN_VALIDATE] ${validFills.length} fills órfãos validados para ${order.symbol}`
+    );
     return validFills;
   }
 
@@ -1383,7 +1589,9 @@ class OrdersService {
     Logger.debug(`🔢 [FILLS_CALC] Calculando posição para ${fills.length} fills:`);
     fills.forEach(fill => {
       const orphanLabel = fill.isOrphan ? ' [ÓRFÃO]' : '';
-      Logger.debug(`  ${fill.side} ${fill.quantity} @ ${fill.price} (${fill.timestamp})${orphanLabel}`);
+      Logger.debug(
+        `  ${fill.side} ${fill.quantity} @ ${fill.price} (${fill.timestamp})${orphanLabel}`
+      );
     });
 
     for (const fill of fills) {
@@ -1393,7 +1601,7 @@ class OrdersService {
 
       if (fill.side === 'BUY') {
         netQuantity += quantity;
-        totalCost += (quantity * price);
+        totalCost += quantity * price;
         Logger.debug(`  BUY: +${quantity}, netQty: ${netQuantity}, totalCost: ${totalCost}`);
       } else {
         const avgCostPrice = netQuantity > 0 ? totalCost / netQuantity : 0;
@@ -1406,7 +1614,9 @@ class OrdersService {
         } else {
           totalCost = 0;
         }
-        Logger.debug(`  SELL: -${quantity}, avgCost: ${avgCostPrice}, sellPrice: ${price}, pnl: ${pnlFromSell}, netQty: ${netQuantity}`);
+        Logger.debug(
+          `  SELL: -${quantity}, avgCost: ${avgCostPrice}, sellPrice: ${price}, pnl: ${pnlFromSell}, netQty: ${netQuantity}`
+        );
       }
     }
 
@@ -1420,22 +1630,31 @@ class OrdersService {
 
     // Verifica se os preços são todos idênticos (indicando possível erro)
     const prices = fills.map(f => f.price);
-    const hasIdenticalPrices = prices.length > 1 && Math.max(...prices) - Math.min(...prices) < 0.0001;
+    const hasIdenticalPrices =
+      prices.length > 1 && Math.max(...prices) - Math.min(...prices) < 0.0001;
 
     const isReallySuspicious = isPnLExactlyZero && hasMultipleFills && hasIdenticalPrices;
 
     let isClosed = isQuantityClosed;
     if (isQuantityClosed && isReallySuspicious) {
-      Logger.warn(`⚠️ [FILLS_CALC] Fill suspeito detectado: PnL=$${totalPnL.toFixed(4)}, preços idênticos=${hasIdenticalPrices}`);
-      Logger.warn(`⚠️ [FILLS_CALC] Fills: ${fills.map(f => `${f.side} ${f.quantity}@${f.price}`).join(', ')}`);
+      Logger.warn(
+        `⚠️ [FILLS_CALC] Fill suspeito detectado: PnL=$${totalPnL.toFixed(4)}, preços idênticos=${hasIdenticalPrices}`
+      );
+      Logger.warn(
+        `⚠️ [FILLS_CALC] Fills: ${fills.map(f => `${f.side} ${f.quantity}@${f.price}`).join(', ')}`
+      );
       Logger.warn(`🚫 [FILLS_CALC] Não marcando como fechada - possível erro de cálculo`);
       isClosed = false;
     } else if (isQuantityClosed) {
       // Log detalhado para fechamentos válidos (incluindo loss pequeno)
       if (Math.abs(totalPnL) < 1) {
-        Logger.debug(`💸 [FILLS_CALC] Posição fechada com PnL pequeno: $${totalPnL.toFixed(4)} (${totalPnL > 0 ? 'gain' : 'loss'})`);
+        Logger.debug(
+          `💸 [FILLS_CALC] Posição fechada com PnL pequeno: $${totalPnL.toFixed(4)} (${totalPnL > 0 ? 'gain' : 'loss'})`
+        );
       } else {
-        Logger.debug(`💰 [FILLS_CALC] Posição fechada com PnL: $${totalPnL.toFixed(2)} (${totalPnL > 0 ? 'gain' : 'loss'})`);
+        Logger.debug(
+          `💰 [FILLS_CALC] Posição fechada com PnL: $${totalPnL.toFixed(2)} (${totalPnL > 0 ? 'gain' : 'loss'})`
+        );
       }
     }
 
@@ -1443,10 +1662,12 @@ class OrdersService {
       totalQuantity: netQuantity,
       totalPnL,
       totalQuantityProcessed,
-      isClosed: isClosed
+      isClosed: isClosed,
     };
 
-    Logger.debug(`🔢 [FILLS_CALC] Resultado: netQty: ${result.totalQuantity}, P&L: ${result.totalPnL}, fechada: ${result.isClosed}, suspeito: ${isReallySuspicious}`);
+    Logger.debug(
+      `🔢 [FILLS_CALC] Resultado: netQty: ${result.totalQuantity}, P&L: ${result.totalPnL}, fechada: ${result.isClosed}, suspeito: ${isReallySuspicious}`
+    );
     return result;
   }
 
@@ -1456,12 +1677,14 @@ class OrdersService {
    * @returns {boolean} True se for ordem condicional
    */
   static isConditionalOrder(order) {
-    return order.triggerPrice ||
-           order.stopLossTriggerPrice ||
-           order.takeProfitTriggerPrice ||
-           order.orderType === 'STOP_MARKET' ||
-           order.orderType === 'TAKE_PROFIT_MARKET' ||
-           order.orderType?.includes('TRIGGER');
+    return (
+      order.triggerPrice ||
+      order.stopLossTriggerPrice ||
+      order.takeProfitTriggerPrice ||
+      order.orderType === 'STOP_MARKET' ||
+      order.orderType === 'TAKE_PROFIT_MARKET' ||
+      order.orderType?.includes('TRIGGER')
+    );
   }
 
   /**
@@ -1493,27 +1716,38 @@ class OrdersService {
         return 0;
       }
 
-      Logger.info(`📊 [GHOST_ORDERS] Encontradas ${pendingOrdersInDB.length} ordens PENDING no banco para bot ${botId}`);
+      Logger.info(
+        `📊 [GHOST_ORDERS] Encontradas ${pendingOrdersInDB.length} ordens PENDING no banco para bot ${botId}`
+      );
 
       // 2. Busca ordens abertas REAIS na corretora (incluindo ordens condicionais)
       const { default: Order } = await import('../Backpack/Authenticated/Order.js');
 
       // Busca ordens regulares
-      const regularOrders = await Order.getOpenOrders(null, "PERP", config.apiKey, config.apiSecret);
+      const regularOrders = await Order.getOpenOrders(
+        null,
+        'PERP',
+        config.apiKey,
+        config.apiSecret
+      );
 
       // Busca ordens condicionais (trigger orders)
-      const triggerOrders = await Order.getOpenTriggerOrders(null, "PERP", config.apiKey, config.apiSecret);
+      const triggerOrders = await Order.getOpenTriggerOrders(
+        null,
+        'PERP',
+        config.apiKey,
+        config.apiSecret
+      );
 
       if (!regularOrders && !triggerOrders) {
-        Logger.warn(`⚠️ [GHOST_ORDERS] Não foi possível buscar ordens da corretora para bot ${botId}`);
+        Logger.warn(
+          `⚠️ [GHOST_ORDERS] Não foi possível buscar ordens da corretora para bot ${botId}`
+        );
         return 0;
       }
 
       // Unifica todas as ordens da exchange
-      const allOpenOrdersOnExchange = [
-        ...(regularOrders || []),
-        ...(triggerOrders || [])
-      ];
+      const allOpenOrdersOnExchange = [...(regularOrders || []), ...(triggerOrders || [])];
 
       // Filtra ordens do bot específico
       const botClientOrderId = config.botClientOrderId?.toString() || '';
@@ -1522,7 +1756,9 @@ class OrdersService {
         return clientId.startsWith(botClientOrderId);
       });
 
-      Logger.info(`📊 [GHOST_ORDERS] Encontradas ${botExchangeOrders.length} ordens REAIS na corretora para bot ${botId} (regulares: ${regularOrders?.length || 0}, condicionais: ${triggerOrders?.length || 0})`);
+      Logger.info(
+        `📊 [GHOST_ORDERS] Encontradas ${botExchangeOrders.length} ordens REAIS na corretora para bot ${botId} (regulares: ${regularOrders?.length || 0}, condicionais: ${triggerOrders?.length || 0})`
+      );
 
       // 3. Cria mapa de ordens que existem na corretora
       const exchangeOrderIds = new Set();
@@ -1540,7 +1776,9 @@ class OrdersService {
         }
       }
 
-      Logger.info(`👻 [GHOST_ORDERS] Detectadas ${ghostOrders.length} ordens fantasma para bot ${botId}`);
+      Logger.info(
+        `👻 [GHOST_ORDERS] Detectadas ${ghostOrders.length} ordens fantasma para bot ${botId}`
+      );
 
       if (ghostOrders.length === 0) {
         return 0;
@@ -1549,7 +1787,9 @@ class OrdersService {
       // 5. Log das ordens fantasma para debug (com identificação de tipo)
       ghostOrders.forEach(order => {
         const orderType = OrdersService.isConditionalOrder(order) ? 'condicional' : 'padrão';
-        Logger.warn(`👻 [GHOST] Bot ${botId}: ${order.symbol} ${order.side} ${order.quantity} (${order.externalOrderId}) - Tipo: ${orderType} (${order.orderType})`);
+        Logger.warn(
+          `👻 [GHOST] Bot ${botId}: ${order.symbol} ${order.side} ${order.quantity} (${order.externalOrderId}) - Tipo: ${orderType} (${order.orderType})`
+        );
       });
 
       // 6. Para cada ordem fantasma, verifica o status real na corretora via histórico
@@ -1558,7 +1798,9 @@ class OrdersService {
 
       for (const ghostOrder of ghostOrders) {
         try {
-          Logger.debug(`🔍 [GHOST_ORDERS] Verificando ordem fantasma ${ghostOrder.externalOrderId} via histórico`);
+          Logger.debug(
+            `🔍 [GHOST_ORDERS] Verificando ordem fantasma ${ghostOrder.externalOrderId} via histórico`
+          );
 
           // Busca histórico da ordem específica
           const orderHistory = await History.getOrderHistory(
@@ -1576,7 +1818,9 @@ class OrdersService {
             const orderRecord = orderHistory.find(order => order.id === ghostOrder.externalOrderId);
 
             if (orderRecord) {
-              Logger.info(`🔍 [GHOST_ORDERS] Status real da ordem fantasma ${ghostOrder.externalOrderId}: ${orderRecord.status}`);
+              Logger.info(
+                `🔍 [GHOST_ORDERS] Status real da ordem fantasma ${ghostOrder.externalOrderId}: ${orderRecord.status}`
+              );
 
               // Atualiza status baseado no histórico real
               let newStatus = 'PENDING';
@@ -1603,37 +1847,61 @@ class OrdersService {
               }
 
               if (newStatus !== ghostOrder.status) {
-                await OrdersService.updateOrderStatus(ghostOrder.externalOrderId, newStatus, closeType);
+                await OrdersService.updateOrderStatus(
+                  ghostOrder.externalOrderId,
+                  newStatus,
+                  closeType
+                );
 
                 // Log aprimorado identificando tipo da ordem
-                const orderType = OrdersService.isConditionalOrder(ghostOrder) ? 'condicional' : 'padrão';
-                Logger.info(`✅ [GHOST_ORDERS] Ordem ${orderType} fantasma processada para ${ghostOrder.symbol}: ID ${ghostOrder.externalOrderId} (${ghostOrder.status} → ${newStatus})`);
+                const orderType = OrdersService.isConditionalOrder(ghostOrder)
+                  ? 'condicional'
+                  : 'padrão';
+                Logger.info(
+                  `✅ [GHOST_ORDERS] Ordem ${orderType} fantasma processada para ${ghostOrder.symbol}: ID ${ghostOrder.externalOrderId} (${ghostOrder.status} → ${newStatus})`
+                );
                 cleanedCount++;
               }
             } else {
               // Ordem não encontrada nem no histórico - marca como CANCELLED
-              await OrdersService.updateOrderStatus(ghostOrder.externalOrderId, 'CANCELLED', 'GHOST_ORDER_NOT_FOUND');
+              await OrdersService.updateOrderStatus(
+                ghostOrder.externalOrderId,
+                'CANCELLED',
+                'GHOST_ORDER_NOT_FOUND'
+              );
 
               // Log aprimorado para ordem não encontrada
-              const orderType = OrdersService.isConditionalOrder(ghostOrder) ? 'condicional' : 'padrão';
-              Logger.info(`❌ [GHOST_ORDERS] Ordem ${orderType} fantasma ${ghostOrder.symbol} não encontrada: ID ${ghostOrder.externalOrderId} - marcada como CANCELLED`);
+              const orderType = OrdersService.isConditionalOrder(ghostOrder)
+                ? 'condicional'
+                : 'padrão';
+              Logger.info(
+                `❌ [GHOST_ORDERS] Ordem ${orderType} fantasma ${ghostOrder.symbol} não encontrada: ID ${ghostOrder.externalOrderId} - marcada como CANCELLED`
+              );
               cleanedCount++;
             }
           } else {
             // Erro ao buscar histórico ou histórico vazio - marca como CANCELLED
-            await OrdersService.updateOrderStatus(ghostOrder.externalOrderId, 'CANCELLED', 'GHOST_ORDER_NO_HISTORY');
-            Logger.warn(`⚠️ [GHOST_ORDERS] Não foi possível obter histórico da ordem fantasma ${ghostOrder.externalOrderId} - marcando como CANCELLED`);
+            await OrdersService.updateOrderStatus(
+              ghostOrder.externalOrderId,
+              'CANCELLED',
+              'GHOST_ORDER_NO_HISTORY'
+            );
+            Logger.warn(
+              `⚠️ [GHOST_ORDERS] Não foi possível obter histórico da ordem fantasma ${ghostOrder.externalOrderId} - marcando como CANCELLED`
+            );
             cleanedCount++;
           }
-
         } catch (orderError) {
-          Logger.error(`❌ [GHOST_ORDERS] Erro ao processar ordem fantasma ${ghostOrder.externalOrderId}: ${orderError.message}`);
+          Logger.error(
+            `❌ [GHOST_ORDERS] Erro ao processar ordem fantasma ${ghostOrder.externalOrderId}: ${orderError.message}`
+          );
         }
       }
 
-      Logger.info(`🎉 [GHOST_ORDERS] Limpeza concluída para bot ${botId}: ${cleanedCount}/${ghostOrders.length} ordens fantasma processadas`);
+      Logger.info(
+        `🎉 [GHOST_ORDERS] Limpeza concluída para bot ${botId}: ${cleanedCount}/${ghostOrders.length} ordens fantasma processadas`
+      );
       return cleanedCount;
-
     } catch (error) {
       Logger.error(`❌ [GHOST_ORDERS] Erro na limpeza de ordens fantasma: ${error.message}`);
       return 0;
@@ -1648,7 +1916,9 @@ class OrdersService {
    */
   static async fixOrdersWithCloseTimeButNotClosed(botId = null) {
     try {
-      Logger.debug(`🔧 [ORDERS_FIX] Iniciando correção de ordens com closeTime não marcadas como CLOSED${botId ? ` para bot ${botId}` : ''}`);
+      Logger.debug(
+        `🔧 [ORDERS_FIX] Iniciando correção de ordens com closeTime não marcadas como CLOSED${botId ? ` para bot ${botId}` : ''}`
+      );
 
       // Busca ordens com closeTime mas status != CLOSED
       const query = botId
@@ -1663,9 +1933,13 @@ class OrdersService {
         return 0;
       }
 
-      Logger.debug(`🔍 [ORDERS_FIX] Encontradas ${problematicOrders.length} ordens com closeTime que não estão CLOSED:`);
+      Logger.debug(
+        `🔍 [ORDERS_FIX] Encontradas ${problematicOrders.length} ordens com closeTime que não estão CLOSED:`
+      );
       problematicOrders.forEach(order => {
-        Logger.debug(`  Bot ${order.botId}: ${order.symbol} ${order.side} ${order.quantity} (${order.externalOrderId}) - Status: ${order.status}`);
+        Logger.debug(
+          `  Bot ${order.botId}: ${order.symbol} ${order.side} ${order.quantity} (${order.externalOrderId}) - Status: ${order.status}`
+        );
       });
 
       let fixedCount = 0;
@@ -1673,11 +1947,15 @@ class OrdersService {
       // Para cada ordem problemática, verifica se realmente deveria estar fechada
       for (const order of problematicOrders) {
         try {
-          Logger.debug(`🔧 [ORDERS_FIX] Analisando ordem ${order.externalOrderId} - ${order.symbol}`);
+          Logger.debug(
+            `🔧 [ORDERS_FIX] Analisando ordem ${order.externalOrderId} - ${order.symbol}`
+          );
 
           // Se tem closeTime e não é PENDING nem CANCELLED, provavelmente deveria estar CLOSED
           if (order.status === 'FILLED') {
-            Logger.info(`🔧 [ORDERS_FIX] Corrigindo ordem FILLED com closeTime: ${order.externalOrderId}`);
+            Logger.info(
+              `🔧 [ORDERS_FIX] Corrigindo ordem FILLED com closeTime: ${order.externalOrderId}`
+            );
 
             // Atualiza para CLOSED mantendo os dados existentes
             await OrdersService.dbService.run(
@@ -1691,17 +1969,21 @@ class OrdersService {
             Logger.info(`✅ [ORDERS_FIX] Ordem ${order.externalOrderId} marcada como CLOSED`);
             fixedCount++;
           } else {
-            Logger.debug(`ℹ️ [ORDERS_FIX] Ordem ${order.externalOrderId} tem status ${order.status} - não corrigindo automaticamente`);
+            Logger.debug(
+              `ℹ️ [ORDERS_FIX] Ordem ${order.externalOrderId} tem status ${order.status} - não corrigindo automaticamente`
+            );
           }
-
         } catch (orderError) {
-          Logger.error(`❌ [ORDERS_FIX] Erro ao corrigir ordem ${order.externalOrderId}: ${orderError.message}`);
+          Logger.error(
+            `❌ [ORDERS_FIX] Erro ao corrigir ordem ${order.externalOrderId}: ${orderError.message}`
+          );
         }
       }
 
-      Logger.debug(`🎉 [ORDERS_FIX] Correção concluída: ${fixedCount}/${problematicOrders.length} ordens corrigidas`);
+      Logger.debug(
+        `🎉 [ORDERS_FIX] Correção concluída: ${fixedCount}/${problematicOrders.length} ordens corrigidas`
+      );
       return fixedCount;
-
     } catch (error) {
       Logger.error(`❌ [ORDERS_FIX] Erro na correção de ordens: ${error.message}`);
       return 0;
@@ -1724,7 +2006,7 @@ class OrdersService {
         ordersFixed: 0,
         ghostOrdersCleaned: 0,
         orphanTrailingStatesCleaned: 0,
-        total: 0
+        total: 0,
       };
 
       // 1. CRÍTICO: Limpa ordens fantasma primeiro (prioridade)
@@ -1736,7 +2018,11 @@ class OrdersService {
       // 4. Limpa dados órfãos da tabela trailing_state
       results.orphanTrailingStatesCleaned = await OrdersService.cleanOrphanTrailingStates(botId);
 
-      results.total = results.ghostOrdersCleaned + results.ordersFixed + results.positionsClosed + results.orphanTrailingStatesCleaned;
+      results.total =
+        results.ghostOrdersCleaned +
+        results.ordersFixed +
+        results.positionsClosed +
+        results.orphanTrailingStatesCleaned;
 
       Logger.debug(`🎉 [COMPLETE_SYNC] Sincronização completa concluída para bot ${botId}:`);
       Logger.debug(`   • Ordens fantasma limpas: ${results.ghostOrdersCleaned}`);
@@ -1746,10 +2032,16 @@ class OrdersService {
       Logger.debug(`   • Total de ações: ${results.total}`);
 
       return results;
-
     } catch (error) {
       Logger.error(`❌ [COMPLETE_SYNC] Erro na sincronização completa: ${error.message}`);
-      return { orphanFillsDetected: 0, positionsClosed: 0, ordersFixed: 0, ghostOrdersCleaned: 0, orphanTrailingStatesCleaned: 0, total: 0 };
+      return {
+        orphanFillsDetected: 0,
+        positionsClosed: 0,
+        ordersFixed: 0,
+        ghostOrdersCleaned: 0,
+        orphanTrailingStatesCleaned: 0,
+        total: 0,
+      };
     }
   }
 
@@ -1761,17 +2053,20 @@ class OrdersService {
    */
   static async performGhostOrdersCleanup(botId, config) {
     try {
-      Logger.info(`👻 [GHOST_CLEANUP] Executando apenas limpeza de ordens fantasma para bot ${botId}`);
+      Logger.info(
+        `👻 [GHOST_CLEANUP] Executando apenas limpeza de ordens fantasma para bot ${botId}`
+      );
 
       const ghostOrdersCleaned = await OrdersService.cleanGhostOrders(botId, config);
 
-      Logger.info(`🎉 [GHOST_CLEANUP] Limpeza concluída para bot ${botId}: ${ghostOrdersCleaned} ordens fantasma processadas`);
+      Logger.info(
+        `🎉 [GHOST_CLEANUP] Limpeza concluída para bot ${botId}: ${ghostOrdersCleaned} ordens fantasma processadas`
+      );
 
       return {
         ghostOrdersCleaned,
-        success: true
+        success: true,
       };
-
     } catch (error) {
       Logger.error(`❌ [GHOST_CLEANUP] Erro na limpeza de ordens fantasma: ${error.message}`);
       return { ghostOrdersCleaned: 0, success: false, error: error.message };
@@ -1790,7 +2085,9 @@ class OrdersService {
         return 0;
       }
 
-      Logger.debug(`🧹 [TRAILING_CLEANUP] Iniciando limpeza de trailing states órfãos para bot ${botId}`);
+      Logger.debug(
+        `🧹 [TRAILING_CLEANUP] Iniciando limpeza de trailing states órfãos para bot ${botId}`
+      );
 
       // Busca todos os trailing states do bot
       const trailingStates = await OrdersService.dbService.getAll(
@@ -1803,7 +2100,9 @@ class OrdersService {
         return 0;
       }
 
-      Logger.debug(`🔍 [TRAILING_CLEANUP] Encontrados ${trailingStates.length} trailing states para bot ${botId}`);
+      Logger.debug(
+        `🔍 [TRAILING_CLEANUP] Encontrados ${trailingStates.length} trailing states para bot ${botId}`
+      );
 
       let cleanedCount = 0;
 
@@ -1819,27 +2118,34 @@ class OrdersService {
 
           // Se não há ordens ativas para este símbolo, remove o trailing state
           if (activeOrders.length === 0) {
-            await OrdersService.dbService.run(
-              `DELETE FROM trailing_state WHERE id = ?`,
-              [trailingState.id]
-            );
+            await OrdersService.dbService.run(`DELETE FROM trailing_state WHERE id = ?`, [
+              trailingState.id,
+            ]);
 
-            Logger.info(`🗑️ [TRAILING_CLEANUP] Trailing state órfão removido: ${trailingState.symbol} (ID: ${trailingState.id})`);
+            Logger.info(
+              `🗑️ [TRAILING_CLEANUP] Trailing state órfão removido: ${trailingState.symbol} (ID: ${trailingState.id})`
+            );
             cleanedCount++;
           } else {
-            Logger.debug(`✅ [TRAILING_CLEANUP] Trailing state válido mantido: ${trailingState.symbol} (${activeOrders.length} ordens ativas)`);
+            Logger.debug(
+              `✅ [TRAILING_CLEANUP] Trailing state válido mantido: ${trailingState.symbol} (${activeOrders.length} ordens ativas)`
+            );
           }
-
         } catch (error) {
-          Logger.error(`❌ [TRAILING_CLEANUP] Erro ao processar trailing state ${trailingState.id}: ${error.message}`);
+          Logger.error(
+            `❌ [TRAILING_CLEANUP] Erro ao processar trailing state ${trailingState.id}: ${error.message}`
+          );
         }
       }
 
-      Logger.debug(`🎉 [TRAILING_CLEANUP] Limpeza concluída para bot ${botId}: ${cleanedCount} trailing states órfãos removidos`);
+      Logger.debug(
+        `🎉 [TRAILING_CLEANUP] Limpeza concluída para bot ${botId}: ${cleanedCount} trailing states órfãos removidos`
+      );
       return cleanedCount;
-
     } catch (error) {
-      Logger.error(`❌ [TRAILING_CLEANUP] Erro na limpeza de trailing states órfãos: ${error.message}`);
+      Logger.error(
+        `❌ [TRAILING_CLEANUP] Erro na limpeza de trailing states órfãos: ${error.message}`
+      );
       return 0;
     }
   }

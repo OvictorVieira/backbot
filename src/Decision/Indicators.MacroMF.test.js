@@ -1,7 +1,6 @@
 import { calculateIndicators } from './Indicators.js';
 
 describe('Macro Money Flow', () => {
-  
   describe('Cálculo do Macro Money Flow', () => {
     it('deve calcular o Macro Money Flow corretamente para timeframe 5m', async () => {
       // Cria dados mock simulando candles de 5m
@@ -26,11 +25,11 @@ describe('Macro Money Flow', () => {
         { open: 165, close: 170, volume: 2600, high: 170, low: 165, start: 17000 },
         { open: 170, close: 165, volume: 1700, high: 170, low: 165, start: 18000 },
         { open: 165, close: 175, volume: 2300, high: 175, low: 165, start: 19000 },
-        { open: 175, close: 180, volume: 2800, high: 180, low: 175, start: 20000 }
+        { open: 175, close: 180, volume: 2800, high: 180, low: 175, start: 20000 },
       ];
-      
+
       const indicators = await calculateIndicators(dailyCandles, '5m', 'BTC_USDC_PERP');
-      
+
       expect(indicators.macroMoneyFlow).toBeDefined();
       expect(indicators.macroMoneyFlow.macroBias).toBeDefined();
       expect(indicators.macroMoneyFlow.mfiCurrent).toBeDefined();
@@ -50,7 +49,7 @@ describe('Macro Money Flow', () => {
       if (indicators.macroMoneyFlow.error !== undefined) {
         expect(typeof indicators.macroMoneyFlow.error).toBe('string');
       }
-      
+
       // Verifica se history existe (pode não existir em caso de erro)
       if (indicators.macroMoneyFlow.history) {
         expect(Array.isArray(indicators.macroMoneyFlow.history)).toBe(true);
@@ -60,11 +59,15 @@ describe('Macro Money Flow', () => {
     it('deve lidar com dados insuficientes', async () => {
       const insufficientCandles = [
         { open: 100, close: 110, volume: 1000, high: 110, low: 100, start: 1000 },
-        { open: 110, close: 120, volume: 1500, high: 120, low: 110, start: 2000 }
+        { open: 110, close: 120, volume: 1500, high: 120, low: 110, start: 2000 },
       ];
-      
-      const indicatorsInsufficient = await calculateIndicators(insufficientCandles, '5m', 'BTC_USDC_PERP');
-      
+
+      const indicatorsInsufficient = await calculateIndicators(
+        insufficientCandles,
+        '5m',
+        'BTC_USDC_PERP'
+      );
+
       expect(indicatorsInsufficient.macroMoneyFlow).toBeDefined();
       // macroBias pode variar dependendo dos dados, mas deve ser um número
       expect(typeof indicatorsInsufficient.macroMoneyFlow.macroBias).toBe('number');
@@ -78,9 +81,9 @@ describe('Macro Money Flow', () => {
 
     it('deve lidar com array vazio', async () => {
       const emptyCandles = [];
-      
+
       const indicatorsEmpty = await calculateIndicators(emptyCandles, '5m', 'BTC_USDC_PERP');
-      
+
       expect(indicatorsEmpty.macroMoneyFlow).toBeDefined();
       expect(indicatorsEmpty.macroMoneyFlow.macroBias).toBe(0);
       expect(indicatorsEmpty.macroMoneyFlow.mfiCurrent).toBe(50);
@@ -111,11 +114,11 @@ describe('Macro Money Flow', () => {
         { open: 165, close: 170, volume: 2600, high: 170, low: 165, start: 17000 },
         { open: 170, close: 165, volume: 1700, high: 170, low: 165, start: 18000 },
         { open: 165, close: 175, volume: 2300, high: 175, low: 165, start: 19000 },
-        { open: 175, close: 180, volume: 2800, high: 180, low: 175, start: 20000 }
+        { open: 175, close: 180, volume: 2800, high: 180, low: 175, start: 20000 },
       ];
-      
+
       const indicators = await calculateIndicators(candles, '5m', 'BTC_USDC_PERP');
-      
+
       expect(indicators.macroMoneyFlow).toBeDefined();
       expect(indicators.macroMoneyFlow.macroBias).toBeDefined();
       expect(indicators.macroMoneyFlow.mfiCurrent).toBeDefined();
@@ -128,11 +131,11 @@ describe('Macro Money Flow', () => {
       if (indicators.macroMoneyFlow.error !== undefined) {
         expect(typeof indicators.macroMoneyFlow.error).toBe('string');
       }
-      
+
       // Verifica se history existe (pode não existir em caso de erro)
       if (indicators.macroMoneyFlow.history) {
         expect(Array.isArray(indicators.macroMoneyFlow.history)).toBe(true);
       }
     });
   });
-}); 
+});

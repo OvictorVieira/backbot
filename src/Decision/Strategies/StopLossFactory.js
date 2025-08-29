@@ -9,8 +9,8 @@ export class StopLossFactory {
    */
   static async createStopLoss(strategyType, config = null) {
     const strategy = strategyType?.toUpperCase() || 'DEFAULT';
-    
-    switch(strategy) {
+
+    switch (strategy) {
       case 'DEFAULT':
         const { DefaultStopLoss } = await import('./DefaultStopLoss.js');
         return new DefaultStopLoss(config);
@@ -44,4 +44,4 @@ export class StopLossFactory {
   static isValidStopLoss(strategyType) {
     return this.getAvailableStopLosses().includes(strategyType?.toUpperCase());
   }
-} 
+}

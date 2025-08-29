@@ -20,6 +20,8 @@
     "update": "node update.js",
     "test:update": "node test-update-check.js",
     "migrate-orders": "node migrate-orders.js",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "prepare": "husky"
   },
   "keywords": [],
@@ -50,6 +52,7 @@
     "concurrently": "^9.2.0",
     "cross-env": "^7.0.3",
     "husky": "^9.1.7",
-    "jest": "^29.7.0"
+    "jest": "^29.7.0",
+    "prettier": "^3.6.2"
   }
 }

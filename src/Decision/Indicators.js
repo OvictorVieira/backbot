@@ -32,10 +32,12 @@ function calculateIntradayVWAP(candles) {
       cumulativeVolume = 0;
       sessionCandles = [];
     }
-    
+
     // Validação para evitar dados inválidos
     if (isNaN(high) || isNaN(low) || isNaN(close) || isNaN(volume)) {
-      vwapHistory.push(vwapHistory.length > 0 ? vwapHistory[vwapHistory.length-1] : { vwap: close }); // Repete o último valor válido
+      vwapHistory.push(
+        vwapHistory.length > 0 ? vwapHistory[vwapHistory.length - 1] : { vwap: close }
+      ); // Repete o último valor válido
       continue;
     }
 
@@ -54,7 +56,7 @@ function calculateIntradayVWAP(candles) {
       const diff = sc.typicalPrice - vwap;
       sumVarV += sc.volume * diff * diff;
     }
-    
+
     const variance = cumulativeVolume > 0 ? sumVarV / cumulativeVolume : 0;
     const stdDev = Math.sqrt(variance);
 
@@ -62,18 +64,28 @@ function calculateIntradayVWAP(candles) {
     vwapHistory.push({
       vwap,
       stdDev,
-      upperBands: [vwap + stdDev, vwap + (2 * stdDev), vwap + (3 * stdDev)],
-      lowerBands: [vwap - stdDev, vwap - (2 * stdDev), vwap - (3 * stdDev)],
+      upperBands: [vwap + stdDev, vwap + 2 * stdDev, vwap + 3 * stdDev],
+      lowerBands: [vwap - stdDev, vwap - 2 * stdDev, vwap - 3 * stdDev],
     });
   }
 
   // Retorna dados atuais e anteriores para detecção de mudança de estado
-  const current = vwapHistory[vwapHistory.length - 1] || { vwap: null, stdDev: null, upperBands: [], lowerBands: [] };
-  const previous = vwapHistory[vwapHistory.length - 2] || { vwap: null, stdDev: null, upperBands: [], lowerBands: [] };
+  const current = vwapHistory[vwapHistory.length - 1] || {
+    vwap: null,
+    stdDev: null,
+    upperBands: [],
+    lowerBands: [],
+  };
+  const previous = vwapHistory[vwapHistory.length - 2] || {
+    vwap: null,
+    stdDev: null,
+    upperBands: [],
+    lowerBands: [],
+  };
 
   return {
     current,
-    previous
+    previous,
   };
 }
 
@@ -93,15 +105,15 @@ function calculateWaveTrend(candles, channelLen = 9, avgLen = 12, maLen = 3) {
       vwap: null,
       reversal: null,
       isBullish: false,
-      isBearish: false
+      isBearish: false,
     };
   }
 
   const hlc3 = candles.map(c => (parseFloat(c.high) + parseFloat(c.low) + parseFloat(c.close)) / 3);
-  
+
   // Calcular ESA (EMA do HLC3)
   const esa = EMA.calculate({ period: channelLen, values: hlc3 });
-  
+
   // Calcular DE (EMA do valor absoluto da diferença)
   const deValues = [];
   for (let i = 0; i < hlc3.length; i++) {
@@ -112,7 +124,7 @@ function calculateWaveTrend(candles, channelLen = 9, avgLen = 12, maLen = 3) {
     }
   }
   const de = EMA.calculate({ period: channelLen, values: deValues });
-  
+
   // Calcular CI (Chande Momentum Oscillator)
   const ci = [];
   for (let i = 0; i < hlc3.length; i++) {
@@ -123,15 +135,17 @@ function calculateWaveTrend(candles, channelLen = 9, avgLen = 12, maLen = 3) {
       ci.push(0);
     }
   }
-  
+
   // Calcular WT1 (EMA do CI)
   const wt1 = EMA.calculate({ period: avgLen, values: ci });
-  
+
   // Calcular WT2 (SMA do WT1)
   const wt2 = [];
   for (let i = 0; i < wt1.length; i++) {
     if (i >= maLen - 1) {
-      const validValues = wt1.slice(i - maLen + 1, i + 1).filter(val => val !== null && !isNaN(val));
+      const validValues = wt1
+        .slice(i - maLen + 1, i + 1)
+        .filter(val => val !== null && !isNaN(val));
       if (validValues.length > 0) {
         const sum = validValues.reduce((acc, val) => acc + val, 0);
         wt2.push(sum / validValues.length);
@@ -142,7 +156,7 @@ function calculateWaveTrend(candles, channelLen = 9, avgLen = 12, maLen = 3) {
       wt2.push(null);
     }
   }
-  
+
   // Calcular VWAP (WT1 - WT2)
   const vwap = [];
   for (let i = 0; i < wt1.length; i++) {
@@ -152,7 +166,7 @@ function calculateWaveTrend(candles, channelLen = 9, avgLen = 12, maLen = 3) {
       vwap.push(null);
     }
   }
-  
+
   // Detectar reversão
   let reversal = null;
   if (wt1.length >= 2 && wt2.length >= 2) {
@@ -160,9 +174,17 @@ function calculateWaveTrend(candles, channelLen = 9, avgLen = 12, maLen = 3) {
     const prevWt1 = wt1[wt1.length - 2];
     const currentWt2 = wt2[wt2.length - 1];
     const prevWt2 = wt2[wt2.length - 2];
-    
-    if (currentWt1 !== null && prevWt1 !== null && currentWt2 !== null && prevWt2 !== null &&
-        !isNaN(currentWt1) && !isNaN(prevWt1) && !isNaN(currentWt2) && !isNaN(prevWt2)) {
+
+    if (
+      currentWt1 !== null &&
+      prevWt1 !== null &&
+      currentWt2 !== null &&
+      prevWt2 !== null &&
+      !isNaN(currentWt1) &&
+      !isNaN(prevWt1) &&
+      !isNaN(currentWt2) &&
+      !isNaN(prevWt2)
+    ) {
       // Crossover (Golden Cross)
       if (prevWt1 <= prevWt2 && currentWt1 > currentWt2) {
         reversal = { type: 'GREEN', strength: Math.abs(currentWt1 - currentWt2) };
@@ -173,23 +195,33 @@ function calculateWaveTrend(candles, channelLen = 9, avgLen = 12, maLen = 3) {
       }
     }
   }
-  
+
   const currentWt1 = wt1[wt1.length - 1];
   const currentWt2 = wt2[wt2.length - 1];
   const currentVwap = vwap[vwap.length - 1];
-  
+
   return {
     wt1: currentWt1,
     wt2: currentWt2,
     vwap: currentVwap,
     reversal: reversal,
-    isBullish: currentWt1 !== null && currentWt2 !== null && !isNaN(currentWt1) && !isNaN(currentWt2) && currentWt1 > currentWt2,
-    isBearish: currentWt1 !== null && currentWt2 !== null && !isNaN(currentWt1) && !isNaN(currentWt2) && currentWt1 < currentWt2,
+    isBullish:
+      currentWt1 !== null &&
+      currentWt2 !== null &&
+      !isNaN(currentWt1) &&
+      !isNaN(currentWt2) &&
+      currentWt1 > currentWt2,
+    isBearish:
+      currentWt1 !== null &&
+      currentWt2 !== null &&
+      !isNaN(currentWt1) &&
+      !isNaN(currentWt2) &&
+      currentWt1 < currentWt2,
     history: {
       wt1: wt1,
       wt2: wt2,
-      vwap: vwap
-    }
+      vwap: vwap,
+    },
   };
 }
 
@@ -205,14 +237,24 @@ function calculateMoneyFlow(candles, mfiPeriod = 14, signalPeriod = 9) {
   if (candles.length < mfiPeriod + 1) {
     return {
       current: {
-        value: 0, mfi: 50, mfiAvg: 50, isBullish: false, isBearish: false,
-        isStrong: false, direction: 'NEUTRAL'
+        value: 0,
+        mfi: 50,
+        mfiAvg: 50,
+        isBullish: false,
+        isBearish: false,
+        isStrong: false,
+        direction: 'NEUTRAL',
       },
       previous: {
-        value: 0, mfi: 50, mfiAvg: 50, isBullish: false, isBearish: false,
-        isStrong: false, direction: 'NEUTRAL'
+        value: 0,
+        mfi: 50,
+        mfiAvg: 50,
+        isBullish: false,
+        isBearish: false,
+        isStrong: false,
+        direction: 'NEUTRAL',
       },
-      history: []
+      history: [],
     };
   }
 
@@ -231,10 +273,12 @@ function calculateMoneyFlow(candles, mfiPeriod = 14, signalPeriod = 9) {
     const prevHigh = parseFloat(p.high);
     const prevLow = parseFloat(p.low);
     const prevClose = parseFloat(p.close);
-    
+
     // Validar se os dados são numéricos após a conversão
     if (isNaN(high) || isNaN(low) || isNaN(close) || isNaN(volume)) {
-      console.warn(`⚠️ [MFI] Dados inválidos no candle ${i}: high=${c.high}, low=${c.low}, close=${c.close}, volume=${c.volume}`);
+      console.warn(
+        `⚠️ [MFI] Dados inválidos no candle ${i}: high=${c.high}, low=${c.low}, close=${c.close}, volume=${c.volume}`
+      );
       continue;
     }
 
@@ -247,9 +291,9 @@ function calculateMoneyFlow(candles, mfiPeriod = 14, signalPeriod = 9) {
       negative: typicalPrice < prevTypicalPrice ? rawMoneyFlow : 0,
     });
   }
-  
+
   // O resto da função continua igual, pois agora ela receberá os dados corretos...
-  
+
   // --- Passo 2: Calcular o histórico de MFI ---
   const mfiHistory = [];
   // (código omitido para brevidade, continua o mesmo da resposta anterior)
@@ -265,29 +309,29 @@ function calculateMoneyFlow(candles, mfiPeriod = 14, signalPeriod = 9) {
     }
 
     const moneyRatio = totalPositiveFlow / totalNegativeFlow;
-    const mfi = 100 - (100 / (1 + moneyRatio));
+    const mfi = 100 - 100 / (1 + moneyRatio);
     mfiHistory.push(mfi);
   }
 
   // --- Passo 3: Calcular a média (linha de sinal) do MFI ---
   const mfiAvgHistory = [];
   if (mfiHistory.length >= signalPeriod) {
-      for (let i = signalPeriod - 1; i < mfiHistory.length; i++) {
-          const smaSlice = mfiHistory.slice(i - signalPeriod + 1, i + 1);
-          const sma = smaSlice.reduce((sum, val) => sum + val, 0) / signalPeriod;
-          mfiAvgHistory.push(sma);
-      }
+    for (let i = signalPeriod - 1; i < mfiHistory.length; i++) {
+      const smaSlice = mfiHistory.slice(i - signalPeriod + 1, i + 1);
+      const sma = smaSlice.reduce((sum, val) => sum + val, 0) / signalPeriod;
+      mfiAvgHistory.push(sma);
+    }
   }
 
   // --- Passo 4: Obter os valores atuais e anteriores ---
   const currentMfi = mfiHistory[mfiHistory.length - 1] || 50;
   const currentMfiAvg = mfiAvgHistory[mfiAvgHistory.length - 1] || 50;
   const currentMfiValue = currentMfi - currentMfiAvg;
-  
+
   const previousMfi = mfiHistory[mfiHistory.length - 2] || 50;
   const previousMfiAvg = mfiAvgHistory[mfiAvgHistory.length - 2] || 50;
   const previousMfiValue = previousMfi - previousMfiAvg;
-  
+
   // --- Passo 5: Montar o objeto de retorno com dados atuais e anteriores ---
   return {
     current: {
@@ -297,7 +341,7 @@ function calculateMoneyFlow(candles, mfiPeriod = 14, signalPeriod = 9) {
       isBullish: currentMfiValue > 0,
       isBearish: currentMfiValue < 0,
       isStrong: Math.abs(currentMfiValue) > 10,
-      direction: currentMfiValue > 0 ? 'UP' : (currentMfiValue < 0 ? 'DOWN' : 'NEUTRAL')
+      direction: currentMfiValue > 0 ? 'UP' : currentMfiValue < 0 ? 'DOWN' : 'NEUTRAL',
     },
     previous: {
       value: previousMfiValue,
@@ -306,9 +350,9 @@ function calculateMoneyFlow(candles, mfiPeriod = 14, signalPeriod = 9) {
       isBullish: previousMfiValue > 0,
       isBearish: previousMfiValue < 0,
       isStrong: Math.abs(previousMfiValue) > 10,
-      direction: previousMfiValue > 0 ? 'UP' : (previousMfiValue < 0 ? 'DOWN' : 'NEUTRAL')
+      direction: previousMfiValue > 0 ? 'UP' : previousMfiValue < 0 ? 'DOWN' : 'NEUTRAL',
     },
-    history: mfiHistory
+    history: mfiHistory,
   };
 }
 
@@ -336,15 +380,17 @@ async function calculateMacroMoneyFlow(candles, timeframe = '5m', symbol = null)
         isBearish: false,
         direction: 'NEUTRAL',
         error: 'Símbolo não fornecido',
-        dataSource: 'NO_SYMBOL'
+        dataSource: 'NO_SYMBOL',
       };
     }
 
     // Busca diretamente da Binance apenas os últimos 22 candles
     const binanceCandles = await getBinanceCandles(symbol, timeframe, 22);
-    
+
     if (!binanceCandles || binanceCandles.length < 14) {
-      console.warn(`⚠️ [MACRO] ${symbol}: Par não disponível na Binance ou dados ${timeframe} insuficientes (${binanceCandles?.length || 0} candles)`);
+      console.warn(
+        `⚠️ [MACRO] ${symbol}: Par não disponível na Binance ou dados ${timeframe} insuficientes (${binanceCandles?.length || 0} candles)`
+      );
       return {
         macroBias: 0,
         mfiCurrent: 50,
@@ -356,17 +402,17 @@ async function calculateMacroMoneyFlow(candles, timeframe = '5m', symbol = null)
         direction: 'NEUTRAL',
         error: `Par não disponível na Binance`,
         dataSource: 'BINANCE_UNAVAILABLE',
-        symbol
+        symbol,
       };
     }
 
-
-
     // Calcula MFI com período 14 nos dados do timeframe
     const mfiResult = calculateMoneyFlow(binanceCandles, 14, 9);
-    
+
     if (!mfiResult.history || mfiResult.history.length < 8) {
-      console.error(`❌ [MACRO] ${symbol}: Histórico MFI insuficiente (${mfiResult.history?.length || 0} valores) - mínimo 8 valores necessários`);
+      console.error(
+        `❌ [MACRO] ${symbol}: Histórico MFI insuficiente (${mfiResult.history?.length || 0} valores) - mínimo 8 valores necessários`
+      );
       return {
         macroBias: 0,
         mfiCurrent: 50,
@@ -378,19 +424,21 @@ async function calculateMacroMoneyFlow(candles, timeframe = '5m', symbol = null)
         direction: 'NEUTRAL',
         error: 'Histórico MFI insuficiente',
         dataSource: 'INSUFFICIENT_MFI_HISTORY',
-        symbol
+        symbol,
       };
     }
 
     // Calcula EMA de 22 períodos sobre o MFI
-    
+
     const mfiValues = mfiResult.history.filter(val => val !== null && !isNaN(val));
 
     // Ajusta o período da EMA baseado na quantidade de valores disponíveis
     const emaPeriod = Math.min(22, Math.floor(mfiValues.length / 2));
-    
+
     if (mfiValues.length < emaPeriod) {
-      console.warn(`⚠️ [MACRO] ${symbol}: Valores MFI insuficientes para EMA (${mfiValues.length} < ${emaPeriod})`);
+      console.warn(
+        `⚠️ [MACRO] ${symbol}: Valores MFI insuficientes para EMA (${mfiValues.length} < ${emaPeriod})`
+      );
       return {
         macroBias: 0,
         mfiCurrent: 50,
@@ -402,12 +450,12 @@ async function calculateMacroMoneyFlow(candles, timeframe = '5m', symbol = null)
         direction: 'NEUTRAL',
         error: 'Valores MFI insuficientes para EMA',
         dataSource: 'INSUFFICIENT_MFI_FOR_EMA',
-        symbol
+        symbol,
       };
     }
-    
+
     const mfiEma = EMA.calculate({ period: emaPeriod, values: mfiValues });
-    
+
     // Obtém valores atuais e anteriores
     const mfiCurrent = mfiResult.current.mfi;
     const mfiPrevious = mfiResult.previous.mfi;
@@ -417,7 +465,7 @@ async function calculateMacroMoneyFlow(candles, timeframe = '5m', symbol = null)
     // Calcula macroBias baseado na direção da EMA do MFI
     let macroBias = 0;
     let direction = 'NEUTRAL';
-    
+
     if (mfiEmaCurrent > mfiEmaPrevious) {
       macroBias = 1;
       direction = 'UP';
@@ -426,7 +474,9 @@ async function calculateMacroMoneyFlow(candles, timeframe = '5m', symbol = null)
       direction = 'DOWN';
     }
 
-    Logger.debug(`📊 [MACRO] ${symbol}: MFI=${mfiCurrent.toFixed(2)}, EMA=${mfiEmaCurrent.toFixed(2)}, Bias=${macroBias}`);
+    Logger.debug(
+      `📊 [MACRO] ${symbol}: MFI=${mfiCurrent.toFixed(2)}, EMA=${mfiEmaCurrent.toFixed(2)}, Bias=${macroBias}`
+    );
 
     return {
       macroBias,
@@ -440,12 +490,13 @@ async function calculateMacroMoneyFlow(candles, timeframe = '5m', symbol = null)
       history: mfiResult.history,
       emaHistory: mfiEma,
       dataSource: `${timeframe.toUpperCase()}_BINANCE`,
-      symbol
+      symbol,
     };
-
   } catch (error) {
-    console.error(`❌ [MACRO] Erro fatal ao calcular Macro Money Flow para ${symbol}: ${error.message}`);
-    
+    console.error(
+      `❌ [MACRO] Erro fatal ao calcular Macro Money Flow para ${symbol}: ${error.message}`
+    );
+
     return {
       macroBias: 0,
       mfiCurrent: 50,
@@ -457,7 +508,7 @@ async function calculateMacroMoneyFlow(candles, timeframe = '5m', symbol = null)
       direction: 'NEUTRAL',
       error: error.message,
       dataSource: 'ERROR',
-      symbol
+      symbol,
     };
   }
 }
@@ -474,24 +525,30 @@ async function getBinanceCandles(symbol, timeframe, limit = 22) {
     // Converte símbolo para formato Binance
     const binanceSymbol = convertSymbolToBinance(symbol);
     const binanceInterval = convertTimeframeToBinance(timeframe);
-    
-    Logger.debug(`🔄 [BINANCE] Buscando ${limit} candles ${timeframe} para ${binanceSymbol} (${binanceInterval})`);
-    
-    const response = await axios.get(`https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=${binanceInterval}&limit=${limit}`);
-    
+
+    Logger.debug(
+      `🔄 [BINANCE] Buscando ${limit} candles ${timeframe} para ${binanceSymbol} (${binanceInterval})`
+    );
+
+    const response = await axios.get(
+      `https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=${binanceInterval}&limit=${limit}`
+    );
+
     if (response.status !== 200) {
       // Se a resposta não for ok, retorna null em vez de throw error
-      console.warn(`⚠️ [BINANCE] Par ${binanceSymbol} não encontrado na Binance (${response.status}: ${response.statusText})`);
+      console.warn(
+        `⚠️ [BINANCE] Par ${binanceSymbol} não encontrado na Binance (${response.status}: ${response.statusText})`
+      );
       return null;
     }
-    
+
     const data = response.data;
-    
+
     if (!Array.isArray(data)) {
       console.warn(`⚠️ [BINANCE] Resposta inválida da Binance para ${binanceSymbol}`);
       return null;
     }
-    
+
     // Converte para formato padrão
     const candles = data.map(candle => ({
       timestamp: candle[0], // Timestamp de abertura
@@ -500,14 +557,11 @@ async function getBinanceCandles(symbol, timeframe, limit = 22) {
       low: parseFloat(candle[3]),
       close: parseFloat(candle[4]),
       volume: parseFloat(candle[5]),
-      start: candle[0] // Para compatibilidade
+      start: candle[0], // Para compatibilidade
     }));
-    
 
-    
     Logger.debug(`✅ [BINANCE] ${symbol}: ${candles.length} candles ${timeframe} obtidos`);
     return candles;
-    
   } catch (error) {
     // Em caso de erro de rede ou outros problemas, retorna null em vez de throw
     console.warn(`⚠️ [BINANCE] Erro ao obter dados para ${symbol}: ${error.message}`);
@@ -523,33 +577,33 @@ async function getBinanceCandles(symbol, timeframe, limit = 22) {
 function convertSymbolToBinance(symbol) {
   // Mapeamentos específicos conhecidos
   const mappings = {
-    'BTC_USDC_PERP': 'BTCUSDT',
-    'ETH_USDC_PERP': 'ETHUSDT',
-    'SOL_USDC_PERP': 'SOLUSDT',
-    'XRP_USDC_PERP': 'XRPUSDT',
-    'HYPE_USDC_PERP': 'HYPERUSDT'  // Corrigido: HYPE -> HYPER
+    BTC_USDC_PERP: 'BTCUSDT',
+    ETH_USDC_PERP: 'ETHUSDT',
+    SOL_USDC_PERP: 'SOLUSDT',
+    XRP_USDC_PERP: 'XRPUSDT',
+    HYPE_USDC_PERP: 'HYPERUSDT', // Corrigido: HYPE -> HYPER
   };
-  
+
   // Se temos um mapeamento específico, usa ele
   if (mappings[symbol]) {
     return mappings[symbol];
   }
-  
+
   // Tenta diferentes variações do símbolo
   const variations = [
-    symbol.replace('_USDC_PERP', 'USDT'),  // BTC_USDC_PERP -> BTCUSDT
-    symbol.replace('_USDC_PERP', ''),       // BTC_USDC_PERP -> BTC
-    symbol.replace('_PERP', 'USDT'),        // BTC_PERPT -> BTCUSDT
-    symbol.replace('_PERP', ''),            // BTC_PERPT -> BTC
-    symbol.replace('_', ''),                // BTC_USDC -> BTCUSDC
-    symbol                                   // Mantém original
+    symbol.replace('_USDC_PERP', 'USDT'), // BTC_USDC_PERP -> BTCUSDT
+    symbol.replace('_USDC_PERP', ''), // BTC_USDC_PERP -> BTC
+    symbol.replace('_PERP', 'USDT'), // BTC_PERPT -> BTCUSDT
+    symbol.replace('_PERP', ''), // BTC_PERPT -> BTC
+    symbol.replace('_', ''), // BTC_USDC -> BTCUSDC
+    symbol, // Mantém original
   ];
-  
+
   // Remove duplicatas
   const uniqueVariations = [...new Set(variations)];
-  
+
   Logger.debug(`🔄 [BINANCE] Tentando variações para ${symbol}: ${uniqueVariations.join(', ')}`);
-  
+
   // Retorna a primeira variação (será testada na função getBinanceCandles)
   return uniqueVariations[0];
 }
@@ -563,7 +617,6 @@ function convertTimeframeToBinance(timeframe) {
   // Binance usa os mesmos formatos
   return timeframe;
 }
-
 
 function findEMACross(ema9Arr, ema21Arr) {
   const len = Math.min(ema9Arr.length, ema21Arr.length);
@@ -586,13 +639,13 @@ function findEMACross(ema9Arr, ema21Arr) {
   return null;
 }
 
-function  analyzeEMA(ema9Arr, ema21Arr) {
+function analyzeEMA(ema9Arr, ema21Arr) {
   const len = ema9Arr.length;
   if (len < 2 || ema21Arr.length < 2) return null;
 
-  const lastEma9  = ema9Arr[ema9Arr.length - 1];
+  const lastEma9 = ema9Arr[ema9Arr.length - 1];
   const lastEma21 = ema21Arr[ema21Arr.length - 1];
-  const prevEma9  = ema9Arr[ema9Arr.length - 2];
+  const prevEma9 = ema9Arr[ema9Arr.length - 2];
   const prevEma21 = ema21Arr[ema21Arr.length - 2];
 
   if (lastEma9 == null || lastEma21 == null || prevEma9 == null || prevEma21 == null) {
@@ -600,7 +653,7 @@ function  analyzeEMA(ema9Arr, ema21Arr) {
   }
 
   // diferença absoluta e percentual
-  const diff    = lastEma9 - lastEma21;
+  const diff = lastEma9 - lastEma21;
   const diffPct = (diff / lastEma21) * 100;
 
   // sinal básico
@@ -615,12 +668,12 @@ function  analyzeEMA(ema9Arr, ema21Arr) {
   }
 
   return {
-    ema9:    lastEma9,
-    ema21:   lastEma21,
+    ema9: lastEma9,
+    ema21: lastEma21,
     diff,
     diffPct,
     signal,
-    crossed
+    crossed,
   };
 }
 
@@ -630,10 +683,10 @@ function analyzeTrends(data) {
   const metrics = ['volume', 'variance', 'price'];
 
   // soma dos índices de 0 a n-1 e sum(x^2) podem ser pré-calculados
-  const sumX = (n - 1) * n / 2;
-  const sumXX = (n - 1) * n * (2 * n - 1) / 6;
+  const sumX = ((n - 1) * n) / 2;
+  const sumXX = ((n - 1) * n * (2 * n - 1)) / 6;
 
-  metrics.forEach((metric) => {
+  metrics.forEach(metric => {
     let sumY = 0;
     let sumXY = 0;
 
@@ -647,22 +700,18 @@ function analyzeTrends(data) {
     const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
 
     // intercept = mean(y) - slope * mean(x)
-    const intercept = (sumY / n) - slope * (sumX / n);
+    const intercept = sumY / n - slope * (sumX / n);
 
     // previsão para o próximo ponto (índice n)
     const forecast = slope * n + intercept;
 
     // tendência
-    const trend = slope > 0
-      ? 'increasing'
-      : slope < 0
-        ? 'decreasing'
-        : 'flat';
+    const trend = slope > 0 ? 'increasing' : slope < 0 ? 'decreasing' : 'flat';
 
     result[metric] = {
       trend,
       slope,
-      forecast
+      forecast,
     };
   });
 
@@ -686,7 +735,7 @@ export function calculateMomentum(candles, channelLength = 10, averageLength = 2
         cross: null,
         direction: 'NEUTRAL',
         isBullish: false,
-        isBearish: false
+        isBearish: false,
       },
       previous: {
         wt1: null,
@@ -694,12 +743,12 @@ export function calculateMomentum(candles, channelLength = 10, averageLength = 2
         cross: null,
         direction: 'NEUTRAL',
         isBullish: false,
-        isBearish: false
+        isBearish: false,
       },
       history: {
         wt1: [],
-        wt2: []
-      }
+        wt2: [],
+      },
     };
   }
 
@@ -742,7 +791,8 @@ export function calculateMomentum(candles, channelLength = 10, averageLength = 2
   // Passo f): Calcular o WaveTrend 2 (wt2) - SMA da wt1 com período fixo de 4
   const wt2 = [];
   for (let i = 0; i < wt1.length; i++) {
-    if (i >= 3) { // Precisa de pelo menos 4 valores para SMA de 4
+    if (i >= 3) {
+      // Precisa de pelo menos 4 valores para SMA de 4
       const validValues = wt1.slice(i - 3, i + 1).filter(val => val !== null && !isNaN(val));
       if (validValues.length > 0) {
         const sum = validValues.reduce((acc, val) => acc + val, 0);
@@ -763,8 +813,16 @@ export function calculateMomentum(candles, channelLength = 10, averageLength = 2
 
   // Detectar cruzamento atual
   let currentCross = null;
-  if (currentWt1 !== null && currentWt2 !== null && prevWt1 !== null && prevWt2 !== null &&
-      !isNaN(currentWt1) && !isNaN(currentWt2) && !isNaN(prevWt1) && !isNaN(prevWt2)) {
+  if (
+    currentWt1 !== null &&
+    currentWt2 !== null &&
+    prevWt1 !== null &&
+    prevWt2 !== null &&
+    !isNaN(currentWt1) &&
+    !isNaN(currentWt2) &&
+    !isNaN(prevWt1) &&
+    !isNaN(prevWt2)
+  ) {
     // Cruzamento BULLISH (wt1 cruza wt2 de baixo para cima)
     if (prevWt1 <= prevWt2 && currentWt1 > currentWt2) {
       currentCross = 'BULLISH';
@@ -787,8 +845,16 @@ export function calculateMomentum(candles, channelLength = 10, averageLength = 2
 
   // Detectar cruzamento anterior
   let previousCross = null;
-  if (prevWt1 !== null && prevWt2 !== null && prevPrevWt1 !== null && prevPrevWt2 !== null &&
-      !isNaN(prevWt1) && !isNaN(prevWt2) && !isNaN(prevPrevWt1) && !isNaN(prevPrevWt2)) {
+  if (
+    prevWt1 !== null &&
+    prevWt2 !== null &&
+    prevPrevWt1 !== null &&
+    prevPrevWt2 !== null &&
+    !isNaN(prevWt1) &&
+    !isNaN(prevWt2) &&
+    !isNaN(prevPrevWt1) &&
+    !isNaN(prevPrevWt2)
+  ) {
     // Cruzamento BULLISH anterior
     if (prevPrevWt1 <= prevPrevWt2 && prevWt1 > prevWt2) {
       previousCross = 'BULLISH';
@@ -812,7 +878,7 @@ export function calculateMomentum(candles, channelLength = 10, averageLength = 2
       cross: currentCross,
       direction: currentDirection,
       isBullish: currentDirection === 'UP',
-      isBearish: currentDirection === 'DOWN'
+      isBearish: currentDirection === 'DOWN',
     },
     previous: {
       wt1: prevWt1,
@@ -820,12 +886,12 @@ export function calculateMomentum(candles, channelLength = 10, averageLength = 2
       cross: previousCross,
       direction: previousDirection,
       isBullish: previousDirection === 'UP',
-      isBearish: previousDirection === 'DOWN'
+      isBearish: previousDirection === 'DOWN',
     },
     history: {
       wt1: wt1,
-      wt2: wt2
-    }
+      wt2: wt2,
+    },
   };
 }
 
@@ -841,20 +907,20 @@ function calculateCVD(candles, period = 8) {
   }
 
   const cvdValues = [];
-  
+
   for (let i = 0; i < candles.length; i++) {
     let cvd = 0;
-    
+
     // Calcula o CVD para as últimas 'period' velas, ou todas as velas disponíveis se menos que period
     const actualPeriod = Math.min(period, i + 1);
     const startIndex = Math.max(0, i - actualPeriod + 1);
-    
+
     for (let j = startIndex; j <= i; j++) {
       const candle = candles[j];
       const open = parseFloat(candle.open);
       const close = parseFloat(candle.close);
       const volume = parseFloat(candle.volume);
-      
+
       // Calcula o delta de volume para esta vela
       let delta = 0;
       if (close > open) {
@@ -863,13 +929,13 @@ function calculateCVD(candles, period = 8) {
         delta = -volume; // Vela de baixa
       }
       // Se close === open, delta = 0
-      
+
       cvd += delta;
     }
-    
+
     cvdValues.push(cvd);
   }
-  
+
   return cvdValues;
 }
 
@@ -881,12 +947,12 @@ function calculateCVD(candles, period = 8) {
  */
 function findPivots(values, fractalPeriod = 1) {
   const pivots = [];
-  
+
   for (let i = fractalPeriod; i < values.length - fractalPeriod; i++) {
     const current = values[i];
     let isTop = true;
     let isBottom = true;
-    
+
     // Verifica se é um topo
     for (let j = 1; j <= fractalPeriod; j++) {
       if (values[i - j] >= current || values[i + j] >= current) {
@@ -894,7 +960,7 @@ function findPivots(values, fractalPeriod = 1) {
         break;
       }
     }
-    
+
     // Verifica se é um fundo
     for (let j = 1; j <= fractalPeriod; j++) {
       if (values[i - j] <= current || values[i + j] <= current) {
@@ -902,14 +968,14 @@ function findPivots(values, fractalPeriod = 1) {
         break;
       }
     }
-    
+
     if (isTop) {
       pivots.push({ index: i, value: current, type: 'top' });
     } else if (isBottom) {
       pivots.push({ index: i, value: current, type: 'bottom' });
     }
   }
-  
+
   return pivots;
 }
 
@@ -923,58 +989,62 @@ function findCvdDivergences(candles, cvdValues) {
   if (candles.length < 10 || cvdValues.length < 10) {
     return { bullish: false, bearish: false };
   }
-  
+
   // Extrai preços de fechamento
   const prices = candles.map(c => parseFloat(c.close));
-  
+
   // Encontra pivots de preço e CVD
   const pricePivots = findPivots(prices, 1);
   const cvdPivots = findPivots(cvdValues, 1);
-  
+
   if (pricePivots.length < 2 || cvdPivots.length < 2) {
     return { bullish: false, bearish: false };
   }
-  
+
   let bullishDivergence = false;
   let bearishDivergence = false;
-  
+
   // Verifica divergência bullish (preço faz fundo mais baixo, CVD faz fundo mais alto)
   const priceBottoms = pricePivots.filter(p => p.type === 'bottom');
   const cvdBottoms = cvdPivots.filter(p => p.type === 'bottom');
-  
+
   if (priceBottoms.length >= 2 && cvdBottoms.length >= 2) {
     const currentPriceBottom = priceBottoms[priceBottoms.length - 1];
     const previousPriceBottom = priceBottoms[priceBottoms.length - 2];
     const currentCvdBottom = cvdBottoms[cvdBottoms.length - 1];
     const previousCvdBottom = cvdBottoms[cvdBottoms.length - 2];
-    
+
     // Verifica se o preço fez um fundo mais baixo mas o CVD fez um fundo mais alto
-    if (currentPriceBottom.value < previousPriceBottom.value && 
-        currentCvdBottom.value > previousCvdBottom.value) {
+    if (
+      currentPriceBottom.value < previousPriceBottom.value &&
+      currentCvdBottom.value > previousCvdBottom.value
+    ) {
       bullishDivergence = true;
     }
   }
-  
+
   // Verifica divergência bearish (preço faz topo mais alto, CVD faz topo mais baixo)
   const priceTops = pricePivots.filter(p => p.type === 'top');
   const cvdTops = cvdPivots.filter(p => p.type === 'top');
-  
+
   if (priceTops.length >= 2 && cvdTops.length >= 2) {
     const currentPriceTop = priceTops[priceTops.length - 1];
     const previousPriceTop = priceTops[priceTops.length - 2];
     const currentCvdTop = cvdTops[cvdTops.length - 1];
     const previousCvdTop = cvdTops[cvdTops.length - 2];
-    
+
     // Verifica se o preço fez um topo mais alto mas o CVD fez um topo mais baixo
-    if (currentPriceTop.value > previousPriceTop.value && 
-        currentCvdTop.value < previousCvdTop.value) {
+    if (
+      currentPriceTop.value > previousPriceTop.value &&
+      currentCvdTop.value < previousCvdTop.value
+    ) {
       bearishDivergence = true;
     }
   }
-  
+
   return {
     bullish: bullishDivergence,
-    bearish: bearishDivergence
+    bearish: bearishDivergence,
   };
 }
 
@@ -982,49 +1052,51 @@ export async function calculateIndicators(candles, timeframe = '5m', symbol = nu
   // Validação de entrada
   if (!candles || !Array.isArray(candles) || candles.length === 0) {
     // Retorna estrutura vazia para casos inválidos, mas ainda calcula Macro Money Flow se symbol fornecido
-    const macroMoneyFlow = symbol ? await calculateMacroMoneyFlow(candles, timeframe, symbol) : {
-      macroBias: 0,
-      mfiCurrent: 50,
-      mfiPrevious: 50,
-      mfiEmaCurrent: 50,
-      mfiEmaPrevious: 50,
-      isBullish: false,
-      isBearish: false,
-      direction: 'NEUTRAL',
-      error: 'Sem candles para análise',
-      dataSource: 'NO_CANDLES',
-      history: []
-    };
-    
+    const macroMoneyFlow = symbol
+      ? await calculateMacroMoneyFlow(candles, timeframe, symbol)
+      : {
+          macroBias: 0,
+          mfiCurrent: 50,
+          mfiPrevious: 50,
+          mfiEmaCurrent: 50,
+          mfiEmaPrevious: 50,
+          isBullish: false,
+          isBearish: false,
+          direction: 'NEUTRAL',
+          error: 'Sem candles para análise',
+          dataSource: 'NO_CANDLES',
+          history: [],
+        };
+
     return {
       ema: {
         isBullish: false,
         isBearish: false,
         crossIndex: null,
         crossType: null,
-        candlesAgo: null
+        candlesAgo: null,
       },
       rsi: {
         value: null,
         avg: null,
         prev: null,
         avgPrev: null,
-        history: []
+        history: [],
       },
       macd: {
         MACD: null,
         MACD_signal: null,
         MACD_histogram: null,
         histogram: null,
-        histogramPrev: null
+        histogramPrev: null,
       },
       bollinger: {
         BOLL_upper: null,
         BOLL_middle: null,
-        BOLL_lower: null
+        BOLL_lower: null,
       },
       volume: {
-        history: []
+        history: [],
       },
       vwap: {
         vwap: null,
@@ -1032,26 +1104,26 @@ export async function calculateIndicators(candles, timeframe = '5m', symbol = nu
         upperBands: [],
         lowerBands: [],
         current: null,
-        previous: null
+        previous: null,
       },
       atr: {
         atr: null,
         value: null,
-        history: []
+        history: [],
       },
       stoch: {
         k: null,
         d: null,
         kPrev: null,
         dPrev: null,
-        history: []
+        history: [],
       },
       slowStochastic: {
         k: null,
         d: null,
         kPrev: null,
         dPrev: null,
-        history: []
+        history: [],
       },
       adx: {
         adx: null,
@@ -1061,7 +1133,7 @@ export async function calculateIndicators(candles, timeframe = '5m', symbol = nu
         diMinusPrev: null,
         adxEma: null,
         history: [],
-        emaHistory: []
+        emaHistory: [],
       },
       momentum: {
         value: null,
@@ -1075,7 +1147,7 @@ export async function calculateIndicators(candles, timeframe = '5m', symbol = nu
         direction: null,
         history: [],
         momentumValue: null,
-        momentumHistory: []
+        momentumHistory: [],
       },
       waveTrend: {
         wt1: null,
@@ -1084,7 +1156,7 @@ export async function calculateIndicators(candles, timeframe = '5m', symbol = nu
         reversal: false,
         isBullish: false,
         isBearish: false,
-        history: []
+        history: [],
       },
       moneyFlow: {
         mfi: null,
@@ -1095,16 +1167,16 @@ export async function calculateIndicators(candles, timeframe = '5m', symbol = nu
         isStrong: false,
         direction: null,
         history: [],
-        mfiPrev: null
+        mfiPrev: null,
       },
       cvd: {
         values: [],
         current: null,
-        history: []
+        history: [],
       },
       cvdDivergence: {
         bullish: false,
-        bearish: false
+        bearish: false,
       },
       macroMoneyFlow: {
         macroBias: 0,
@@ -1117,8 +1189,8 @@ export async function calculateIndicators(candles, timeframe = '5m', symbol = nu
         direction: 'NEUTRAL',
         error: 'Sem candles para análise',
         dataSource: 'NO_CANDLES',
-        history: []
-      }
+        history: [],
+      },
     };
   }
 
@@ -1127,9 +1199,9 @@ export async function calculateIndicators(candles, timeframe = '5m', symbol = nu
   const lows = candles.map(c => parseFloat(c.low));
 
   const volumesUSD = candles.map(c => ({
-    volume:   parseFloat(c.quoteVolume),
+    volume: parseFloat(c.quoteVolume),
     variance: parseFloat(c.high) - parseFloat(c.low),
-    price:    parseFloat(c.start) - parseFloat(c.close),
+    price: parseFloat(c.start) - parseFloat(c.close),
   }));
 
   // Indicadores existentes
@@ -1144,20 +1216,20 @@ export async function calculateIndicators(candles, timeframe = '5m', symbol = nu
     slowPeriod: 26,
     signalPeriod: 9,
     SimpleMAOscillator: false,
-    SimpleMASignal: false
+    SimpleMASignal: false,
   });
 
   const boll = BollingerBands.calculate({
     period: 20,
     values: closes,
-    stdDev: 2
+    stdDev: 2,
   });
 
   const atr = ATR.calculate({
     period: 14,
     high: highs,
     low: lows,
-    close: closes
+    close: closes,
   });
 
   const slowStoch = Stochastic.calculate({
@@ -1165,21 +1237,21 @@ export async function calculateIndicators(candles, timeframe = '5m', symbol = nu
     high: highs,
     low: lows,
     close: closes,
-    signalPeriod: 3
+    signalPeriod: 3,
   });
 
   const adx = ADX.calculate({
     period: 14,
     high: highs,
     low: lows,
-    close: closes
+    close: closes,
   });
 
   // Calculate EMA of ADX values
   const adxValues = adx.map(v => v.adx).filter(v => v !== null);
-  const adxEma = EMA.calculate({ 
-    values: adxValues, 
-    period: 21 
+  const adxEma = EMA.calculate({
+    values: adxValues,
+    period: 21,
   });
 
   // MOMENTUM - WaveTrend Oscillator
@@ -1187,13 +1259,23 @@ export async function calculateIndicators(candles, timeframe = '5m', symbol = nu
 
   // INDICATORS - Baseados no PineScript
   const waveTrend = calculateWaveTrend(candles, 9, 12, 3); // MOMENTUM(2)
-  const customMoneyFlow = calculateMoneyFlow(candles) // MONEY FLOW(3)
+  const customMoneyFlow = calculateMoneyFlow(candles); // MONEY FLOW(3)
 
   const vwapHistory = calculateIntradayVWAP(candles);
-  const latestVwapData = vwapHistory.current || { vwap: null, stdDev: null, upperBands: [], lowerBands: [] };
-  const previousVwapData = vwapHistory.previous || { vwap: null, stdDev: null, upperBands: [], lowerBands: [] };
+  const latestVwapData = vwapHistory.current || {
+    vwap: null,
+    stdDev: null,
+    upperBands: [],
+    lowerBands: [],
+  };
+  const previousVwapData = vwapHistory.previous || {
+    vwap: null,
+    stdDev: null,
+    upperBands: [],
+    lowerBands: [],
+  };
 
-  const volumeAnalyse = analyzeTrends(volumesUSD)
+  const volumeAnalyse = analyzeTrends(volumesUSD);
 
   const emaAnalysis = analyzeEMA(ema9, ema21);
   const emaCrossInfo = findEMACross(ema9, ema21);
@@ -1203,33 +1285,35 @@ export async function calculateIndicators(candles, timeframe = '5m', symbol = nu
   const cvdDivergence = findCvdDivergences(candles, cvdValues);
 
   // Macro Money Flow (MFI diário)
-  const macroMoneyFlow = symbol ? await calculateMacroMoneyFlow(candles, timeframe, symbol) : {
-    macroBias: 0,
-    mfiCurrent: 50,
-    mfiPrevious: 50,
-    mfiEmaCurrent: 50,
-    mfiEmaPrevious: 50,
-    isBullish: false,
-    isBearish: false,
-    direction: 'NEUTRAL',
-    error: 'Sem symbol para análise',
-    dataSource: 'NO_SYMBOL',
-    history: []
-  };
+  const macroMoneyFlow = symbol
+    ? await calculateMacroMoneyFlow(candles, timeframe, symbol)
+    : {
+        macroBias: 0,
+        mfiCurrent: 50,
+        mfiPrevious: 50,
+        mfiEmaCurrent: 50,
+        mfiEmaPrevious: 50,
+        isBullish: false,
+        isBearish: false,
+        direction: 'NEUTRAL',
+        error: 'Sem symbol para análise',
+        dataSource: 'NO_SYMBOL',
+        history: [],
+      };
 
   return {
     ema: {
       ...emaAnalysis,
       crossIndex: emaCrossInfo?.index ?? null,
       crossType: emaCrossInfo?.type ?? null,
-      candlesAgo: emaCrossInfo ? (ema9.length - 1 - emaCrossInfo.index) : null
+      candlesAgo: emaCrossInfo ? ema9.length - 1 - emaCrossInfo.index : null,
     },
     rsi: {
       value: rsi[rsi.length - 1] ?? null,
       avg: rsi.length >= 14 ? rsi.slice(-14).reduce((sum, val) => sum + val, 0) / 14 : null,
       prev: rsi[rsi.length - 2] ?? null,
       avgPrev: rsi.length >= 15 ? rsi.slice(-15, -1).reduce((sum, val) => sum + val, 0) / 14 : null,
-      history: rsi
+      history: rsi,
     },
     macd: {
       MACD: macd[macd.length - 1]?.MACD ?? null,
@@ -1245,7 +1329,7 @@ export async function calculateIndicators(candles, timeframe = '5m', symbol = nu
     },
     volume: {
       history: volumesUSD,
-      ...volumeAnalyse
+      ...volumeAnalyse,
     },
     vwap: {
       vwap: latestVwapData.vwap,
@@ -1253,24 +1337,24 @@ export async function calculateIndicators(candles, timeframe = '5m', symbol = nu
       upperBands: latestVwapData.upperBands,
       lowerBands: latestVwapData.lowerBands,
       current: latestVwapData,
-      previous: previousVwapData
+      previous: previousVwapData,
     },
     atr: {
       atr: atr[atr.length - 1] ?? null,
       value: atr[atr.length - 1] ?? null,
-      history: atr
+      history: atr,
     },
     stoch: {
       k: slowStoch[slowStoch.length - 1]?.k ?? null,
       d: slowStoch[slowStoch.length - 1]?.d ?? null,
       kPrev: slowStoch[slowStoch.length - 2]?.k ?? null,
       dPrev: slowStoch[slowStoch.length - 2]?.d ?? null,
-      history: slowStoch
+      history: slowStoch,
     },
     slowStochastic: {
       k: slowStoch[slowStoch.length - 1]?.k ?? null,
       d: slowStoch[slowStoch.length - 1]?.d ?? null,
-      history: slowStoch
+      history: slowStoch,
     },
     adx: {
       adx: adx[adx.length - 1]?.adx ?? null,
@@ -1280,7 +1364,7 @@ export async function calculateIndicators(candles, timeframe = '5m', symbol = nu
       diMinusPrev: adx[adx.length - 2]?.mdi ?? null,
       adxEma: adxEma[adxEma.length - 1] ?? null,
       history: adx,
-      emaHistory: adxEma
+      emaHistory: adxEma,
     },
     // INDICATORS - WaveTrend Oscillator (MOMENTUM)
     momentum: momentum, // Return the full momentum structure with current/previous
@@ -1292,7 +1376,7 @@ export async function calculateIndicators(candles, timeframe = '5m', symbol = nu
       reversal: waveTrend.reversal,
       isBullish: waveTrend.isBullish,
       isBearish: waveTrend.isBearish,
-      history: waveTrend.history
+      history: waveTrend.history,
     },
     moneyFlow: {
       mfi: customMoneyFlow.current.mfi,
@@ -1303,24 +1387,20 @@ export async function calculateIndicators(candles, timeframe = '5m', symbol = nu
       isStrong: customMoneyFlow.current.isStrong,
       direction: customMoneyFlow.current.direction,
       history: customMoneyFlow.history,
-      mfiPrev: customMoneyFlow.previous.mfi
+      mfiPrev: customMoneyFlow.previous.mfi,
     },
     // NOVO: CVD Periódico
     cvd: {
       values: cvdValues,
       current: cvdValues[cvdValues.length - 1] ?? null,
-      history: cvdValues
+      history: cvdValues,
     },
     // NOVO: Divergências de CVD
     cvdDivergence: {
       bullish: cvdDivergence.bullish,
-      bearish: cvdDivergence.bearish
+      bearish: cvdDivergence.bearish,
     },
-          // NOVO: Macro Money Flow (MFI diário)
-      macroMoneyFlow: macroMoneyFlow // Usa dados diários reais quando symbol disponível
+    // NOVO: Macro Money Flow (MFI diário)
+    macroMoneyFlow: macroMoneyFlow, // Usa dados diários reais quando symbol disponível
   };
 }
-
-
-
-

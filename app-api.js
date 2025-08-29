@@ -40,9 +40,10 @@ import DatabaseService from './src/Services/DatabaseService.js';
 import Markets from './src/Backpack/Public/Markets.js';
 import PositionSyncServiceClass from './src/Services/PositionSyncService.js';
 import PositionTrackingService from './src/Services/PositionTrackingService.js';
-import OrdersService from "./src/Services/OrdersService.js";
-import Order from "./src/Backpack/Authenticated/Order.js";
-import AccountController from "./src/Controllers/AccountController.js";
+import OrdersService from './src/Services/OrdersService.js';
+import Order from './src/Backpack/Authenticated/Order.js';
+import AccountController from './src/Controllers/AccountController.js';
+import CachedOrdersService from './src/Utils/CachedOrdersService.js';
 
 // Instancia PositionSyncService (será inicializado depois que o DatabaseService estiver pronto)
 let PositionSyncService = null;
@@ -58,9 +59,8 @@ function killProcessOnPort(port) {
     Logger.info(`🔍 [SERVER] Verificando se porta ${port} está em uso...`);
 
     // Busca processos usando a porta
-    const command = process.platform === 'win32'
-      ? `netstat -ano | findstr :${port}`
-      : `lsof -ti:${port}`;
+    const command =
+      process.platform === 'win32' ? `netstat -ano | findstr :${port}` : `lsof -ti:${port}`;
 
     const result = execSync(command, { encoding: 'utf8', stdio: 'pipe' });
 
@@ -81,7 +81,10 @@ function killProcessOnPort(port) {
         });
       } else {
         // Linux/macOS
-        const pids = result.trim().split('\n').filter(pid => pid);
+        const pids = result
+          .trim()
+          .split('\n')
+          .filter(pid => pid);
         pids.forEach(pid => {
           try {
             execSync(`kill -9 ${pid}`, { stdio: 'ignore' });
@@ -119,7 +122,8 @@ const connections = new Set();
 function broadcast(message) {
   const messageStr = JSON.stringify(message);
   connections.forEach(connection => {
-    if (connection.readyState === 1) { // WebSocket.OPEN
+    if (connection.readyState === 1) {
+      // WebSocket.OPEN
       connection.send(messageStr);
     }
   });
@@ -129,12 +133,12 @@ function broadcast(message) {
 function broadcastViaWs(message) {
   const messageStr = JSON.stringify(message);
   wss.clients.forEach(client => {
-    if (client.readyState === 1) { // WebSocket.OPEN
+    if (client.readyState === 1) {
+      // WebSocket.OPEN
       client.send(messageStr);
     }
   });
 }
-
 
 // Mapa de instâncias de bots ativos (apenas para controle de intervalos)
 let activeBotInstances = new Map(); // Map<botName, {intervalId, executeBot}>
@@ -150,24 +154,24 @@ function getMonitorRateLimit(botId) {
         interval: 15000, // começa em 15s
         errorCount: 0,
         maxInterval: 120000, // máximo 2min
-        minInterval: 15000,  // mínimo 15s
-        lastErrorTime: null
+        minInterval: 15000, // mínimo 15s
+        lastErrorTime: null,
       },
       orphanOrders: {
         interval: 60000, // começa em 60s (menos agressivo)
         errorCount: 0,
         maxInterval: 300000, // máximo 5min
-        minInterval: 60000,  // mínimo 60s (menos agressivo)
+        minInterval: 60000, // mínimo 60s (menos agressivo)
         lastErrorTime: null,
-        lastFullScan: 0 // timestamp da última varredura completa
+        lastFullScan: 0, // timestamp da última varredura completa
       },
       takeProfit: {
         interval: 30000, // começa em 30s
         errorCount: 0,
         maxInterval: 300000, // máximo 5min
-        minInterval: 30000,  // mínimo 30s
-        lastErrorTime: null
-      }
+        minInterval: 30000, // mínimo 30s
+        lastErrorTime: null,
+      },
     });
   }
   return monitorRateLimits.get(botId);
@@ -178,12 +182,15 @@ function getMonitorRateLimit(botId) {
  */
 async function loadAndRecoverBots() {
   try {
+    CachedOrdersService.clearAllCache();
+
     // Carrega todos os bots habilitados que estavam rodando ou em erro
     const configs = await ConfigManagerSQLite.loadConfigs();
 
-    const botsToRecover = configs.filter(config =>
-      config.enabled &&
-      (config.status === 'running' || config.status === 'error' || config.status === 'starting')
+    const botsToRecover = configs.filter(
+      config =>
+        config.enabled &&
+        (config.status === 'running' || config.status === 'error' || config.status === 'starting')
     );
 
     if (botsToRecover.length === 0) {
@@ -194,9 +201,11 @@ async function loadAndRecoverBots() {
     Logger.debug(`📋 [PERSISTENCE] Carregando ${botsToRecover.length} bots para recuperação...`);
 
     // Executa todos os bots em paralelo sem aguardar
-    const recoveryPromises = botsToRecover.map(async (botConfig) => {
+    const recoveryPromises = botsToRecover.map(async botConfig => {
       try {
-        Logger.debug(`🔄 [PERSISTENCE] Iniciando recuperação do bot: ${botConfig.id} (${botConfig.botName}) - Status anterior: ${botConfig.status}`);
+        Logger.debug(
+          `🔄 [PERSISTENCE] Iniciando recuperação do bot: ${botConfig.id} (${botConfig.botName}) - Status anterior: ${botConfig.status}`
+        );
         await recoverBot(botConfig.id, botConfig, botConfig.startTime);
       } catch (error) {
         Logger.error(`❌ [PERSISTENCE] Erro ao recuperar bot ${botConfig.id}:`, error.message);
@@ -204,18 +213,17 @@ async function loadAndRecoverBots() {
     });
 
     // Executa em background sem bloquear
-    Promise.all(recoveryPromises).then(() => {
-      Logger.info(`✅ [PERSISTENCE] Recuperação de bots concluída`);
-    }).catch((error) => {
-      Logger.error(`❌ [PERSISTENCE] Erro na recuperação de bots:`, error.message);
-    });
-
+    Promise.all(recoveryPromises)
+      .then(() => {
+        Logger.info(`✅ [PERSISTENCE] Recuperação de bots concluída`);
+      })
+      .catch(error => {
+        Logger.error(`❌ [PERSISTENCE] Erro na recuperação de bots:`, error.message);
+      });
   } catch (error) {
     Logger.error(`❌ [PERSISTENCE] Erro ao carregar bots ativos:`, error.message);
   }
 }
-
-
 
 /**
  * Recupera um bot específico sem chamar startBot recursivamente
@@ -242,14 +250,20 @@ async function recoverBot(botId, config, startTime) {
     if (executionMode === 'ON_CANDLE_CLOSE') {
       // Modo ON_CANDLE_CLOSE: Aguarda o próximo fechamento de vela
       executionInterval = timeframeConfig.getTimeUntilNextCandleClose(config.time || '5m');
-      Logger.info(`⏰ [ON_CANDLE_CLOSE] Bot ${botId}: Próxima análise em ${Math.floor(executionInterval / 1000)}s`);
+      Logger.info(
+        `⏰ [ON_CANDLE_CLOSE] Bot ${botId}: Próxima análise em ${Math.floor(executionInterval / 1000)}s`
+      );
     } else {
       // Modo REALTIME: Análise a cada 60 segundos
       executionInterval = 60000;
-      Logger.info(`⏰ [REALTIME] Bot ${botId}: Próxima análise em ${Math.floor(executionInterval / 1000)}s`);
+      Logger.info(
+        `⏰ [REALTIME] Bot ${botId}: Próxima análise em ${Math.floor(executionInterval / 1000)}s`
+      );
     }
 
-    Logger.info(`🔧 [DEBUG] Bot ${botId}: Execution Mode: ${executionMode}, Next Interval: ${executionInterval}ms`);
+    Logger.info(
+      `🔧 [DEBUG] Bot ${botId}: Execution Mode: ${executionMode}, Next Interval: ${executionInterval}ms`
+    );
 
     // Função de execução do bot
     const executeBot = async () => {
@@ -265,7 +279,7 @@ async function recoverBot(botId, config, startTime) {
         // Calcula e salva o próximo horário de validação
         const nextValidationAt = new Date(Date.now() + executionInterval);
         await ConfigManagerSQLite.updateBotConfigById(botId, {
-          nextValidationAt: nextValidationAt.toISOString()
+          nextValidationAt: nextValidationAt.toISOString(),
         });
 
         // Emite evento de execução bem-sucedida
@@ -273,9 +287,8 @@ async function recoverBot(botId, config, startTime) {
           type: 'BOT_EXECUTION_SUCCESS',
           botId,
           botName: config.botName,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
         });
-
       } catch (error) {
         Logger.error(`❌ [BOT] Erro na execução do bot ${botId}:`, error.message);
 
@@ -288,20 +301,26 @@ async function recoverBot(botId, config, startTime) {
           botId,
           botName: config.botName,
           timestamp: new Date().toISOString(),
-          error: error.message
+          error: error.message,
         });
       }
     };
 
     // Executa imediatamente em background
     executeBot().catch(error => {
-      Logger.error(`❌ [${config.botName}][BOT] Erro crítico na execução do bot ${botId}:`, error.message);
+      Logger.error(
+        `❌ [${config.botName}][BOT] Erro crítico na execução do bot ${botId}:`,
+        error.message
+      );
     });
 
     // Configura execução periódica em background (apenas análise)
     const intervalId = setInterval(() => {
       executeBot().catch(error => {
-        Logger.error(`❌ [${config.botName}][BOT] Erro na execução periódica do bot ${botId}:`, error.message);
+        Logger.error(
+          `❌ [${config.botName}][BOT] Erro na execução periódica do bot ${botId}:`,
+          error.message
+        );
       });
     }, executionInterval);
 
@@ -313,7 +332,7 @@ async function recoverBot(botId, config, startTime) {
     if (!config.nextValidationAt) {
       const nextValidationAt = new Date(Date.now() + executionInterval);
       await ConfigManagerSQLite.updateBotConfigById(botId, {
-        nextValidationAt: nextValidationAt.toISOString()
+        nextValidationAt: nextValidationAt.toISOString(),
       });
     }
 
@@ -325,7 +344,7 @@ async function recoverBot(botId, config, startTime) {
       takeProfitIntervalId,
       config,
       status: 'running',
-      updateConfig: async (newConfig) => {
+      updateConfig: async newConfig => {
         Logger.info(`🔄 [CONFIG_UPDATE] Atualizando configuração do bot ${botId} em tempo real`);
         // Atualiza a configuração na instância
         const botInstance = activeBotInstances.get(botId);
@@ -341,14 +360,13 @@ async function recoverBot(botId, config, startTime) {
             capitalPercentage: newConfig.capitalPercentage,
             maxOpenOrders: newConfig.maxOpenOrders,
             enableTrailingStop: newConfig.enableTrailingStop,
-            enabled: newConfig.enabled
+            enabled: newConfig.enabled,
           });
         }
-      }
+      },
     });
 
     Logger.info(`✅ [PERSISTENCE] Bot ${botId} (${config.botName}) recuperado com sucesso`);
-
   } catch (error) {
     Logger.error(`❌ [PERSISTENCE] Erro ao recuperar bot ${botId}:`, error.message);
     await ConfigManagerSQLite.updateBotStatusById(botId, 'error');
@@ -370,7 +388,9 @@ async function startDecision(botId) {
 
     // Debug: Verifica se as credenciais estão presentes
     if (!config.apiKey || !config.apiSecret) {
-      Logger.warn(`⚠️ [DECISION] Bot ${botId} (${config.botName}) não tem credenciais configuradas`);
+      Logger.warn(
+        `⚠️ [DECISION] Bot ${botId} (${config.botName}) não tem credenciais configuradas`
+      );
     }
 
     // Inicializa o Decision com a estratégia
@@ -389,7 +409,7 @@ async function startDecision(botId) {
       botId,
       botName: botConfig.botName,
       timestamp: new Date().toISOString(),
-      result
+      result,
     });
 
     return result;
@@ -402,7 +422,7 @@ async function startDecision(botId) {
       botId,
       botName: botConfig?.botName || 'Unknown',
       timestamp: new Date().toISOString(),
-      error: error.message
+      error: error.message,
     });
 
     throw error;
@@ -439,29 +459,30 @@ async function startStops(botId) {
       botId,
       botName: botConfig.botName,
       timestamp: new Date().toISOString(),
-      result
+      result,
     });
 
     // Reset contador de erros em caso de sucesso
     const rateLimit = getMonitorRateLimit(botId);
-    rateLimit.trailingStop = rateLimit.trailingStop || { errorCount: 0, interval: 5000 }; // 5s padrão
+    rateLimit.trailingStop = rateLimit.trailingStop || { errorCount: 0, interval: 30000 }; // 30s padrão
     rateLimit.trailingStop.errorCount = 0;
 
-    // Reduz intervalo gradualmente até mínimo (5s -> 2s)
-    if (rateLimit.trailingStop.interval > 2000) {
-      rateLimit.trailingStop.interval = Math.max(2000, rateLimit.trailingStop.interval - 250);
+    // Reduz intervalo gradualmente até mínimo (30s -> 20s)
+    if (rateLimit.trailingStop.interval > 20000) {
+      rateLimit.trailingStop.interval = Math.max(20000, rateLimit.trailingStop.interval - 2000);
     }
-
   } catch (error) {
     // Incrementa contador de erros
     const rateLimit = getMonitorRateLimit(botId);
-    rateLimit.trailingStop = rateLimit.trailingStop || { errorCount: 0, interval: 5000 };
+    rateLimit.trailingStop = rateLimit.trailingStop || { errorCount: 0, interval: 30000 };
     rateLimit.trailingStop.errorCount++;
 
     if (error?.response?.status === 429 || String(error).includes('rate limit')) {
       // Aumenta intervalo exponencialmente em caso de rate limit
       rateLimit.trailingStop.interval = Math.min(30000, rateLimit.trailingStop.interval * 2); // máximo 30s
-      Logger.warn(`⚠️ [STOPS] Bot ${botId}: Rate limit detectado! Aumentando intervalo para ${Math.floor(rateLimit.trailingStop.interval / 1000)}s`);
+      Logger.warn(
+        `⚠️ [STOPS] Bot ${botId}: Rate limit detectado! Aumentando intervalo para ${Math.floor(rateLimit.trailingStop.interval / 1000)}s`
+      );
     } else {
       Logger.error(`❌ [STOPS] Erro no trailing stop do bot ${botId}:`, error.message);
     }
@@ -472,7 +493,7 @@ async function startStops(botId) {
       botId,
       botName: botConfig?.botName || 'Unknown',
       timestamp: new Date().toISOString(),
-      error: error.message
+      error: error.message,
     });
   }
 
@@ -506,7 +527,9 @@ async function startTakeProfitMonitor(botId) {
 
     // Debug: Verifica se as credenciais estão presentes
     if (!config.apiKey || !config.apiSecret) {
-      Logger.warn(`⚠️ [TAKE_PROFIT] Bot ${botId} (${config.botName}) não tem credenciais configuradas`);
+      Logger.warn(
+        `⚠️ [TAKE_PROFIT] Bot ${botId} (${config.botName}) não tem credenciais configuradas`
+      );
     }
 
     // Executa o monitor de Take Profit
@@ -514,7 +537,10 @@ async function startTakeProfitMonitor(botId) {
 
     // Se sucesso, reduz gradualmente o intervalo até o mínimo
     if (rateLimit.takeProfit.interval > rateLimit.takeProfit.minInterval) {
-      rateLimit.takeProfit.interval = Math.max(rateLimit.takeProfit.minInterval, rateLimit.takeProfit.interval - 1000);
+      rateLimit.takeProfit.interval = Math.max(
+        rateLimit.takeProfit.minInterval,
+        rateLimit.takeProfit.interval - 1000
+      );
     }
     rateLimit.takeProfit.errorCount = 0;
 
@@ -524,20 +550,32 @@ async function startTakeProfitMonitor(botId) {
       botId,
       botName: botConfig.botName,
       timestamp: new Date().toISOString(),
-      result
+      result,
     });
 
     return result;
   } catch (error) {
     // Detecta erro de rate limit (HTTP 429 ou mensagem)
-    if (error?.response?.status === 429 || String(error).includes('rate limit') || String(error).includes('429')) {
+    if (
+      error?.response?.status === 429 ||
+      String(error).includes('rate limit') ||
+      String(error).includes('429')
+    ) {
       rateLimit.takeProfit.errorCount++;
       rateLimit.takeProfit.lastErrorTime = Date.now();
       // Aumenta o intervalo exponencialmente até o máximo
-      rateLimit.takeProfit.interval = Math.min(rateLimit.takeProfit.maxInterval, rateLimit.takeProfit.interval * 2);
-      Logger.warn(`⚠️ [TAKE_PROFIT] Bot ${botId}: Rate limit detectado! Aumentando intervalo para ${Math.floor(rateLimit.takeProfit.interval / 1000)}s`);
+      rateLimit.takeProfit.interval = Math.min(
+        rateLimit.takeProfit.maxInterval,
+        rateLimit.takeProfit.interval * 2
+      );
+      Logger.warn(
+        `⚠️ [TAKE_PROFIT] Bot ${botId}: Rate limit detectado! Aumentando intervalo para ${Math.floor(rateLimit.takeProfit.interval / 1000)}s`
+      );
     } else {
-      Logger.error(`❌ [TAKE_PROFIT] Erro inesperado no monitoramento do bot ${botId}:`, error.message || error);
+      Logger.error(
+        `❌ [TAKE_PROFIT] Erro inesperado no monitoramento do bot ${botId}:`,
+        error.message || error
+      );
     }
     throw error;
   }
@@ -559,7 +597,9 @@ async function startPendingOrdersMonitor(botId) {
 
     // Debug: Verifica se as credenciais estão presentes
     if (!config.apiKey || !config.apiSecret) {
-      Logger.warn(`⚠️ [PENDING_ORDERS] Bot ${botId} (${config.botName}) não tem credenciais configuradas`);
+      Logger.warn(
+        `⚠️ [PENDING_ORDERS] Bot ${botId} (${config.botName}) não tem credenciais configuradas`
+      );
     }
 
     // Passa as configurações do bot para o monitor
@@ -567,7 +607,10 @@ async function startPendingOrdersMonitor(botId) {
 
     // Se sucesso, reduz gradualmente o intervalo até o mínimo
     if (rateLimit.pendingOrders.interval > rateLimit.pendingOrders.minInterval) {
-      rateLimit.pendingOrders.interval = Math.max(rateLimit.pendingOrders.minInterval, rateLimit.pendingOrders.interval - 1000);
+      rateLimit.pendingOrders.interval = Math.max(
+        rateLimit.pendingOrders.minInterval,
+        rateLimit.pendingOrders.interval - 1000
+      );
     }
     rateLimit.pendingOrders.errorCount = 0;
 
@@ -577,20 +620,32 @@ async function startPendingOrdersMonitor(botId) {
       botId,
       botName: botConfig.botName,
       timestamp: new Date().toISOString(),
-      result
+      result,
     });
 
     return result;
   } catch (error) {
     // Detecta erro de rate limit (HTTP 429 ou mensagem)
-    if (error?.response?.status === 429 || String(error).includes('rate limit') || String(error).includes('429')) {
+    if (
+      error?.response?.status === 429 ||
+      String(error).includes('rate limit') ||
+      String(error).includes('429')
+    ) {
       rateLimit.pendingOrders.errorCount++;
       rateLimit.pendingOrders.lastErrorTime = Date.now();
       // Aumenta o intervalo exponencialmente até o máximo
-      rateLimit.pendingOrders.interval = Math.min(rateLimit.pendingOrders.maxInterval, rateLimit.pendingOrders.interval * 2);
-      Logger.warn(`⚠️ [PENDING_ORDERS] Bot ${botId}: Rate limit detectado! Aumentando intervalo para ${Math.floor(rateLimit.pendingOrders.interval / 1000)}s`);
+      rateLimit.pendingOrders.interval = Math.min(
+        rateLimit.pendingOrders.maxInterval,
+        rateLimit.pendingOrders.interval * 2
+      );
+      Logger.warn(
+        `⚠️ [PENDING_ORDERS] Bot ${botId}: Rate limit detectado! Aumentando intervalo para ${Math.floor(rateLimit.pendingOrders.interval / 1000)}s`
+      );
     } else {
-      Logger.error(`❌ [PENDING_ORDERS] Erro inesperado no monitoramento do bot ${botId}:`, error.message || error);
+      Logger.error(
+        `❌ [PENDING_ORDERS] Erro inesperado no monitoramento do bot ${botId}:`,
+        error.message || error
+      );
     }
     throw error;
   }
@@ -612,25 +667,32 @@ async function startOrphanOrderMonitor(botId) {
 
     // Debug: Verifica se as credenciais estão presentes
     if (!config.apiKey || !config.apiSecret) {
-      Logger.warn(`⚠️ [ORPHAN_ORDERS] Bot ${botId} (${config.botName}) não tem credenciais configuradas`);
+      Logger.warn(
+        `⚠️ [ORPHAN_ORDERS] Bot ${botId} (${config.botName}) não tem credenciais configuradas`
+      );
     }
 
     const now = Date.now();
     const lastFullScan = rateLimit.orphanOrders.lastFullScan || 0;
-    const shouldDoFullScan = (now - lastFullScan) > 300000; // 5 minutos desde última varredura completa
+    const shouldDoFullScan = now - lastFullScan > 300000; // 5 minutos desde última varredura completa
 
     let result;
     if (shouldDoFullScan) {
       result = await OrderController.scanAndCleanupAllOrphanedOrders(config.botName, config);
       rateLimit.orphanOrders.lastFullScan = now;
-      Logger.info(`🔍 [${config.botName}][ORPHAN_MONITOR] Varredura completa executada: ${result.ordersScanned} símbolos verificados`);
+      Logger.info(
+        `🔍 [${config.botName}][ORPHAN_MONITOR] Varredura completa executada: ${result.ordersScanned} símbolos verificados`
+      );
     } else {
       result = await OrderController.monitorAndCleanupOrphanedOrders(config.botName, config);
     }
 
     // Se sucesso, reduz gradualmente o intervalo até o mínimo
     if (rateLimit.orphanOrders.interval > rateLimit.orphanOrders.minInterval) {
-      rateLimit.orphanOrders.interval = Math.max(rateLimit.orphanOrders.minInterval, rateLimit.orphanOrders.interval - 1000);
+      rateLimit.orphanOrders.interval = Math.max(
+        rateLimit.orphanOrders.minInterval,
+        rateLimit.orphanOrders.interval - 1000
+      );
     }
     rateLimit.orphanOrders.errorCount = 0;
 
@@ -640,20 +702,32 @@ async function startOrphanOrderMonitor(botId) {
       botId,
       botName: botConfig.botName,
       timestamp: new Date().toISOString(),
-      result
+      result,
     });
 
     return result;
   } catch (error) {
     // Detecta erro de rate limit (HTTP 429 ou mensagem)
-    if (error?.response?.status === 429 || String(error).includes('rate limit') || String(error).includes('429')) {
+    if (
+      error?.response?.status === 429 ||
+      String(error).includes('rate limit') ||
+      String(error).includes('429')
+    ) {
       rateLimit.orphanOrders.errorCount++;
       rateLimit.orphanOrders.lastErrorTime = Date.now();
       // Aumenta o intervalo exponencialmente até o máximo
-      rateLimit.orphanOrders.interval = Math.min(rateLimit.orphanOrders.maxInterval, rateLimit.orphanOrders.interval * 2);
-      Logger.warn(`⚠️ [ORPHAN_ORDERS] Bot ${botId}: Rate limit detectado! Aumentando intervalo para ${Math.floor(rateLimit.orphanOrders.interval / 1000)}s`);
+      rateLimit.orphanOrders.interval = Math.min(
+        rateLimit.orphanOrders.maxInterval,
+        rateLimit.orphanOrders.interval * 2
+      );
+      Logger.warn(
+        `⚠️ [ORPHAN_ORDERS] Bot ${botId}: Rate limit detectado! Aumentando intervalo para ${Math.floor(rateLimit.orphanOrders.interval / 1000)}s`
+      );
     } else {
-      Logger.error(`❌ [ORPHAN_ORDERS] Erro inesperado na limpeza do bot ${botId}:`, error.message || error);
+      Logger.error(
+        `❌ [ORPHAN_ORDERS] Erro inesperado na limpeza do bot ${botId}:`,
+        error.message || error
+      );
     }
     throw error;
   }
@@ -672,7 +746,9 @@ async function startTrailingStopsCleanerMonitor(botId) {
 
     // Verifica se as credenciais estão presentes
     if (!botConfig.apiKey || !botConfig.apiSecret) {
-      Logger.debug(`[TRAILING_CLEANER] Bot ${botId} (${botConfig.botName}) não tem credenciais configuradas`);
+      Logger.debug(
+        `[TRAILING_CLEANER] Bot ${botId} (${botConfig.botName}) não tem credenciais configuradas`
+      );
       setTimeout(() => startTrailingStopsCleanerMonitor(botId), 5 * 60 * 1000); // 5 minutos
       return;
     }
@@ -683,7 +759,6 @@ async function startTrailingStopsCleanerMonitor(botId) {
     // Reset contador de erros em caso de sucesso
     rateLimit.trailingCleaner = rateLimit.trailingCleaner || { errorCount: 0 };
     rateLimit.trailingCleaner.errorCount = 0;
-
   } catch (error) {
     // Incrementa contador de erros
     const trailingCleanerLimit = rateLimit.trailingCleaner || { errorCount: 0 };
@@ -701,7 +776,7 @@ async function startTrailingStopsCleanerMonitor(botId) {
   const baseInterval = 5 * 60 * 1000; // 5 minutos
   const maxInterval = 15 * 60 * 1000; // 15 minutos
   const errorCount = rateLimit.trailingCleaner?.errorCount || 0;
-  const nextInterval = Math.min(maxInterval, baseInterval + (errorCount * 2 * 60 * 1000)); // +2min por erro
+  const nextInterval = Math.min(maxInterval, baseInterval + errorCount * 2 * 60 * 1000); // +2min por erro
 
   setTimeout(() => startTrailingStopsCleanerMonitor(botId), nextInterval);
 }
@@ -720,7 +795,9 @@ async function startTrailingStopSyncMonitor(botId) {
 
     // Verifica se as credenciais estão presentes
     if (!botConfig.apiKey || !botConfig.apiSecret) {
-      Logger.debug(`⏭️ [TRAILING_SYNC] Bot ${botId} (${botConfig.botName}) não tem credenciais configuradas`);
+      Logger.debug(
+        `⏭️ [TRAILING_SYNC] Bot ${botId} (${botConfig.botName}) não tem credenciais configuradas`
+      );
       return;
     }
 
@@ -735,11 +812,15 @@ async function startTrailingStopSyncMonitor(botId) {
       return;
     }
 
-    Logger.debug(`🔄 [TRAILING_SYNC] Bot ${botId}: Sincronizando ${trailingStates.length} trailing states...`);
+    Logger.debug(
+      `🔄 [TRAILING_SYNC] Bot ${botId}: Sincronizando ${trailingStates.length} trailing states...`
+    );
 
     // Busca posições abertas na corretora
-    const positions = await Futures.getOpenPositions(botConfig.apiKey, botConfig.apiSecret) || [];
-    Logger.debug(`🔍 [TRAILING_SYNC] Bot ${botId}: ${positions.length} posições abertas na corretora`);
+    const positions = (await Futures.getOpenPositions(botConfig.apiKey, botConfig.apiSecret)) || [];
+    Logger.debug(
+      `🔍 [TRAILING_SYNC] Bot ${botId}: ${positions.length} posições abertas na corretora`
+    );
 
     let syncCount = 0;
     let orphanCount = 0;
@@ -761,7 +842,7 @@ async function startTrailingStopSyncMonitor(botId) {
         }
 
         // Busca ordens abertas deste símbolo na corretora
-        const activeOrders = await Order.getOpenOrders(state.symbol, "PERP", apiKey, apiSecret);
+        const activeOrders = await Order.getOpenOrders(state.symbol, 'PERP', apiKey, apiSecret);
 
         if (!activeOrders || activeOrders.length === 0) {
           // Nenhuma ordem aberta - marcar como órfão
@@ -770,12 +851,14 @@ async function startTrailingStopSyncMonitor(botId) {
             [new Date().toISOString(), botId, state.symbol]
           );
           orphanCount++;
-          Logger.info(`🧹 [TRAILING_SYNC] ${state.symbol}: Nenhuma ordem aberta encontrada, marcado como órfão`);
+          Logger.info(
+            `🧹 [TRAILING_SYNC] ${state.symbol}: Nenhuma ordem aberta encontrada, marcado como órfão`
+          );
           continue;
         }
 
         // Identifica trailing stop real baseado na posição e preço
-        let positions = await Futures.getOpenPositions(apiKey, apiSecret) || [];
+        let positions = (await Futures.getOpenPositions(apiKey, apiSecret)) || [];
         const position = positions.find(pos => pos.symbol === state.symbol);
         if (!position) {
           Logger.debug(`🔍 [TRAILING_SYNC] Posição não encontrada para ${state.symbol}`);
@@ -789,7 +872,9 @@ async function startTrailingStopSyncMonitor(botId) {
             return false;
           }
 
-          const orderPrice = parseFloat(order.triggerPrice || order.takeProfitTriggerPrice || order.price);
+          const orderPrice = parseFloat(
+            order.triggerPrice || order.takeProfitTriggerPrice || order.price
+          );
 
           // Para trailing stop: ordem deve estar "atrás" do preço atual (proteção)
           if (isLong) {
@@ -803,20 +888,24 @@ async function startTrailingStopSyncMonitor(botId) {
 
         if (!realTrailingStop) {
           // Trailing stop não encontrado - tentar criar um
-          Logger.warn(`⚠️ [TRAILING_SYNC] ${state.symbol}: Trailing stop não encontrado, tentando criar...`);
+          Logger.warn(
+            `⚠️ [TRAILING_SYNC] ${state.symbol}: Trailing stop não encontrado, tentando criar...`
+          );
 
           try {
             // Busca configuração do bot para criar trailing stop
             const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
             if (!botConfig || !botConfig.enableTrailingStop) {
-              Logger.debug(`🔍 [TRAILING_SYNC] ${state.symbol}: Trailing stop desabilitado para bot ${botId}`);
+              Logger.debug(
+                `🔍 [TRAILING_SYNC] ${state.symbol}: Trailing stop desabilitado para bot ${botId}`
+              );
               continue;
             }
 
             // Cria trailing stop usando a lógica do TrailingStop
-            const trailingStopPrice = isLong ?
-              currentPrice * (1 - (botConfig.trailingStopDistance || 1.5) / 100) :
-              currentPrice * (1 + (botConfig.trailingStopDistance || 1.5) / 100);
+            const trailingStopPrice = isLong
+              ? currentPrice * (1 - (botConfig.trailingStopDistance || 1.5) / 100)
+              : currentPrice * (1 + (botConfig.trailingStopDistance || 1.5) / 100);
 
             const Account = await AccountController.get(botConfig);
 
@@ -826,7 +915,8 @@ async function startTrailingStopSyncMonitor(botId) {
               continue;
             }
 
-            const formatPrice = (value) => parseFloat(value).toFixed(marketInfo.decimal_price).toString();
+            const formatPrice = value =>
+              parseFloat(value).toFixed(marketInfo.decimal_price).toString();
 
             const orderPayload = {
               symbol: state.symbol,
@@ -848,14 +938,18 @@ async function startTrailingStopSyncMonitor(botId) {
                 [newOrder.id, new Date().toISOString(), botId, state.symbol]
               );
 
-              Logger.info(`✅ [TRAILING_SYNC] ${state.symbol}: Trailing stop criado ${newOrder.id} (${formatPrice(trailingStopPrice)})`);
+              Logger.info(
+                `✅ [TRAILING_SYNC] ${state.symbol}: Trailing stop criado ${newOrder.id} (${formatPrice(trailingStopPrice)})`
+              );
               syncCount++;
             } else {
               throw new Error('Ordem não foi criada');
             }
-
           } catch (error) {
-            Logger.error(`❌ [TRAILING_SYNC] Erro ao criar trailing stop para ${state.symbol}:`, error.message);
+            Logger.error(
+              `❌ [TRAILING_SYNC] Erro ao criar trailing stop para ${state.symbol}:`,
+              error.message
+            );
             // Marca como órfão se não conseguiu criar
             await TrailingStop.dbService.run(
               'UPDATE trailing_state SET active_stop_order_id = NULL, updatedAt = ? WHERE botId = ? AND symbol = ?',
@@ -873,25 +967,35 @@ async function startTrailingStopSyncMonitor(botId) {
             [realTrailingStop.id, new Date().toISOString(), botId, state.symbol]
           );
           syncCount++;
-          const orderPrice = realTrailingStop.triggerPrice || realTrailingStop.takeProfitTriggerPrice || realTrailingStop.price;
-          Logger.info(`🔄 [TRAILING_SYNC] ${state.symbol}: Sincronizado active_order_id: ${state.active_stop_order_id} → ${realTrailingStop.id} (trigger: $${orderPrice})`);
+          const orderPrice =
+            realTrailingStop.triggerPrice ||
+            realTrailingStop.takeProfitTriggerPrice ||
+            realTrailingStop.price;
+          Logger.info(
+            `🔄 [TRAILING_SYNC] ${state.symbol}: Sincronizado active_order_id: ${state.active_stop_order_id} → ${realTrailingStop.id} (trigger: $${orderPrice})`
+          );
         } else {
-          Logger.debug(`✅ [TRAILING_SYNC] ${state.symbol}: active_order_id correto (${realTrailingStop.id})`);
+          Logger.debug(
+            `✅ [TRAILING_SYNC] ${state.symbol}: active_order_id correto (${realTrailingStop.id})`
+          );
         }
-
       } catch (error) {
         Logger.error(`❌ [TRAILING_SYNC] Erro ao sincronizar ${state.symbol}:`, error.message);
       }
     }
 
     if (syncCount > 0 || orphanCount > 0) {
-      Logger.info(`✅ [TRAILING_SYNC] Bot ${botId}: Sincronização concluída - ${syncCount} atualizados, ${orphanCount} órfãos`);
+      Logger.info(
+        `✅ [TRAILING_SYNC] Bot ${botId}: Sincronização concluída - ${syncCount} atualizados, ${orphanCount} órfãos`
+      );
     }
 
     return { synchronized: syncCount, orphaned: orphanCount, total: trailingStates.length };
-
   } catch (error) {
-    Logger.error(`❌ [TRAILING_SYNC] Erro no monitor de sincronização do bot ${botId}:`, error.message);
+    Logger.error(
+      `❌ [TRAILING_SYNC] Erro no monitor de sincronização do bot ${botId}:`,
+      error.message
+    );
     throw error;
   }
 }
@@ -902,7 +1006,9 @@ async function startTrailingStopSyncMonitor(botId) {
  * @param {Object} config - Configuração do bot
  */
 function setupBotMonitors(botId, config) {
-  Logger.info(`🚀 [MONITORS] Iniciando TODOS os monitores para bot ${botId} (${config.botName})...`);
+  Logger.info(
+    `🚀 [MONITORS] Iniciando TODOS os monitores para bot ${botId} (${config.botName})...`
+  );
 
   // Monitor de ordens pendentes - 90 segundos (aumentado de 15s)
   const runPendingOrdersMonitor = async () => {
@@ -910,7 +1016,10 @@ function setupBotMonitors(botId, config) {
       Logger.debug(`🔄 [PENDING_ORDERS] Executando para bot ${botId}`);
       await startPendingOrdersMonitor(botId);
     } catch (error) {
-      Logger.error(`❌ [${config.botName}][PENDING_ORDERS] Erro no monitoramento do bot ${botId}:`, error.message);
+      Logger.error(
+        `❌ [${config.botName}][PENDING_ORDERS] Erro no monitoramento do bot ${botId}:`,
+        error.message
+      );
     }
     setTimeout(runPendingOrdersMonitor, 90000);
   };
@@ -922,7 +1031,10 @@ function setupBotMonitors(botId, config) {
       Logger.debug(`🔄 [ORPHAN_MONITOR] Executando para bot ${botId}`);
       await startOrphanOrderMonitor(botId);
     } catch (error) {
-      Logger.error(`❌ [${config.botName}][ORPHAN_MONITOR] Erro no monitoramento do bot ${botId}:`, error.message);
+      Logger.error(
+        `❌ [${config.botName}][ORPHAN_MONITOR] Erro no monitoramento do bot ${botId}:`,
+        error.message
+      );
     }
     setTimeout(runOrphanOrdersMonitor, 120000);
   };
@@ -934,7 +1046,10 @@ function setupBotMonitors(botId, config) {
       Logger.debug(`🔄 [TAKE_PROFIT] Executando para bot ${botId}`);
       await startTakeProfitMonitor(botId);
     } catch (error) {
-      Logger.error(`❌ [${config.botName}][TAKE_PROFIT] Erro no monitoramento do bot ${botId}:`, error.message);
+      Logger.error(
+        `❌ [${config.botName}][TAKE_PROFIT] Erro no monitoramento do bot ${botId}:`,
+        error.message
+      );
     }
     setTimeout(runTakeProfitMonitor, 120000);
   };
@@ -946,7 +1061,10 @@ function setupBotMonitors(botId, config) {
       Logger.debug(`🔄 [TRAILING_CLEANER] Executando para bot ${botId}`);
       await startTrailingStopsCleanerMonitor(botId);
     } catch (error) {
-      Logger.error(`❌ [${config.botName}][TRAILING_CLEANER] Erro no monitoramento do bot ${botId}:`, error.message);
+      Logger.error(
+        `❌ [${config.botName}][TRAILING_CLEANER] Erro no monitoramento do bot ${botId}:`,
+        error.message
+      );
       // startTrailingStopsCleanerMonitor já agenda a próxima execução internamente
     }
   };
@@ -959,7 +1077,10 @@ function setupBotMonitors(botId, config) {
       Logger.debug(`🔄 [TRAILING_SYNC] Executando para bot ${botId}`);
       await startTrailingStopSyncMonitor(botId);
     } catch (error) {
-      Logger.error(`❌ [${config.botName}][TRAILING_SYNC] Erro no monitoramento do bot ${botId}:`, error.message);
+      Logger.error(
+        `❌ [${config.botName}][TRAILING_SYNC] Erro no monitoramento do bot ${botId}:`,
+        error.message
+      );
     }
     setTimeout(runTrailingStopSyncMonitor, 300000); // 5 minutos
   };
@@ -973,7 +1094,7 @@ function setupBotMonitors(botId, config) {
     orphanOrdersIntervalId: 'timeout_orphan',
     takeProfitIntervalId: 'timeout_takeprofit',
     trailingStopsCleanerIntervalId: 'timeout_trailing_cleaner',
-    trailingSyncIntervalId: 'timeout_trailing_sync'
+    trailingSyncIntervalId: 'timeout_trailing_sync',
   };
 }
 
@@ -985,7 +1106,7 @@ async function startBot(botId, forceRestart = false) {
     Logger.info(`🚀 [BOT] Iniciando bot com ID: ${botId}`);
 
     // Verifica se o bot pode ser iniciado (a menos que seja um restart forçado)
-    if (!forceRestart && !await ConfigManagerSQLite.canStartBotById(botId)) {
+    if (!forceRestart && !(await ConfigManagerSQLite.canStartBotById(botId))) {
       const currentStatus = await ConfigManagerSQLite.getBotStatusById(botId);
       if (currentStatus === 'running') {
         throw new Error(`Bot ${botId} já está rodando`);
@@ -1028,7 +1149,7 @@ async function startBot(botId, forceRestart = false) {
       type: 'BOT_STARTING',
       botId,
       botName: botConfig.botName,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
 
     // Configura o intervalo de execução baseado no executionMode
@@ -1039,14 +1160,20 @@ async function startBot(botId, forceRestart = false) {
     if (executionMode === 'ON_CANDLE_CLOSE') {
       // Modo ON_CANDLE_CLOSE: Aguarda o próximo fechamento de vela
       executionInterval = timeframeConfig.getTimeUntilNextCandleClose(botConfig.time || '5m');
-      Logger.debug(`⏰ [ON_CANDLE_CLOSE] Bot ${botId}: Próxima análise em ${Math.floor(executionInterval / 1000)}s`);
+      Logger.debug(
+        `⏰ [ON_CANDLE_CLOSE] Bot ${botId}: Próxima análise em ${Math.floor(executionInterval / 1000)}s`
+      );
     } else {
       // Modo REALTIME: Análise a cada 60 segundos
       executionInterval = 60000;
-      Logger.debug(`⏰ [REALTIME] Bot ${botId}: Próxima análise em ${Math.floor(executionInterval / 1000)}s`);
+      Logger.debug(
+        `⏰ [REALTIME] Bot ${botId}: Próxima análise em ${Math.floor(executionInterval / 1000)}s`
+      );
     }
 
-    Logger.debug(`🔧 [DEBUG] Bot ${botId}: Execution Mode: ${executionMode}, Next Interval: ${executionInterval}ms`);
+    Logger.debug(
+      `🔧 [DEBUG] Bot ${botId}: Execution Mode: ${executionMode}, Next Interval: ${executionInterval}ms`
+    );
 
     // Função de execução do bot
     const executeBot = async () => {
@@ -1075,7 +1202,7 @@ async function startBot(botId, forceRestart = false) {
         // Calcula e salva o próximo horário de validação
         const nextValidationAt = new Date(Date.now() + executionInterval);
         await ConfigManagerSQLite.updateBotConfigById(botId, {
-          nextValidationAt: nextValidationAt.toISOString()
+          nextValidationAt: nextValidationAt.toISOString(),
         });
 
         // Emite evento de execução bem-sucedida
@@ -1083,9 +1210,8 @@ async function startBot(botId, forceRestart = false) {
           type: 'BOT_EXECUTION_SUCCESS',
           botId,
           botName: currentBotConfig.botName,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
         });
-
       } catch (error) {
         Logger.error(`❌ [BOT] Erro na execução do bot ${botId}:`, error.message);
 
@@ -1098,7 +1224,7 @@ async function startBot(botId, forceRestart = false) {
           botId,
           botName: currentBotConfig?.botName || 'Unknown',
           timestamp: new Date().toISOString(),
-          error: error.message
+          error: error.message,
         });
       }
     };
@@ -1106,7 +1232,7 @@ async function startBot(botId, forceRestart = false) {
     // Calcula e salva o próximo horário de validação
     const nextValidationAt = new Date(Date.now() + executionInterval);
     await ConfigManagerSQLite.updateBotConfigById(botId, {
-      nextValidationAt: nextValidationAt.toISOString()
+      nextValidationAt: nextValidationAt.toISOString(),
     });
 
     // Executa imediatamente
@@ -1124,7 +1250,7 @@ async function startBot(botId, forceRestart = false) {
       executeBot,
       config: botInstanceConfig,
       status: 'running',
-      updateConfig: async (newConfig) => {
+      updateConfig: async newConfig => {
         Logger.info(`🔄 [CONFIG_UPDATE] Atualizando configuração do bot ${botId} em tempo real`);
         // Atualiza a configuração na instância
         const botInstance = activeBotInstances.get(botId);
@@ -1140,10 +1266,10 @@ async function startBot(botId, forceRestart = false) {
             capitalPercentage: newConfig.capitalPercentage,
             maxOpenOrders: newConfig.maxOpenOrders,
             enableTrailingStop: newConfig.enableTrailingStop,
-            enabled: newConfig.enabled
+            enabled: newConfig.enabled,
           });
         }
-      }
+      },
     });
 
     Logger.info(`✅ [BOT] Bot ${botId} iniciado com sucesso`);
@@ -1153,9 +1279,8 @@ async function startBot(botId, forceRestart = false) {
       type: 'BOT_STARTED',
       botId,
       botName: botConfig.botName,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
-
   } catch (error) {
     Logger.error(`❌ [BOT] Erro ao iniciar bot ${botId}:`, error.message);
 
@@ -1168,7 +1293,7 @@ async function startBot(botId, forceRestart = false) {
       botId,
       botName: botConfig?.botName || 'Unknown',
       timestamp: new Date().toISOString(),
-      error: error.message
+      error: error.message,
     });
 
     throw error;
@@ -1190,7 +1315,6 @@ async function restartBot(botId) {
     // Reinicia o bot com restart forçado
     await startBot(botId, true);
     Logger.info(`✅ [BOT] Bot ${botId} reiniciado com sucesso`);
-
   } catch (error) {
     Logger.error(`❌ [BOT] Erro ao reiniciar bot ${botId}:`, error.message);
     throw error;
@@ -1239,7 +1363,10 @@ async function stopBot(botId, updateStatus = true) {
       PositionSyncService.stopSyncForBot(botId);
       Logger.info(`🛑 [BOT] Sincronização de posições parada para bot ${botId}`);
     } catch (syncError) {
-      Logger.error(`❌ [BOT] Erro ao parar sincronização de posições para bot ${botId}:`, syncError.message);
+      Logger.error(
+        `❌ [BOT] Erro ao parar sincronização de posições para bot ${botId}:`,
+        syncError.message
+      );
     }
 
     // Atualiza status no ConfigManager apenas se solicitado
@@ -1253,9 +1380,8 @@ async function stopBot(botId, updateStatus = true) {
     broadcastViaWs({
       type: 'BOT_STOPPED',
       botId,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
-
   } catch (error) {
     Logger.error(`❌ [BOT] Erro ao parar bot ${botId}:`, error.message);
     throw error;
@@ -1280,18 +1406,18 @@ app.get('/api/bot/status', async (req, res) => {
         status: effectiveStatus,
         startTime: config.startTime,
         isRunning: isRunning,
-        config: config
+        config: config,
       };
     });
 
     res.json({
       success: true,
-      data: status
+      data: status,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -1305,7 +1431,7 @@ app.get('/api/bot/:botId/next-execution', async (req, res) => {
     if (isNaN(botIdNum)) {
       return res.status(400).json({
         success: false,
-        error: 'botId deve ser um número válido'
+        error: 'botId deve ser um número válido',
       });
     }
 
@@ -1314,7 +1440,7 @@ app.get('/api/bot/:botId/next-execution', async (req, res) => {
     if (!botConfig) {
       return res.status(404).json({
         success: false,
-        error: `Bot com ID ${botId} não encontrado`
+        error: `Bot com ID ${botId} não encontrado`,
       });
     }
 
@@ -1330,7 +1456,6 @@ app.get('/api/bot/:botId/next-execution', async (req, res) => {
 
       // Se já passou do tempo (com margem de 5 segundos), calcula o próximo
       if (nextExecutionMs <= 5000) {
-
         if (executionMode === 'ON_CANDLE_CLOSE') {
           // Para ON_CANDLE_CLOSE, calcula tempo até próximo fechamento de vela
           const timeframe = botConfig.time || '5m';
@@ -1339,10 +1464,17 @@ app.get('/api/bot/:botId/next-execution', async (req, res) => {
 
           let timeframeMs;
           switch (unit) {
-            case 'm': timeframeMs = value * 60 * 1000; break;
-            case 'h': timeframeMs = value * 60 * 60 * 1000; break;
-            case 'd': timeframeMs = value * 24 * 60 * 60 * 1000; break;
-            default: timeframeMs = 5 * 60 * 1000; // padrão 5m
+            case 'm':
+              timeframeMs = value * 60 * 1000;
+              break;
+            case 'h':
+              timeframeMs = value * 60 * 60 * 1000;
+              break;
+            case 'd':
+              timeframeMs = value * 24 * 60 * 60 * 1000;
+              break;
+            default:
+              timeframeMs = 5 * 60 * 1000; // padrão 5m
           }
 
           const now = Date.now();
@@ -1357,7 +1489,7 @@ app.get('/api/bot/:botId/next-execution', async (req, res) => {
 
         // Atualiza o nextValidationAt no bot
         await ConfigManagerSQLite.updateBotConfigById(botIdNum, {
-          nextValidationAt: nextExecutionDate.toISOString()
+          nextValidationAt: nextExecutionDate.toISOString(),
         });
       }
     } else {
@@ -1371,10 +1503,17 @@ app.get('/api/bot/:botId/next-execution', async (req, res) => {
 
         let timeframeMs;
         switch (unit) {
-          case 'm': timeframeMs = value * 60 * 1000; break;
-          case 'h': timeframeMs = value * 60 * 60 * 1000; break;
-          case 'd': timeframeMs = value * 24 * 60 * 60 * 1000; break;
-          default: timeframeMs = 5 * 60 * 1000; // padrão 5m
+          case 'm':
+            timeframeMs = value * 60 * 1000;
+            break;
+          case 'h':
+            timeframeMs = value * 60 * 60 * 1000;
+            break;
+          case 'd':
+            timeframeMs = value * 24 * 60 * 60 * 1000;
+            break;
+          default:
+            timeframeMs = 5 * 60 * 1000; // padrão 5m
         }
 
         const now = Date.now();
@@ -1389,14 +1528,15 @@ app.get('/api/bot/:botId/next-execution', async (req, res) => {
 
       // Salva o nextValidationAt no bot
       await ConfigManagerSQLite.updateBotConfigById(botIdNum, {
-        nextValidationAt: nextExecutionDate.toISOString()
+        nextValidationAt: nextExecutionDate.toISOString(),
       });
     }
 
     // Se temos um nextValidationAt válido, usa ele; senão usa o calculado
-    const finalNextExecutionDate = botConfig.nextValidationAt && nextExecutionMs > 0
-      ? new Date(botConfig.nextValidationAt)
-      : nextExecutionDate;
+    const finalNextExecutionDate =
+      botConfig.nextValidationAt && nextExecutionMs > 0
+        ? new Date(botConfig.nextValidationAt)
+        : nextExecutionDate;
 
     const response = {
       success: true,
@@ -1411,16 +1551,16 @@ app.get('/api/bot/:botId/next-execution', async (req, res) => {
           hour: '2-digit',
           minute: '2-digit',
           second: '2-digit',
-          hour12: false
-        })
-      }
+          hour12: false,
+        }),
+      },
     };
 
     res.json(response);
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -1434,7 +1574,7 @@ app.get('/api/bot/:botId/orders', async (req, res) => {
     if (isNaN(botIdNum)) {
       return res.status(400).json({
         success: false,
-        error: 'botId deve ser um número válido'
+        error: 'botId deve ser um número válido',
       });
     }
 
@@ -1443,7 +1583,7 @@ app.get('/api/bot/:botId/orders', async (req, res) => {
     if (!botConfig) {
       return res.status(404).json({
         success: false,
-        error: `Bot com ID ${botId} não encontrado`
+        error: `Bot com ID ${botId} não encontrado`,
       });
     }
 
@@ -1457,13 +1597,13 @@ app.get('/api/bot/:botId/orders', async (req, res) => {
         botName: botConfig.botName,
         strategyName: botConfig.strategyName,
         botClientOrderId: botConfig.botClientOrderId,
-        orders
-      }
+        orders,
+      },
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -1476,7 +1616,7 @@ app.get('/api/bot/orders', async (req, res) => {
     if (configs.length === 0) {
       return res.json({
         success: true,
-        data: {}
+        data: {},
       });
     }
 
@@ -1485,12 +1625,12 @@ app.get('/api/bot/orders', async (req, res) => {
 
     res.json({
       success: true,
-      data: allBotsOrders
+      data: allBotsOrders,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -1503,7 +1643,7 @@ app.post('/api/bot/start', async (req, res) => {
     if (!botId) {
       return res.status(400).json({
         success: false,
-        error: 'botId é obrigatório'
+        error: 'botId é obrigatório',
       });
     }
 
@@ -1511,12 +1651,12 @@ app.post('/api/bot/start', async (req, res) => {
 
     res.json({
       success: true,
-      message: `Bot ${botId} iniciado com sucesso`
+      message: `Bot ${botId} iniciado com sucesso`,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -1529,7 +1669,7 @@ app.post('/api/bot/stop', async (req, res) => {
     if (!botId) {
       return res.status(400).json({
         success: false,
-        error: 'botId é obrigatório'
+        error: 'botId é obrigatório',
       });
     }
 
@@ -1537,12 +1677,12 @@ app.post('/api/bot/stop', async (req, res) => {
 
     res.json({
       success: true,
-      message: `Bot ${botId} parado com sucesso`
+      message: `Bot ${botId} parado com sucesso`,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -1555,7 +1695,7 @@ app.post('/api/bot/force-sync', async (req, res) => {
     if (!botId) {
       return res.status(400).json({
         success: false,
-        error: 'botId é obrigatório'
+        error: 'botId é obrigatório',
       });
     }
 
@@ -1564,7 +1704,7 @@ app.post('/api/bot/force-sync', async (req, res) => {
     if (!config) {
       return res.status(404).json({
         success: false,
-        error: `Bot ${botId} não encontrado`
+        error: `Bot ${botId} não encontrado`,
       });
     }
 
@@ -1572,11 +1712,13 @@ app.post('/api/bot/force-sync', async (req, res) => {
     if (!config.apiKey || !config.apiSecret) {
       return res.status(400).json({
         success: false,
-        error: 'Bot não possui credenciais de API configuradas'
+        error: 'Bot não possui credenciais de API configuradas',
       });
     }
 
-    Logger.info(`🔄 [FORCE_SYNC] Iniciando sincronização forçada para bot ${botId} (${config.botName})`);
+    Logger.info(
+      `🔄 [FORCE_SYNC] Iniciando sincronização forçada para bot ${botId} (${config.botName})`
+    );
 
     // Importa OrdersService dinamicamente
     const { default: OrdersService } = await import('./src/Services/OrdersService.js');
@@ -1592,15 +1734,14 @@ app.post('/api/bot/force-sync', async (req, res) => {
       data: {
         botId,
         botName: config.botName,
-        syncedOrders
-      }
+        syncedOrders,
+      },
     });
-
   } catch (error) {
     Logger.error(`❌ [FORCE_SYNC] Erro no force sync para bot ${req.body?.botId}:`, error.message);
     res.status(500).json({
       success: false,
-      error: error.message || 'Erro interno do servidor'
+      error: error.message || 'Erro interno do servidor',
     });
   }
 });
@@ -1613,7 +1754,7 @@ app.post('/api/bot/update-running', async (req, res) => {
     if (!botId || !config) {
       return res.status(400).json({
         success: false,
-        error: 'botId e config são obrigatórios'
+        error: 'botId e config são obrigatórios',
       });
     }
 
@@ -1623,7 +1764,7 @@ app.post('/api/bot/update-running', async (req, res) => {
     if (!activeBotInstances.has(botId)) {
       return res.status(400).json({
         success: false,
-        error: `Bot ${botId} não está em execução`
+        error: `Bot ${botId} não está em execução`,
       });
     }
 
@@ -1641,13 +1782,13 @@ app.post('/api/bot/update-running', async (req, res) => {
     res.json({
       success: true,
       message: `Bot ${botId} atualizado com sucesso`,
-      botId: botId
+      botId: botId,
     });
   } catch (error) {
     Logger.error(`❌ [BOT_UPDATE] Erro ao atualizar bot ${req.body?.botId}:`, error.message);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -1662,7 +1803,7 @@ app.post('/api/configs', async (req, res) => {
       if (!botConfig.apiKey || !botConfig.apiSecret) {
         return res.status(400).json({
           success: false,
-          error: 'apiKey e apiSecret são obrigatórios'
+          error: 'apiKey e apiSecret são obrigatórios',
         });
       }
 
@@ -1680,7 +1821,10 @@ app.post('/api/configs', async (req, res) => {
       if (botConfig.id) {
         // Verifica se o bot estava rodando antes da atualização
         const currentConfig = await ConfigManagerSQLite.getBotConfigById(botConfig.id);
-        const wasRunning = currentConfig && currentConfig.status === 'running' && activeBotInstances.has(botConfig.id);
+        const wasRunning =
+          currentConfig &&
+          currentConfig.status === 'running' &&
+          activeBotInstances.has(botConfig.id);
 
         if (wasRunning) {
           // Se está rodando, usa a nova rota de atualização
@@ -1694,8 +1838,8 @@ app.post('/api/configs', async (req, res) => {
             },
             body: JSON.stringify({
               botId: botConfig.id,
-              config: botConfig
-            })
+              config: botConfig,
+            }),
           });
 
           const updateResult = await updateResponse.json();
@@ -1708,7 +1852,7 @@ app.post('/api/configs', async (req, res) => {
             success: true,
             message: updateResult.message,
             botId: botConfig.id,
-            wasRunning: true
+            wasRunning: true,
           });
         } else {
           // Se não está rodando, atualiza normalmente
@@ -1718,7 +1862,7 @@ app.post('/api/configs', async (req, res) => {
             success: true,
             message: `Bot ${botConfig.id} atualizado com sucesso`,
             botId: botConfig.id,
-            wasRunning: false
+            wasRunning: false,
           });
         }
       } else {
@@ -1726,7 +1870,7 @@ app.post('/api/configs', async (req, res) => {
         res.json({
           success: true,
           message: `Bot criado com sucesso`,
-          botId: botId
+          botId: botId,
         });
       }
     } else if (strategyName && botConfig) {
@@ -1734,7 +1878,7 @@ app.post('/api/configs', async (req, res) => {
       if (!botConfig.apiKey || !botConfig.apiSecret) {
         return res.status(400).json({
           success: false,
-          error: 'apiKey e apiSecret são obrigatórios'
+          error: 'apiKey e apiSecret são obrigatórios',
         });
       }
 
@@ -1752,7 +1896,10 @@ app.post('/api/configs', async (req, res) => {
       if (botConfig.id) {
         // Verifica se o bot estava rodando antes da atualização
         const currentConfig = await ConfigManagerSQLite.getBotConfigById(botConfig.id);
-        const wasRunning = currentConfig && currentConfig.status === 'running' && activeBotInstances.has(botConfig.id);
+        const wasRunning =
+          currentConfig &&
+          currentConfig.status === 'running' &&
+          activeBotInstances.has(botConfig.id);
 
         if (wasRunning) {
           // Se está rodando, usa a nova rota de atualização
@@ -1766,8 +1913,8 @@ app.post('/api/configs', async (req, res) => {
             },
             body: JSON.stringify({
               botId: botConfig.id,
-              config: botConfig
-            })
+              config: botConfig,
+            }),
           });
 
           const updateResult = await updateResponse.json();
@@ -1780,7 +1927,7 @@ app.post('/api/configs', async (req, res) => {
             success: true,
             message: updateResult.message,
             botId: botConfig.id,
-            wasRunning: true
+            wasRunning: true,
           });
         } else {
           // Se não está rodando, atualiza normalmente
@@ -1790,7 +1937,7 @@ app.post('/api/configs', async (req, res) => {
             success: true,
             message: `Bot ${botConfig.id} atualizado com sucesso`,
             botId: botConfig.id,
-            wasRunning: false
+            wasRunning: false,
           });
         }
       } else {
@@ -1798,7 +1945,7 @@ app.post('/api/configs', async (req, res) => {
         res.json({
           success: true,
           message: `Bot criado com sucesso`,
-          botId: botId
+          botId: botId,
         });
       }
     } else {
@@ -1808,14 +1955,14 @@ app.post('/api/configs', async (req, res) => {
       if (!config.strategyName) {
         return res.status(400).json({
           success: false,
-          error: 'strategyName é obrigatório'
+          error: 'strategyName é obrigatório',
         });
       }
 
       if (!config.apiKey || !config.apiSecret) {
         return res.status(400).json({
           success: false,
-          error: 'apiKey e apiSecret são obrigatórios'
+          error: 'apiKey e apiSecret são obrigatórios',
         });
       }
 
@@ -1823,7 +1970,8 @@ app.post('/api/configs', async (req, res) => {
       if (config.id) {
         // Verifica se o bot estava rodando antes da atualização
         const currentConfig = await ConfigManagerSQLite.getBotConfigById(config.id);
-        const wasRunning = currentConfig && currentConfig.status === 'running' && activeBotInstances.has(config.id);
+        const wasRunning =
+          currentConfig && currentConfig.status === 'running' && activeBotInstances.has(config.id);
 
         if (wasRunning) {
           // Se está rodando, usa a nova rota de atualização
@@ -1837,8 +1985,8 @@ app.post('/api/configs', async (req, res) => {
             },
             body: JSON.stringify({
               botId: config.id,
-              config: config
-            })
+              config: config,
+            }),
           });
 
           const updateResult = await updateResponse.json();
@@ -1851,7 +1999,7 @@ app.post('/api/configs', async (req, res) => {
             success: true,
             message: updateResult.message,
             botId: config.id,
-            wasRunning: true
+            wasRunning: true,
           });
         } else {
           // Se não está rodando, atualiza normalmente
@@ -1861,7 +2009,7 @@ app.post('/api/configs', async (req, res) => {
             success: true,
             message: `Bot ${config.id} atualizado com sucesso`,
             botId: config.id,
-            wasRunning: false
+            wasRunning: false,
           });
         }
       } else {
@@ -1869,7 +2017,7 @@ app.post('/api/configs', async (req, res) => {
         res.json({
           success: true,
           message: `Bot criado com sucesso`,
-          botId: botId
+          botId: botId,
         });
       }
     }
@@ -1877,7 +2025,7 @@ app.post('/api/configs', async (req, res) => {
     Logger.error(`❌ [CONFIG] Erro ao processar configuração:`, error.message);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -1889,7 +2037,7 @@ app.get('/api/configs', async (req, res) => {
     if (!ConfigManagerSQLite.dbService || !ConfigManagerSQLite.dbService.isInitialized()) {
       return res.status(500).json({
         success: false,
-        error: 'Database service não está inicializado'
+        error: 'Database service não está inicializado',
       });
     }
 
@@ -1897,20 +2045,16 @@ app.get('/api/configs', async (req, res) => {
 
     res.json({
       success: true,
-      data: configs
+      data: configs,
     });
   } catch (error) {
     Logger.error('❌ Erro no endpoint /api/configs:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
-
-
-
-
 
 // DELETE /api/configs/bot/:botName - Remove uma configuração por botName
 app.delete('/api/configs/bot/:botName', async (req, res) => {
@@ -1921,12 +2065,12 @@ app.delete('/api/configs/bot/:botName', async (req, res) => {
 
     res.json({
       success: true,
-      message: `Bot ${botName} removido com sucesso`
+      message: `Bot ${botName} removido com sucesso`,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -1940,7 +2084,7 @@ app.delete('/api/configs/:botId', async (req, res) => {
     if (isNaN(botIdNum)) {
       return res.status(400).json({
         success: false,
-        error: 'ID do bot deve ser um número válido'
+        error: 'ID do bot deve ser um número válido',
       });
     }
 
@@ -1949,7 +2093,7 @@ app.delete('/api/configs/:botId', async (req, res) => {
     if (!existingConfig) {
       return res.status(404).json({
         success: false,
-        error: `Bot com ID ${botIdNum} não encontrado`
+        error: `Bot com ID ${botIdNum} não encontrado`,
       });
     }
 
@@ -2010,17 +2154,19 @@ app.delete('/api/configs/:botId', async (req, res) => {
       Logger.info(`🧹 [DELETE] Rate limits do bot ${botIdNum} removidos`);
     }
 
-    Logger.info(`🎯 [DELETE] Bot ${botIdNum} completamente removido - Config, Trailing, Ordens, Posições, Instâncias e Rate Limits`);
+    Logger.info(
+      `🎯 [DELETE] Bot ${botIdNum} completamente removido - Config, Trailing, Ordens, Posições, Instâncias e Rate Limits`
+    );
 
     res.json({
       success: true,
-      message: `Bot ID ${botIdNum} removido com sucesso - Todos os dados foram limpos`
+      message: `Bot ID ${botIdNum} removido com sucesso - Todos os dados foram limpos`,
     });
   } catch (error) {
     Logger.error('❌ [DELETE] Erro ao deletar bot:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -2032,12 +2178,12 @@ app.get('/api/strategies', (req, res) => {
 
     res.json({
       success: true,
-      data: strategies
+      data: strategies,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -2046,29 +2192,29 @@ app.get('/api/strategies', (req, res) => {
 app.post('/api/account/clear-cache', (req, res) => {
   try {
     // Importa o AccountController dinamicamente
-    import('./src/Controllers/AccountController.js').then(module => {
-      const AccountController = module.default;
-      AccountController.clearCache();
+    import('./src/Controllers/AccountController.js')
+      .then(module => {
+        const AccountController = module.default;
+        AccountController.clearCache();
 
-      res.json({
-        success: true,
-        message: 'Cache do AccountController limpo com sucesso'
+        res.json({
+          success: true,
+          message: 'Cache do AccountController limpo com sucesso',
+        });
+      })
+      .catch(error => {
+        res.status(500).json({
+          success: false,
+          error: error.message,
+        });
       });
-    }).catch(error => {
-      res.status(500).json({
-        success: false,
-        error: error.message
-      });
-    });
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
-
-
 
 // GET /api/klines - Retorna dados de klines para um símbolo
 app.get('/api/klines', async (req, res) => {
@@ -2078,7 +2224,7 @@ app.get('/api/klines', async (req, res) => {
     if (!symbol) {
       return res.status(400).json({
         success: false,
-        error: 'symbol é obrigatório'
+        error: 'symbol é obrigatório',
       });
     }
 
@@ -2090,17 +2236,17 @@ app.get('/api/klines', async (req, res) => {
       high: 100 + Math.random() * 15,
       low: 100 + Math.random() * 5,
       close: 100 + Math.random() * 10,
-      volume: Math.random() * 1000
+      volume: Math.random() * 1000,
     }));
 
     res.json({
       success: true,
-      data: mockKlines
+      data: mockKlines,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -2111,22 +2257,22 @@ app.get('/api/health', async (req, res) => {
     const health = {
       database: {
         initialized: ConfigManagerSQLite.dbService?.isInitialized() || false,
-        path: ConfigManagerSQLite.dbService?.dbPath || 'N/A'
+        path: ConfigManagerSQLite.dbService?.dbPath || 'N/A',
       },
       configManager: {
-        initialized: !!ConfigManagerSQLite.dbService
+        initialized: !!ConfigManagerSQLite.dbService,
       },
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
 
     res.json({
       success: true,
-      data: health
+      data: health,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -2150,26 +2296,30 @@ app.get('/api/tokens/available', async (req, res) => {
       Logger.error('❌ [API] Dados inválidos recebidos da API:', markets);
       return res.status(500).json({
         success: false,
-        error: 'Erro ao obter dados de mercado da API'
+        error: 'Erro ao obter dados de mercado da API',
       });
     }
 
     // Filtrar apenas mercados PERP ativos
     Logger.debug(`🔍 [API] Filtrando ${markets.length} mercados...`);
-    Logger.debug(`🔍 [API] Primeiros 3 mercados:`, markets.slice(0, 3).map(m => ({ symbol: m.symbol, marketType: m.marketType, orderBookState: m.orderBookState })));
+    Logger.debug(
+      `🔍 [API] Primeiros 3 mercados:`,
+      markets.slice(0, 3).map(m => ({
+        symbol: m.symbol,
+        marketType: m.marketType,
+        orderBookState: m.orderBookState,
+      }))
+    );
 
     const availableTokens = markets
-      .filter(market =>
-        market.marketType === 'PERP' &&
-        market.orderBookState === 'Open'
-      )
+      .filter(market => market.marketType === 'PERP' && market.orderBookState === 'Open')
       .map(market => ({
         symbol: market.symbol,
         baseSymbol: market.baseSymbol,
         quoteSymbol: market.quoteSymbol,
         marketType: market.marketType,
         orderBookState: market.orderBookState,
-        status: market.status || 'Unknown'
+        status: market.status || 'Unknown',
       }))
       .sort((a, b) => a.symbol.localeCompare(b.symbol));
 
@@ -2178,13 +2328,13 @@ app.get('/api/tokens/available', async (req, res) => {
     res.json({
       success: true,
       tokens: availableTokens,
-      total: availableTokens.length
+      total: availableTokens.length,
     });
   } catch (error) {
     Logger.error('❌ Erro ao buscar tokens disponíveis:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -2196,7 +2346,8 @@ app.get('/api/positions', async (req, res) => {
 
     // Para cada bot ativo, buscar suas posições
     for (const [botName, bot] of activeBotInstances.entries()) {
-      if (bot.status === 'running' && bot.intervalId) { // Verifica se o bot está rodando e tem intervalo
+      if (bot.status === 'running' && bot.intervalId) {
+        // Verifica se o bot está rodando e tem intervalo
         try {
           // Buscar posições da exchange (em produção, usar API real)
           const botPositions = await getBotPositions(botName);
@@ -2209,12 +2360,12 @@ app.get('/api/positions', async (req, res) => {
 
     res.json({
       success: true,
-      data: positions
+      data: positions,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -2226,7 +2377,8 @@ app.get('/api/orders', async (req, res) => {
 
     // Para cada bot ativo, buscar suas ordens pendentes
     for (const [botName, bot] of activeBotInstances.entries()) {
-      if (bot.status === 'running' && bot.intervalId) { // Verifica se o bot está rodando e tem intervalo
+      if (bot.status === 'running' && bot.intervalId) {
+        // Verifica se o bot está rodando e tem intervalo
         try {
           // Buscar ordens da exchange (em produção, usar API real)
           const botOrders = await getBotOrders(botName);
@@ -2239,12 +2391,12 @@ app.get('/api/orders', async (req, res) => {
 
     res.json({
       success: true,
-      data: orders
+      data: orders,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -2257,7 +2409,7 @@ app.get('/api/trading-stats/:botId', async (req, res) => {
     if (isNaN(botId)) {
       return res.status(400).json({
         success: false,
-        error: 'ID do bot inválido'
+        error: 'ID do bot inválido',
       });
     }
 
@@ -2266,14 +2418,14 @@ app.get('/api/trading-stats/:botId', async (req, res) => {
     if (!botConfig || !botConfig.apiKey || !botConfig.apiSecret) {
       return res.status(400).json({
         success: false,
-        error: 'Configuração de API não encontrada'
+        error: 'Configuração de API não encontrada',
       });
     }
 
     // Busca dados da Backpack API
     const [account, collateral] = await Promise.all([
       Account.getAccount(null, botConfig.apiKey, botConfig.apiSecret),
-      Capital.getCollateral(null, botConfig.apiKey, botConfig.apiSecret)
+      Capital.getCollateral(null, botConfig.apiKey, botConfig.apiSecret),
     ]);
 
     if (!account || !collateral) {
@@ -2293,18 +2445,18 @@ app.get('/api/trading-stats/:botId', async (req, res) => {
       totalOpenPositions: 0,
       totalPositionPnl: 0,
       totalBalance: Math.round(totalBalance * 100) / 100,
-      lastUpdated: new Date().toISOString()
+      lastUpdated: new Date().toISOString(),
     };
 
     res.json({
       success: true,
-      data: stats
+      data: stats,
     });
   } catch (error) {
     Logger.error('Erro ao buscar estatísticas de trading:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -2318,52 +2470,48 @@ app.get('/api/trading-stats/bot/:botName', async (req, res) => {
     if (!botConfig || !botConfig.apiKey || !botConfig.apiSecret) {
       return res.status(400).json({
         success: false,
-        error: 'Configuração de API não encontrada'
+        error: 'Configuração de API não encontrada',
       });
     }
 
-                            // Busca dados da Backpack API
-            const [account, collateral] = await Promise.all([
-              Account.getAccount(null, botConfig.apiKey, botConfig.apiSecret),
-              Capital.getCollateral(null, botConfig.apiKey, botConfig.apiSecret)
-            ]);
+    // Busca dados da Backpack API
+    const [account, collateral] = await Promise.all([
+      Account.getAccount(null, botConfig.apiKey, botConfig.apiSecret),
+      Capital.getCollateral(null, botConfig.apiKey, botConfig.apiSecret),
+    ]);
 
-            if (!account || !collateral) {
-              throw new Error('Falha ao obter dados da conta');
-            }
+    if (!account || !collateral) {
+      throw new Error('Falha ao obter dados da conta');
+    }
 
-            // Processa dados da conta
-            const totalBalance = parseFloat(collateral.netEquityAvailable || 0);
+    // Processa dados da conta
+    const totalBalance = parseFloat(collateral.netEquityAvailable || 0);
 
-            // Dados simplificados para validação
-            const stats = {
-              totalTrades: 0,
-              winningTrades: 0,
-              losingTrades: 0,
-              winRate: 0,
-              totalPnl: 0,
-              totalOpenPositions: 0,
-              totalPositionPnl: 0,
-              totalBalance: Math.round(totalBalance * 100) / 100,
-              lastUpdated: new Date().toISOString()
-            };
-
-
+    // Dados simplificados para validação
+    const stats = {
+      totalTrades: 0,
+      winningTrades: 0,
+      losingTrades: 0,
+      winRate: 0,
+      totalPnl: 0,
+      totalOpenPositions: 0,
+      totalPositionPnl: 0,
+      totalBalance: Math.round(totalBalance * 100) / 100,
+      lastUpdated: new Date().toISOString(),
+    };
 
     res.json({
       success: true,
-      data: stats
+      data: stats,
     });
   } catch (error) {
     Logger.error('Erro ao buscar estatísticas de trading:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
-
-
 
 // GET /api/backpack-positions/bot/:botName - Busca posições da Backpack por botName
 app.get('/api/backpack-positions/bot/:botName', async (req, res) => {
@@ -2374,21 +2522,25 @@ app.get('/api/backpack-positions/bot/:botName', async (req, res) => {
     if (!botConfig || !botConfig.apiKey || !botConfig.apiSecret) {
       return res.status(400).json({
         success: false,
-        error: 'Configuração de API não encontrada'
+        error: 'Configuração de API não encontrada',
       });
     }
 
-    const positions = await makeBackpackRequest(botConfig.apiKey, botConfig.apiSecret, '/api/v1/positions');
+    const positions = await makeBackpackRequest(
+      botConfig.apiKey,
+      botConfig.apiSecret,
+      '/api/v1/positions'
+    );
 
     res.json({
       success: true,
-      data: positions.positions || []
+      data: positions.positions || [],
     });
   } catch (error) {
     Logger.error('Erro ao buscar posições da Backpack:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -2401,7 +2553,7 @@ app.post('/api/validate-credentials', async (req, res) => {
     if (!apiKey || !apiSecret) {
       return res.status(400).json({
         success: false,
-        error: 'API Key e API Secret são obrigatórios'
+        error: 'API Key e API Secret são obrigatórios',
       });
     }
 
@@ -2409,7 +2561,7 @@ app.post('/api/validate-credentials', async (req, res) => {
     try {
       const [accountData, collateralData] = await Promise.all([
         Account.getAccount(null, apiKey, apiSecret),
-        Capital.getCollateral(null, apiKey, apiSecret)
+        Capital.getCollateral(null, apiKey, apiSecret),
       ]);
 
       if (accountData && accountData.leverageLimit && collateralData) {
@@ -2423,14 +2575,14 @@ app.post('/api/validate-credentials', async (req, res) => {
             futuresMakerFee: accountData.futuresMakerFee,
             futuresTakerFee: accountData.futuresTakerFee,
             netEquityAvailable: collateralData.netEquityAvailable,
-            totalEquity: collateralData.totalEquity
-          }
+            totalEquity: collateralData.totalEquity,
+          },
         });
       } else {
         res.status(401).json({
           success: false,
           error: 'Credenciais inválidas',
-          apiKeyStatus: 'inválida'
+          apiKeyStatus: 'inválida',
         });
       }
     } catch (backpackError) {
@@ -2438,14 +2590,14 @@ app.post('/api/validate-credentials', async (req, res) => {
       res.status(401).json({
         success: false,
         error: 'Credenciais inválidas ou erro de conexão com a Backpack',
-        apiKeyStatus: 'com erro'
+        apiKeyStatus: 'com erro',
       });
     }
   } catch (error) {
     Logger.error('Erro ao validar credenciais:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -2458,7 +2610,7 @@ app.post('/api/validate-duplicate-credentials', async (req, res) => {
     if (!apiKey || !apiSecret) {
       return res.status(400).json({
         success: false,
-        error: 'API Key e API Secret são obrigatórios'
+        error: 'API Key e API Secret são obrigatórios',
       });
     }
 
@@ -2466,8 +2618,8 @@ app.post('/api/validate-duplicate-credentials', async (req, res) => {
     const configs = await ConfigManagerSQLite.loadConfigs();
 
     // Verificar se já existe um bot com as mesmas credenciais
-    const existingBot = configs.find(config =>
-      config.apiKey === apiKey && config.apiSecret === apiSecret
+    const existingBot = configs.find(
+      config => config.apiKey === apiKey && config.apiSecret === apiSecret
     );
 
     if (existingBot) {
@@ -2476,42 +2628,44 @@ app.post('/api/validate-duplicate-credentials', async (req, res) => {
         error: 'Já existe um bot configurado com essas credenciais de API',
         existingBot: {
           botName: existingBot.botName,
-          strategyName: existingBot.strategyName
-        }
+          strategyName: existingBot.strategyName,
+        },
       });
     }
 
     res.json({
       success: true,
-      message: 'Credenciais únicas, pode prosseguir'
+      message: 'Credenciais únicas, pode prosseguir',
     });
   } catch (error) {
     Logger.error('Erro ao validar credenciais duplicadas:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
 
 // WebSocket connection handler
-wss.on('connection', (ws) => {
+wss.on('connection', ws => {
   connections.add(ws);
   Logger.info(`🔌 [WS] Nova conexão WebSocket estabelecida`);
 
   // Envia status inicial
-  ws.send(JSON.stringify({
-    type: 'CONNECTION_ESTABLISHED',
-    timestamp: new Date().toISOString(),
-    message: 'Conexão WebSocket estabelecida'
-  }));
+  ws.send(
+    JSON.stringify({
+      type: 'CONNECTION_ESTABLISHED',
+      timestamp: new Date().toISOString(),
+      message: 'Conexão WebSocket estabelecida',
+    })
+  );
 
   ws.on('close', () => {
     connections.delete(ws);
     Logger.info(`🔌 [WS] Conexão WebSocket fechada`);
   });
 
-  ws.on('error', (error) => {
+  ws.on('error', error => {
     Logger.error('🔌 [WS] Erro na conexão WebSocket:', error.message);
   });
 });
@@ -2520,7 +2674,8 @@ wss.on('connection', (ws) => {
 async function getBotPositions(botName) {
   try {
     const bot = activeBotInstances.get(botName);
-    if (!bot || !bot.intervalId) { // Verifica se o bot está rodando e tem intervalo
+    if (!bot || !bot.intervalId) {
+      // Verifica se o bot está rodando e tem intervalo
       return [];
     }
 
@@ -2549,7 +2704,7 @@ async function getBotPositions(botName) {
         pnlPercentage: (pnl / (entryPrice * size)) * 100,
         stopLoss: entryPrice * (isLong ? 0.95 : 1.05),
         takeProfit: entryPrice * (isLong ? 1.05 : 0.95),
-        botName: botName
+        botName: botName,
       });
     }
 
@@ -2564,7 +2719,8 @@ async function getBotPositions(botName) {
 async function getBotOrders(botName) {
   try {
     const bot = activeBotInstances.get(botName);
-    if (!bot || !bot.intervalId) { // Verifica se o bot está rodando e tem intervalo
+    if (!bot || !bot.intervalId) {
+      // Verifica se o bot está rodando e tem intervalo
       return [];
     }
 
@@ -2591,7 +2747,7 @@ async function getBotOrders(botName) {
         status: 'PENDING',
         botName: botName,
         createdAt: new Date(Date.now() - Math.random() * 10 * 60 * 1000), // 0-10 minutos atrás
-        timeInForce: 'GTC'
+        timeInForce: 'GTC',
       });
     }
 
@@ -2612,7 +2768,7 @@ app.get('/api/bot/:botId/positions/history', async (req, res) => {
     if (isNaN(botIdNum)) {
       return res.status(400).json({
         success: false,
-        error: 'botId deve ser um número válido'
+        error: 'botId deve ser um número válido',
       });
     }
 
@@ -2621,7 +2777,7 @@ app.get('/api/bot/:botId/positions/history', async (req, res) => {
     if (!botConfig) {
       return res.status(404).json({
         success: false,
-        error: `Bot com ID ${botId} não encontrado`
+        error: `Bot com ID ${botId} não encontrado`,
       });
     }
 
@@ -2633,16 +2789,20 @@ app.get('/api/bot/:botId/positions/history', async (req, res) => {
     if (sortDirection) options.sortDirection = sortDirection;
 
     // Recupera posições do histórico da Backpack
-    const positionsData = await OrderController.getBotPositionsFromHistory(botIdNum, botConfig, options);
+    const positionsData = await OrderController.getBotPositionsFromHistory(
+      botIdNum,
+      botConfig,
+      options
+    );
 
     res.json({
       success: true,
-      data: positionsData
+      data: positionsData,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -2656,7 +2816,7 @@ app.get('/api/bot/:botId/positions/history/summary', async (req, res) => {
     if (isNaN(botIdNum)) {
       return res.status(400).json({
         success: false,
-        error: 'botId deve ser um número válido'
+        error: 'botId deve ser um número válido',
       });
     }
 
@@ -2665,7 +2825,7 @@ app.get('/api/bot/:botId/positions/history/summary', async (req, res) => {
     if (!botConfig) {
       return res.status(404).json({
         success: false,
-        error: `Bot com ID ${botId} não encontrado`
+        error: `Bot com ID ${botId} não encontrado`,
       });
     }
 
@@ -2679,13 +2839,13 @@ app.get('/api/bot/:botId/positions/history/summary', async (req, res) => {
         botName: positionsData.botName,
         strategyName: positionsData.strategyName,
         statistics: positionsData.statistics,
-        lastUpdated: new Date().toISOString()
-      }
+        lastUpdated: new Date().toISOString(),
+      },
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -2699,7 +2859,7 @@ app.get('/api/bot/performance', async (req, res) => {
     if (!botClientOrderId && !botId) {
       return res.status(400).json({
         success: false,
-        error: 'botClientOrderId ou botId é obrigatório'
+        error: 'botClientOrderId ou botId é obrigatório',
       });
     }
 
@@ -2712,7 +2872,7 @@ app.get('/api/bot/performance', async (req, res) => {
       if (isNaN(botIdNum)) {
         return res.status(400).json({
           success: false,
-          error: 'botId deve ser um número válido'
+          error: 'botId deve ser um número válido',
         });
       }
 
@@ -2720,7 +2880,7 @@ app.get('/api/bot/performance', async (req, res) => {
       if (!botConfig) {
         return res.status(404).json({
           success: false,
-          error: `Bot com ID ${botId} não encontrado`
+          error: `Bot com ID ${botId} não encontrado`,
         });
       }
 
@@ -2729,7 +2889,7 @@ app.get('/api/bot/performance', async (req, res) => {
         if (!botConfig.botClientOrderId) {
           return res.status(400).json({
             success: false,
-            error: 'Bot não possui botClientOrderId configurado'
+            error: 'Bot não possui botClientOrderId configurado',
           });
         }
         botClientOrderIdToUse = botConfig.botClientOrderId;
@@ -2739,15 +2899,17 @@ app.get('/api/bot/performance', async (req, res) => {
     } else {
       // Se foi fornecido apenas botClientOrderId, busca um bot que use essas credenciais
       const configs = await ConfigManagerSQLite.loadConfigs();
-      botConfig = configs.find(config =>
-        config.apiKey && config.apiSecret &&
-        (config.botClientOrderId === botClientOrderId || config.botName === botClientOrderId)
+      botConfig = configs.find(
+        config =>
+          config.apiKey &&
+          config.apiSecret &&
+          (config.botClientOrderId === botClientOrderId || config.botName === botClientOrderId)
       );
 
       if (!botConfig) {
         return res.status(404).json({
           success: false,
-          error: `Nenhum bot encontrado com botClientOrderId: ${botClientOrderId}`
+          error: `Nenhum bot encontrado com botClientOrderId: ${botClientOrderId}`,
         });
       }
     }
@@ -2756,29 +2918,33 @@ app.get('/api/bot/performance', async (req, res) => {
     if (!botConfig.apiKey || !botConfig.apiSecret) {
       return res.status(400).json({
         success: false,
-        error: 'Bot não possui credenciais de API configuradas'
+        error: 'Bot não possui credenciais de API configuradas',
       });
     }
 
     // Opções de análise
     const options = {
       days: parseInt(days),
-      limit: parseInt(limit)
+      limit: parseInt(limit),
     };
 
     // Executa a análise de performance usando a classe History
-    const performanceData = await History.analyzeBotPerformance(botClientOrderIdToUse, options, botConfig.apiKey, botConfig.apiSecret);
+    const performanceData = await History.analyzeBotPerformance(
+      botClientOrderIdToUse,
+      options,
+      botConfig.apiKey,
+      botConfig.apiSecret
+    );
 
     res.json({
       success: true,
-      data: performanceData
+      data: performanceData,
     });
-
   } catch (error) {
     Logger.error('Erro ao analisar performance do bot:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -2792,7 +2958,7 @@ app.get('/api/bot/performance/details', async (req, res) => {
     if (!botClientOrderId && !botId) {
       return res.status(400).json({
         success: false,
-        error: 'botClientOrderId ou botId é obrigatório'
+        error: 'botClientOrderId ou botId é obrigatório',
       });
     }
 
@@ -2805,78 +2971,84 @@ app.get('/api/bot/performance/details', async (req, res) => {
       if (isNaN(botIdNum)) {
         return res.status(400).json({
           success: false,
-          error: 'botId deve ser um número válido'
-          });
-        }
-
-        botConfig = await ConfigManagerSQLite.getBotConfigById(botIdNum);
-        if (!botConfig) {
-          return res.status(404).json({
-            success: false,
-            error: `Bot com ID ${botId} não encontrado`
-          });
-        }
-
-        // Se não foi fornecido botClientOrderId, usa o do bot configurado
-        if (!botClientOrderId) {
-          if (!botConfig.botClientOrderId) {
-            return res.status(400).json({
-              success: false,
-              error: 'Bot não possui botClientOrderId configurado'
-            });
-          }
-          botClientOrderIdToUse = botConfig.botClientOrderId;
-        } else {
-          botClientOrderIdToUse = botClientOrderId;
-        }
-      } else {
-        // Se foi fornecido apenas botClientOrderId, busca um bot que use essas credenciais
-        const configs = await ConfigManagerSQLite.loadConfigs();
-        botConfig = configs.find(config =>
-          config.apiKey && config.apiSecret &&
-          (config.botClientOrderId === botClientOrderId || config.botName === botClientOrderId)
-        );
-
-        if (!botConfig) {
-          return res.status(404).json({
-            success: false,
-            error: `Nenhum bot encontrado com botClientOrderId: ${botClientOrderId}`
-          });
-        }
-      }
-
-      // Validação das credenciais
-      if (!botConfig.apiKey || !botConfig.apiSecret) {
-        return res.status(400).json({
-          success: false,
-          error: 'Bot não possui credenciais de API configuradas'
+          error: 'botId deve ser um número válido',
         });
       }
 
-      // Opções de análise
-      const options = {
-        includeOpen: includeOpen === 'true'
-      };
+      botConfig = await ConfigManagerSQLite.getBotConfigById(botIdNum);
+      if (!botConfig) {
+        return res.status(404).json({
+          success: false,
+          error: `Bot com ID ${botId} não encontrado`,
+        });
+      }
 
-      // Executa a análise de detalhes usando a classe History
-      const detailsData = await History.getBotPerformanceDetails(botClientOrderIdToUse, options, botConfig.apiKey, botConfig.apiSecret);
-
-      res.json({
-        success: true,
-        data: {
-          ...detailsData,
-          botName: botConfig.botName
+      // Se não foi fornecido botClientOrderId, usa o do bot configurado
+      if (!botClientOrderId) {
+        if (!botConfig.botClientOrderId) {
+          return res.status(400).json({
+            success: false,
+            error: 'Bot não possui botClientOrderId configurado',
+          });
         }
-      });
+        botClientOrderIdToUse = botConfig.botClientOrderId;
+      } else {
+        botClientOrderIdToUse = botClientOrderId;
+      }
+    } else {
+      // Se foi fornecido apenas botClientOrderId, busca um bot que use essas credenciais
+      const configs = await ConfigManagerSQLite.loadConfigs();
+      botConfig = configs.find(
+        config =>
+          config.apiKey &&
+          config.apiSecret &&
+          (config.botClientOrderId === botClientOrderId || config.botName === botClientOrderId)
+      );
 
-    } catch (error) {
-      Logger.error('Erro ao buscar detalhes de performance do bot:', error);
-      res.status(500).json({
+      if (!botConfig) {
+        return res.status(404).json({
+          success: false,
+          error: `Nenhum bot encontrado com botClientOrderId: ${botClientOrderId}`,
+        });
+      }
+    }
+
+    // Validação das credenciais
+    if (!botConfig.apiKey || !botConfig.apiSecret) {
+      return res.status(400).json({
         success: false,
-        error: error.message
+        error: 'Bot não possui credenciais de API configuradas',
       });
     }
-  });
+
+    // Opções de análise
+    const options = {
+      includeOpen: includeOpen === 'true',
+    };
+
+    // Executa a análise de detalhes usando a classe History
+    const detailsData = await History.getBotPerformanceDetails(
+      botClientOrderIdToUse,
+      options,
+      botConfig.apiKey,
+      botConfig.apiSecret
+    );
+
+    res.json({
+      success: true,
+      data: {
+        ...detailsData,
+        botName: botConfig.botName,
+      },
+    });
+  } catch (error) {
+    Logger.error('Erro ao buscar detalhes de performance do bot:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
 
 // GET /api/bot/performance/simple - Endpoint simples para teste
 app.get('/api/bot/performance/simple', async (req, res) => {
@@ -2886,7 +3058,7 @@ app.get('/api/bot/performance/simple', async (req, res) => {
     if (!botId) {
       return res.status(400).json({
         success: false,
-        error: 'botId é obrigatório'
+        error: 'botId é obrigatório',
       });
     }
 
@@ -2894,7 +3066,7 @@ app.get('/api/bot/performance/simple', async (req, res) => {
     if (isNaN(botIdNum)) {
       return res.status(400).json({
         success: false,
-        error: 'botId deve ser um número válido'
+        error: 'botId deve ser um número válido',
       });
     }
 
@@ -2903,7 +3075,7 @@ app.get('/api/bot/performance/simple', async (req, res) => {
     if (!botConfig) {
       return res.status(404).json({
         success: false,
-        error: `Bot com ID ${botId} não encontrado`
+        error: `Bot com ID ${botId} não encontrado`,
       });
     }
 
@@ -2911,7 +3083,7 @@ app.get('/api/bot/performance/simple', async (req, res) => {
     if (!botConfig.apiKey || !botConfig.apiSecret) {
       return res.status(400).json({
         success: false,
-        error: 'Bot não possui credenciais de API configuradas'
+        error: 'Bot não possui credenciais de API configuradas',
       });
     }
 
@@ -2923,12 +3095,15 @@ app.get('/api/bot/performance/simple', async (req, res) => {
       id: botConfig.id,
       botName: botConfig.botName,
       botClientOrderId: botConfig.botClientOrderId,
-      orderCounter: botConfig.orderCounter
+      orderCounter: botConfig.orderCounter,
     });
 
     Logger.info(`🔍 [ENDPOINT] Chamando History.analyzeBotPerformance...`);
     Logger.info(`🔍 [ENDPOINT] History object:`, typeof History);
-    Logger.info(`🔍 [ENDPOINT] History.analyzeBotPerformance:`, typeof History.analyzeBotPerformance);
+    Logger.info(
+      `🔍 [ENDPOINT] History.analyzeBotPerformance:`,
+      typeof History.analyzeBotPerformance
+    );
     // Executa análise simples
     const performanceData = await History.analyzeBotPerformance(
       botClientOrderId,
@@ -2947,15 +3122,14 @@ app.get('/api/bot/performance/simple', async (req, res) => {
         performance: performanceData.performance,
         positions: performanceData.positions,
         lastAnalyzed: performanceData.lastAnalyzed,
-        analysisPeriod: performanceData.analysisPeriod
-      }
+        analysisPeriod: performanceData.analysisPeriod,
+      },
     });
-
   } catch (error) {
     Logger.error('Erro no endpoint simples:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -2983,7 +3157,9 @@ async function startMonitorsForAllEnabledBots() {
 
         // Verifica se tem credenciais antes de iniciar monitores
         if (!botConfig.apiKey || !botConfig.apiSecret) {
-          Logger.debug(`⚠️ [MONITORS] Bot ${botId} (${botConfig.botName}) não tem credenciais, pulando monitores`);
+          Logger.debug(
+            `⚠️ [MONITORS] Bot ${botId} (${botConfig.botName}) não tem credenciais, pulando monitores`
+          );
           continue;
         }
 
@@ -2993,14 +3169,15 @@ async function startMonitorsForAllEnabledBots() {
         // Este local agora não inicia monitores duplicados
 
         Logger.debug(`✅ [MONITORS] Monitores iniciados para bot ${botId}`);
-
       } catch (error) {
-        Logger.error(`❌ [MONITORS] Erro ao iniciar monitores para bot ${botConfig.id}:`, error.message);
+        Logger.error(
+          `❌ [MONITORS] Erro ao iniciar monitores para bot ${botConfig.id}:`,
+          error.message
+        );
       }
     }
 
     Logger.info('✅ [MONITORS] Monitores globais iniciados com sucesso');
-
   } catch (error) {
     Logger.error('❌ [MONITORS] Erro ao carregar bots para monitores:', error.message);
   }
@@ -3029,12 +3206,16 @@ async function initializeServer() {
     if (dbService && dbService.isInitialized()) {
       await TrailingStop.loadStateFromDB(dbService);
     } else {
-      Logger.warn('⚠️ [SERVER] Database service não inicializado, Trailing Stop será carregado individualmente para cada bot');
+      Logger.warn(
+        '⚠️ [SERVER] Database service não inicializado, Trailing Stop será carregado individualmente para cada bot'
+      );
     }
 
     // Migração automática: cria estado para posições abertas existentes
     // Será executada individualmente para cada bot quando iniciarem
-    Logger.debug('ℹ️ [SERVER] Migração do Trailing Stop será executada individualmente para cada bot');
+    Logger.debug(
+      'ℹ️ [SERVER] Migração do Trailing Stop será executada individualmente para cada bot'
+    );
 
     // PnL Controller será executado individualmente para cada bot
     Logger.debug('ℹ️ [SERVER] PnL Controller será executado individualmente para cada bot');
@@ -3047,20 +3228,24 @@ async function initializeServer() {
     await killProcessOnPort(PORT);
 
     // Inicializa o servidor primeiro
-    server.listen(PORT, () => {
-      Logger.info(`✅ [SERVER] Servidor rodando na porta ${PORT}`);
-      Logger.info(`📊 [SERVER] API disponível em http://localhost:${PORT}`);
-      Logger.info(`🔌 [SERVER] WebSocket disponível em ws://localhost:${PORT}`);
-      Logger.info(`🤖 [SERVER] Estratégias disponíveis: ${StrategyFactory.getAvailableStrategies().join(', ')}`);
-    }).on('error', (err) => {
-      if (err.code === 'EADDRINUSE') {
-        Logger.error(`❌ [SERVER] Porta ${PORT} ainda está em uso após limpeza. Abortando...`);
-        process.exit(1);
-      } else {
-        Logger.error(`❌ [SERVER] Erro ao iniciar servidor:`, err.message);
-        process.exit(1);
-      }
-    });
+    server
+      .listen(PORT, () => {
+        Logger.info(`✅ [SERVER] Servidor rodando na porta ${PORT}`);
+        Logger.info(`📊 [SERVER] API disponível em http://localhost:${PORT}`);
+        Logger.info(`🔌 [SERVER] WebSocket disponível em ws://localhost:${PORT}`);
+        Logger.info(
+          `🤖 [SERVER] Estratégias disponíveis: ${StrategyFactory.getAvailableStrategies().join(', ')}`
+        );
+      })
+      .on('error', err => {
+        if (err.code === 'EADDRINUSE') {
+          Logger.error(`❌ [SERVER] Porta ${PORT} ainda está em uso após limpeza. Abortando...`);
+          process.exit(1);
+        } else {
+          Logger.error(`❌ [SERVER] Erro ao iniciar servidor:`, err.message);
+          process.exit(1);
+        }
+      });
 
     // Carrega e recupera bots em background (não bloqueia o servidor)
     loadAndRecoverBots().catch(error => {
@@ -3071,7 +3256,6 @@ async function initializeServer() {
     startMonitorsForAllEnabledBots().catch(error => {
       Logger.error('❌ [SERVER] Erro ao iniciar monitores globais:', error.message);
     });
-
   } catch (error) {
     Logger.error('❌ [SERVER] Erro ao inicializar servidor:', error.message);
     process.exit(1);
@@ -3092,7 +3276,7 @@ app.get('/api/bot/:botId/sync-status', async (req, res) => {
     if (isNaN(botIdNum)) {
       return res.status(400).json({
         success: false,
-        error: 'botId deve ser um número válido'
+        error: 'botId deve ser um número válido',
       });
     }
 
@@ -3101,7 +3285,7 @@ app.get('/api/bot/:botId/sync-status', async (req, res) => {
     if (!botConfig) {
       return res.status(404).json({
         success: false,
-        error: `Bot com ID ${botId} não encontrado`
+        error: `Bot com ID ${botId} não encontrado`,
       });
     }
 
@@ -3115,19 +3299,17 @@ app.get('/api/bot/:botId/sync-status', async (req, res) => {
         botId: botIdNum,
         botName: botConfig.botName,
         syncStatus: botSyncStatus,
-        lastSync: botSyncStatus.lastSync ? new Date(botSyncStatus.lastSync).toISOString() : null
-      }
+        lastSync: botSyncStatus.lastSync ? new Date(botSyncStatus.lastSync).toISOString() : null,
+      },
     });
-
   } catch (error) {
     Logger.error('❌ Erro ao buscar status da sincronização:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
-
 
 // GET /api/bot/summary - Retorna resumo completo das estatísticas do bot para o card
 app.get('/api/bot/summary', async (req, res) => {
@@ -3137,7 +3319,7 @@ app.get('/api/bot/summary', async (req, res) => {
     if (!botId) {
       return res.status(400).json({
         success: false,
-        error: 'botId é obrigatório'
+        error: 'botId é obrigatório',
       });
     }
 
@@ -3145,7 +3327,7 @@ app.get('/api/bot/summary', async (req, res) => {
     if (isNaN(botIdNum)) {
       return res.status(400).json({
         success: false,
-        error: 'botId deve ser um número válido'
+        error: 'botId deve ser um número válido',
       });
     }
 
@@ -3154,7 +3336,7 @@ app.get('/api/bot/summary', async (req, res) => {
     if (!botConfig) {
       return res.status(404).json({
         success: false,
-        error: `Bot com ID ${botId} não encontrado`
+        error: `Bot com ID ${botId} não encontrado`,
       });
     }
 
@@ -3185,17 +3367,18 @@ app.get('/api/bot/summary', async (req, res) => {
           averagePnl: performanceMetrics.avgPnl,
           maxDrawdown: performanceMetrics.maxDrawdown || 0,
           openTrades: performanceMetrics.openPositions,
-          totalVolume: performanceMetrics.totalVolume || 0
+          totalVolume: performanceMetrics.totalVolume || 0,
         },
         positions: {
           closed: performanceMetrics.closedTrades,
           open: performanceMetrics.openPositions,
-          total: performanceMetrics.totalPositions
-        }
+          total: performanceMetrics.totalPositions,
+        },
       };
-
     } catch (error) {
-      Logger.warn(`⚠️ [SUMMARY] Erro ao buscar dados de performance (novo sistema): ${error.message}`);
+      Logger.warn(
+        `⚠️ [SUMMARY] Erro ao buscar dados de performance (novo sistema): ${error.message}`
+      );
 
       performanceData = {
         performance: {
@@ -3208,13 +3391,13 @@ app.get('/api/bot/summary', async (req, res) => {
           averagePnl: 0,
           maxDrawdown: 0,
           openTrades: 0,
-          totalVolume: 0
+          totalVolume: 0,
         },
         positions: {
           closed: 0,
           open: 0,
-          total: 0
-        }
+          total: 0,
+        },
       };
     }
 
@@ -3223,7 +3406,9 @@ app.get('/api/bot/summary', async (req, res) => {
     try {
       const positionTracker = new PositionTrackingService(ConfigManagerSQLite.dbService);
       activePositions = await positionTracker.getBotOpenPositions(botIdNum);
-      Logger.info(`📊 [SUMMARY] Usando ${activePositions.length} posições do bot (evitando posições manuais)`);
+      Logger.info(
+        `📊 [SUMMARY] Usando ${activePositions.length} posições do bot (evitando posições manuais)`
+      );
     } catch (error) {
       Logger.warn(`⚠️ [SUMMARY] Erro ao buscar posições ativas do bot: ${error.message}`);
     }
@@ -3247,13 +3432,13 @@ app.get('/api/bot/summary', async (req, res) => {
         profitRatio = profitFactor > 0 ? profitFactor : 1.0;
       } else if (winningTrades > 0 && losingTrades === 0) {
         // Só trades vencedores - Profit Factor = ∞ (ganhos / 0 = ∞)
-        profitRatio = "∞"; // Representa infinito
+        profitRatio = '∞'; // Representa infinito
       } else if (losingTrades > 0 && winningTrades === 0) {
         // Só trades perdedores - Profit Factor = 0 (0 / perdas = 0)
         profitRatio = 0.0;
       } else if (totalPnl > 0) {
         // PnL positivo mas sem trades perdedores (trades parciais)
-        profitRatio = "∞"; // Representa infinito
+        profitRatio = '∞'; // Representa infinito
       } else if (totalPnl < 0) {
         // PnL negativo
         profitRatio = 0.0;
@@ -3261,7 +3446,6 @@ app.get('/api/bot/summary', async (req, res) => {
         // PnL zero ou sem trades fechados
         profitRatio = 0.0;
       }
-
     }
 
     // Calcula estatísticas do card
@@ -3269,39 +3453,38 @@ app.get('/api/bot/summary', async (req, res) => {
       botId: botIdNum,
       botName: botConfig.botName,
       strategyName: botConfig.strategyName,
-      updateInterval: "60s", // REALTIME (60s)
+      updateInterval: '60s', // REALTIME (60s)
       statistics: {
         winningTrades: performanceData.performance.winningTrades,
         losingTrades: performanceData.performance.losingTrades,
         winRate: performanceData.performance.winRate,
         profitRatio: profitRatio,
         totalTrades: performanceData.performance.totalTrades,
-        openPositions: activePositions.length
+        openPositions: activePositions.length,
       },
       performance: {
         totalPnl: performanceData.performance.totalPnl,
         averagePnl: performanceData.performance.averagePnl,
         maxDrawdown: performanceData.performance.maxDrawdown,
-        totalVolume: performanceData.performance.totalVolume
+        totalVolume: performanceData.performance.totalVolume,
       },
       positions: {
         closed: performanceData.positions.closed,
         open: activePositions.length,
-        total: performanceData.positions.closed + activePositions.length
+        total: performanceData.positions.closed + activePositions.length,
       },
-      lastUpdated: new Date().toISOString()
+      lastUpdated: new Date().toISOString(),
     };
 
     res.json({
       success: true,
-      data: summary
+      data: summary,
     });
-
   } catch (error) {
     Logger.error('❌ Erro no endpoint /api/bot/summary:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -3315,7 +3498,7 @@ app.get('/api/bot/test-api/:botId', async (req, res) => {
     if (isNaN(botIdNum)) {
       return res.status(400).json({
         success: false,
-        error: 'botId deve ser um número válido'
+        error: 'botId deve ser um número válido',
       });
     }
 
@@ -3323,7 +3506,7 @@ app.get('/api/bot/test-api/:botId', async (req, res) => {
     if (!botConfig) {
       return res.status(404).json({
         success: false,
-        error: `Bot com ID ${botId} não encontrado`
+        error: `Bot com ID ${botId} não encontrado`,
       });
     }
 
@@ -3333,7 +3516,7 @@ app.get('/api/bot/test-api/:botId', async (req, res) => {
     const History = (await import('./src/Backpack/Authenticated/History.js')).default;
 
     const now = Date.now();
-    const sevenDaysAgo = now - (7 * 24 * 60 * 60 * 1000);
+    const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
 
     const fills = await History.getFillHistory(
       null, // symbol - todos os símbolos
@@ -3350,17 +3533,19 @@ app.get('/api/bot/test-api/:botId', async (req, res) => {
     );
 
     // Retorna mais detalhes dos fills para debug
-    const fillsDetails = fills ? fills.map(fill => ({
-      symbol: fill.symbol,
-      side: fill.side,
-      quantity: fill.quantity,
-      price: fill.price,
-      timestamp: fill.timestamp,
-      orderId: fill.orderId,
-      clientId: fill.clientId,
-      fee: fill.fee,
-      feeSymbol: fill.feeSymbol
-    })) : [];
+    const fillsDetails = fills
+      ? fills.map(fill => ({
+          symbol: fill.symbol,
+          side: fill.side,
+          quantity: fill.quantity,
+          price: fill.price,
+          timestamp: fill.timestamp,
+          orderId: fill.orderId,
+          clientId: fill.clientId,
+          fee: fill.fee,
+          feeSymbol: fill.feeSymbol,
+        }))
+      : [];
 
     res.json({
       success: true,
@@ -3371,16 +3556,15 @@ app.get('/api/bot/test-api/:botId', async (req, res) => {
           fillsCount: fills ? fills.length : 0,
           fillsSample: fills && fills.length > 0 ? fills[0] : null,
           fillsDetails: fillsDetails,
-          error: null
-        }
-      }
+          error: null,
+        },
+      },
     });
-
   } catch (error) {
     Logger.error('❌ Erro no teste da API da corretora:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -3394,7 +3578,7 @@ async function gracefulShutdown(signal) {
     // Para o servidor HTTP primeiro
     if (server && server.listening) {
       Logger.info(`🛑 [SHUTDOWN] Fechando servidor HTTP...`);
-      server.close((err) => {
+      server.close(err => {
         if (err) {
           Logger.error(`❌ [SHUTDOWN] Erro ao fechar servidor:`, err.message);
         } else {
@@ -3435,7 +3619,6 @@ async function gracefulShutdown(signal) {
     }, 3000);
 
     process.exit(0);
-
   } catch (error) {
     Logger.error(`❌ [SHUTDOWN] Erro durante shutdown:`, error.message);
     process.exit(1);
@@ -3447,7 +3630,7 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
 // Handler para erros não capturados
-process.on('uncaughtException', (error) => {
+process.on('uncaughtException', error => {
   Logger.error('❌ [UNCAUGHT_EXCEPTION] Erro não capturado:', error);
   gracefulShutdown('UNCAUGHT_EXCEPTION');
 });

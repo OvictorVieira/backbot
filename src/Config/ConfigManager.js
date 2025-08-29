@@ -11,7 +11,7 @@ const __dirname = path.dirname(__filename);
  */
 class ConfigManager {
   static CONFIG_FILE_PATH = path.join(process.cwd(), 'persistence', 'bot_configs.json');
-  
+
   /**
    * Gera um ID único para um novo bot
    * @returns {number} ID único do bot
@@ -21,12 +21,12 @@ class ConfigManager {
     if (configs.length === 0) {
       return 1;
     }
-    
+
     // Encontra o maior ID existente e adiciona 1
     const maxId = Math.max(...configs.map(config => config.id || 0));
     return maxId + 1;
   }
-  
+
   /**
    * Carrega todas as configurações do arquivo JSON
    * @returns {Array} Array de configurações de bots
@@ -38,14 +38,14 @@ class ConfigManager {
       if (!fs.existsSync(configDir)) {
         fs.mkdirSync(configDir, { recursive: true });
       }
-      
+
       // Se o arquivo não existir, cria com array vazio
       if (!fs.existsSync(this.CONFIG_FILE_PATH)) {
         const defaultConfigs = [];
         fs.writeFileSync(this.CONFIG_FILE_PATH, JSON.stringify(defaultConfigs, null, 2));
         return defaultConfigs;
       }
-      
+
       const configData = fs.readFileSync(this.CONFIG_FILE_PATH, 'utf8');
       return JSON.parse(configData);
     } catch (error) {
@@ -53,7 +53,7 @@ class ConfigManager {
       return [];
     }
   }
-  
+
   /**
    * Salva configurações no arquivo JSON
    * @param {Array} configs - Array de configurações para salvar
@@ -61,14 +61,14 @@ class ConfigManager {
   static saveConfigs(configs) {
     try {
       console.log(`💾 [CONFIG] Iniciando salvamento de ${configs.length} configurações...`);
-      
+
       // Cria o diretório se não existir
       const configDir = path.dirname(this.CONFIG_FILE_PATH);
       if (!fs.existsSync(configDir)) {
         console.log(`📁 [CONFIG] Criando diretório: ${configDir}`);
         fs.mkdirSync(configDir, { recursive: true });
       }
-      
+
       console.log(`📄 [CONFIG] Salvando em: ${this.CONFIG_FILE_PATH}`);
       fs.writeFileSync(this.CONFIG_FILE_PATH, JSON.stringify(configs, null, 2));
       console.log(`✅ [CONFIG] Configurações salvas com sucesso`);
@@ -77,7 +77,7 @@ class ConfigManager {
       throw error;
     }
   }
-  
+
   /**
    * Obtém configuração de um bot específico
    * @param {string} strategyName - Nome da estratégia (ex: 'DEFAULT', 'ALPHA_FLOW')
@@ -126,7 +126,7 @@ class ConfigManager {
   static updateBotConfig(strategyName, newConfig) {
     const configs = this.loadConfigs();
     const existingIndex = configs.findIndex(config => config.strategyName === strategyName);
-    
+
     if (existingIndex !== -1) {
       // Atualiza configuração existente
       configs[existingIndex] = { ...configs[existingIndex], ...newConfig };
@@ -134,7 +134,7 @@ class ConfigManager {
       // Adiciona nova configuração
       configs.push({ strategyName, ...newConfig });
     }
-    
+
     this.saveConfigs(configs);
   }
 
@@ -146,7 +146,7 @@ class ConfigManager {
   static updateBotConfigByBotName(botName, newConfig) {
     const configs = this.loadConfigs();
     const existingIndex = configs.findIndex(config => config.botName === botName);
-    
+
     if (existingIndex !== -1) {
       // Atualiza configuração existente
       configs[existingIndex] = { ...configs[existingIndex], ...newConfig };
@@ -163,27 +163,30 @@ class ConfigManager {
    */
   static updateBotConfigById(botId, newConfig) {
     console.log(`🔄 [CONFIG] Iniciando atualização do bot ID: ${botId}`);
-    
+
     try {
       const configs = this.loadConfigs();
       console.log(`📊 [CONFIG] Configurações carregadas: ${configs.length} bots`);
-      
+
       const configIndex = configs.findIndex(config => config.id === botId);
       console.log(`🔍 [CONFIG] Índice encontrado: ${configIndex}`);
-      
+
       if (configIndex !== -1) {
         const currentConfig = configs[configIndex];
         console.log(`📝 [CONFIG] Configuração atual encontrada: ${currentConfig.botName}`);
-        
+
         // Preserva os campos de rastreamento de ordens se não estiverem no newConfig
         const updatedConfig = {
           ...currentConfig,
           ...newConfig,
           // Garante que os campos de rastreamento sejam preservados
           botClientOrderId: newConfig.botClientOrderId || currentConfig.botClientOrderId,
-          orderCounter: newConfig.orderCounter !== undefined ? newConfig.orderCounter : currentConfig.orderCounter
+          orderCounter:
+            newConfig.orderCounter !== undefined
+              ? newConfig.orderCounter
+              : currentConfig.orderCounter,
         };
-        
+
         console.log(`💾 [CONFIG] Salvando configuração atualizada...`);
         configs[configIndex] = updatedConfig;
         this.saveConfigs(configs);
@@ -206,7 +209,7 @@ class ConfigManager {
   static addBotConfig(config) {
     const configs = this.loadConfigs();
     const botId = this.generateBotId();
-    
+
     // Garante que os campos de rastreamento de ordens sejam sempre incluídos
     const newBotConfig = {
       id: botId,
@@ -216,16 +219,18 @@ class ConfigManager {
       orderCounter: config.orderCounter || 0,
       createdAt: new Date().toISOString(),
       status: 'stopped', // Status inicial
-      nextValidationAt: new Date(Date.now() + 60000).toISOString() // Próxima validação em 60s
+      nextValidationAt: new Date(Date.now() + 60000).toISOString(), // Próxima validação em 60s
     };
-    
+
     configs.push(newBotConfig);
     this.saveConfigs(configs);
-    
-    console.log(`✅ Bot criado com ID: ${botId} e botClientOrderId: ${newBotConfig.botClientOrderId}`);
+
+    console.log(
+      `✅ Bot criado com ID: ${botId} e botClientOrderId: ${newBotConfig.botClientOrderId}`
+    );
     return botId;
   }
-  
+
   /**
    * Remove configuração de um bot
    * @param {string} strategyName - Nome da estratégia
@@ -266,7 +271,7 @@ class ConfigManager {
   static updateBotStatus(strategyName, status, startTime = null) {
     const configs = this.loadConfigs();
     const configIndex = configs.findIndex(config => config.strategyName === strategyName);
-    
+
     if (configIndex !== -1) {
       configs[configIndex].status = status;
       if (startTime) {
@@ -285,7 +290,7 @@ class ConfigManager {
   static updateBotStatusByBotName(botName, status, startTime = null) {
     const configs = this.loadConfigs();
     const configIndex = configs.findIndex(config => config.botName === botName);
-    
+
     if (configIndex !== -1) {
       configs[configIndex].status = status;
       if (startTime) {
@@ -306,7 +311,7 @@ class ConfigManager {
   static updateBotStatusById(botId, status, startTime = null) {
     const configs = this.loadConfigs();
     const configIndex = configs.findIndex(config => config.id === botId);
-    
+
     if (configIndex !== -1) {
       configs[configIndex].status = status;
       if (startTime) {
@@ -366,7 +371,7 @@ class ConfigManager {
     const config = this.getBotConfigById(botId);
     return config && config.status === 'running';
   }
-  
+
   /**
    * Verifica se um bot pode ser iniciado (não está rodando)
    * @param {number} botId - ID único do bot
@@ -375,7 +380,7 @@ class ConfigManager {
   static canStartBotById(botId) {
     const config = this.getBotConfigById(botId);
     if (!config) return false;
-    
+
     // Pode iniciar se estiver stopped, error, ou starting
     return ['stopped', 'error', 'starting'].includes(config.status);
   }
@@ -417,14 +422,14 @@ class ConfigManager {
   static clearErrorStatus(botId) {
     const configs = this.loadConfigs();
     const configIndex = configs.findIndex(config => config.id === botId);
-    
+
     if (configIndex !== -1 && configs[configIndex].status === 'error') {
       configs[configIndex].status = 'stopped';
       this.saveConfigs(configs);
       console.log(`🔄 [CONFIG] Status de erro limpo para bot ${botId}`);
     }
   }
-  
+
   /**
    * Lista todas as estratégias configuradas
    * @returns {Array} Array com nomes das estratégias
@@ -442,7 +447,7 @@ class ConfigManager {
     const configs = this.loadConfigs();
     return configs.map(config => config.botName);
   }
-  
+
   /**
    * Valida se uma configuração está completa
    * @param {Object} config - Configuração para validar
@@ -454,49 +459,52 @@ class ConfigManager {
       const value = config[field];
       return value === undefined || value === null || value === '';
     });
-    
+
     if (missingFields.length > 0) {
       return {
         isValid: false,
-        errors: missingFields.map(field => `Campo obrigatório ausente: ${field}`)
+        errors: missingFields.map(field => `Campo obrigatório ausente: ${field}`),
       };
     }
-    
+
     // Validações específicas
     const errors = [];
-    
+
     if (config.capitalPercentage < 0 || config.capitalPercentage > 100) {
       errors.push('Percentual de capital deve estar entre 0 e 100');
     }
-    
+
     // Validações de API keys - obrigatórias para bots ativos
     if (!config.apiKey || config.apiKey.trim() === '') {
       errors.push('API Key é obrigatória');
     } else if (config.apiKey.length < 10) {
       errors.push('API Key muito curta');
     }
-    
+
     if (!config.apiSecret || config.apiSecret.trim() === '') {
       errors.push('API Secret é obrigatório');
     } else if (config.apiSecret.length < 10) {
       errors.push('API Secret muito curto');
     }
-    
+
     // Validações de configurações opcionais
     if (config.trailingStopDistance !== undefined && config.trailingStopDistance <= 0) {
       errors.push('Distância do Trailing Stop deve ser maior que zero');
     }
-    
-    if (config.partialTakeProfitPercentage !== undefined && (config.partialTakeProfitPercentage <= 0 || config.partialTakeProfitPercentage > 100)) {
+
+    if (
+      config.partialTakeProfitPercentage !== undefined &&
+      (config.partialTakeProfitPercentage <= 0 || config.partialTakeProfitPercentage > 100)
+    ) {
       errors.push('Percentual de Take Profit parcial deve estar entre 0 e 100');
     }
-    
+
     return {
       isValid: errors.length === 0,
-      errors
+      errors,
     };
   }
-  
+
   /**
    * Cria uma configuração padrão para uma estratégia
    * @param {string} strategyName - Nome da estratégia
@@ -535,7 +543,7 @@ class ConfigManager {
       orderCounter: 0, // Contador de ordens criadas pelo bot
       // Configurações de Limite de Ordens
       maxOpenOrders: 5, // Máximo de ordens ativas de uma vez
-      maxSlippagePct: 0.5 // Adicionado
+      maxSlippagePct: 0.5, // Adicionado
     };
   }
 
@@ -548,7 +556,7 @@ class ConfigManager {
   static createDefaultConfigByBotName(botName, strategyName = null) {
     // Se strategyName não foi fornecido, gera baseado no botName
     const defaultStrategyName = strategyName || botName.replace(/\s+/g, '_').toUpperCase();
-    
+
     return {
       strategyName: defaultStrategyName,
       botName,
@@ -581,7 +589,7 @@ class ConfigManager {
       orderCounter: 0, // Contador de ordens criadas pelo bot
       // Configurações de Limite de Ordens
       maxOpenOrders: 5, // Máximo de ordens ativas de uma vez
-      maxSlippagePct: 0.5 // Adicionado
+      maxSlippagePct: 0.5, // Adicionado
     };
   }
 
@@ -609,13 +617,13 @@ class ConfigManager {
   static incrementOrderCounter(botId) {
     const configs = this.loadConfigs();
     const configIndex = configs.findIndex(config => config.id === botId);
-    
+
     if (configIndex !== -1) {
       configs[configIndex].orderCounter = (configs[configIndex].orderCounter || 0) + 1;
       this.saveConfigs(configs);
       return configs[configIndex].orderCounter;
     }
-    
+
     return 0;
   }
 
@@ -629,7 +637,7 @@ class ConfigManager {
     if (!config) {
       throw new Error(`Bot com ID ${botId} não encontrado`);
     }
-    
+
     const newCounter = this.incrementOrderCounter(botId);
     return this.generateOrderId(botId, config.botClientOrderId, newCounter);
   }
@@ -641,7 +649,7 @@ class ConfigManager {
    */
   static getOrderCounter(botId) {
     const config = this.getBotConfigById(botId);
-    return config ? (config.orderCounter || 0) : 0;
+    return config ? config.orderCounter || 0 : 0;
   }
 
   /**
@@ -651,7 +659,7 @@ class ConfigManager {
   static resetOrderCounter(botId) {
     const configs = this.loadConfigs();
     const configIndex = configs.findIndex(config => config.id === botId);
-    
+
     if (configIndex !== -1) {
       configs[configIndex].orderCounter = 0;
       this.saveConfigs(configs);
@@ -670,18 +678,18 @@ class ConfigManager {
     if (!config || !config.botClientOrderId) {
       return [];
     }
-    
+
     return orders.filter(order => {
       if (!order.clientId) return false;
-      
+
       // Verifica se o clientId começa com o botClientOrderId do bot
       const clientIdStr = order.clientId.toString();
       const botClientOrderIdStr = config.botClientOrderId.toString();
-      
+
       // Verifica se o clientId começa com o botClientOrderId
       return clientIdStr.startsWith(botClientOrderIdStr);
     });
   }
 }
 
-export default ConfigManager; 
+export default ConfigManager;

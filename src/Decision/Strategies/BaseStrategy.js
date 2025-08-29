@@ -25,24 +25,24 @@ export class BaseStrategy {
     if (!data) {
       return false;
     }
-    
+
     // Verifica se vwap existe
     if (!data.vwap) {
       return false;
     }
-    
+
     // Verifica estrutura do VWAP (pode ser direto ou com current/previous)
     const vwapData = data.vwap.current || data.vwap;
-    
+
     if (!vwapData) {
       return false;
     }
-    
+
     // Verifica se tem os campos necessários
     const hasVwap = vwapData.vwap != null;
     const hasLowerBands = vwapData.lowerBands && vwapData.lowerBands.length > 0;
     const hasUpperBands = vwapData.upperBands && vwapData.upperBands.length > 0;
-    
+
     return hasVwap && hasLowerBands && hasUpperBands;
   }
 
@@ -61,16 +61,16 @@ export class BaseStrategy {
     const MIN_TAKE_PROFIT_PCT = Number(this.config?.minTakeProfitPct || 0.5);
 
     const { pnl, risk } = this.calculatePnLAndRisk(action, entry, stop, target, investmentUSD, fee);
-    
+
     // Calcula métricas
     const riskRewardRatio = pnl / risk;
-    const takeProfitPct = ((action === 'long') ? target - entry : entry - target) / entry * 100;
-    
+    const takeProfitPct = ((action === 'long' ? target - entry : entry - target) / entry) * 100;
+
     // Validações (apenas porcentagem e R/R)
     const isValidPct = takeProfitPct >= MIN_TAKE_PROFIT_PCT;
-    
+
     const isValid = isValidPct;
-    
+
     return {
       isValid,
       pnl,
@@ -78,8 +78,10 @@ export class BaseStrategy {
       riskRewardRatio: Number(riskRewardRatio.toFixed(2)),
       takeProfitPct: Number(takeProfitPct.toFixed(2)),
       reasons: {
-        pct: isValidPct ? null : `TP ${takeProfitPct.toFixed(2)}% < mínimo ${MIN_TAKE_PROFIT_PCT.toFixed(1)}%`
-      }
+        pct: isValidPct
+          ? null
+          : `TP ${takeProfitPct.toFixed(2)}% < mínimo ${MIN_TAKE_PROFIT_PCT.toFixed(1)}%`,
+      },
     };
   }
 
@@ -95,17 +97,17 @@ export class BaseStrategy {
    */
   calculatePnLAndRisk(action, entry, stop, target, investmentUSD, fee) {
     const units = investmentUSD / entry;
-    
-    const grossLoss = ((action === 'long') ? entry - stop : stop - entry) * units;
-    const grossTarget = ((action === 'long') ? target - entry : entry - target) * units;
-    
+
+    const grossLoss = (action === 'long' ? entry - stop : stop - entry) * units;
+    const grossTarget = (action === 'long' ? target - entry : entry - target) * units;
+
     const entryFee = investmentUSD * fee;
     const exitFeeTarget = grossTarget * fee;
     const exitFeeLoss = grossLoss * fee;
-    
+
     const pnl = grossTarget - (entryFee + exitFeeTarget);
     const risk = grossLoss + (entryFee + exitFeeLoss);
-    
+
     return { pnl: Number(pnl), risk: Number(risk) };
   }
 
@@ -121,7 +123,10 @@ export class BaseStrategy {
   async calculateStopAndTarget(data, price, isLong, stopLossPct, takeProfitPct, config = null) {
     // Validação dos parâmetros
     if (!stopLossPct || !takeProfitPct) {
-      console.error('❌ [BASE_STRATEGY] Parâmetros de stop/target inválidos:', { stopLossPct, takeProfitPct });
+      console.error('❌ [BASE_STRATEGY] Parâmetros de stop/target inválidos:', {
+        stopLossPct,
+        takeProfitPct,
+      });
       return null;
     }
 
@@ -130,28 +135,36 @@ export class BaseStrategy {
     try {
       // SEMPRE usa credenciais do config - lança exceção se não disponível
       if (!config?.apiKey || !config?.apiSecret) {
-        throw new Error('API_KEY e API_SECRET são obrigatórios - deve ser passado da config do bot');
+        throw new Error(
+          'API_KEY e API_SECRET são obrigatórios - deve ser passado da config do bot'
+        );
       }
-      
-      const Account = await AccountController.get({ 
-        apiKey: config.apiKey, 
+
+      const Account = await AccountController.get({
+        apiKey: config.apiKey,
         apiSecret: config.apiSecret,
-        strategy: config?.strategyName || 'DEFAULT' 
+        strategy: config?.strategyName || 'DEFAULT',
       });
       if (Account && Account.leverage) {
         const rawLeverage = Account.leverage;
         leverage = validateLeverageForSymbol(data.market.symbol, rawLeverage);
-        Logger.debug(`🔧 [BASE_STRATEGY] ${data.market.symbol}: Alavancagem ${rawLeverage}x -> ${leverage}x (validada)`);
+        Logger.debug(
+          `🔧 [BASE_STRATEGY] ${data.market.symbol}: Alavancagem ${rawLeverage}x -> ${leverage}x (validada)`
+        );
       }
     } catch (error) {
-      console.warn(`⚠️ [BASE_STRATEGY] ${data.market.symbol}: Erro ao obter alavancagem, usando 1x: ${error.message}`);
+      console.warn(
+        `⚠️ [BASE_STRATEGY] ${data.market.symbol}: Erro ao obter alavancagem, usando 1x: ${error.message}`
+      );
     }
 
     // CORREÇÃO CRÍTICA: Calcula o stop loss real considerando a alavancagem
     const baseStopLossPct = Math.abs(stopLossPct);
     const actualStopLossPct = baseStopLossPct / leverage;
-    
-            Logger.debug(`🔧 [BASE_STRATEGY] ${data.market.symbol}: Stop Loss - Bruto: ${baseStopLossPct}%, Real: ${actualStopLossPct.toFixed(2)}% (leverage ${leverage}x)`);
+
+    Logger.debug(
+      `🔧 [BASE_STRATEGY] ${data.market.symbol}: Stop Loss - Bruto: ${baseStopLossPct}%, Real: ${actualStopLossPct.toFixed(2)}% (leverage ${leverage}x)`
+    );
 
     // Converte percentuais para decimais (usando o valor corrigido pela alavancagem)
     const stopLossDecimal = actualStopLossPct / 100;
@@ -162,13 +175,13 @@ export class BaseStrategy {
     if (isLong) {
       // Stop: abaixo do preço atual
       stop = price * (1 - stopLossDecimal);
-      
+
       // Target: acima do preço atual
       target = price * (1 + takeProfitDecimal);
     } else {
       // Stop: acima do preço atual
       stop = price * (1 + stopLossDecimal);
-      
+
       // Target: abaixo do preço atual
       target = price * (1 - takeProfitDecimal);
     }
@@ -185,4 +198,4 @@ export class BaseStrategy {
 
     return { stop, target };
   }
-} 
+}

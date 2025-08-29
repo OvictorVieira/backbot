@@ -17,9 +17,10 @@ export class RiskManager {
    */
   static calculateInvestmentAmount(capitalAvailable, config = {}) {
     try {
-      let capitalPercentage = (config?.capitalPercentage !== null && config?.capitalPercentage !== undefined)
-        ? config.capitalPercentage
-        : 1;
+      let capitalPercentage =
+        config?.capitalPercentage !== null && config?.capitalPercentage !== undefined
+          ? config.capitalPercentage
+          : 1;
 
       if (capitalPercentage <= 0) {
         Logger.warn('⚠️ [RISK] capitalPercentage inválido, usando fallback de 1%');
@@ -38,7 +39,6 @@ export class RiskManager {
       return 1;
     }
   }
-
 }
 
 export default RiskManager;

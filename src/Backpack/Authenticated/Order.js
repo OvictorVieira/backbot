@@ -2,9 +2,10 @@ import axios from 'axios';
 import { auth } from './Authentication.js';
 import Logger from '../../Utils/Logger.js';
 import GlobalRequestQueue from '../../Utils/GlobalRequestQueue.js';
+import OrdersCache from '../../Utils/OrdersCache.js';
+import CacheInvalidator from '../../Utils/CacheInvalidator.js';
 
 class Order {
-
   async getOpenOrder(symbol, orderId, clientId = null, apiKey, apiSecret) {
     const timestamp = Date.now();
 
@@ -12,7 +13,7 @@ class Order {
       throw new Error('Parâmetros obrigatórios faltando: apiKey, apiSecret');
     }
 
-     if (!symbol) {
+    if (!symbol) {
       throw new Error('Parâmetros obrigatórios faltando: symbol');
     }
 
@@ -20,11 +21,10 @@ class Order {
       throw new Error('Parâmetros obrigatórios faltando: clientId ou orderId');
     }
 
-
-    const params = {}
+    const params = {};
     params.symbol = symbol;
     params.orderId = orderId;
-    
+
     if (clientId) params.clientId = clientId;
 
     const headers = auth({
@@ -32,58 +32,89 @@ class Order {
       timestamp,
       params,
       apiKey,
-      apiSecret
+      apiSecret,
     });
 
     try {
       const response = await axios.get(`${process.env.API_URL}/api/v1/order`, {
         headers,
-        params
+        params,
       });
-      return response.data
+      return response.data;
     } catch (error) {
       Logger.error('getOpenOrder - ERROR!', error.response?.data || error.message);
-      return null
+      return null;
     }
   }
 
   //marketType: "SPOT" "PERP" "IPERP" "DATED" "PREDICTION" "RFQ"
-  async getOpenOrders(symbol, marketType = "PERP", apiKey, apiSecret) {
+  async getOpenOrders(symbol, marketType = 'PERP', apiKey, apiSecret, bypassCache = false) {
     if (!apiKey || !apiSecret) {
       throw new Error('Parâmetros obrigatórios faltando: apiKey, apiSecret');
     }
 
-    // Usa fila global para coordenar todas as requests
-    return await GlobalRequestQueue.enqueue(async () => {
-      const timestamp = Date.now();
+    const cacheKey = OrdersCache.getCacheKey(apiKey, apiSecret);
 
-      const params = {}
-      if (symbol) params.symbol = symbol;
-      if (marketType) params.marketType = marketType;
+    // Tenta buscar do cache primeiro (exceto se bypassCache = true)
+    const cachedOrders = OrdersCache.getCache(cacheKey, symbol, bypassCache);
 
-      const headers = auth({
-        instruction: 'orderQueryAll',
-        timestamp,
-        params,
-        apiKey,
-        apiSecret
-      });
+    if (cachedOrders !== null && cachedOrders.length !== 0) {
+      // Cache hit - retorna dados cached
+      Logger.debug(
+        `🎯 [ORDERS_CACHE] Cache hit para getOpenOrders(${symbol || 'ALL'}): ${cachedOrders.length} ordens`
+      );
+      return cachedOrders;
+    }
 
-      const response = await axios.get(`${process.env.API_URL}/api/v1/orders`, {
-        headers,
-        params,
-        timeout: 15000 // 15 segundos de timeout
-      });
+    // Cache miss - busca da API
+    Logger.debug(
+      `🔍 [ORDERS_CACHE] Cache miss para getOpenOrders(${symbol || 'ALL'}), buscando da API...`
+    );
 
-      return response.data;
-    }, `getOpenOrders(symbol=${symbol}, marketType=${marketType})`);
+    const timestamp = Date.now();
+
+    const params = {};
+    // OTIMIZAÇÃO: Se não tem símbolo específico, busca TODAS as ordens (mais eficiente)
+    if (symbol) params.symbol = symbol;
+    if (marketType) params.marketType = marketType;
+
+    const headers = auth({
+      instruction: 'orderQueryAll',
+      timestamp,
+      params,
+      apiKey,
+      apiSecret,
+    });
+
+    const response = await axios.get(`${process.env.API_URL}/api/v1/orders`, {
+      headers,
+      params,
+      timeout: 15000, // 15 segundos de timeout
+    });
+
+    const orders = response.data || [];
+
+    // Armazena no cache
+    if (symbol) {
+      // Cache para símbolo específico
+      OrdersCache.setCache(cacheKey, orders, symbol);
+    } else {
+      // Cache para todas as ordens (mais eficiente)
+      OrdersCache.setCache(cacheKey, orders);
+    }
+
+    Logger.debug(
+      `💾 [ORDERS_CACHE] Dados salvos no cache para ${symbol || 'ALL'}: ${orders.length} ordens`
+    );
+
+    return orders;
   }
 
   /**
    * Busca especificamente por ordens condicionais (trigger orders)
    * Inclui STOP_MARKET, TAKE_PROFIT_MARKET e outras ordens com triggerPrice
    */
-  async getOpenTriggerOrders(symbol, marketType = "PERP", apiKey = null, apiSecret = null) {
+  async getOpenTriggerOrders(symbol, marketType = 'PERP', apiKey = null, apiSecret = null) {
     try {
       // Primeiro tenta o endpoint principal para ver se inclui trigger orders
       const allOrders = await this.getOpenOrders(symbol, marketType, apiKey, apiSecret);
@@ -95,25 +126,38 @@ class Order {
 
       // Filtra apenas ordens que têm características de trigger orders
       const triggerOrders = allOrders.filter(order => {
-        return order.triggerPrice ||
-               order.stopLossTriggerPrice ||
-               order.takeProfitTriggerPrice ||
-               order.orderType === 'STOP_MARKET' ||
-               order.orderType === 'TAKE_PROFIT_MARKET' ||
-               order.status === 'TriggerPending';
+        return (
+          order.triggerPrice ||
+          order.stopLossTriggerPrice ||
+          order.takeProfitTriggerPrice ||
+          order.orderType === 'STOP_MARKET' ||
+          order.orderType === 'TAKE_PROFIT_MARKET' ||
+          order.status === 'TriggerPending'
+        );
       });
 
-      Logger.debug(`[TRIGGER_ORDERS] Encontradas ${triggerOrders.length} ordens condicionais para ${symbol}`);
+      Logger.debug(
+        `[TRIGGER_ORDERS] Encontradas ${triggerOrders.length} ordens condicionais para ${symbol}`
+      );
       return triggerOrders;
-
     } catch (error) {
-      Logger.error(`[TRIGGER_ORDERS] Erro ao buscar ordens condicionais para ${symbol}:`, error.message);
+      Logger.error(
+        `[TRIGGER_ORDERS] Erro ao buscar ordens condicionais para ${symbol}:`,
+        error.message
+      );
 
       // Fallback: tenta endpoint específico de trigger orders se existir
       try {
-        return await this.getTriggerOrdersFromSpecificEndpoint(symbol, marketType, apiKey, apiSecret);
+        return await this.getTriggerOrdersFromSpecificEndpoint(
+          symbol,
+          marketType,
+          apiKey,
+          apiSecret
+        );
       } catch (fallbackError) {
-        Logger.debug(`[TRIGGER_ORDERS] Endpoint específico não disponível: ${fallbackError.message}`);
+        Logger.debug(
+          `[TRIGGER_ORDERS] Endpoint específico não disponível: ${fallbackError.message}`
+        );
         return [];
       }
     }
@@ -123,11 +167,16 @@ class Order {
    * Tenta buscar ordens condicionais de um endpoint específico
    * Este método pode falhar se o endpoint não existir
    */
-  async getTriggerOrdersFromSpecificEndpoint(symbol, marketType = "PERP", apiKey = null, apiSecret = null) {
+  async getTriggerOrdersFromSpecificEndpoint(
+    symbol,
+    marketType = 'PERP',
+    apiKey = null,
+    apiSecret = null
+  ) {
     return await GlobalRequestQueue.enqueue(async () => {
       const timestamp = Date.now();
 
-      const params = {}
+      const params = {};
       if (symbol) params.symbol = symbol;
       if (marketType) params.marketType = marketType;
 
@@ -136,7 +185,7 @@ class Order {
         timestamp,
         params,
         apiKey,
-        apiSecret
+        apiSecret,
       });
 
       // Tenta diferentes possíveis endpoints para trigger orders
@@ -144,7 +193,7 @@ class Order {
         '/api/v1/trigger_orders',
         '/api/v1/triggerOrders',
         '/api/v1/orders/trigger',
-        '/api/v1/conditional_orders'
+        '/api/v1/conditional_orders',
       ];
 
       for (const endpoint of possibleEndpoints) {
@@ -152,7 +201,7 @@ class Order {
           const response = await axios.get(`${process.env.API_URL}${endpoint}`, {
             headers,
             params,
-            timeout: 15000
+            timeout: 15000,
           });
 
           Logger.debug(`[TRIGGER_ORDERS] Sucesso com endpoint: ${endpoint}`);
@@ -169,19 +218,18 @@ class Order {
   }
 
   async executeOrder(body, apiKey = null, apiSecret = null) {
-
     const timestamp = Date.now();
     const headers = auth({
       instruction: 'orderExecute',
       timestamp,
       params: body,
       apiKey,
-      apiSecret
+      apiSecret,
     });
 
     try {
       const { data } = await axios.post(`${process.env.API_URL}/api/v1/order`, body, {
-        headers
+        headers,
       });
 
       return data;
@@ -190,15 +238,18 @@ class Order {
         status: err.response?.status,
         statusText: err.response?.statusText,
         data: err.response?.data,
-        message: err.message
+        message: err.message,
       });
 
       // Captura o motivo do erro para retornar
-      const errorMessage = err.response?.data?.message || err.response?.data?.msg || err.message || 'Erro desconhecido';
+      const errorMessage =
+        err.response?.data?.message ||
+        err.response?.data?.msg ||
+        err.message ||
+        'Erro desconhecido';
       return { error: errorMessage };
     }
   }
-
 
   async cancelOpenOrder(symbol, orderId, clientId, apiKey = null, apiSecret = null) {
     const timestamp = Date.now();
@@ -208,7 +259,7 @@ class Order {
       return null;
     }
 
-    const params = {}
+    const params = {};
     if (symbol) params.symbol = symbol;
     if (orderId) params.orderId = orderId;
     if (clientId) params.clientId = clientId;
@@ -218,31 +269,36 @@ class Order {
       timestamp,
       params: params,
       apiKey,
-      apiSecret
+      apiSecret,
     });
 
     try {
       const response = await axios.delete(`${process.env.API_URL}/api/v1/order`, {
         headers,
-        data:params
+        data: params,
       });
-      return response.data
-    } catch (error) {
-    Logger.error('cancelOpenOrder - ERROR!', error.response?.data || error.message);
-    return null
-    }
 
+      // Invalida cache após cancelar ordem com sucesso
+      if (response.data && symbol) {
+        CacheInvalidator.onOrderCancelled(apiKey, apiSecret, symbol);
+      }
+
+      return response.data;
+    } catch (error) {
+      Logger.error('cancelOpenOrder - ERROR!', error.response?.data || error.message);
+      return null;
+    }
   }
 
   async cancelOpenOrders(symbol, orderType, apiKey = null, apiSecret = null) {
     const timestamp = Date.now();
 
-     if (!symbol) {
+    if (!symbol) {
       Logger.error('symbol required');
       return null;
     }
 
-    const params = {}
+    const params = {};
     if (symbol) params.symbol = symbol;
     if (orderType) params.orderType = orderType;
 
@@ -251,21 +307,20 @@ class Order {
       timestamp,
       params: params, // isso é fundamental para assinatura correta
       apiKey,
-      apiSecret
+      apiSecret,
     });
 
     try {
       const response = await axios.delete(`${process.env.API_URL}/api/v1/orders`, {
         headers,
-        data:params
+        data: params,
       });
-      return response.data
+      return response.data;
     } catch (error) {
       Logger.error('cancelOpenOrders - ERROR!', error.response?.data || error.message);
-      return null
+      return null;
     }
   }
-
 }
 
 export default new Order();

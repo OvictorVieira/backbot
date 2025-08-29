@@ -5,7 +5,7 @@ import TrailingStop from '../../TrailingStop/TrailingStop.js';
 // Mock do TrailingStop.calculatePnL diretamente
 jest.spyOn(TrailingStop, 'calculatePnL').mockImplementation(() => ({
   pnl: 0,
-  pnlPct: 0
+  pnlPct: 0,
 }));
 
 // Mock do monitorTakeProfitMinimum
@@ -24,7 +24,7 @@ describe('DefaultStopLoss', () => {
     mockConfig = {
       enableTrailingStop: false,
       maxNegativePnlStopPct: -10,
-      enableTpValidation: false
+      enableTpValidation: false,
     };
     defaultStopLoss = new DefaultStopLoss(mockConfig);
   });
@@ -35,7 +35,7 @@ describe('DefaultStopLoss', () => {
       const mockConfig = {
         enableTrailingStop: true,
         maxNegativePnlStopPct: -10,
-        enableTpValidation: false
+        enableTpValidation: false,
       };
       const stopLossWithTrailing = new DefaultStopLoss(mockConfig);
 
@@ -43,13 +43,15 @@ describe('DefaultStopLoss', () => {
         symbol: 'BTC_USDC_PERP',
         netQuantity: '0.1',
         avgEntryPrice: '50000',
-        markPrice: '49000'
+        markPrice: '49000',
       };
       const account = {
-        markets: [{
-          symbol: 'BTC_USDC_PERP',
-          decimal_quantity: 3
-        }]
+        markets: [
+          {
+            symbol: 'BTC_USDC_PERP',
+            decimal_quantity: 3,
+          },
+        ],
       };
 
       const result = stopLossWithTrailing.shouldClosePosition(position, account, null, mockConfig);
@@ -59,10 +61,12 @@ describe('DefaultStopLoss', () => {
     test('should return null for invalid position data', () => {
       const position = null;
       const account = {
-        markets: [{
-          symbol: 'BTC_USDC_PERP',
-          decimal_quantity: 3
-        }]
+        markets: [
+          {
+            symbol: 'BTC_USDC_PERP',
+            decimal_quantity: 3,
+          },
+        ],
       };
 
       const result = defaultStopLoss.shouldClosePosition(position, account, null, mockConfig);
@@ -74,7 +78,7 @@ describe('DefaultStopLoss', () => {
         symbol: 'BTC_USDC_PERP',
         netQuantity: '0.1',
         avgEntryPrice: '50000',
-        markPrice: '49000'
+        markPrice: '49000',
       };
       const account = null;
 
@@ -86,13 +90,15 @@ describe('DefaultStopLoss', () => {
       const position = {
         netQuantity: '0.1',
         avgEntryPrice: '50000',
-        markPrice: '49000'
+        markPrice: '49000',
       };
       const account = {
-        markets: [{
-          symbol: 'BTC_USDC_PERP',
-          decimal_quantity: 3
-        }]
+        markets: [
+          {
+            symbol: 'BTC_USDC_PERP',
+            decimal_quantity: 3,
+          },
+        ],
       };
 
       const result = defaultStopLoss.shouldClosePosition(position, account, null, mockConfig);
@@ -107,13 +113,15 @@ describe('DefaultStopLoss', () => {
       const position = {
         symbol: 'BTC_USDC_PERP',
         avgEntryPrice: '50000',
-        markPrice: '49000'
+        markPrice: '49000',
       };
       const account = {
-        markets: [{
-          symbol: 'BTC_USDC_PERP',
-          decimal_quantity: 3
-        }]
+        markets: [
+          {
+            symbol: 'BTC_USDC_PERP',
+            decimal_quantity: 3,
+          },
+        ],
       };
 
       const result = defaultStopLoss.shouldClosePosition(position, account, null, mockConfig);
@@ -134,13 +142,15 @@ describe('DefaultStopLoss', () => {
         symbol: 'BTC_USDC_PERP',
         netQuantity: '0.1',
         avgEntryPrice: '50000',
-        markPrice: '49000'
+        markPrice: '49000',
       };
       const account = {
-        markets: [{
-          symbol: 'BTC_USDC_PERP',
-          decimal_quantity: 3
-        }]
+        markets: [
+          {
+            symbol: 'BTC_USDC_PERP',
+            decimal_quantity: 3,
+          },
+        ],
       };
 
       const result = defaultStopLoss.shouldClosePosition(position, account, null, mockConfig);
@@ -162,13 +172,15 @@ describe('DefaultStopLoss', () => {
         symbol: 'BTC_USDC_PERP',
         netQuantity: '0.1',
         avgEntryPrice: '50000',
-        markPrice: '49000'
+        markPrice: '49000',
       };
       const account = {
-        markets: [{
-          symbol: 'BTC_USDC_PERP',
-          decimal_quantity: 3
-        }]
+        markets: [
+          {
+            symbol: 'BTC_USDC_PERP',
+            decimal_quantity: 3,
+          },
+        ],
       };
 
       const result = defaultStopLoss.shouldClosePosition(position, account, null, mockConfig);
@@ -193,13 +205,15 @@ describe('DefaultStopLoss', () => {
         symbol: 'BTC_USDC_PERP',
         netQuantity: '0.1',
         avgEntryPrice: '50000',
-        markPrice: '49000'
+        markPrice: '49000',
       };
       const account = {
-        markets: [{
-          symbol: 'BTC_USDC_PERP',
-          decimal_quantity: 3
-        }]
+        markets: [
+          {
+            symbol: 'BTC_USDC_PERP',
+            decimal_quantity: 3,
+          },
+        ],
       };
 
       const result = defaultStopLoss.shouldClosePosition(position, account, null, mockConfig);
@@ -224,17 +238,19 @@ describe('DefaultStopLoss', () => {
         symbol: 'BTC_USDC_PERP',
         netQuantity: '0.1',
         avgEntryPrice: '50000',
-        markPrice: '48000' // -4% loss (at the limit)
+        markPrice: '48000', // -4% loss (at the limit)
       };
       const account = {
-        markets: [{
-          symbol: 'BTC_USDC_PERP',
-          decimal_quantity: 3
-        }]
+        markets: [
+          {
+            symbol: 'BTC_USDC_PERP',
+            decimal_quantity: 3,
+          },
+        ],
       };
 
       const result = defaultStopLoss.shouldClosePosition(position, account, null, mockConfig);
-      
+
       expect(result).not.toBeNull();
       expect(result.shouldClose).toBe(true);
       expect(result.type).toBe('PERCENTAGE');
@@ -261,13 +277,15 @@ describe('DefaultStopLoss', () => {
         symbol: 'BTC_USDC_PERP',
         netQuantity: '0.1',
         avgEntryPrice: '50000',
-        markPrice: '49000' // -2% loss (above the -4% limit)
+        markPrice: '49000', // -2% loss (above the -4% limit)
       };
       const account = {
-        markets: [{
-          symbol: 'BTC_USDC_PERP',
-          decimal_quantity: 3
-        }]
+        markets: [
+          {
+            symbol: 'BTC_USDC_PERP',
+            decimal_quantity: 3,
+          },
+        ],
       };
 
       const result = defaultStopLoss.shouldClosePosition(position, account, null, mockConfig);
@@ -285,7 +303,7 @@ describe('DefaultStopLoss', () => {
       const originalTpValidation = process.env.ENABLE_TP_VALIDATION;
       const originalMinTp = process.env.MIN_TAKE_PROFIT_PCT;
       const originalTpPartial = process.env.TP_PARTIAL_PERCENTAGE;
-      
+
       process.env.ENABLE_TRAILING_STOP = 'false';
       process.env.MAX_NEGATIVE_PNL_STOP_PCT = '4.0';
       process.env.ENABLE_TP_VALIDATION = 'true';
@@ -299,17 +317,19 @@ describe('DefaultStopLoss', () => {
         symbol: 'BTC_USDC_PERP',
         netQuantity: '0.1',
         avgEntryPrice: '50000',
-        markPrice: '50250' // 0.5% profit
+        markPrice: '50250', // 0.5% profit
       };
       const account = {
-        markets: [{
-          symbol: 'BTC_USDC_PERP',
-          decimal_quantity: 3
-        }]
+        markets: [
+          {
+            symbol: 'BTC_USDC_PERP',
+            decimal_quantity: 3,
+          },
+        ],
       };
 
       const result = defaultStopLoss.shouldClosePosition(position, account, null, mockConfig);
-      
+
       // Como o monitorTakeProfitMinimum é assíncrono mas está sendo chamado de forma síncrona,
       // o resultado será null
       expect(result).toBeNull();
@@ -358,4 +378,4 @@ describe('DefaultStopLoss', () => {
       process.env.LOG_TYPE = originalLogType;
     });
   });
-}); 
+});

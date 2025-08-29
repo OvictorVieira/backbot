@@ -2,10 +2,10 @@ import { ConfigAdapter } from '../Persistence/index.js';
 
 /**
  * ConfigManager V2 - Usando Sistema de Persistência Isolado
- * 
+ *
  * Esta é a nova versão do ConfigManager que usa o sistema de persistência
  * isolado, facilitando migração para outras tecnologias.
- * 
+ *
  * Todas as operações são delegadas para o ConfigAdapter, que gerencia
  * a persistência de forma transparente.
  */
@@ -17,7 +17,7 @@ class ConfigManagerV2 {
   static generateBotId() {
     return ConfigAdapter.generateBotId();
   }
-  
+
   /**
    * Carrega todas as configurações
    * @returns {Array} Array de configurações de bots
@@ -25,7 +25,7 @@ class ConfigManagerV2 {
   static loadConfigs() {
     return ConfigAdapter.loadConfigs();
   }
-  
+
   /**
    * Salva configurações
    * @param {Array} configs - Array de configurações para salvar
@@ -33,7 +33,7 @@ class ConfigManagerV2 {
   static saveConfigs(configs) {
     ConfigAdapter.saveConfigs(configs);
   }
-  
+
   /**
    * Obtém configuração de um bot específico
    * @param {string} strategyName - Nome da estratégia
@@ -42,7 +42,7 @@ class ConfigManagerV2 {
   static getBotConfig(strategyName) {
     return ConfigAdapter.getBotConfig(strategyName);
   }
-  
+
   /**
    * Obtém configuração de um bot por ID
    * @param {number} botId - ID do bot
@@ -51,7 +51,7 @@ class ConfigManagerV2 {
   static getBotConfigById(botId) {
     return ConfigAdapter.getBotConfigById(botId);
   }
-  
+
   /**
    * Obtém configuração de um bot por nome
    * @param {string} botName - Nome do bot
@@ -60,7 +60,7 @@ class ConfigManagerV2 {
   static getBotConfigByBotName(botName) {
     return ConfigAdapter.getBotConfigByBotName(botName);
   }
-  
+
   /**
    * Adiciona uma nova configuração de bot
    * @param {Object} config - Configuração do bot
@@ -69,7 +69,7 @@ class ConfigManagerV2 {
   static addBotConfig(config) {
     return ConfigAdapter.addBotConfig(config);
   }
-  
+
   /**
    * Atualiza configuração de um bot
    * @param {number} botId - ID do bot
@@ -79,7 +79,7 @@ class ConfigManagerV2 {
   static updateBotConfig(botId, newConfig) {
     return ConfigAdapter.updateBotConfig(botId, newConfig);
   }
-  
+
   /**
    * Remove configuração de um bot
    * @param {number} botId - ID do bot
@@ -88,7 +88,7 @@ class ConfigManagerV2 {
   static removeBotConfig(botId) {
     return ConfigAdapter.removeBotConfig(botId);
   }
-  
+
   /**
    * Remove configuração de um bot por nome
    * @param {string} botName - Nome do bot
@@ -101,7 +101,7 @@ class ConfigManagerV2 {
     }
     return false;
   }
-  
+
   /**
    * Atualiza status de um bot
    * @param {number} botId - ID do bot
@@ -112,7 +112,7 @@ class ConfigManagerV2 {
   static updateBotStatus(botId, status, startTime = null) {
     return ConfigAdapter.updateBotStatus(botId, status, startTime);
   }
-  
+
   /**
    * Obtém todos os bots ativos
    * @returns {Array} Array de bots ativos
@@ -120,7 +120,7 @@ class ConfigManagerV2 {
   static getActiveBots() {
     return ConfigAdapter.getActiveBots();
   }
-  
+
   /**
    * Obtém estatísticas das configurações
    * @returns {Object} Estatísticas
@@ -128,7 +128,7 @@ class ConfigManagerV2 {
   static getStats() {
     return ConfigAdapter.getStats();
   }
-  
+
   /**
    * Valida configuração de bot
    * @param {Object} config - Configuração para validar
@@ -136,38 +136,42 @@ class ConfigManagerV2 {
    */
   static validateConfig(config) {
     const errors = [];
-    
+
     // Validações básicas
     if (!config.botName || config.botName.trim() === '') {
       errors.push('Nome do bot é obrigatório');
     }
-    
+
     if (!config.strategyName || config.strategyName.trim() === '') {
       errors.push('Nome da estratégia é obrigatório');
     }
-    
+
     if (!config.apiKey || config.apiKey.trim() === '') {
       errors.push('API Key é obrigatória');
     }
-    
+
     if (!config.apiSecret || config.apiSecret.trim() === '') {
       errors.push('API Secret é obrigatório');
     }
-    
-    if (config.capitalPercentage === null || config.capitalPercentage === undefined || config.capitalPercentage < 0) {
+
+    if (
+      config.capitalPercentage === null ||
+      config.capitalPercentage === undefined ||
+      config.capitalPercentage < 0
+    ) {
       errors.push('Percentual de capital deve ser maior ou igual a 0');
     }
-    
+
     if (!config.time || config.time.trim() === '') {
       errors.push('Timeframe é obrigatório');
     }
-    
+
     return {
       isValid: errors.length === 0,
-      errors
+      errors,
     };
   }
-  
+
   /**
    * Cria configuração padrão para uma estratégia
    * @param {string} strategyName - Nome da estratégia
@@ -198,10 +202,10 @@ class ConfigManagerV2 {
       enableOrphanOrderMonitor: true,
       enablePendingOrdersMonitor: true,
       maxOpenOrders: 5,
-      status: 'stopped'
+      status: 'stopped',
     };
   }
-  
+
   /**
    * Obtém todos os nomes de estratégias
    * @returns {string[]} Array de nomes de estratégias
@@ -210,7 +214,7 @@ class ConfigManagerV2 {
     const configs = this.loadConfigs();
     return [...new Set(configs.map(config => config.strategyName))];
   }
-  
+
   /**
    * Obtém todos os nomes de bots
    * @returns {string[]} Array de nomes de bots
@@ -219,7 +223,7 @@ class ConfigManagerV2 {
     const configs = this.loadConfigs();
     return configs.map(config => config.botName);
   }
-  
+
   /**
    * Verifica se um bot está ativo
    * @param {number} botId - ID do bot
@@ -229,7 +233,7 @@ class ConfigManagerV2 {
     const config = this.getBotConfigById(botId);
     return config && config.status === 'running';
   }
-  
+
   /**
    * Verifica se um bot pode ser iniciado
    * @param {number} botId - ID do bot
@@ -239,7 +243,7 @@ class ConfigManagerV2 {
     const config = this.getBotConfigById(botId);
     return config && config.enabled && config.status !== 'running';
   }
-  
+
   /**
    * Limpa status de erro de um bot
    * @param {number} botId - ID do bot

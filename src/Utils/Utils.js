@@ -49,15 +49,17 @@ function clearLeverageAdjustLog(symbol = null) {
 function validateLeverageForSymbol(symbol, currentLeverage) {
   // Tokens que podem ter até 50x
   const highLeverageTokens = ['BTC_USDC_PERP', 'ETH_USDC_PERP', 'SOL_USDC_PERP'];
-  
+
   // Verifica se o símbolo está na lista de alta alavancagem
   const isHighLeverageToken = highLeverageTokens.includes(symbol);
-  
+
   if (isHighLeverageToken) {
     // Para BTC, ETH, SOL: pode usar até 50x
     const validLeverage = Math.min(currentLeverage, 50);
     if (validLeverage !== currentLeverage && !leverageAdjustLogged.has(symbol)) {
-      console.log(`⚠️ [LEVERAGE_ADJUST] ${symbol}: Alavancagem ajustada de ${currentLeverage}x para ${validLeverage}x (máximo 50x para este token)`);
+      console.log(
+        `⚠️ [LEVERAGE_ADJUST] ${symbol}: Alavancagem ajustada de ${currentLeverage}x para ${validLeverage}x (máximo 50x para este token)`
+      );
       leverageAdjustLogged.add(symbol);
     }
     return validLeverage;
@@ -65,7 +67,9 @@ function validateLeverageForSymbol(symbol, currentLeverage) {
     // Para outros tokens: máximo 10x
     const validLeverage = Math.min(currentLeverage, 10);
     if (validLeverage !== currentLeverage && !leverageAdjustLogged.has(symbol)) {
-      console.log(`⚠️ [LEVERAGE_ADJUST] ${symbol}: Alavancagem ajustada de ${currentLeverage}x para ${validLeverage}x (máximo 10x para este token)`);
+      console.log(
+        `⚠️ [LEVERAGE_ADJUST] ${symbol}: Alavancagem ajustada de ${currentLeverage}x para ${validLeverage}x (máximo 10x para este token)`
+      );
       leverageAdjustLogged.add(symbol);
     }
     return validLeverage;

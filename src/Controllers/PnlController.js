@@ -41,7 +41,6 @@ class PnlController {
 
       Logger.warn(`⚠️ [PNL] BotId não fornecido - retornando estatísticas vazias`);
       return this.getEmptyStats();
-
     } catch (error) {
       Logger.error('❌ [PNL] Erro ao calcular estatísticas:', error.message);
       return this.getEmptyStats();
@@ -70,12 +69,11 @@ class PnlController {
         totalVolume: await this.calculateTotalVolume(botId),
         // Timestamp da análise
         calculatedAt: new Date().toISOString(),
-        botId: botId
+        botId: botId,
       };
 
       this.logStatistics(enrichedStats);
       return enrichedStats;
-
     } catch (error) {
       Logger.error(`❌ [PNL] Erro ao calcular estatísticas do bot ${botId}:`, error.message);
       return this.getEmptyStats();
@@ -113,7 +111,6 @@ class PnlController {
       );
 
       return result?.totalVolume || 0;
-
     } catch (error) {
       Logger.error(`❌ [PNL] Erro ao calcular volume total:`, error.message);
       return 0;
@@ -160,7 +157,7 @@ class PnlController {
       averageLoss: 0,
       totalVolume: 0,
       calculatedAt: new Date().toISOString(),
-      botId: null
+      botId: null,
     };
   }
 
@@ -192,20 +189,22 @@ class PnlController {
       const overall = Object.values(bySymbol).reduce(
         (tot, curr) => ({
           totalFee: tot.totalFee + curr.totalFee,
-          totalVolume: tot.totalVolume + curr.totalVolume
+          totalVolume: tot.totalVolume + curr.totalVolume,
         }),
         { totalFee: 0, totalVolume: 0 }
       );
 
-      const volumeBylFee = overall.totalFee > 0 ? (overall.totalVolume / overall.totalFee) : 0;
+      const volumeBylFee = overall.totalFee > 0 ? overall.totalVolume / overall.totalFee : 0;
 
-      return { totalFee: overall.totalFee, totalVolume: overall.totalVolume, volumeBylFee: volumeBylFee };
-
+      return {
+        totalFee: overall.totalFee,
+        totalVolume: overall.totalVolume,
+        volumeBylFee: volumeBylFee,
+      };
     } catch (error) {
       Logger.error('❌ PnlController.summarizeTrades - Error:', error.message);
       return { totalFee: 0, totalVolume: 0, volumeBylFee: 0 };
     }
   }
-
 }
 export default new PnlController();

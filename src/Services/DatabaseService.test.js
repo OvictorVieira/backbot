@@ -27,13 +27,16 @@ describe('DatabaseService', () => {
   describe('Initialization', () => {
     it('deve criar o arquivo da base de dados e a tabela trailing_state na inicialização', async () => {
       await dbService.init();
-      
+
       expect(dbService.isInitialized()).toBe(true);
-      
+
       // Check if database file exists
-      const fileExists = await fs.access(testDbPath).then(() => true).catch(() => false);
+      const fileExists = await fs
+        .access(testDbPath)
+        .then(() => true)
+        .catch(() => false);
       expect(fileExists).toBe(true);
-      
+
       // Check if trailing_state table exists
       const tableExists = await dbService.get(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='trailing_state'"
@@ -53,7 +56,7 @@ describe('DatabaseService', () => {
         symbol: testSymbol,
         trailingStopPrice: 50000,
         activated: true,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
       };
 
       // Insert test data
@@ -64,36 +67,33 @@ describe('DatabaseService', () => {
       expect(insertResult.changes).toBe(1);
 
       // Get the inserted data
-      const retrievedData = await dbService.get(
-        'SELECT * FROM trailing_state WHERE symbol = ?',
-        [testSymbol]
-      );
+      const retrievedData = await dbService.get('SELECT * FROM trailing_state WHERE symbol = ?', [
+        testSymbol,
+      ]);
       expect(retrievedData).toBeTruthy();
       expect(retrievedData.symbol).toBe(testSymbol);
-      
+
       const retrievedState = JSON.parse(retrievedData.state);
       expect(retrievedState.trailingStopPrice).toBe(50000);
       expect(retrievedState.activated).toBe(true);
 
       // Delete the test data
-      const deleteResult = await dbService.run(
-        'DELETE FROM trailing_state WHERE symbol = ?',
-        [testSymbol]
-      );
+      const deleteResult = await dbService.run('DELETE FROM trailing_state WHERE symbol = ?', [
+        testSymbol,
+      ]);
       expect(deleteResult.changes).toBe(1);
 
       // Verify deletion
-      const deletedData = await dbService.get(
-        'SELECT * FROM trailing_state WHERE symbol = ?',
-        [testSymbol]
-      );
+      const deletedData = await dbService.get('SELECT * FROM trailing_state WHERE symbol = ?', [
+        testSymbol,
+      ]);
       expect(deletedData).toBeUndefined();
     });
 
     it('deve conseguir executar queries getAll', async () => {
       const testData = [
         { symbol: 'BTC_USDC_PERP', state: JSON.stringify({ price: 50000 }) },
-        { symbol: 'ETH_USDC_PERP', state: JSON.stringify({ price: 3000 }) }
+        { symbol: 'ETH_USDC_PERP', state: JSON.stringify({ price: 3000 }) },
       ];
 
       // Insert test data
@@ -115,7 +115,7 @@ describe('DatabaseService', () => {
   describe('Error Handling', () => {
     it('deve lidar com erros de query inválida', async () => {
       await dbService.init();
-      
+
       await expect(dbService.run('INVALID SQL QUERY')).rejects.toThrow();
     });
   });

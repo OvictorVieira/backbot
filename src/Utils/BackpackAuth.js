@@ -6,7 +6,6 @@ import Logger from './Logger.js';
  * Resolve problema de "Request has expired" causado por delays na fila do RequestManager
  */
 class BackpackAuth {
-  
   /**
    * Gera headers de autenticação com timestamp fresco
    * @param {Object} options - Opções de autenticação
@@ -21,16 +20,18 @@ class BackpackAuth {
     try {
       // Gera timestamp SEMPRE no momento da chamada
       const timestamp = Date.now();
-      
-      Logger.debug(`🔐 [BACKPACK_AUTH] Gerando headers para ${instruction} - Timestamp: ${timestamp}`);
-      
+
+      Logger.debug(
+        `🔐 [BACKPACK_AUTH] Gerando headers para ${instruction} - Timestamp: ${timestamp}`
+      );
+
       return auth({
         instruction,
         params,
         timestamp,
         window,
         apiKey,
-        apiSecret
+        apiSecret,
       });
     } catch (error) {
       Logger.error(`❌ [BACKPACK_AUTH] Erro ao gerar headers para ${instruction}:`, error.message);
@@ -60,11 +61,11 @@ class BackpackAuth {
     const now = Date.now();
     const age = now - timestamp;
     const isValid = age <= window;
-    
+
     if (!isValid) {
       Logger.warn(`⚠️ [BACKPACK_AUTH] Timestamp expirado - Idade: ${age}ms, Limite: ${window}ms`);
     }
-    
+
     return isValid;
   }
 

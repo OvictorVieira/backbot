@@ -65,7 +65,6 @@ class BotInstance {
       // Inicializa PositionTrackingService
       await this.initializePositionTracking();
 
-
       // Inicia análise
       this.startAnalysis();
 
@@ -78,7 +77,6 @@ class BotInstance {
       this.logger.success('Bot iniciado com sucesso');
 
       return true;
-
     } catch (error) {
       this.logger.error(`Erro ao iniciar bot: ${error.message}`);
       return false;
@@ -104,7 +102,6 @@ class BotInstance {
 
       this.isRunning = false;
       this.logger.success('Bot parado com sucesso');
-
     } catch (error) {
       this.logger.error(`Erro ao parar bot: ${error.message}`);
     }
@@ -124,15 +121,13 @@ class BotInstance {
       errors.push(`Estratégia inválida: ${this.strategy}`);
     }
 
-
-
     if (this.capitalPercentage < 0 || this.capitalPercentage > 100) {
       errors.push('Porcentagem do capital deve estar entre 0 e 100');
     }
 
     return {
       isValid: errors.length === 0,
-      errors
+      errors,
     };
   }
 
@@ -145,25 +140,24 @@ class BotInstance {
       const accountData = await AccountController.get({
         apiKey: this.config.apiKey,
         apiSecret: this.config.apiSecret,
-        strategy: this.strategy
+        strategy: this.strategy,
       });
 
       if (!accountData) {
         return {
           success: false,
-          error: 'Falha ao obter dados da conta'
+          error: 'Falha ao obter dados da conta',
         };
       }
 
       return {
         success: true,
-        data: accountData
+        data: accountData,
       };
-
     } catch (error) {
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
@@ -188,7 +182,6 @@ class BotInstance {
       this.startFillMonitoring();
 
       this.logger.success('Sistema de rastreamento de posições inicializado');
-
     } catch (error) {
       this.logger.error('Erro ao inicializar rastreamento de posições:', error.message);
       throw error;
@@ -202,7 +195,7 @@ class BotInstance {
     this.logger.debug('Iniciando monitoramento de fills...');
 
     // Define timestamp inicial para buscar apenas fills novos
-    this.lastFillCheck = Date.now() - (5 * 60 * 1000); // 5 minutos atrás
+    this.lastFillCheck = Date.now() - 5 * 60 * 1000; // 5 minutos atrás
 
     // Primeira verificação imediata
     this.checkForNewFills();
@@ -262,8 +255,9 @@ class BotInstance {
           // Processa o fill
           await this.positionTracker.updatePositionOnFill(fillEvent);
 
-          this.logger.debug(`✅ [FILL_MONITOR] Fill processado: ${fill.symbol} ${fill.side} ${fill.quantity} @ ${fill.price}`);
-
+          this.logger.debug(
+            `✅ [FILL_MONITOR] Fill processado: ${fill.symbol} ${fill.side} ${fill.quantity} @ ${fill.price}`
+          );
         } catch (error) {
           this.logger.error(`❌ [FILL_MONITOR] Erro ao processar fill:`, error.message);
         }
@@ -271,7 +265,6 @@ class BotInstance {
 
       // Atualiza timestamp da última verificação
       this.lastFillCheck = now;
-
     } catch (error) {
       this.logger.error('❌ [FILL_MONITOR] Erro ao verificar fills:', error.message);
     }
@@ -294,13 +287,15 @@ class BotInstance {
           {
             symbol: fill.symbol,
             clientId: fill.clientId,
-            createdAt: fill.createdAt || fill.timestamp
+            createdAt: fill.createdAt || fill.timestamp,
           },
           this.config
         );
 
         if (hasValidClientId) {
-          this.logger.debug(`✅ [FILL_MONITOR] Fill de abertura detectado: ${fill.symbol} (clientId: ${fill.clientId})`);
+          this.logger.debug(
+            `✅ [FILL_MONITOR] Fill de abertura detectado: ${fill.symbol} (clientId: ${fill.clientId})`
+          );
           return true;
         }
       }
@@ -311,13 +306,14 @@ class BotInstance {
         const hasOpenPosition = await this.hasOpenPositionForSymbol(fill.symbol);
 
         if (hasOpenPosition) {
-          this.logger.debug(`🔄 [FILL_MONITOR] Fill de fechamento automático detectado: ${fill.symbol}`);
+          this.logger.debug(
+            `🔄 [FILL_MONITOR] Fill de fechamento automático detectado: ${fill.symbol}`
+          );
           return true;
         }
       }
 
       return false;
-
     } catch (error) {
       this.logger.debug(`⚠️ [FILL_MONITOR] Erro na validação do fill: ${error.message}`);
       return false;
@@ -340,9 +336,10 @@ class BotInstance {
       const symbolPosition = openPositions.find(pos => pos.symbol === symbol);
 
       return !!symbolPosition;
-
     } catch (error) {
-      this.logger.debug(`⚠️ [FILL_MONITOR] Erro ao verificar posição para ${symbol}: ${error.message}`);
+      this.logger.debug(
+        `⚠️ [FILL_MONITOR] Erro ao verificar posição para ${symbol}: ${error.message}`
+      );
       return false;
     }
   }
@@ -361,7 +358,7 @@ class BotInstance {
       orderId: fill.orderId,
       clientId: fill.clientId,
       timestamp: fill.timestamp || fill.createdAt || new Date().toISOString(),
-      botId: this.config.botId || null
+      botId: this.config.botId || null,
     };
   }
 
@@ -443,7 +440,6 @@ class BotInstance {
 
       // Executa análise passando o timeframe específico da conta, o logger e a configuração
       await decisionInstance.analyze(this.time, this.logger, instanceConfig);
-
     } catch (error) {
       this.logger.error(`Erro na análise: ${error.message}`);
     }
@@ -459,7 +455,6 @@ class BotInstance {
       try {
         // Executa monitoramento APENAS para esta conta usando config do bot
         await OrderController.monitorPendingEntryOrders(this.botName, this.config);
-
       } catch (error) {
         this.logger.error(`Erro no monitoramento: ${error.message}`);
       }
@@ -476,7 +471,7 @@ class BotInstance {
       strategy: this.strategy,
       isRunning: this.isRunning,
       capitalPercentage: this.capitalPercentage,
-      time: this.time
+      time: this.time,
     };
   }
 
@@ -508,7 +503,6 @@ class BotInstance {
       }
 
       this.logger.success('Bot parado com sucesso');
-
     } catch (error) {
       this.logger.error('Erro ao parar bot:', error.message);
       throw error;
@@ -522,7 +516,7 @@ class BotInstance {
     return {
       botName: this.botName,
       strategy: this.strategy,
-      isRunning: this.isRunning
+      isRunning: this.isRunning,
     };
   }
 }

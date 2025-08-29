@@ -57,7 +57,6 @@ class OrdersMigrator {
       this.showStatistics(result);
 
       return result;
-
     } catch (error) {
       console.error('❌ [MIGRATOR] Erro durante a migração:', error.message);
       return { success: false, error: error.message };
@@ -88,10 +87,10 @@ class OrdersMigrator {
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const backupFile = path.join(this.backupDir, `bot_orders_backup_${timestamp}.json`);
-      
+
       fs.copyFileSync(this.jsonFile, backupFile);
       console.log(`💾 [MIGRATOR] Backup criado: ${backupFile}`);
-      
+
       return backupFile;
     } catch (error) {
       console.warn(`⚠️ [MIGRATOR] Erro ao criar backup: ${error.message}`);
@@ -114,7 +113,7 @@ class OrdersMigrator {
       try {
         // Verifica se a ordem já existe no SQLite
         const existingOrder = await OrdersService.getOrderByExternalId(order.externalOrderId);
-        
+
         if (existingOrder) {
           skippedCount++;
           console.log(`⏭️ [MIGRATOR] Ordem ${order.externalOrderId} já existe, pulando`);
@@ -122,9 +121,11 @@ class OrdersMigrator {
           // Adiciona a ordem ao SQLite
           await OrdersService.addOrder(order);
           migratedCount++;
-          
+
           if (migratedCount % 100 === 0) {
-            console.log(`📊 [MIGRATOR] Progresso: ${migratedCount}/${orders.length} ordens migradas`);
+            console.log(
+              `📊 [MIGRATOR] Progresso: ${migratedCount}/${orders.length} ordens migradas`
+            );
           }
         }
       } catch (error) {
@@ -141,7 +142,7 @@ class OrdersMigrator {
       migratedCount,
       skippedCount,
       errorCount,
-      errors
+      errors,
     };
   }
 
@@ -155,7 +156,7 @@ class OrdersMigrator {
     console.log(`✅ Ordens migradas: ${result.migratedCount}`);
     console.log(`⏭️ Ordens puladas (já existiam): ${result.skippedCount}`);
     console.log(`❌ Erros: ${result.errorCount}`);
-    
+
     if (result.errors.length > 0) {
       console.log('\n🚨 Erros encontrados:');
       result.errors.slice(0, 5).forEach(error => {
@@ -197,7 +198,9 @@ class OrdersMigrator {
         console.log('✅ [MIGRATOR] Migração verificada com sucesso!');
         return true;
       } else {
-        console.log('⚠️ [MIGRATOR] Migração incompleta - algumas ordens podem não ter sido migradas');
+        console.log(
+          '⚠️ [MIGRATOR] Migração incompleta - algumas ordens podem não ter sido migradas'
+        );
         return false;
       }
     } catch (error) {
@@ -210,8 +213,9 @@ class OrdersMigrator {
 // Executa a migração se o script for chamado diretamente
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const migrator = new OrdersMigrator();
-  
-  migrator.migrate()
+
+  migrator
+    .migrate()
     .then(result => {
       if (result.success) {
         console.log('\n🎉 [MIGRATOR] Migração concluída com sucesso!');

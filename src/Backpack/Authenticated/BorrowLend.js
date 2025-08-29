@@ -3,7 +3,6 @@ import { auth } from './Authentication.js';
 import Logger from '../../Utils/Logger.js';
 
 class BorrowLend {
-  
   async getBorrowLendPositionQuery() {
     const timestamp = Date.now();
 
@@ -43,8 +42,8 @@ class BorrowLend {
     }
 
     const body = {
-      symbol,   //symbol token "BTC" "ETH" "SOL"
-      side,     // "Borrow" ou "Lend"
+      symbol, //symbol token "BTC" "ETH" "SOL"
+      side, // "Borrow" ou "Lend"
       quantity, // string, exemplo: "0.01"
     };
 
@@ -65,7 +64,6 @@ class BorrowLend {
       return null;
     }
   }
-
 }
 
 export default new BorrowLend();

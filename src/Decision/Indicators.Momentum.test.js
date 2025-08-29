@@ -1,7 +1,6 @@
 import { calculateMomentum } from './Indicators.js';
 
 describe('calculateMomentum - WaveTrend Oscillator', () => {
-  
   // Conjunto de dados de teste conhecido (25 candles)
   const mockCandles = [
     { open: 50000, high: 50100, low: 49900, close: 50050, volume: 1000 },
@@ -29,13 +28,13 @@ describe('calculateMomentum - WaveTrend Oscillator', () => {
     { open: 52150, high: 52300, low: 52100, close: 52250, volume: 3200 },
     { open: 52250, high: 52400, low: 52200, close: 52350, volume: 3300 },
     { open: 52350, high: 52500, low: 52300, close: 52450, volume: 3400 },
-    { open: 52450, high: 52600, low: 52400, close: 52550, volume: 3500 }
+    { open: 52450, high: 52600, low: 52400, close: 52550, volume: 3500 },
   ];
 
   describe('Cálculo básico do WaveTrend', () => {
     it('deve calcular os valores de wt1 e wt2 corretamente para um conjunto de dados conhecido', () => {
       const result = calculateMomentum(mockCandles, 10, 21);
-      
+
       // Validações básicas
       expect(result).toBeDefined();
       expect(result.wt1).toBeDefined();
@@ -47,20 +46,20 @@ describe('calculateMomentum - WaveTrend Oscillator', () => {
       expect(result.history).toBeDefined();
       expect(result.history.wt1).toBeDefined();
       expect(result.history.wt2).toBeDefined();
-      
+
       // Validações de tipo
       expect(typeof result.wt1).toBe('number');
       expect(typeof result.wt2).toBe('number');
       expect(typeof result.direction).toBe('string');
       expect(Array.isArray(result.history.wt1)).toBe(true);
       expect(Array.isArray(result.history.wt2)).toBe(true);
-      
+
       // Validações de lógica
       expect(['UP', 'DOWN', 'NEUTRAL']).toContain(result.direction);
       expect([null, 'BULLISH', 'BEARISH']).toContain(result.cross);
       expect(typeof result.isBullish).toBe('boolean');
       expect(typeof result.isBearish).toBe('boolean');
-      
+
       // Validação da lógica de direção
       if (result.wt1 > result.wt2) {
         expect(result.direction).toBe('UP');
@@ -76,7 +75,7 @@ describe('calculateMomentum - WaveTrend Oscillator', () => {
     it('deve retornar valores válidos mesmo com poucos dados', () => {
       const shortCandles = mockCandles.slice(0, 15); // Menos que o mínimo necessário
       const result = calculateMomentum(shortCandles, 10, 21);
-      
+
       expect(result).toBeDefined();
       expect(result.wt1).toBeNull();
       expect(result.wt2).toBeNull();
@@ -88,7 +87,7 @@ describe('calculateMomentum - WaveTrend Oscillator', () => {
 
     it('deve retornar estrutura válida com dados vazios', () => {
       const result = calculateMomentum([], 10, 21);
-      
+
       expect(result).toBeDefined();
       expect(result.wt1).toBeNull();
       expect(result.wt2).toBeNull();
@@ -132,11 +131,11 @@ describe('calculateMomentum - WaveTrend Oscillator', () => {
         { open: 52350, high: 52500, low: 52300, close: 52450, volume: 3400 },
         { open: 52450, high: 52600, low: 52400, close: 52550, volume: 3500 },
         // Última vela com forte alta para forçar cruzamento bullish
-        { open: 52550, high: 53000, low: 52500, close: 52950, volume: 4000 }
+        { open: 52550, high: 53000, low: 52500, close: 52950, volume: 4000 },
       ];
-      
+
       const result = calculateMomentum(bullishCandles, 10, 21);
-      
+
       // Verifica se detectou o cruzamento bullish
       if (result.cross === 'BULLISH') {
         expect(result.cross).toBe('BULLISH');
@@ -182,11 +181,11 @@ describe('calculateMomentum - WaveTrend Oscillator', () => {
         { open: 52350, high: 52500, low: 52300, close: 52450, volume: 3400 },
         { open: 52450, high: 52600, low: 52400, close: 52550, volume: 3500 },
         // Última vela com forte queda para forçar cruzamento bearish
-        { open: 52550, high: 52600, low: 52000, close: 52050, volume: 4000 }
+        { open: 52550, high: 52600, low: 52000, close: 52050, volume: 4000 },
       ];
-      
+
       const result = calculateMomentum(bearishCandles, 10, 21);
-      
+
       // Verifica se detectou o cruzamento bearish
       if (result.cross === 'BEARISH') {
         expect(result.cross).toBe('BEARISH');
@@ -207,7 +206,7 @@ describe('calculateMomentum - WaveTrend Oscillator', () => {
     it('deve aceitar parâmetros personalizados de channelLength e averageLength', () => {
       const result1 = calculateMomentum(mockCandles, 5, 10);
       const result2 = calculateMomentum(mockCandles, 15, 30);
-      
+
       expect(result1).toBeDefined();
       expect(result2).toBeDefined();
       expect(result1.wt1).toBeDefined();
@@ -218,7 +217,7 @@ describe('calculateMomentum - WaveTrend Oscillator', () => {
 
     it('deve usar valores padrão quando parâmetros não são fornecidos', () => {
       const result = calculateMomentum(mockCandles);
-      
+
       expect(result).toBeDefined();
       expect(result.wt1).toBeDefined();
       expect(result.wt2).toBeDefined();
@@ -228,17 +227,17 @@ describe('calculateMomentum - WaveTrend Oscillator', () => {
   describe('Validação de histórico', () => {
     it('deve retornar histórico completo de wt1 e wt2', () => {
       const result = calculateMomentum(mockCandles, 10, 21);
-      
+
       expect(result.history).toBeDefined();
       expect(result.history.wt1).toBeDefined();
       expect(result.history.wt2).toBeDefined();
       expect(Array.isArray(result.history.wt1)).toBe(true);
       expect(Array.isArray(result.history.wt2)).toBe(true);
-      
+
       // Verifica se o histórico tem pelo menos alguns valores válidos
       const validWt1Values = result.history.wt1.filter(val => val !== null && !isNaN(val));
       const validWt2Values = result.history.wt2.filter(val => val !== null && !isNaN(val));
-      
+
       expect(validWt1Values.length).toBeGreaterThan(0);
       expect(validWt2Values.length).toBeGreaterThan(0);
     });
@@ -248,7 +247,7 @@ describe('calculateMomentum - WaveTrend Oscillator', () => {
     it('deve calcular valores consistentes para o mesmo conjunto de dados', () => {
       const result1 = calculateMomentum(mockCandles, 10, 21);
       const result2 = calculateMomentum(mockCandles, 10, 21);
-      
+
       expect(result1.wt1).toBe(result2.wt1);
       expect(result1.wt2).toBe(result2.wt2);
       expect(result1.direction).toBe(result2.direction);
@@ -258,10 +257,10 @@ describe('calculateMomentum - WaveTrend Oscillator', () => {
     it('deve calcular valores diferentes para parâmetros diferentes', () => {
       const result1 = calculateMomentum(mockCandles, 5, 10);
       const result2 = calculateMomentum(mockCandles, 15, 30);
-      
+
       // Os valores devem ser diferentes devido aos parâmetros diferentes
       expect(result1.wt1).not.toBe(result2.wt1);
       expect(result1.wt2).not.toBe(result2.wt2);
     });
   });
-}); 
+});

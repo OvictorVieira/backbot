@@ -17,28 +17,34 @@ class Semaphore {
    * @returns {Promise<Function>} - Release function para liberar a permissão
    */
   async acquire(identifier = 'unknown') {
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
       const tryAcquire = () => {
         if (this.currentPermits > 0) {
           this.currentPermits--;
-          Logger.debug(`🔒 [SEMAPHORE] ${identifier}: Permissão adquirida (${this.currentPermits}/${this.permits} disponíveis)`);
-          
+          Logger.debug(
+            `🔒 [SEMAPHORE] ${identifier}: Permissão adquirida (${this.currentPermits}/${this.permits} disponíveis)`
+          );
+
           // Retorna função de release
           const release = () => {
             this.currentPermits++;
-            Logger.debug(`🔓 [SEMAPHORE] ${identifier}: Permissão liberada (${this.currentPermits}/${this.permits} disponíveis)`);
-            
+            Logger.debug(
+              `🔓 [SEMAPHORE] ${identifier}: Permissão liberada (${this.currentPermits}/${this.permits} disponíveis)`
+            );
+
             // Processa próximo na fila se houver
             if (this.waitQueue.length > 0) {
               const nextResolve = this.waitQueue.shift();
               setImmediate(() => nextResolve());
             }
           };
-          
+
           resolve(release);
         } else {
           // Adiciona na fila de espera
-          Logger.debug(`⏳ [SEMAPHORE] ${identifier}: Aguardando permissão (${this.waitQueue.length + 1} na fila)`);
+          Logger.debug(
+            `⏳ [SEMAPHORE] ${identifier}: Aguardando permissão (${this.waitQueue.length + 1} na fila)`
+          );
           this.waitQueue.push(tryAcquire);
         }
       };
@@ -72,7 +78,7 @@ class Semaphore {
       totalPermits: this.permits,
       availablePermits: this.currentPermits,
       queueLength: this.waitQueue.length,
-      isAvailable: this.currentPermits > 0
+      isAvailable: this.currentPermits > 0,
     };
   }
 }

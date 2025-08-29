@@ -31,14 +31,14 @@ class AccountConfig {
       if (!apiKey || !apiSecret) {
         return {
           isValid: false,
-          error: 'API Key ou Secret não fornecidos'
+          error: 'API Key ou Secret não fornecidos',
         };
       }
 
       if (apiKey.trim() === '' || apiSecret.trim() === '') {
         return {
           isValid: false,
-          error: 'API Key ou Secret estão vazios'
+          error: 'API Key ou Secret estão vazios',
         };
       }
 
@@ -46,7 +46,7 @@ class AccountConfig {
       if (apiKey.length < 10 || apiSecret.length < 10) {
         return {
           isValid: false,
-          error: 'API Key ou Secret muito curtos (formato inválido)'
+          error: 'API Key ou Secret muito curtos (formato inválido)',
         };
       }
 
@@ -56,32 +56,30 @@ class AccountConfig {
         const accountData = await AccountController.default.get({
           apiKey: apiKey,
           apiSecret: apiSecret,
-          strategy: 'DEFAULT' // Usa estratégia padrão para validação
+          strategy: 'DEFAULT', // Usa estratégia padrão para validação
         });
-        
+
         if (!accountData) {
           return {
             isValid: false,
-            error: 'Falha ao conectar com a API - dados da conta não obtidos'
+            error: 'Falha ao conectar com a API - dados da conta não obtidos',
           };
         }
 
         return {
           isValid: true,
-          data: accountData
+          data: accountData,
         };
-        
       } catch (error) {
         return {
           isValid: false,
-          error: `Erro na conexão com a API: ${error.message}`
+          error: `Erro na conexão com a API: ${error.message}`,
         };
       }
-      
     } catch (error) {
       return {
         isValid: false,
-        error: `Erro na validação: ${error.message}`
+        error: `Erro na validação: ${error.message}`,
       };
     }
   }
@@ -92,9 +90,13 @@ class AccountConfig {
    */
   async loadConfigurations() {
     console.log('\n⚠️ [DEPRECATED] AccountConfig.loadConfigurations() não deve mais ser usado!');
-    console.log('   Use addBotConfig() para adicionar bots individuais com suas próprias configurações.');
-    console.log('   Cada bot deve ter suas próprias credenciais e configurações passadas via parâmetro.\n');
-    
+    console.log(
+      '   Use addBotConfig() para adicionar bots individuais com suas próprias configurações.'
+    );
+    console.log(
+      '   Cada bot deve ter suas próprias credenciais e configurações passadas via parâmetro.\n'
+    );
+
     // Não carrega mais configurações do .env
     // Cada bot deve ser adicionado individualmente via addBotConfig()
   }
@@ -110,7 +112,7 @@ class AccountConfig {
     }
 
     console.log(`🤖 Adicionando bot: ${botId}`);
-    
+
     this.accounts.set(botId, {
       id: botId,
       name: config.name || `Bot ${botId}`,
@@ -118,12 +120,12 @@ class AccountConfig {
       apiSecret: config.apiSecret,
       strategy: config.strategy || 'DEFAULT',
       enabled: config.enabled !== false,
-      
+
       // Configurações específicas do bot
       capitalPercentage: Number(config.capitalPercentage) || 0,
       limitOrder: Number(config.limitOrder) || 100,
       time: config.time || '5m',
-      
+
       // Configurações de trailing stop
       enableTrailingStop: config.enableTrailingStop !== false,
       enableHybridStopStrategy: config.enableHybridStopStrategy === true,
@@ -133,12 +135,12 @@ class AccountConfig {
       partialProfitPercentage: Number(config.partialTakeProfitPercentage) || 50,
       maxNegativePnlStopPct: Number(config.maxNegativePnlStopPct) || -10,
       minProfitPercentage: Number(config.minProfitPercentage) || 0.5,
-      
+
       // Configurações específicas da estratégia
       ignoreBronzeSignals: config.ignoreBronzeSignals !== false,
       adxLength: Number(config.adxLength) || 14,
       adxThreshold: Number(config.adxThreshold) || 20,
-      
+
       // Configurações avançadas da estratégia PRO_MAX
       adxAverageLength: Number(config.adxAverageLength) || 21,
       useRsiValidation: config.useRsiValidation !== false,
@@ -250,26 +252,24 @@ class AccountConfig {
    */
   validateConfigurations() {
     const errors = [];
-    
+
     for (const [botName, account] of this.accounts) {
       if (!account.apiKey || !account.apiSecret) {
         errors.push(`${botName}: API Key ou Secret não configurados`);
       }
-      
+
       if (!['DEFAULT', 'PRO_MAX'].includes(account.strategy)) {
         errors.push(`${botName}: Estratégia inválida (${account.strategy})`);
       }
-      
 
-      
       if (account.capitalPercentage < 0 || account.capitalPercentage > 100) {
         errors.push(`${botName}: Porcentagem do capital deve estar entre 0 e 100`);
       }
     }
-    
+
     return {
       isValid: errors.length === 0,
-      errors
+      errors,
     };
   }
 
@@ -279,13 +279,13 @@ class AccountConfig {
   showConfigurations() {
     console.log('\n📋 Configurações dos Bots:');
     console.log('=====================================');
-    
+
     if (this.accounts.size === 0) {
       console.log('❌ Nenhum bot configurado');
       console.log('   Use addBotConfig() para adicionar bots individuais');
       return;
     }
-    
+
     for (const [botId, bot] of this.accounts) {
       const status = bot.enabled ? '✅ Ativo' : '❌ Inativo';
       console.log(`\n🤖 ${botId}: ${bot.name}`);
@@ -293,7 +293,7 @@ class AccountConfig {
       console.log(`   • Status: ${status}`);
       console.log(`   • Capital: ${bot.capitalPercentage}%`);
       console.log(`   • Timeframe: ${bot.time}`);
-      
+
       // Configurações de trailing stop
       if (bot.enableTrailingStop) {
         console.log(`   • Trailing Stop: ✅ Ativo`);
@@ -308,4 +308,4 @@ class AccountConfig {
   }
 }
 
-export default AccountConfig; 
+export default AccountConfig;

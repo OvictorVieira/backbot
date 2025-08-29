@@ -33,7 +33,13 @@ class PositionTrackingService {
    */
   async updatePositionOnFill(fillEvent) {
     try {
-      if (!fillEvent || !fillEvent.symbol || !fillEvent.side || !fillEvent.quantity || !fillEvent.price) {
+      if (
+        !fillEvent ||
+        !fillEvent.symbol ||
+        !fillEvent.side ||
+        !fillEvent.quantity ||
+        !fillEvent.price
+      ) {
         Logger.warn('📊 [POSITION_TRACKING] Fill event inválido:', fillEvent);
         return;
       }
@@ -42,7 +48,9 @@ class PositionTrackingService {
       const fillQuantity = Math.abs(parseFloat(quantity));
       const fillPrice = parseFloat(price);
 
-      Logger.debug(`📊 [POSITION_TRACKING] Processando fill: ${symbol} ${side} ${fillQuantity} @ ${fillPrice}`);
+      Logger.debug(
+        `📊 [POSITION_TRACKING] Processando fill: ${symbol} ${side} ${fillQuantity} @ ${fillPrice}`
+      );
 
       // Atualiza o status da ordem correspondente na tabela bot_orders
       await this.updateOrderStatusOnFill(fillEvent);
@@ -66,7 +74,6 @@ class PositionTrackingService {
         // Fill no mesmo sentido - aumenta a posição (position scaling)
         await this.handlePositionIncrease(existingPosition, fillEvent);
       }
-
     } catch (error) {
       Logger.error('❌ [POSITION_TRACKING] Erro ao processar fill:', error.message);
       throw error;
@@ -97,7 +104,7 @@ class PositionTrackingService {
         status: 'OPEN',
         createdAt: timestamp || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        botId: botId || null
+        botId: botId || null,
       };
 
       const result = await this.dbService.run(
@@ -113,12 +120,13 @@ class PositionTrackingService {
           newPosition.status,
           newPosition.createdAt,
           newPosition.updatedAt,
-          newPosition.botId
+          newPosition.botId,
         ]
       );
 
-      Logger.info(`✅ [POSITION_TRACKING] Nova posição criada: ${symbol} ${positionSide} ${fillQuantity} @ ${fillPrice} (ID: ${result.lastID})`);
-
+      Logger.info(
+        `✅ [POSITION_TRACKING] Nova posição criada: ${symbol} ${positionSide} ${fillQuantity} @ ${fillPrice} (ID: ${result.lastID})`
+      );
     } catch (error) {
       Logger.error('❌ [POSITION_TRACKING] Erro ao criar nova posição:', error.message);
       throw error;
@@ -165,26 +173,25 @@ class PositionTrackingService {
         `UPDATE positions 
          SET currentQuantity = ?, pnl = ?, status = ?, updatedAt = ?
          WHERE id = ?`,
-        [
-          newCurrentQuantity,
-          newTotalPnl,
-          newStatus,
-          new Date().toISOString(),
-          position.id
-        ]
+        [newCurrentQuantity, newTotalPnl, newStatus, new Date().toISOString(), position.id]
       );
 
       // DESATIVADO: Se a posição foi totalmente fechada, atualiza a ordem correspondente na bot_orders
       // P&L será calculado apenas quando confirmado fechamento na corretora via sync
       if (newStatus === 'CLOSED') {
-        Logger.debug(`ℹ️ [POSITION_TRACKING] Posição ${position.symbol} fechada - aguardando sync da corretora para marcar ordem como CLOSED`);
+        Logger.debug(
+          `ℹ️ [POSITION_TRACKING] Posição ${position.symbol} fechada - aguardando sync da corretora para marcar ordem como CLOSED`
+        );
         // await this.updateOrderOnPositionClosed(position, fillEvent, newTotalPnl, pnlFromClose);
       }
 
-      Logger.debug(`📈 [POSITION_TRACKING] Posição atualizada: ${position.symbol} fechou ${quantityToClose} @ ${closePrice}`);
-      Logger.debug(`📈 [POSITION_TRACKING] P&L: ${pnlFromClose.toFixed(6)}, Total P&L: ${newTotalPnl.toFixed(6)}, Status: ${newStatus}`);
+      Logger.debug(
+        `📈 [POSITION_TRACKING] Posição atualizada: ${position.symbol} fechou ${quantityToClose} @ ${closePrice}`
+      );
+      Logger.debug(
+        `📈 [POSITION_TRACKING] P&L: ${pnlFromClose.toFixed(6)}, Total P&L: ${newTotalPnl.toFixed(6)}, Status: ${newStatus}`
+      );
       Logger.debug(`📈 [POSITION_TRACKING] Quantidade restante: ${newCurrentQuantity}`);
-
     } catch (error) {
       Logger.error('❌ [POSITION_TRACKING] Erro ao processar fechamento:', error.message);
       throw error;
@@ -204,7 +211,7 @@ class PositionTrackingService {
       const addPrice = parseFloat(price);
 
       // Calcula o novo preço médio de entrada
-      const totalValue = (position.entryPrice * position.currentQuantity) + (addPrice * addQuantity);
+      const totalValue = position.entryPrice * position.currentQuantity + addPrice * addQuantity;
       const totalQuantity = position.currentQuantity + addQuantity;
       const newEntryPrice = totalValue / totalQuantity;
 
@@ -213,18 +220,15 @@ class PositionTrackingService {
         `UPDATE positions 
          SET entryPrice = ?, initialQuantity = initialQuantity + ?, currentQuantity = ?, updatedAt = ?
          WHERE id = ?`,
-        [
-          newEntryPrice,
-          addQuantity,
-          totalQuantity,
-          new Date().toISOString(),
-          position.id
-        ]
+        [newEntryPrice, addQuantity, totalQuantity, new Date().toISOString(), position.id]
       );
 
-      Logger.debug(`📈 [POSITION_TRACKING] Posição aumentada: ${position.symbol} +${addQuantity} @ ${addPrice}`);
-      Logger.debug(`📈 [POSITION_TRACKING] Novo preço médio: ${newEntryPrice.toFixed(6)}, Quantidade total: ${totalQuantity}`);
-
+      Logger.debug(
+        `📈 [POSITION_TRACKING] Posição aumentada: ${position.symbol} +${addQuantity} @ ${addPrice}`
+      );
+      Logger.debug(
+        `📈 [POSITION_TRACKING] Novo preço médio: ${newEntryPrice.toFixed(6)}, Quantidade total: ${totalQuantity}`
+      );
     } catch (error) {
       Logger.error('❌ [POSITION_TRACKING] Erro ao aumentar posição:', error.message);
       throw error;
@@ -251,7 +255,6 @@ class PositionTrackingService {
 
       const position = await this.dbService.get(query, params);
       return position || null;
-
     } catch (error) {
       Logger.error('❌ [POSITION_TRACKING] Erro ao buscar posição:', error.message);
       return null;
@@ -336,11 +339,10 @@ class PositionTrackingService {
         avgPnl: result?.avgPnl || 0,
         maxWin: result?.maxWin || 0,
         maxLoss: result?.maxLoss || 0,
-        winRate: totalTrades > 0 ? (result.winTrades / totalTrades) * 100 : 0 // CORRIGIDO: usa totalTrades
+        winRate: totalTrades > 0 ? (result.winTrades / totalTrades) * 100 : 0, // CORRIGIDO: usa totalTrades
       };
 
       return stats;
-
     } catch (error) {
       Logger.error('❌ [POSITION_TRACKING] Erro ao calcular estatísticas:', error.message);
       return {
@@ -352,7 +354,7 @@ class PositionTrackingService {
         avgPnl: 0,
         maxWin: 0,
         maxLoss: 0,
-        winRate: 0
+        winRate: 0,
       };
     }
   }
@@ -392,7 +394,9 @@ class PositionTrackingService {
       );
 
       if (!order) {
-        Logger.warn(`⚠️ [POSITION_TRACKING] Ordem não encontrada para fill: ${orderId || clientId}`);
+        Logger.warn(
+          `⚠️ [POSITION_TRACKING] Ordem não encontrada para fill: ${orderId || clientId}`
+        );
         return;
       }
 
@@ -408,7 +412,6 @@ class PositionTrackingService {
 
         Logger.debug(`✅ [POSITION_TRACKING] Ordem ${orderId || clientId} atualizada para FILLED`);
       }
-
     } catch (error) {
       Logger.error('❌ [POSITION_TRACKING] Erro ao atualizar status da ordem:', error.message);
     }
@@ -452,7 +455,7 @@ class PositionTrackingService {
             totalValue: 0,
             pnl: order.pnl || 0,
             status: order.status,
-            orders: []
+            orders: [],
           });
         }
 
@@ -479,12 +482,13 @@ class PositionTrackingService {
         // Adiciona flag para identificar que é posição do bot
         _isBotPosition: true,
         _botId: botId,
-        _orderCount: position.orders.length
+        _orderCount: position.orders.length,
       }));
 
-      Logger.debug(`📊 [POSITION_TRACKING] Encontradas ${positions.length} posições abertas para bot ${botId} (baseado em ${openOrders.length} ordens)`);
+      Logger.debug(
+        `📊 [POSITION_TRACKING] Encontradas ${positions.length} posições abertas para bot ${botId} (baseado em ${openOrders.length} ordens)`
+      );
       return positions;
-
     } catch (error) {
       Logger.error('❌ [POSITION_TRACKING] Erro ao buscar posições abertas do bot:', error.message);
       return [];
@@ -561,9 +565,8 @@ class PositionTrackingService {
         maxLoss: result?.maxLoss || 0,
         winRate: totalTrades > 0 ? (result?.winTrades / totalTrades) * 100 : 0,
         grossProfit: result?.grossProfit,
-        grossLoss: result?.grossLoss
+        grossLoss: result?.grossLoss,
       };
-
     } catch (error) {
       Logger.error('❌ [POSITION_TRACKING] Erro ao calcular estatísticas:', error.message);
       return {
@@ -575,7 +578,7 @@ class PositionTrackingService {
         avgPnl: 0,
         maxWin: 0,
         maxLoss: 0,
-        winRate: 0
+        winRate: 0,
       };
     }
   }
@@ -630,7 +633,7 @@ class PositionTrackingService {
         avgPnl: stats.avgPnl,
         maxWin: stats.maxWin,
         maxLoss: stats.maxLoss,
-        profitFactor: profitFactor
+        profitFactor: profitFactor,
       };
 
       const reconstructedPositions = allOrders.map(order => ({
@@ -641,18 +644,19 @@ class PositionTrackingService {
         pnl: order.pnl || 0,
         status: order.status,
         createdAt: order.timestamp,
-        updatedAt: order.closeTime || order.timestamp
+        updatedAt: order.closeTime || order.timestamp,
       }));
 
-      Logger.debug(`✅ [POSITION_TRACKING] Rastreamento concluído para bot ${botId}: ${allOrders.length} ordens, PnL total: ${stats.totalPnl.toFixed(6)}`);
+      Logger.debug(
+        `✅ [POSITION_TRACKING] Rastreamento concluído para bot ${botId}: ${allOrders.length} ordens, PnL total: ${stats.totalPnl.toFixed(6)}`
+      );
 
       return {
         performanceMetrics,
         reconstructedPositions,
         botId,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       };
-
     } catch (error) {
       Logger.error('❌ [POSITION_TRACKING] Erro ao rastrear posições do bot:', error.message);
       throw error;

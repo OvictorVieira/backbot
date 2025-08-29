@@ -28,7 +28,7 @@ class BackpackAPI {
       params = {},
       timeout = this.defaultTimeout,
       priority = 5,
-      description
+      description,
     } = options;
 
     const config = {
@@ -36,11 +36,11 @@ class BackpackAPI {
       url: this.buildURL(endpoint),
       headers: this.buildHeaders(headers),
       params,
-      timeout
+      timeout,
     };
 
     const desc = description || `GET ${endpoint}`;
-    
+
     try {
       Logger.debug(`📤 [BACKPACK_API] Iniciando: ${desc}`);
       const response = await requestManager.request(config, desc, priority);
@@ -56,23 +56,18 @@ class BackpackAPI {
    * POST request para API da Backpack
    */
   async post(endpoint, data = {}, options = {}) {
-    const {
-      headers = {},
-      timeout = this.defaultTimeout,
-      priority = 5,
-      description
-    } = options;
+    const { headers = {}, timeout = this.defaultTimeout, priority = 5, description } = options;
 
     const config = {
       method: 'POST',
       url: this.buildURL(endpoint),
       headers: this.buildHeaders(headers),
       data,
-      timeout
+      timeout,
     };
 
     const desc = description || `POST ${endpoint}`;
-    
+
     try {
       Logger.debug(`📤 [BACKPACK_API] Iniciando: ${desc}`);
       const response = await requestManager.request(config, desc, priority);
@@ -88,23 +83,18 @@ class BackpackAPI {
    * PUT request para API da Backpack
    */
   async put(endpoint, data = {}, options = {}) {
-    const {
-      headers = {},
-      timeout = this.defaultTimeout,
-      priority = 5,
-      description
-    } = options;
+    const { headers = {}, timeout = this.defaultTimeout, priority = 5, description } = options;
 
     const config = {
       method: 'PUT',
       url: this.buildURL(endpoint),
       headers: this.buildHeaders(headers),
       data,
-      timeout
+      timeout,
     };
 
     const desc = description || `PUT ${endpoint}`;
-    
+
     try {
       Logger.debug(`📤 [BACKPACK_API] Iniciando: ${desc}`);
       const response = await requestManager.request(config, desc, priority);
@@ -120,22 +110,17 @@ class BackpackAPI {
    * DELETE request para API da Backpack
    */
   async delete(endpoint, options = {}) {
-    const {
-      headers = {},
-      timeout = this.defaultTimeout,
-      priority = 5,
-      description
-    } = options;
+    const { headers = {}, timeout = this.defaultTimeout, priority = 5, description } = options;
 
     const config = {
       method: 'DELETE',
       url: this.buildURL(endpoint),
       headers: this.buildHeaders(headers),
-      timeout
+      timeout,
     };
 
     const desc = description || `DELETE ${endpoint}`;
-    
+
     try {
       Logger.debug(`📤 [BACKPACK_API] Iniciando: ${desc}`);
       const response = await requestManager.request(config, desc, priority);
@@ -163,7 +148,7 @@ class BackpackAPI {
     return {
       'Content-Type': 'application/json',
       'User-Agent': 'BackBot/1.6.3',
-      ...customHeaders
+      ...customHeaders,
     };
   }
 
@@ -198,11 +183,11 @@ class BackpackAPI {
   }
 
   async cancelAllOrders(symbol, headers, description = 'Cancel All Orders') {
-    return this.delete(`/api/v1/orders`, { 
-      headers, 
+    return this.delete(`/api/v1/orders`, {
+      headers,
       description,
       priority: 0,
-      params: symbol ? { symbol } : {}
+      params: symbol ? { symbol } : {},
     });
   }
 
@@ -219,7 +204,7 @@ class BackpackAPI {
     const params = { symbol, interval };
     if (startTime) params.startTime = startTime;
     if (endTime) params.endTime = endTime;
-    
+
     return this.get('/api/v1/klines', { params, description, priority: 7 });
   }
 
@@ -262,7 +247,9 @@ class BackpackAPI {
    * @deprecated Use os métodos específicos da classe
    */
   async axios(config, description) {
-    Logger.warn(`⚠️ [BACKPACK_API] Uso de axios() está deprecated. Use métodos específicos da classe.`);
+    Logger.warn(
+      `⚠️ [BACKPACK_API] Uso de axios() está deprecated. Use métodos específicos da classe.`
+    );
     return requestManager.request(config, description || 'Legacy Axios Call');
   }
 }

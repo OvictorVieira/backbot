@@ -2,21 +2,21 @@ import OrderController from './OrderController.js';
 
 describe('OrderController - Testes de Integração', () => {
   let orderController;
-  
+
   // Mock do objeto market para os testes
   const mockMarket = {
     symbol: 'BTC_USDC_PERP',
     decimal_quantity: 4,
     decimal_price: 2,
     stepSize_quantity: 0.0001,
-    min_quantity: 0.001
+    min_quantity: 0.001,
   };
 
   beforeEach(() => {
     // Define variáveis de ambiente necessárias para os testes
     process.env.ENABLE_TRAILING_STOP = 'false';
     process.env.ENABLE_CONFLUENCE_SIZING = 'true';
-    
+
     orderController = OrderController;
   });
 
@@ -25,7 +25,7 @@ describe('OrderController - Testes de Integração', () => {
     apiKey: 'mock-key',
     apiSecret: 'mock-secret',
     id: 'test-bot',
-    botClientOrderId: 1000
+    botClientOrderId: 1000,
   };
 
   describe('Validação de Dados de Mercado', () => {
@@ -39,15 +39,15 @@ describe('OrderController - Testes de Integração', () => {
         decimal_quantity: mockMarket.decimal_quantity,
         decimal_price: mockMarket.decimal_price,
         stepSize_quantity: mockMarket.stepSize_quantity,
-        min_quantity: mockMarket.min_quantity
+        min_quantity: mockMarket.min_quantity,
       };
 
       // Simula a criação de ordem
-      const result = await orderController.createLimitOrderWithTriggers({ 
-        ...mockOrderData, 
-        config: mockConfig
+      const result = await orderController.createLimitOrderWithTriggers({
+        ...mockOrderData,
+        config: mockConfig,
       });
-      
+
       // Verifica se os dados foram validados corretamente
       expect(result).toBeDefined();
     });
@@ -58,16 +58,16 @@ describe('OrderController - Testes de Integração', () => {
         symbol: 'BTC_USDC_PERP',
         side: 'Bid',
         quantity: 0.01,
-        price: 50000
+        price: 50000,
         // Faltam decimal_quantity, decimal_price, stepSize_quantity
       };
 
       // Simula a criação de ordem com dados inválidos
-      const result = await orderController.createLimitOrderWithTriggers({ 
-        ...mockOrderData, 
-        config: mockConfig
+      const result = await orderController.createLimitOrderWithTriggers({
+        ...mockOrderData,
+        config: mockConfig,
       });
-      
+
       // Verifica se foi rejeitado
       expect(result.success).toBe(false);
       expect(result.error).toContain('Dados de decimal ausentes');
@@ -82,17 +82,21 @@ describe('OrderController - Testes de Integração', () => {
         netQuantity: 0.01,
         entryPrice: 50000,
         unrealizedPnl: 100,
-        unrealizedPnlPct: 2
+        unrealizedPnlPct: 2,
       };
 
       // Mock do Account
       const mockAccount = {
         capitalAvailable: 10000,
-        fee: 0.001
+        fee: 0.001,
       };
 
       // Executa createFailsafeOrders com credenciais mock
-      const result = await orderController.createFailsafeOrders(mockPosition, 'DEFAULT', mockConfig);
+      const result = await orderController.createFailsafeOrders(
+        mockPosition,
+        'DEFAULT',
+        mockConfig
+      );
 
       // Verifica se foi executado
       expect(result).toBeDefined();
@@ -103,17 +107,21 @@ describe('OrderController - Testes de Integração', () => {
       const mockPosition = {
         symbol: 'BTC_USDC_PERP',
         netQuantity: 0.01,
-        entryPrice: 50000
+        entryPrice: 50000,
       };
 
       // Mock do Account
       const mockAccount = {
         capitalAvailable: 10000,
-        fee: 0.001
+        fee: 0.001,
       };
 
       // Executa createFailsafeOrders com credenciais mock
-      const result = await orderController.createFailsafeOrders(mockPosition, 'DEFAULT', mockConfig);
+      const result = await orderController.createFailsafeOrders(
+        mockPosition,
+        'DEFAULT',
+        mockConfig
+      );
 
       // Verifica se o erro foi tratado
       expect(result).toBeDefined();
@@ -132,21 +140,25 @@ describe('OrderController - Testes de Integração', () => {
         netQuantity: 0.01,
         entryPrice: 50000,
         unrealizedPnl: 100,
-        unrealizedPnlPct: 2
+        unrealizedPnlPct: 2,
       };
 
       // Mock do Account
       const mockAccount = {
         capitalAvailable: 10000,
-        fee: 0.001
+        fee: 0.001,
       };
 
       // Executa createFailsafeOrders com credenciais mock
-      const result = await orderController.createFailsafeOrders(mockPosition, 'DEFAULT', mockConfig);
+      const result = await orderController.createFailsafeOrders(
+        mockPosition,
+        'DEFAULT',
+        mockConfig
+      );
 
       // Verifica se foi executado (mesmo com erro de autenticação, o método é chamado)
       expect(result).toBeDefined();
-      
+
       // Restaura a configuração
       process.env = originalEnv;
     });
@@ -162,21 +174,25 @@ describe('OrderController - Testes de Integração', () => {
         netQuantity: 0.01,
         entryPrice: 50000,
         unrealizedPnl: 100,
-        unrealizedPnlPct: 2
+        unrealizedPnlPct: 2,
       };
 
       // Mock do Account
       const mockAccount = {
         capitalAvailable: 10000,
-        fee: 0.001
+        fee: 0.001,
       };
 
       // Executa createFailsafeOrders com credenciais mock
-      const result = await orderController.createFailsafeOrders(mockPosition, 'DEFAULT', mockConfig);
+      const result = await orderController.createFailsafeOrders(
+        mockPosition,
+        'DEFAULT',
+        mockConfig
+      );
 
       // Verifica se foi executado (mesmo com erro de autenticação, o método é chamado)
       expect(result).toBeDefined();
-      
+
       // Restaura a configuração
       process.env = originalEnv;
     });
@@ -192,21 +208,25 @@ describe('OrderController - Testes de Integração', () => {
         netQuantity: 0.01,
         entryPrice: 50000,
         unrealizedPnl: 100,
-        unrealizedPnlPct: 2
+        unrealizedPnlPct: 2,
       };
 
       // Mock do Account
       const mockAccount = {
         capitalAvailable: 10000,
-        fee: 0.001
+        fee: 0.001,
       };
 
       // Executa createFailsafeOrders
-      const result = await orderController.createFailsafeOrders(mockPosition, "DEFAULT", mockConfig);
+      const result = await orderController.createFailsafeOrders(
+        mockPosition,
+        'DEFAULT',
+        mockConfig
+      );
 
       // Verifica se foi executado
       expect(result).toBeDefined();
-      
+
       // Restaura a configuração
       process.env = originalEnv;
     });
@@ -218,17 +238,21 @@ describe('OrderController - Testes de Integração', () => {
       const mockPosition = {
         symbol: 'BTC_USDC_PERP',
         netQuantity: 0.01,
-        entryPrice: 50000
+        entryPrice: 50000,
       };
 
       // Mock do Account
       const mockAccount = {
         capitalAvailable: 10000,
-        fee: 0.001
+        fee: 0.001,
       };
 
       // Executa detectPositionOpenedAndCreateFailsafe com credenciais mock
-      const result = await orderController.detectPositionOpenedAndCreateFailsafe(mockPosition, 'DEFAULT', mockConfig);
+      const result = await orderController.detectPositionOpenedAndCreateFailsafe(
+        mockPosition,
+        'DEFAULT',
+        mockConfig
+      );
 
       // Verifica se o estado foi salvo
       expect(result).toBeDefined();
@@ -241,17 +265,21 @@ describe('OrderController - Testes de Integração', () => {
       const mockPosition = {
         symbol: 'BTC_USDC_PERP',
         netQuantity: 0,
-        entryPrice: 50000
+        entryPrice: 50000,
       };
 
       // Mock do Account
       const mockAccount = {
         capitalAvailable: 10000,
-        fee: 0.001
+        fee: 0.001,
       };
 
       // Executa createFailsafeOrders
-      const result = await orderController.createFailsafeOrders(mockPosition, "DEFAULT", mockConfig);
+      const result = await orderController.createFailsafeOrders(
+        mockPosition,
+        'DEFAULT',
+        mockConfig
+      );
 
       // Verifica se foi tratado corretamente
       expect(result).toBeDefined();
@@ -262,17 +290,21 @@ describe('OrderController - Testes de Integração', () => {
       const mockPosition = {
         symbol: 'BTC_USDC_PERP',
         netQuantity: 0.01,
-        entryPrice: 999999999
+        entryPrice: 999999999,
       };
 
       // Mock do Account
       const mockAccount = {
         capitalAvailable: 10000,
-        fee: 0.001
+        fee: 0.001,
       };
 
       // Executa createFailsafeOrders
-      const result = await orderController.createFailsafeOrders(mockPosition, "DEFAULT", mockConfig);
+      const result = await orderController.createFailsafeOrders(
+        mockPosition,
+        'DEFAULT',
+        mockConfig
+      );
 
       // Verifica se foi tratado corretamente
       expect(result).toBeDefined();
@@ -288,24 +320,24 @@ describe('OrderController - Testes de Integração', () => {
         {
           symbol: 'BTC_USDC_PERP',
           netQuantity: 0.01,
-          entryPrice: 50000
+          entryPrice: 50000,
         },
         {
           symbol: 'ETH_USDC_PERP',
           netQuantity: 0.1,
-          entryPrice: 3000
-        }
+          entryPrice: 3000,
+        },
       ];
 
       // Mock do Account
       const mockAccount = {
         capitalAvailable: 10000,
-        fee: 0.001
+        fee: 0.001,
       };
 
       // Executa createFailsafeOrders para múltiplas posições
       const results = await Promise.all(
-        mockPositions.map(position => 
+        mockPositions.map(position =>
           orderController.createFailsafeOrders(position, 'DEFAULT', mockConfig)
         )
       );
@@ -330,12 +362,15 @@ describe('OrderController - Testes de Integração', () => {
         decimal_quantity: 4,
         decimal_price: 2,
         stepSize_quantity: 0.0001,
-        min_quantity: 0.001
+        min_quantity: 0.001,
       };
 
       // Testa a validação
-      const result = await orderController.createLimitOrderWithTriggers({ ...mockOrderData, config: mockConfig });
-      
+      const result = await orderController.createLimitOrderWithTriggers({
+        ...mockOrderData,
+        config: mockConfig,
+      });
+
       expect(result).toBeDefined();
     });
 
@@ -343,13 +378,16 @@ describe('OrderController - Testes de Integração', () => {
       // Mock de dados incompletos
       const mockOrderData = {
         symbol: 'BTC_USDC_PERP',
-        side: 'Bid'
+        side: 'Bid',
         // Faltam outros campos obrigatórios
       };
 
       // Testa a validação
-      const result = await orderController.createLimitOrderWithTriggers({ ...mockOrderData, config: mockConfig });
-      
+      const result = await orderController.createLimitOrderWithTriggers({
+        ...mockOrderData,
+        config: mockConfig,
+      });
+
       expect(result.success).toBe(false);
       expect(result.error).toContain('Dados de decimal ausentes');
     });
@@ -361,16 +399,20 @@ describe('OrderController - Testes de Integração', () => {
       const mockPosition = {
         symbol: 'BTC_USDC_PERP',
         netQuantity: 0.01,
-        entryPrice: 1000000
+        entryPrice: 1000000,
       };
 
       const mockAccount = {
         capitalAvailable: 10000,
-        fee: 0.001
+        fee: 0.001,
       };
 
-      const result = await orderController.createFailsafeOrders(mockPosition, "DEFAULT", mockConfig);
-      
+      const result = await orderController.createFailsafeOrders(
+        mockPosition,
+        'DEFAULT',
+        mockConfig
+      );
+
       expect(result).toBeDefined();
     });
 
@@ -379,16 +421,20 @@ describe('OrderController - Testes de Integração', () => {
       const mockPosition = {
         symbol: 'BTC_USDC_PERP',
         netQuantity: 0.01,
-        entryPrice: 1
+        entryPrice: 1,
       };
 
       const mockAccount = {
         capitalAvailable: 10000,
-        fee: 0.001
+        fee: 0.001,
       };
 
-      const result = await orderController.createFailsafeOrders(mockPosition, "DEFAULT", mockConfig);
-      
+      const result = await orderController.createFailsafeOrders(
+        mockPosition,
+        'DEFAULT',
+        mockConfig
+      );
+
       expect(result).toBeDefined();
     });
   });
@@ -404,12 +450,15 @@ describe('OrderController - Testes de Integração', () => {
         decimal_quantity: 4,
         decimal_price: 2,
         stepSize_quantity: 0.0001,
-        min_quantity: 0.001
+        min_quantity: 0.001,
       };
 
       // Testa a integração
-      const result = await orderController.createLimitOrderWithTriggers({ ...mockOrderData, config: mockConfig });
-      
+      const result = await orderController.createLimitOrderWithTriggers({
+        ...mockOrderData,
+        config: mockConfig,
+      });
+
       expect(result).toBeDefined();
     });
 
@@ -417,18 +466,22 @@ describe('OrderController - Testes de Integração', () => {
       // Mock de dados de conta
       const mockAccount = {
         capitalAvailable: 10000,
-        fee: 0.001
+        fee: 0.001,
       };
 
       const mockPosition = {
         symbol: 'BTC_USDC_PERP',
         netQuantity: 0.01,
-        entryPrice: 50000
+        entryPrice: 50000,
       };
 
       // Testa a integração
-      const result = await orderController.createFailsafeOrders(mockPosition, "DEFAULT", mockConfig);
-      
+      const result = await orderController.createFailsafeOrders(
+        mockPosition,
+        'DEFAULT',
+        mockConfig
+      );
+
       expect(result).toBeDefined();
     });
   });
@@ -440,7 +493,7 @@ describe('OrderController - Testes de Integração', () => {
         symbol: 'BTC_USDC_PERP',
         netQuantity: 0.01,
         entryPrice: 50000,
-        avgEntryPrice: 50000
+        avgEntryPrice: 50000,
       };
 
       // Mock de ordem de stop loss válida (preço ABAIXO da entrada)
@@ -450,7 +503,7 @@ describe('OrderController - Testes de Integração', () => {
         side: 'Ask',
         reduceOnly: true,
         limitPrice: 49000, // ABAIXO do preço de entrada
-        status: 'Pending'
+        status: 'Pending',
       };
 
       // Mock de ordem de take profit inválida (preço ACIMA da entrada)
@@ -460,15 +513,21 @@ describe('OrderController - Testes de Integração', () => {
         side: 'Ask',
         reduceOnly: true,
         limitPrice: 51000, // ACIMA do preço de entrada
-        status: 'Pending'
+        status: 'Pending',
       };
 
       // Testa validação de stop loss válido
-      const isValidStopLoss = OrderController.isOrderCorrectlyPositionedAsStopLoss(validStopLossOrder, mockPosition);
+      const isValidStopLoss = OrderController.isOrderCorrectlyPositionedAsStopLoss(
+        validStopLossOrder,
+        mockPosition
+      );
       expect(isValidStopLoss).toBe(true);
 
       // Testa validação de take profit (deve ser false)
-      const isInvalidTakeProfit = OrderController.isOrderCorrectlyPositionedAsStopLoss(invalidTakeProfitOrder, mockPosition);
+      const isInvalidTakeProfit = OrderController.isOrderCorrectlyPositionedAsStopLoss(
+        invalidTakeProfitOrder,
+        mockPosition
+      );
       expect(isInvalidTakeProfit).toBe(false);
     });
 
@@ -478,7 +537,7 @@ describe('OrderController - Testes de Integração', () => {
         symbol: 'BTC_USDC_PERP',
         netQuantity: -0.01,
         entryPrice: 50000,
-        avgEntryPrice: 50000
+        avgEntryPrice: 50000,
       };
 
       // Mock de ordem de stop loss válida (preço ACIMA da entrada)
@@ -488,7 +547,7 @@ describe('OrderController - Testes de Integração', () => {
         side: 'Bid',
         reduceOnly: true,
         limitPrice: 51000, // ACIMA do preço de entrada
-        status: 'Pending'
+        status: 'Pending',
       };
 
       // Mock de ordem de take profit inválida (preço ABAIXO da entrada)
@@ -498,15 +557,21 @@ describe('OrderController - Testes de Integração', () => {
         side: 'Bid',
         reduceOnly: true,
         limitPrice: 49000, // ABAIXO do preço de entrada
-        status: 'Pending'
+        status: 'Pending',
       };
 
       // Testa validação de stop loss válido
-      const isValidStopLoss = OrderController.isOrderCorrectlyPositionedAsStopLoss(validStopLossOrder, mockPosition);
+      const isValidStopLoss = OrderController.isOrderCorrectlyPositionedAsStopLoss(
+        validStopLossOrder,
+        mockPosition
+      );
       expect(isValidStopLoss).toBe(true);
 
       // Testa validação de take profit (deve ser false)
-      const isInvalidTakeProfit = OrderController.isOrderCorrectlyPositionedAsStopLoss(invalidTakeProfitOrder, mockPosition);
+      const isInvalidTakeProfit = OrderController.isOrderCorrectlyPositionedAsStopLoss(
+        invalidTakeProfitOrder,
+        mockPosition
+      );
       expect(isInvalidTakeProfit).toBe(false);
     });
 
@@ -516,7 +581,7 @@ describe('OrderController - Testes de Integração', () => {
         symbol: 'BTC_USDC_PERP',
         netQuantity: 0.01,
         entryPrice: 50000,
-        avgEntryPrice: 50000
+        avgEntryPrice: 50000,
       };
 
       // Mock de ordem sem preço limite
@@ -525,12 +590,15 @@ describe('OrderController - Testes de Integração', () => {
         symbol: 'BTC_USDC_PERP',
         side: 'Ask',
         reduceOnly: true,
-        status: 'Pending'
+        status: 'Pending',
         // Sem limitPrice
       };
 
       // Testa validação de ordem sem preço limite
-      const isValid = OrderController.isOrderCorrectlyPositionedAsStopLoss(orderWithoutLimitPrice, mockPosition);
+      const isValid = OrderController.isOrderCorrectlyPositionedAsStopLoss(
+        orderWithoutLimitPrice,
+        mockPosition
+      );
       expect(isValid).toBe(false);
     });
 
@@ -540,7 +608,7 @@ describe('OrderController - Testes de Integração', () => {
         symbol: 'BTC_USDC_PERP',
         netQuantity: 0.01,
         entryPrice: 50000,
-        avgEntryPrice: 50000
+        avgEntryPrice: 50000,
       };
 
       // Mock de ordem com trigger de stop loss
@@ -551,11 +619,14 @@ describe('OrderController - Testes de Integração', () => {
         reduceOnly: true,
         stopLossTriggerPrice: 49000,
         limitPrice: 48500,
-        status: 'Pending'
+        status: 'Pending',
       };
 
       // Testa validação de ordem com trigger
-      const isValid = OrderController.isOrderCorrectlyPositionedAsStopLoss(orderWithTrigger, mockPosition);
+      const isValid = OrderController.isOrderCorrectlyPositionedAsStopLoss(
+        orderWithTrigger,
+        mockPosition
+      );
       expect(isValid).toBe(true);
     });
 
@@ -564,7 +635,7 @@ describe('OrderController - Testes de Integração', () => {
       const mockPositionWithAvg = {
         symbol: 'BTC_USDC_PERP',
         netQuantity: 0.01,
-        avgEntryPrice: 50000
+        avgEntryPrice: 50000,
         // Sem entryPrice
       };
 
@@ -575,13 +646,15 @@ describe('OrderController - Testes de Integração', () => {
         side: 'Ask',
         reduceOnly: true,
         limitPrice: 49000,
-        status: 'Pending'
+        status: 'Pending',
       };
 
       // Testa validação usando avgEntryPrice
-      const isValid = OrderController.isOrderCorrectlyPositionedAsStopLoss(validStopLossOrder, mockPositionWithAvg);
+      const isValid = OrderController.isOrderCorrectlyPositionedAsStopLoss(
+        validStopLossOrder,
+        mockPositionWithAvg
+      );
       expect(isValid).toBe(true);
     });
   });
-
-}); 
+});

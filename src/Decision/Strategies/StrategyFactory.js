@@ -11,11 +11,11 @@ export class StrategyFactory {
    */
   static createStrategy(strategyType) {
     Logger.debug(`🔍 StrategyFactory: Tipo recebido: "${strategyType}"`);
-    
+
     const strategy = strategyType?.toUpperCase() || 'DEFAULT';
     Logger.debug(`🔍 StrategyFactory: Tipo processado: "${strategy}"`);
-    
-    switch(strategy) {
+
+    switch (strategy) {
       case 'DEFAULT':
         Logger.debug(`✅ StrategyFactory: Criando estratégia DEFAULT`);
         return new DefaultStrategy();
@@ -47,4 +47,4 @@ export class StrategyFactory {
   static isValidStrategy(strategyType) {
     return this.getAvailableStrategies().includes(strategyType?.toUpperCase());
   }
-} 
+}

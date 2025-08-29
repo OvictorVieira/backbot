@@ -14,7 +14,7 @@ describe('OrdersService', () => {
     } catch (error) {
       // File might not exist, which is fine
     }
-    
+
     dbService = new DatabaseService();
     dbService.dbPath = testDbPath;
     await dbService.init();
@@ -43,11 +43,11 @@ describe('OrdersService', () => {
         quantity: 0.001,
         price: 50000,
         orderType: 'LIMIT',
-        status: 'PENDING'
+        status: 'PENDING',
       };
 
       const result = await OrdersService.addOrder(testOrder);
-      
+
       expect(result).toBeTruthy();
       expect(result.botId).toBe(1);
       expect(result.symbol).toBe('BTC_USDC_PERP');
@@ -63,7 +63,7 @@ describe('OrdersService', () => {
         side: 'BUY',
         quantity: 0.001,
         price: 50000,
-        orderType: 'LIMIT'
+        orderType: 'LIMIT',
       });
 
       await OrdersService.addOrder({
@@ -73,7 +73,7 @@ describe('OrdersService', () => {
         side: 'SELL',
         quantity: 0.01,
         price: 3000,
-        orderType: 'MARKET'
+        orderType: 'MARKET',
       });
 
       await OrdersService.addOrder({
@@ -83,7 +83,7 @@ describe('OrdersService', () => {
         side: 'BUY',
         quantity: 1,
         price: 100,
-        orderType: 'LIMIT'
+        orderType: 'LIMIT',
       });
 
       const bot1Orders = await OrdersService.getOrdersByBotId(1);
@@ -104,7 +104,7 @@ describe('OrdersService', () => {
         side: 'BUY',
         quantity: 0.001,
         price: 50000,
-        orderType: 'LIMIT'
+        orderType: 'LIMIT',
       });
 
       await OrdersService.addOrder({
@@ -114,7 +114,7 @@ describe('OrdersService', () => {
         side: 'SELL',
         quantity: 0.01,
         price: 3000,
-        orderType: 'MARKET'
+        orderType: 'MARKET',
       });
 
       // Verifica que existem ordens
@@ -144,7 +144,7 @@ describe('OrdersService', () => {
         side: 'BUY',
         quantity: 0.001,
         price: 50000,
-        orderType: 'LIMIT'
+        orderType: 'LIMIT',
       });
 
       await OrdersService.addOrder({
@@ -154,7 +154,7 @@ describe('OrdersService', () => {
         side: 'SELL',
         quantity: 0.01,
         price: 3000,
-        orderType: 'MARKET'
+        orderType: 'MARKET',
       });
 
       const stats = await OrdersService.getStats();

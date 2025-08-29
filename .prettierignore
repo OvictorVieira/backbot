@@ -1,0 +1,10 @@
+node_modules/
+dist/
+build/
+.env
+*.log
+package-lock.json
+.git/
+.husky/_/
+dashboard-ui/
+*.md

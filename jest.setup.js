@@ -1,4 +1,3 @@
-
 process.env.ENABLE_TRAILING_STOP = 'true';
 process.env.ENABLE_HYBRID_STOP_STRATEGY = 'true';
 process.env.INITIAL_STOP_ATR_MULTIPLIER = '2.0';
@@ -25,15 +24,23 @@ const originalConsoleError = console.error;
 const originalConsoleWarn = console.warn;
 
 console.log = (...args) => {
-  if (args[0] && typeof args[0] === 'string' && (args[0].includes('TEST') || args[0].includes('DEBUG') || args[0].includes('🔍'))) {
+  if (
+    args[0] &&
+    typeof args[0] === 'string' &&
+    (args[0].includes('TEST') || args[0].includes('DEBUG') || args[0].includes('🔍'))
+  ) {
     originalConsoleLog(...args);
   }
 };
 
 console.warn = (...args) => {
-  if (args[0] && typeof args[0] === 'string' && (args[0].includes('TEST') || args[0].includes('DEBUG') || args[0].includes('🔍'))) {
+  if (
+    args[0] &&
+    typeof args[0] === 'string' &&
+    (args[0].includes('TEST') || args[0].includes('DEBUG') || args[0].includes('🔍'))
+  ) {
     originalConsoleWarn(...args);
   }
 };
 
-console.error = originalConsoleError; 
+console.error = originalConsoleError;

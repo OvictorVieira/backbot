@@ -23,7 +23,7 @@ class DatabaseService {
       // Open database connection
       this.db = await open({
         filename: this.dbPath,
-        driver: sqlite3.Database
+        driver: sqlite3.Database,
       });
 
       // Configure SQLite for better concurrency
@@ -146,9 +146,9 @@ class DatabaseService {
   async migrateBotOrdersTable() {
     try {
       // Verifica se as novas colunas já existem
-      const tableInfo = await this.getAll("PRAGMA table_info(bot_orders)");
+      const tableInfo = await this.getAll('PRAGMA table_info(bot_orders)');
       const columnNames = tableInfo.map(col => col.name);
-      
+
       const newColumns = [
         { name: 'exchangeCreatedAt', type: 'TEXT' },
         { name: 'closePrice', type: 'REAL' },
@@ -157,7 +157,7 @@ class DatabaseService {
         { name: 'closeType', type: 'TEXT' },
         { name: 'pnl', type: 'REAL' },
         { name: 'pnlPct', type: 'REAL' },
-        { name: 'clientId', type: 'TEXT' }
+        { name: 'clientId', type: 'TEXT' },
       ];
 
       for (const column of newColumns) {
@@ -179,19 +179,21 @@ class DatabaseService {
   async migrateTrailingStateTable() {
     try {
       // Verifica se a tabela tem a estrutura antiga (só com symbol, state, updatedAt)
-      const tableInfo = await this.getAll("PRAGMA table_info(trailing_state)");
+      const tableInfo = await this.getAll('PRAGMA table_info(trailing_state)');
       const columnNames = tableInfo.map(col => col.name);
-      
+
       // Se não tem botId, precisa migrar
       if (!columnNames.includes('botId')) {
         console.log(`🔄 [DATABASE] Migrando trailing_state para incluir botId`);
-        
+
         // Busca dados existentes
-        const existingData = await this.getAll('SELECT symbol, state, updatedAt FROM trailing_state');
-        
+        const existingData = await this.getAll(
+          'SELECT symbol, state, updatedAt FROM trailing_state'
+        );
+
         // Remove a tabela antiga
         await this.db.exec('DROP TABLE IF EXISTS trailing_state');
-        
+
         // Recria a tabela com a nova estrutura
         await this.db.exec(`
           CREATE TABLE trailing_state (
@@ -205,7 +207,7 @@ class DatabaseService {
             FOREIGN KEY (botId) REFERENCES bot_configs(botId) ON DELETE CASCADE
           );
         `);
-        
+
         // Migra dados existentes, assumindo botId = 1 para dados órfãos
         for (const row of existingData) {
           await this.db.run(
@@ -213,10 +215,11 @@ class DatabaseService {
             [1, row.symbol, row.state, row.updatedAt]
           );
         }
-        
-        console.log(`✅ [DATABASE] Migração da trailing_state concluída - ${existingData.length} registros migrados para botId=1`);
+
+        console.log(
+          `✅ [DATABASE] Migração da trailing_state concluída - ${existingData.length} registros migrados para botId=1`
+        );
       }
-      
     } catch (error) {
       console.error(`❌ [DATABASE] Erro na migração da tabela trailing_state:`, error.message);
     }
@@ -228,23 +231,27 @@ class DatabaseService {
   async migrateTrailingStateActiveStopColumn() {
     try {
       // Verifica se a coluna active_stop_order_id já existe
-      const tableInfo = await this.getAll("PRAGMA table_info(trailing_state)");
+      const tableInfo = await this.getAll('PRAGMA table_info(trailing_state)');
       const columnNames = tableInfo.map(col => col.name);
-      
+
       // Se não tem active_stop_order_id, adiciona a coluna
       if (!columnNames.includes('active_stop_order_id')) {
-        Logger.info(`🔄 [DATABASE] Adicionando coluna active_stop_order_id à tabela trailing_state`);
-        
+        Logger.info(
+          `🔄 [DATABASE] Adicionando coluna active_stop_order_id à tabela trailing_state`
+        );
+
         await this.db.exec(`
           ALTER TABLE trailing_state 
           ADD COLUMN active_stop_order_id TEXT DEFAULT NULL
         `);
-        
+
         Logger.info(`✅ [DATABASE] Migração da coluna active_stop_order_id concluída`);
       }
-      
     } catch (error) {
-      console.error(`❌ [DATABASE] Erro na migração da coluna active_stop_order_id:`, error.message);
+      console.error(
+        `❌ [DATABASE] Erro na migração da coluna active_stop_order_id:`,
+        error.message
+      );
     }
   }
 

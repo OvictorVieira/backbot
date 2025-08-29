@@ -11,11 +11,11 @@ describe('BaseStopLoss', () => {
     test('should return true for valid position and account data', () => {
       const position = {
         symbol: 'BTC_USDC_PERP',
-        netQuantity: '0.1'
+        netQuantity: '0.1',
       };
       const account = {
         markets: [],
-        leverage: 10
+        leverage: 10,
       };
 
       const result = baseStopLoss.validateData(position, account);
@@ -26,7 +26,7 @@ describe('BaseStopLoss', () => {
       const position = null;
       const account = {
         markets: [],
-        leverage: 10
+        leverage: 10,
       };
 
       const result = baseStopLoss.validateData(position, account);
@@ -36,7 +36,7 @@ describe('BaseStopLoss', () => {
     test('should return false for null account', () => {
       const position = {
         symbol: 'BTC_USDC_PERP',
-        netQuantity: '0.1'
+        netQuantity: '0.1',
       };
       const account = null;
 
@@ -46,11 +46,11 @@ describe('BaseStopLoss', () => {
 
     test('should return false for position without symbol', () => {
       const position = {
-        netQuantity: '0.1'
+        netQuantity: '0.1',
       };
       const account = {
         markets: [],
-        leverage: 10
+        leverage: 10,
       };
 
       const result = baseStopLoss.validateData(position, account);
@@ -59,11 +59,11 @@ describe('BaseStopLoss', () => {
 
     test('should return false for position without netQuantity', () => {
       const position = {
-        symbol: 'BTC_USDC_PERP'
+        symbol: 'BTC_USDC_PERP',
       };
       const account = {
         markets: [],
-        leverage: 10
+        leverage: 10,
       };
 
       const result = baseStopLoss.validateData(position, account);
@@ -74,7 +74,7 @@ describe('BaseStopLoss', () => {
   describe('isVolumeBelowMinimum', () => {
     test('should return true when volume is below minimum', () => {
       const position = {
-        netExposureNotional: '50'
+        netExposureNotional: '50',
       };
       const minVolume = 100;
 
@@ -84,7 +84,7 @@ describe('BaseStopLoss', () => {
 
     test('should return false when volume is above minimum', () => {
       const position = {
-        netExposureNotional: '150'
+        netExposureNotional: '150',
       };
       const minVolume = 100;
 
@@ -94,7 +94,7 @@ describe('BaseStopLoss', () => {
 
     test('should return false when volume equals minimum', () => {
       const position = {
-        netExposureNotional: '100'
+        netExposureNotional: '100',
       };
       const minVolume = 100;
 
@@ -104,7 +104,7 @@ describe('BaseStopLoss', () => {
 
     test('should handle string volume values', () => {
       const position = {
-        netExposureNotional: '75.5'
+        netExposureNotional: '75.5',
       };
       const minVolume = 100;
 
@@ -123,13 +123,15 @@ describe('BaseStopLoss', () => {
         symbol: 'BTC_USDC_PERP',
         netQuantity: '0.1',
         avgEntryPrice: '50000',
-        markPrice: '51000'
+        markPrice: '51000',
       };
       const account = {
-        markets: [{
-          symbol: 'BTC_USDC_PERP',
-          decimal_quantity: 3
-        }]
+        markets: [
+          {
+            symbol: 'BTC_USDC_PERP',
+            decimal_quantity: 3,
+          },
+        ],
       };
 
       const result = await baseStopLoss.monitorTakeProfitMinimum(position, account);
@@ -148,13 +150,15 @@ describe('BaseStopLoss', () => {
         symbol: 'BTC_USDC_PERP',
         netQuantity: '0.1',
         avgEntryPrice: '50000',
-        markPrice: '49000' // Loss
+        markPrice: '49000', // Loss
       };
       const account = {
-        markets: [{
-          symbol: 'BTC_USDC_PERP',
-          decimal_quantity: 3
-        }]
+        markets: [
+          {
+            symbol: 'BTC_USDC_PERP',
+            decimal_quantity: 3,
+          },
+        ],
       };
 
       const result = await baseStopLoss.monitorTakeProfitMinimum(position, account);
@@ -169,7 +173,7 @@ describe('BaseStopLoss', () => {
       const originalEnv = process.env.ENABLE_TP_VALIDATION;
       const originalMinTp = process.env.MIN_TAKE_PROFIT_PCT;
       const originalTpPartial = process.env.TP_PARTIAL_PERCENTAGE;
-      
+
       process.env.ENABLE_TP_VALIDATION = 'true';
       process.env.MIN_TAKE_PROFIT_PCT = '0.5';
       process.env.TP_PARTIAL_PERCENTAGE = '50';
@@ -181,18 +185,20 @@ describe('BaseStopLoss', () => {
         markPrice: '50250', // 0.5% profit
         pnlRealized: '0',
         pnlUnrealized: '25', // 0.1 * (50250 - 50000) = 25
-        netCost: '5000' // 0.1 * 50000
+        netCost: '5000', // 0.1 * 50000
       };
       const account = {
-        markets: [{
-          symbol: 'BTC_USDC_PERP',
-          decimal_quantity: 3
-        }],
-        leverage: 10
+        markets: [
+          {
+            symbol: 'BTC_USDC_PERP',
+            decimal_quantity: 3,
+          },
+        ],
+        leverage: 10,
       };
 
       const result = await baseStopLoss.monitorTakeProfitMinimum(position, account);
-      
+
       expect(result).not.toBeNull();
       expect(result.shouldTakePartialProfit).toBe(true);
       expect(result.type).toBe('TAKE_PROFIT_PARTIAL');
@@ -208,7 +214,7 @@ describe('BaseStopLoss', () => {
       // Mock process.env
       const originalEnv = process.env.ENABLE_TP_VALIDATION;
       const originalMinTp = process.env.MIN_TAKE_PROFIT_PCT;
-      
+
       process.env.ENABLE_TP_VALIDATION = 'true';
       process.env.MIN_TAKE_PROFIT_PCT = '1.0'; // Higher minimum
 
@@ -216,13 +222,15 @@ describe('BaseStopLoss', () => {
         symbol: 'BTC_USDC_PERP',
         netQuantity: '0.1',
         avgEntryPrice: '50000',
-        markPrice: '50250' // 0.5% profit (below 1.0% minimum)
+        markPrice: '50250', // 0.5% profit (below 1.0% minimum)
       };
       const account = {
-        markets: [{
-          symbol: 'BTC_USDC_PERP',
-          decimal_quantity: 3
-        }]
+        markets: [
+          {
+            symbol: 'BTC_USDC_PERP',
+            decimal_quantity: 3,
+          },
+        ],
       };
 
       const result = await baseStopLoss.monitorTakeProfitMinimum(position, account);
@@ -238,11 +246,11 @@ describe('BaseStopLoss', () => {
     test('should throw error when called directly on base class', () => {
       const position = {
         symbol: 'BTC_USDC_PERP',
-        netQuantity: '0.1'
+        netQuantity: '0.1',
       };
       const account = {
         markets: [],
-        leverage: 10
+        leverage: 10,
       };
       const marketData = {};
 
@@ -251,4 +259,4 @@ describe('BaseStopLoss', () => {
       }).toThrow('shouldClosePosition must be implemented by subclass');
     });
   });
-}); 
+});

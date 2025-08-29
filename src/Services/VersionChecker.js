@@ -11,7 +11,8 @@ const __dirname = dirname(__filename);
 class VersionChecker {
   constructor() {
     this.localPackagePath = path.join(__dirname, '../../package.json');
-    this.remotePackageUrl = 'https://raw.githubusercontent.com/ovictorvieira/backbot/main/package.json';
+    this.remotePackageUrl =
+      'https://raw.githubusercontent.com/ovictorvieira/backbot/main/package.json';
   }
 
   /**
@@ -37,8 +38,8 @@ class VersionChecker {
       const response = await axios.get(this.remotePackageUrl, {
         timeout: 10000, // 10 segundos
         headers: {
-          'User-Agent': 'BackBot-VersionChecker/1.0'
-        }
+          'User-Agent': 'BackBot-VersionChecker/1.0',
+        },
       });
 
       const packageJson = response.data;
@@ -67,7 +68,7 @@ class VersionChecker {
       console.log(`📋 Versão remota: ${remoteVersion}`);
 
       const hasUpdate = semver.gt(remoteVersion, localVersion);
-      
+
       if (hasUpdate) {
         console.log(`🎉 Nova versão disponível: ${remoteVersion}`);
       } else {
@@ -93,7 +94,7 @@ class VersionChecker {
       if (!localVersion || !remoteVersion) {
         return {
           success: false,
-          error: 'Não foi possível determinar as versões'
+          error: 'Não foi possível determinar as versões',
         };
       }
 
@@ -110,12 +111,12 @@ class VersionChecker {
         isBehind,
         isAhead,
         isEqual,
-        difference: hasUpdate ? semver.diff(remoteVersion, localVersion) : null
+        difference: hasUpdate ? semver.diff(remoteVersion, localVersion) : null,
       };
     } catch (error) {
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }

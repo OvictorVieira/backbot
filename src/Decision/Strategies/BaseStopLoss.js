@@ -47,10 +47,10 @@ export class BaseStopLoss {
 
       // Importação dinâmica para evitar circular dependency
       const TrailingStop = await import('../../TrailingStop/TrailingStop.js');
-      
+
       // Usa a função calculatePnL do TrailingStop
       const { pnl, pnlPct } = TrailingStop.default.calculatePnL(position, account);
-      
+
       // Só monitora se há lucro
       if (pnl <= 0) {
         return null;
@@ -58,10 +58,10 @@ export class BaseStopLoss {
 
       const MIN_TAKE_PROFIT_PCT = Number(this.config?.minTakeProfitPct || 0.5);
       const TP_PARTIAL_PERCENTAGE = Number(this.config?.tpPartialPercentage || 50); // % da posição para realizar
-      
+
       // Verifica se atende ao critério mínimo de take profit
       const isValidPct = pnlPct >= MIN_TAKE_PROFIT_PCT;
-      
+
       // Se atende ao critério, realiza lucro parcial
       if (isValidPct) {
         return {
@@ -70,15 +70,14 @@ export class BaseStopLoss {
           type: 'TAKE_PROFIT_PARTIAL',
           pnl,
           pnlPct,
-          partialPercentage: TP_PARTIAL_PERCENTAGE
+          partialPercentage: TP_PARTIAL_PERCENTAGE,
         };
       }
 
       return null;
-
     } catch (error) {
       console.error('BaseStopLoss.monitorTakeProfitMinimum - Error:', error);
       return null;
     }
   }
-} 
+}
