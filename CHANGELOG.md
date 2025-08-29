@@ -5,6 +5,38 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.6.5] - 2025-08-29
+
+### 🛠️ **FIX: Correção Crítica de Alavancagem e Symbol Undefined**
+
+#### 🎯 **Alavancagem Específica por Token**
+**Alterações:** Implementada lógica de alavancagem diferenciada baseada no tipo de token.
+
+**Problemas corrigidos:**
+- ✅ **Alavancagem universal incorreta** - Sistema usava 25x para todos os tokens
+- ✅ **Position sizing incorreto** - Posições eram calculadas com alavancagem errada
+- ✅ **Symbol undefined** - Calls do AccountController sem contexto do token
+- ✅ **Logs confusos** - Informações imprecisas sobre alavancagem aplicada
+- ✅ **Capital oscilante** - Instabilidade devido a cálculos inconsistentes
+
+**Nova lógica de alavancagem:**
+- 🟢 **BTC, SOL, ETH**: Usa alavancagem da corretora (25x)  
+- 🔵 **Outros tokens**: Limitado a máximo 10x
+- 📊 **Logs informativos**: Mostra alavancagem da corretora vs aplicada
+
+**Arquivos modificados:**
+- `src/Controllers/AccountController.js` - Implementa alavancagem específica por token
+- `src/Decision/Decision.js` - Adiciona symbol ao config
+- `src/Controllers/OrderController.js` - Corrige calls para AccountController  
+- `src/TrailingStop/TrailingStop.js` - Adiciona symbol nos métodos de posição
+- `src/Utils/QuantityCalculator.js` - **NOVO**: Centralizador de cálculos de quantidade
+
+**Impacto:** Com $18.45 na conta e 20% capitalPercentage:
+- **DOGE/LINK/ENA** (10x): Capital disponível = $184.50 → Investment = $36.90
+- **BTC/SOL/ETH** (25x): Capital disponível = $461.25 → Investment = $92.25
+
+**Fluxo corrigido:** Token → Alavancagem específica → Capital correto → Position size preciso
+
 ## [1.6.3] - 2025-08-23
 
 ### 🛡️ **FIX: Implementação de RiskManager Centralizado**
