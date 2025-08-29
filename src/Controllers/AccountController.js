@@ -21,12 +21,29 @@ class AccountController {
     const botKey = `${strategy}_${apiKey}`;
     const symbol = config?.symbol || 'UNKNOWN'; // Para determinar alavancagem específica do token
 
-    // ⚠️ CACHE REMOVIDO: Dados de conta devem SEMPRE ser atualizados da exchange
-    // Cache pode causar cálculos incorretos de position size e perdas financeiras
+    // 🎯 CACHE POR RODADA: 1 chamada por minuto para todos os tokens
+    // Valida tokens a cada ~1min, todos tokens da mesma rodada usam os mesmos dados
+    
+    const now = Date.now();
+    const lastCacheTime = AccountController.lastCacheTimeByBot.get(botKey) || 0;
+    const cacheAge = now - lastCacheTime;
+    const roundCacheDuration = 55000; // 55 segundos - válido para toda rodada de validação
+    
+    // Verifica se cache ainda é válido (menos de 55 segundos = mesma rodada)
+    if (cacheAge < roundCacheDuration && AccountController.accountCacheByBot.has(botKey)) {
+      Logger.debug(`⚡ [ACCOUNT_CACHE] ${strategy}: Usando cache da rodada (idade: ${Math.round(cacheAge/1000)}s)`);
+      const cachedData = AccountController.accountCacheByBot.get(botKey);
+      
+      // Retorna dados da corretora SEM modificar alavancagem - usuário define na corretora
+      const cachedDataForToken = { ...cachedData };
+      
+      Logger.debug(`🔄 [CACHE_REUSE] ${symbol}: Reutilizando dados da rodada (alavancagem: ${cachedData.leverage}x)`);
+      return cachedDataForToken;
+    }
 
     try {
-      // ✅ SEMPRE busca dados FRESCOS da exchange - CRÍTICO para position sizing correto
-      Logger.info(`🔄 [ACCOUNT_FRESH] ${strategy}: Buscando dados atualizados da exchange...`);
+      // ✅ NOVA RODADA: Busca dados da exchange quando inicia nova rodada (55+ segundos)  
+      Logger.info(`🔄 [ACCOUNT_FRESH] ${strategy}: Nova rodada iniciada (${Math.round(cacheAge/1000)}s) - Buscando dados para TODOS os tokens...`);
 
       const Accounts = await Account.getAccount(strategy, apiKey, apiSecret);
       const Collateral = await Capital.getCollateral(strategy, apiKey, apiSecret);
@@ -87,54 +104,37 @@ class AccountController {
         });
 
       const makerFee = parseFloat(Accounts.futuresMakerFee) / 10000;
-      const apiLeverage = parseInt(Accounts.leverageLimit); // Alavancagem vinda da API (sempre 25x)
+      const leverage = parseInt(Accounts.leverageLimit); // Alavancagem definida pelo usuário na corretora
       const netEquityAvailable = parseFloat(Collateral.netEquityAvailable);
 
-      // 🎯 CORREÇÃO CRÍTICA: Usa alavancagem da corretora com regras específicas
-      // BTC, SOL, ETH: Usa alavancagem definida pela corretora
-      // Outros tokens: Usa alavancagem da corretora, mas limita a máximo 10x
-      const highLeverageTokens = ['BTC', 'SOL', 'ETH', 'BTCUSDC', 'SOLUSDC', 'ETHUSDC'];
-      const isHighLeverageToken = highLeverageTokens.some(token => symbol.includes(token));
-
-      let actualLeverage;
-      if (isHighLeverageToken) {
-        // Para BTC/SOL/ETH: usa alavancagem da corretora (normalmente 25x)
-        actualLeverage = apiLeverage;
-      } else {
-        // Para outros tokens: usa alavancagem da corretora, mas limita a 10x máximo
-        actualLeverage = Math.min(apiLeverage, 10);
-      }
-
+      // 💡 USANDO ALAVANCAGEM DA CORRETORA: Usuário define a alavancagem que quer usar
+      // Respeitamos a configuração do usuário sem impor limites arbitrários
       const marginSafety = 0.95; // 95% como margem de segurança
       const realCapital = netEquityAvailable * marginSafety; // Capital real para controle de risco
-      const capitalAvailable = realCapital * actualLeverage; // Capital para cálculo de posição (alavancagem CORRETA do token)
+      const capitalAvailable = realCapital * leverage; // Capital para cálculo usando alavancagem do usuário
 
       // 🔍 LOG DETALHADO DO CÁLCULO
-      Logger.debug(`📊 [ACCOUNT_CALC] ${symbol}: Cálculo de capital:`);
+      Logger.debug(`📊 [ACCOUNT_CALC] Dados da rodada para TODOS os tokens:`);
       Logger.debug(`   • netEquityAvailable (API): $${netEquityAvailable.toFixed(2)}`);
       Logger.debug(`   • marginSafety: ${marginSafety}`);
-      Logger.debug(`   • apiLeverage (da corretora): ${apiLeverage}x`);
-      Logger.debug(`   • isHighLeverageToken: ${isHighLeverageToken}`);
-      Logger.debug(`   • actualLeverage (aplicada): ${actualLeverage}x`);
+      Logger.debug(`   • leverage (definida pelo usuário): ${leverage}x`);
       Logger.debug(
         `   • realCapital = $${netEquityAvailable.toFixed(2)} × ${marginSafety} = $${realCapital.toFixed(2)}`
       );
       Logger.debug(
-        `   • capitalAvailable = $${realCapital.toFixed(2)} × ${actualLeverage}x = $${capitalAvailable.toFixed(2)}`
+        `   • capitalAvailable = $${realCapital.toFixed(2)} × ${leverage}x = $${capitalAvailable.toFixed(2)}`
       );
 
       // Log explicativo do cálculo do capital (apenas na primeira vez para este bot)
       if (!AccountController.capitalLoggedByBot.get(botKey)) {
-        Logger.info(`\n📊 [${strategy}] CÁLCULO DO CAPITAL (${symbol}):
+        Logger.info(`\n📊 [${strategy}] NOVA RODADA - DADOS PARA TODOS OS TOKENS:
    • Patrimônio Líquido Disponível: $${netEquityAvailable.toFixed(2)}
    • Margem de segurança: ${(marginSafety * 100).toFixed(0)}%
    • Capital real (controle de risco): $${realCapital.toFixed(2)}
-   • Alavancagem da corretora: ${apiLeverage}x
-   • Alavancagem aplicada: ${actualLeverage}x ${isHighLeverageToken ? '(sem limite)' : '(máx. 10x)'}
-   • Capital para cálculo de posição: $${realCapital.toFixed(2)} × ${actualLeverage}x = $${capitalAvailable.toFixed(2)}`);
-        Logger.info(
-          `   💡 Initial Margin será deduzido do capital real ($${realCapital.toFixed(2)})`
-        );
+   • Alavancagem (definida pelo usuário): ${leverage}x
+   • Capital para cálculo de posição: $${realCapital.toFixed(2)} × ${leverage}x = $${capitalAvailable.toFixed(2)}`);
+        Logger.info(`   💡 Estes dados serão reutilizados por TODOS os tokens desta rodada (55s)`);
+        Logger.info(`   💡 Initial Margin será deduzido do capital real ($${realCapital.toFixed(2)})`);
         AccountController.capitalLoggedByBot.set(botKey, true);
       }
 
@@ -146,20 +146,33 @@ class AccountController {
         maxOpenOrders,
         minVolumeDollar,
         fee: makerFee,
-        leverage: actualLeverage, // Alavancagem específica do token
-        capitalAvailable, // Capital para cálculo de posição (com alavancagem correta)
-        realCapital, // Capital real para controle de risco (sem alavancagem)
+        leverage, // Alavancagem definida pelo usuário na corretora
+        capitalAvailable, // Capital para cálculo de posição
+        realCapital, // Capital real para controle de risco
         markets,
       };
 
-      // ✅ NÃO SALVA CACHE - Dados de conta devem sempre ser frescos
-      Logger.debug(
-        `✅ [ACCOUNT_FRESH] ${symbol}: Capital real: $${realCapital.toFixed(2)}, Capital p/ posição: $${capitalAvailable.toFixed(2)} (${actualLeverage}x)`
+      // 💾 SALVA CACHE por 55 segundos - 1 chamada por rodada para TODOS os tokens
+      AccountController.accountCacheByBot.set(botKey, obj);
+      AccountController.lastCacheTimeByBot.set(botKey, now);
+      
+      Logger.info(
+        `✅ [ACCOUNT_CACHED] RODADA: Capital real: $${realCapital.toFixed(2)}, Capital p/ posição: $${capitalAvailable.toFixed(2)} (${leverage}x) - Cache para próximos 55s`
       );
 
       return obj;
     } catch (error) {
       Logger.error('❌ AccountController.get - Error:', error.message);
+      
+      // 🛡️ FALLBACK: Se deu erro (possivelmente rate limit) e temos cache antigo, usa ele
+      if (error.message.includes('rate limit') || error.message.includes('TOO_MANY_REQUESTS')) {
+        const cachedData = AccountController.accountCacheByBot.get(botKey);
+        if (cachedData) {
+          Logger.warn(`⚠️ [RATE_LIMIT_FALLBACK] ${strategy}: Usando cache da rodada anterior devido ao rate limit`);
+          return { ...cachedData }; // Retorna dados da corretora sem modificações
+        }
+      }
+      
       return null;
     }
   }
@@ -221,6 +234,25 @@ class AccountController {
     Logger.info(
       `🔄 [ACCOUNT] Cache limpo para todos os bots - próxima chamada buscará dados frescos`
     );
+  }
+
+  /**
+   * Força atualização imediata dos dados da conta (ignora cache)
+   * Usar apenas em casos críticos como após execução de ordens
+   */
+  static async getForceRefresh(config = null) {
+    // Limpa cache específico do bot
+    const strategy = config?.strategy;
+    const apiKey = config?.apiKey;
+    if (strategy && apiKey) {
+      const botKey = `${strategy}_${apiKey}`;
+      AccountController.accountCacheByBot.delete(botKey);
+      AccountController.lastCacheTimeByBot.delete(botKey);
+      Logger.debug(`🔄 [ACCOUNT_FORCE] Forçando atualização para ${strategy}`);
+    }
+    
+    // Chama método normal que agora buscará dados frescos
+    return await AccountController.get(config);
   }
 
   /**
