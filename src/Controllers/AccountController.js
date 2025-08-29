@@ -23,27 +23,33 @@ class AccountController {
 
     // 🎯 CACHE POR RODADA: 1 chamada por minuto para todos os tokens
     // Valida tokens a cada ~1min, todos tokens da mesma rodada usam os mesmos dados
-    
+
     const now = Date.now();
     const lastCacheTime = AccountController.lastCacheTimeByBot.get(botKey) || 0;
     const cacheAge = now - lastCacheTime;
     const roundCacheDuration = 55000; // 55 segundos - válido para toda rodada de validação
-    
+
     // Verifica se cache ainda é válido (menos de 55 segundos = mesma rodada)
     if (cacheAge < roundCacheDuration && AccountController.accountCacheByBot.has(botKey)) {
-      Logger.debug(`⚡ [ACCOUNT_CACHE] ${strategy}: Usando cache da rodada (idade: ${Math.round(cacheAge/1000)}s)`);
+      Logger.debug(
+        `⚡ [ACCOUNT_CACHE] ${strategy}: Usando cache da rodada (idade: ${Math.round(cacheAge / 1000)}s)`
+      );
       const cachedData = AccountController.accountCacheByBot.get(botKey);
-      
+
       // Retorna dados da corretora SEM modificar alavancagem - usuário define na corretora
       const cachedDataForToken = { ...cachedData };
-      
-      Logger.debug(`🔄 [CACHE_REUSE] ${symbol}: Reutilizando dados da rodada (alavancagem: ${cachedData.leverage}x)`);
+
+      Logger.debug(
+        `🔄 [CACHE_REUSE] ${symbol}: Reutilizando dados da rodada (alavancagem: ${cachedData.leverage}x)`
+      );
       return cachedDataForToken;
     }
 
     try {
-      // ✅ NOVA RODADA: Busca dados da exchange quando inicia nova rodada (55+ segundos)  
-      Logger.info(`🔄 [ACCOUNT_FRESH] ${strategy}: Nova rodada iniciada (${Math.round(cacheAge/1000)}s) - Buscando dados para TODOS os tokens...`);
+      // ✅ NOVA RODADA: Busca dados da exchange quando inicia nova rodada (55+ segundos)
+      Logger.info(
+        `🔄 [ACCOUNT_FRESH] ${strategy}: Nova rodada iniciada (${Math.round(cacheAge / 1000)}s) - Buscando dados para TODOS os tokens...`
+      );
 
       const Accounts = await Account.getAccount(strategy, apiKey, apiSecret);
       const Collateral = await Capital.getCollateral(strategy, apiKey, apiSecret);
@@ -134,7 +140,9 @@ class AccountController {
    • Alavancagem (definida pelo usuário): ${leverage}x
    • Capital para cálculo de posição: $${realCapital.toFixed(2)} × ${leverage}x = $${capitalAvailable.toFixed(2)}`);
         Logger.info(`   💡 Estes dados serão reutilizados por TODOS os tokens desta rodada (55s)`);
-        Logger.info(`   💡 Initial Margin será deduzido do capital real ($${realCapital.toFixed(2)})`);
+        Logger.info(
+          `   💡 Initial Margin será deduzido do capital real ($${realCapital.toFixed(2)})`
+        );
         AccountController.capitalLoggedByBot.set(botKey, true);
       }
 
@@ -155,7 +163,7 @@ class AccountController {
       // 💾 SALVA CACHE por 55 segundos - 1 chamada por rodada para TODOS os tokens
       AccountController.accountCacheByBot.set(botKey, obj);
       AccountController.lastCacheTimeByBot.set(botKey, now);
-      
+
       Logger.info(
         `✅ [ACCOUNT_CACHED] RODADA: Capital real: $${realCapital.toFixed(2)}, Capital p/ posição: $${capitalAvailable.toFixed(2)} (${leverage}x) - Cache para próximos 55s`
       );
@@ -163,16 +171,18 @@ class AccountController {
       return obj;
     } catch (error) {
       Logger.error('❌ AccountController.get - Error:', error.message);
-      
+
       // 🛡️ FALLBACK: Se deu erro (possivelmente rate limit) e temos cache antigo, usa ele
       if (error.message.includes('rate limit') || error.message.includes('TOO_MANY_REQUESTS')) {
         const cachedData = AccountController.accountCacheByBot.get(botKey);
         if (cachedData) {
-          Logger.warn(`⚠️ [RATE_LIMIT_FALLBACK] ${strategy}: Usando cache da rodada anterior devido ao rate limit`);
+          Logger.warn(
+            `⚠️ [RATE_LIMIT_FALLBACK] ${strategy}: Usando cache da rodada anterior devido ao rate limit`
+          );
           return { ...cachedData }; // Retorna dados da corretora sem modificações
         }
       }
-      
+
       return null;
     }
   }
@@ -250,7 +260,7 @@ class AccountController {
       AccountController.lastCacheTimeByBot.delete(botKey);
       Logger.debug(`🔄 [ACCOUNT_FORCE] Forçando atualização para ${strategy}`);
     }
-    
+
     // Chama método normal que agora buscará dados frescos
     return await AccountController.get(config);
   }

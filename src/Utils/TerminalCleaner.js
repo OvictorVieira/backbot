@@ -17,7 +17,7 @@ class TerminalCleaner {
   static clearTerminal() {
     try {
       const platform = process.platform;
-      
+
       if (platform === 'win32') {
         // Windows
         spawn('cmd', ['/c', 'cls'], { stdio: 'inherit' });
@@ -25,10 +25,10 @@ class TerminalCleaner {
         // Unix-like (Linux, macOS)
         spawn('clear', { stdio: 'inherit' });
       }
-      
+
       // Alternativa usando códigos ANSI que funciona em ambos
       process.stdout.write('\x1Bc');
-      
+
       Logger.info('🧹 [TERMINAL_CLEANER] Terminal limpo automaticamente');
     } catch (error) {
       Logger.warn(`⚠️ [TERMINAL_CLEANER] Erro ao limpar terminal: ${error.message}`);
@@ -48,13 +48,13 @@ class TerminalCleaner {
     }
 
     const intervalMs = intervalMinutes * 60 * 1000;
-    
+
     Logger.info(`🧹 [TERMINAL_CLEANER] Auto-limpeza iniciada: ${intervalMinutes} minutos`);
-    
+
     this.intervalId = setInterval(() => {
       TerminalCleaner.clearTerminal();
     }, intervalMs);
-    
+
     this.isEnabled = true;
   }
 
@@ -71,7 +71,7 @@ class TerminalCleaner {
       clearInterval(this.intervalId);
       this.intervalId = null;
     }
-    
+
     this.isEnabled = false;
     Logger.info('🧹 [TERMINAL_CLEANER] Auto-limpeza parada');
   }

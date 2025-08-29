@@ -510,7 +510,7 @@ async function startBot() {
     // Inicia limpeza automática do terminal se habilitada
     const autoClearEnabled = process.env.TERMINAL_AUTO_CLEAR !== 'false'; // default true
     const autoClearInterval = parseInt(process.env.TERMINAL_CLEAR_INTERVAL) || 10; // default 10 minutes
-    
+
     if (autoClearEnabled) {
       const terminalCleaner = new TerminalCleaner();
       terminalCleaner.startAutoClear(autoClearInterval);
