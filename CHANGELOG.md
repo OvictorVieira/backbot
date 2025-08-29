@@ -5,6 +5,43 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.6.6] - 2025-08-29
+
+### 🚀 **Cache Avançado para Posições e Terminal Cleaner**
+
+#### 🎯 **Sistema de Cache para getOpenPositions**
+**Alterações:** Implementação de cache inteligente com duração de 10 segundos para evitar rate limiting no endpoint de posições.
+
+**Problemas corrigidos:**
+- ✅ **Rate limiting em posições** - TrailingStop causava muitas chamadas à API
+- ✅ **Cache por bot** - Sistema independente usando apiKey como identificador
+- ✅ **Fallback robusto** - Usa cache antigo em caso de rate limit ou timeout
+- ✅ **Logging detalhado** - Informações claras sobre uso/expiração do cache
+- ✅ **Métodos utilitários** - clearPositionsCache, getOpenPositionsForceRefresh, getPositionsCacheInfo
+
+**Recursos adicionados:**
+- 💾 **Cache de 10s** - Posições são cached por 10 segundos por bot
+- 🔄 **Retry automático** - Timeout de 15s → retry com 20s timeout
+- 🛡️ **Proteção rate limit** - Fallback para cache antigo quando necessário
+- 📊 **Monitoramento** - Informações detalhadas sobre estado do cache
+
+#### 🧹 **Terminal Auto Cleaner Cross-Platform**
+**Alterações:** Sistema automático de limpeza do terminal compatível com Unix e Windows.
+
+**Recursos implementados:**
+- 🖥️ **Cross-platform** - Funciona em Unix (clear) e Windows (cls)
+- ⏰ **Auto-clear configurável** - Padrão 10 minutos via .env
+- 🔧 **Controles manuais** - startAutoClear, stopAutoClear, isActive
+- 📋 **Códigos ANSI fallback** - Garante funcionamento em qualquer terminal
+
+**Arquivos modificados:**
+- `src/Backpack/Authenticated/Futures.js` - Sistema completo de cache
+- `src/Utils/TerminalCleaner.js` - **NOVO**: Limpeza automática de terminal
+- `app.js` - Integração do TerminalCleaner
+- `.env` - Configurações TERMINAL_AUTO_CLEAR e TERMINAL_CLEAR_INTERVAL
+
+**Impacto:** Redução drástica de calls à API de posições e terminal sempre limpo automaticamente.
+
 ## [1.6.5] - 2025-08-29
 
 ### 🛠️ **FIX: Correção Crítica de Alavancagem e Symbol Undefined**
