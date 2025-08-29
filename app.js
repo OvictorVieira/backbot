@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import Logger from './src/Utils/Logger.js';
+import TerminalCleaner from './src/Utils/TerminalCleaner.js';
 
 dotenv.config();
 
@@ -505,6 +506,16 @@ async function startBot() {
     startStops();
     startPendingOrdersMonitor();
     // Monitor de ordens órfãs agora é gerenciado pelo sistema multi-bot do app-api.js
+
+    // Inicia limpeza automática do terminal se habilitada
+    const autoClearEnabled = process.env.TERMINAL_AUTO_CLEAR !== 'false'; // default true
+    const autoClearInterval = parseInt(process.env.TERMINAL_CLEAR_INTERVAL) || 10; // default 10 minutes
+    
+    if (autoClearEnabled) {
+      const terminalCleaner = new TerminalCleaner();
+      terminalCleaner.startAutoClear(autoClearInterval);
+      console.log(`🧹 Auto-limpeza do terminal ativada (${autoClearInterval} minutos)`);
+    }
 
     // Verifica se deve fazer análise imediatamente ou aguardar
     const timeframeConfig = new TimeframeConfig(activeBotConfig);
