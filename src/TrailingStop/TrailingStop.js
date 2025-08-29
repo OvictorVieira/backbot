@@ -302,6 +302,7 @@ class TrailingStop {
                 apiKey,
                 apiSecret,
                 strategy: config?.strategyName || 'DEFAULT',
+                symbol,
               });
               const marketInfo = Account.markets.find(m => m.symbol === symbol);
               if (!marketInfo) {
@@ -1900,6 +1901,7 @@ class TrailingStop {
         apiKey,
         apiSecret,
         strategy: this.strategyType,
+        symbol: position.symbol,
       });
 
       if (!Account.leverage) {
@@ -1977,6 +1979,7 @@ class TrailingStop {
         apiKey,
         apiSecret,
         strategy: this.strategyType,
+        symbol: position.symbol,
       });
 
       if (!Account.leverage) {

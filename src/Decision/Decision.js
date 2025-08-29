@@ -195,8 +195,11 @@ class Decision {
    */
   async getMarketInfo(symbol, config = null) {
     try {
+      // Adiciona symbol ao config para cálculo correto da alavancagem
+      const configWithSymbol = { ...config, symbol };
+
       // Obtém os dados da conta
-      const Account = await AccountController.get(config);
+      const Account = await AccountController.get(configWithSymbol);
 
       if (!Account || !Account.markets) {
         Logger.error(`❌ [${config?.strategyName || 'DEFAULT'}] Dados da conta não disponíveis`);

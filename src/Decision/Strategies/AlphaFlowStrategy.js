@@ -526,13 +526,21 @@ export class AlphaFlowStrategy extends BaseStrategy {
       entryPrices.push(entryPrice);
     }
 
-    // ✅ USA RISKMANAGER: Distribui capital e calcula quantidades com validação de risco
+    // ⚠️ TEMPORÁRIO: Usando método DEPRECADO - Esta estratégia precisa ser refatorada
+    // TODO: Refatorar para usar QuantityCalculator.calculateScaledPositions() diretamente
+    const marketInfo = {
+      decimal_quantity: market?.decimal_quantity || 8,
+      decimal_price: market?.decimal_price || 6,
+      stepSize_quantity: market?.stepSize_quantity || 0,
+    };
+
     const riskValidatedOrders = RiskManager.distributeCapitalAcrossOrders(
       investmentUSD,
       weights,
       entryPrices,
       market,
-      symbol
+      symbol,
+      marketInfo
     );
 
     if (!riskValidatedOrders || riskValidatedOrders.length === 0) {

@@ -16,6 +16,7 @@ import Account from '../Backpack/Authenticated/Account.js';
 import PositionUtils from '../Utils/PositionUtils.js';
 import CacheInvalidator from '../Utils/CacheInvalidator.js';
 import StopLossUtilsModule from '../Utils/PositionUtils.js';
+import QuantityCalculator from '../Utils/QuantityCalculator.js';
 
 class OrderController {
   // Instância centralizada do OrdersService
@@ -1173,7 +1174,8 @@ class OrderController {
 
   static async forceClose(position, account = null, config = null) {
     // Se account não foi fornecido, obtém da API
-    const Account = account || (await AccountController.get(config));
+    const configWithSymbol = { ...config, symbol: position.symbol };
+    const Account = account || (await AccountController.get(configWithSymbol));
 
     // Log detalhado para debug
     Logger.info(`🔍 [FORCE_CLOSE] Procurando market para ${position.symbol}`);
@@ -1650,12 +1652,6 @@ class OrderController {
         return true;
       }
 
-      Logger.info(`🔍 [${botName}] ${market}: Dados originais do sinal:`, {
-        action: originalSignalData.action,
-        config: originalSignalData.config,
-        timestamp: originalSignalData.timestamp,
-      });
-
       // Usa a estratégia passada como parâmetro
       const strategyNameToUse = botName || config?.strategyName || 'DEFAULT';
 
@@ -1777,40 +1773,69 @@ class OrderController {
     target,
     action,
     market,
-    volume,
+    volume, // 🗑️ DEPRECATED: será calculado internamente
     decimal_quantity,
     decimal_price,
     stepSize_quantity,
     botName = 'DEFAULT',
     originalSignalData,
     config = null,
+    account = null, // ✅ NOVO: dados da conta para cálculo interno
   }) {
+    // Define strategy name early for error handling
+    const strategyNameToUse = config?.strategyName || botName || 'UNKNOWN';
+
     try {
       const formatPrice = value => parseFloat(value).toFixed(decimal_price).toString();
 
       // Validações básicas
-      if (!entry || !stop || !target || !action || !market || !volume) {
+      if (!entry || !stop || !target || !action || !market) {
         return { error: 'Parâmetros obrigatórios ausentes' };
       }
 
       const entryPrice = parseFloat(entry);
 
-      // ✅ CÁLCULO SIMPLES: Volume já vem validado do Decision.js via calculateInvestmentAmount
-      const desiredQuantity = volume / entryPrice;
-      const quantity = desiredQuantity.toFixed(decimal_quantity);
+      // ✅ NOVA ABORDAGEM CENTRALIZADA: QuantityCalculator calcula volume internamente
+      const marketInfo = {
+        decimal_quantity,
+        decimal_price,
+        stepSize_quantity: stepSize_quantity || 0,
+      };
 
-      if (parseFloat(quantity) <= 0) {
-        Logger.error(`❌ [QUANTITY_ERROR] ${market}: Quantidade inválida ${quantity}`);
-        return { error: 'Quantidade calculada inválida' };
+      // Se account não foi fornecida, busca dinamicamente
+      const configWithSymbol = { ...config, symbol: market };
+      const accountData = account || (await AccountController.get(configWithSymbol));
+      if (!accountData || !accountData.capitalAvailable) {
+        Logger.error(
+          `❌ [QUANTITY_ERROR] ${market}: Não foi possível obter capital disponível da conta`
+        );
+        return { error: 'Capital da conta não disponível' };
       }
-      const orderValue = entryPrice * parseFloat(quantity);
+
+      const quantityResult = QuantityCalculator.calculatePositionSize(
+        entryPrice,
+        marketInfo,
+        config || {},
+        accountData,
+        market
+      );
+
+      if (!quantityResult.isValid) {
+        Logger.error(`❌ [QUANTITY_ERROR] ${market}: ${quantityResult.error}`);
+        return { error: quantityResult.error };
+      }
+
+      const quantity = quantityResult.quantity;
+      const orderValue = quantityResult.orderValue;
       const side = action === 'long' ? 'Bid' : 'Ask';
       const finalPrice = formatPrice(entryPrice);
 
       // Debug dos valores calculados
       Logger.info(`🔍 [DEBUG] ${market}: Valores calculados:`);
       Logger.info(`   • Entry: ${entry} -> entryPrice: ${entryPrice}`);
-      Logger.info(`   • Volume: ${volume} -> quantity: ${quantity}`);
+      Logger.info(
+        `   • Volume calculado: $${quantityResult.volumeUSD.toFixed(2)} -> quantity: ${quantity}`
+      );
       Logger.info(`   • OrderValue: ${orderValue}`);
       Logger.info(`   • Side: ${side} (action: ${action})`);
       Logger.info(`   • FinalPrice: ${finalPrice}`);
@@ -1822,7 +1847,6 @@ class OrderController {
       }
 
       // Log inicial da execução híbrida
-      const strategyNameToUse = config?.strategyName || botName;
       Logger.info(`\n🚀 [${strategyNameToUse}] ${market}: Iniciando execução híbrida`);
       Logger.info(
         `📊 [${strategyNameToUse}] ${market}: Preço de entrada: $${entryPrice.toFixed(6)} | Quantidade: ${quantity} | Valor: $${orderValue.toFixed(2)}`
