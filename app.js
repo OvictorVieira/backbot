@@ -42,6 +42,7 @@ let trailingStopErrorCount = 0;
 let trailingStopMaxInterval = 120000; // máximo 120s (aumentado de 10s)
 let trailingStopMinInterval = 15000; // mínimo 15s (aumentado de 0.5s)
 let trailingStopLastErrorTime = null;
+let trailingStopInProgress = false; // Semáforo para evitar execuções simultâneas
 
 // Variáveis para controle do intervalo dos monitores
 let pendingOrdersInterval = 15000; // começa em 15s
@@ -286,6 +287,17 @@ async function startStops() {
       return;
     }
 
+    // 🔒 PROTEÇÃO: Verifica se já há uma execução em andamento
+    if (trailingStopInProgress) {
+      console.log(
+        `⏳ [${activeBotConfig.botName}][TRAILING] Execução anterior ainda em andamento - aguardando...`
+      );
+      return;
+    }
+
+    // Define o semáforo para evitar execuções simultâneas
+    trailingStopInProgress = true;
+
     const trailingStopInstance = new TrailingStop(
       activeBotConfig.strategyName || 'DEFAULT',
       activeBotConfig,
@@ -320,6 +332,9 @@ async function startStops() {
         error.message || error
       );
     }
+  } finally {
+    // 🔓 LIBERAÇÃO: Sempre libera o semáforo após execução (sucesso ou erro)
+    trailingStopInProgress = false;
   }
   setTimeout(startStops, trailingStopInterval);
 }

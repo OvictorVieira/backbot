@@ -15,6 +15,9 @@ class TrailingStop {
   // Cache estático para controlar symbols que devem ser skipados (posição fechada)
   static skippedSymbols = new Map();
 
+  // Cache para evitar múltiplas tentativas simultâneas de fechamento
+  static closingInProgress = new Map();
+
   // Limpa entries do cache que são mais antigas que 24 horas
   static cleanupSkippedSymbolsCache() {
     const now = Date.now();
@@ -25,6 +28,60 @@ class TrailingStop {
         TrailingStop.skippedSymbols.delete(key);
         Logger.debug(`🧹 [CACHE_CLEANUP] Removido ${key} do cache de skip (> 24h)`);
       }
+    }
+  }
+
+  // Limpa entries do cache de fechamento em progresso mais antigas que 5 minutos
+  static cleanupClosingInProgressCache() {
+    const now = Date.now();
+    const maxAge = 5 * 60 * 1000; // 5 minutos
+
+    for (const [key, timestamp] of TrailingStop.closingInProgress.entries()) {
+      if (now - timestamp > maxAge) {
+        TrailingStop.closingInProgress.delete(key);
+        Logger.debug(`🧹 [CACHE_CLEANUP] Removido ${key} do cache de fechamento (> 5min)`);
+      }
+    }
+  }
+
+  // Função protegida para fechamento de posição
+  static async protectedForceClose(position, Account, config, reason = 'unknown') {
+    const symbol = position.symbol;
+    const now = Date.now();
+
+    // Limpa cache periodicamente
+    TrailingStop.cleanupClosingInProgressCache();
+
+    // Verifica se já está sendo fechada
+    if (TrailingStop.closingInProgress.has(symbol)) {
+      const startTime = TrailingStop.closingInProgress.get(symbol);
+      const elapsedMs = now - startTime;
+      Logger.info(
+        `⏳ [CLOSING_PROTECTION] ${symbol}: Fechamento já em progresso há ${Math.round(elapsedMs / 1000)}s - ignorando tentativa adicional (${reason})`
+      );
+      return { success: false, reason: 'already_closing' };
+    }
+
+    // Marca como fechamento em progresso
+    TrailingStop.closingInProgress.set(symbol, now);
+    Logger.info(`🔒 [CLOSING_PROTECTION] ${symbol}: Iniciando fechamento protegido (${reason})`);
+
+    try {
+      await OrderController.forceClose(position, Account, config);
+      Logger.info(
+        `✅ [CLOSING_PROTECTION] ${symbol}: Fechamento concluído com sucesso (${reason})`
+      );
+      return { success: true, reason: 'completed' };
+    } catch (error) {
+      Logger.error(
+        `❌ [CLOSING_PROTECTION] ${symbol}: Erro no fechamento (${reason}):`,
+        error.message
+      );
+      return { success: false, reason: 'error', error: error.message };
+    } finally {
+      // Remove do cache após tentativa
+      TrailingStop.closingInProgress.delete(symbol);
+      Logger.info(`🔓 [CLOSING_PROTECTION] ${symbol}: Fechamento liberado (${reason})`);
     }
   }
 
@@ -2143,8 +2200,15 @@ class TrailingStop {
           TrailingStop.colorLogger.positionClosed(
             `🛑 [STOP_LOSS] ${position.symbol}: Fechando por stop loss principal - ${stopLossDecision.reason}`
           );
-          await OrderController.forceClose(position, Account, this.config);
-          await TrailingStop.onPositionClosed(position, 'stop_loss');
+          const result = await TrailingStop.protectedForceClose(
+            position,
+            Account,
+            this.config,
+            `stop_loss_${stopLossDecision.reason}`
+          );
+          if (result.success) {
+            await TrailingStop.onPositionClosed(position, 'stop_loss');
+          }
           continue;
         }
 
@@ -2185,8 +2249,15 @@ class TrailingStop {
               Logger.info(
                 `🎯 [PROFIT_TARGET] ${position.symbol}: Alvo de preço da Alpha Flow atingido! Fechando posição.`
               );
-              await OrderController.forceClose(position, Account, this.config);
-              await TrailingStop.onPositionClosed(position, 'alpha_flow_target');
+              const result = await TrailingStop.protectedForceClose(
+                position,
+                Account,
+                this.config,
+                'alpha_flow_target'
+              );
+              if (result.success) {
+                await TrailingStop.onPositionClosed(position, 'alpha_flow_target');
+              }
               continue;
             }
           } else {
@@ -2276,8 +2347,15 @@ class TrailingStop {
               TrailingStop.colorLogger.positionClosed(
                 `💰 [PROFIT_CONFIGURED] ${position.symbol}: Fechando por profit mínimo configurado`
               );
-              await OrderController.forceClose(position, Account, this.config);
-              await TrailingStop.onPositionClosed(position, 'profit_configured');
+              const result = await TrailingStop.protectedForceClose(
+                position,
+                Account,
+                this.config,
+                'profit_configured'
+              );
+              if (result.success) {
+                await TrailingStop.onPositionClosed(position, 'profit_configured');
+              }
               continue;
             }
 
@@ -2285,8 +2363,15 @@ class TrailingStop {
               TrailingStop.colorLogger.positionClosed(
                 `🚨 [STOP_LOSS_EMERGENCY] ${position.symbol}: Fechando por stop loss emergencial`
               );
-              await OrderController.forceClose(position, Account, this.config);
-              await TrailingStop.onPositionClosed(position, 'stop_loss_emergency');
+              const result = await TrailingStop.protectedForceClose(
+                position,
+                Account,
+                this.config,
+                'stop_loss_emergency'
+              );
+              if (result.success) {
+                await TrailingStop.onPositionClosed(position, 'stop_loss_emergency');
+              }
               continue;
             }
 
@@ -2295,8 +2380,15 @@ class TrailingStop {
               TrailingStop.colorLogger.positionClosed(
                 `📈 [ADX_CROSSOVER] ${position.symbol}: ${adxCrossoverDecision.reason}`
               );
-              await OrderController.forceClose(position, Account, this.config);
-              await TrailingStop.onPositionClosed(position, 'adx_crossover');
+              const result = await TrailingStop.protectedForceClose(
+                position,
+                Account,
+                this.config,
+                'adx_crossover'
+              );
+              if (result.success) {
+                await TrailingStop.onPositionClosed(position, 'adx_crossover');
+              }
               continue;
             }
 
