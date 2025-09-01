@@ -2149,6 +2149,55 @@ class OrdersService {
       return 0;
     }
   }
+
+  /**
+   * Busca a ordem de abertura original para um símbolo e bot específicos
+   * @param {string} symbol - Símbolo do mercado
+   * @param {number} botId - ID do bot
+   * @param {string} positionSide - Lado da posição ('LONG' ou 'SHORT')
+   * @returns {Promise<Object|null>} Ordem original ou null
+   */
+  static async getOriginalOpeningOrder(symbol, botId, positionSide) {
+    try {
+      if (!OrdersService.dbService || !OrdersService.dbService.isInitialized()) {
+        throw new Error('Database service not initialized');
+      }
+
+      // Converte lado da posição para lado da ordem de abertura
+      const orderSide = positionSide === 'LONG' ? 'BUY' : 'SELL';
+
+      // Busca a primeira ordem de abertura específica
+      const query = `
+        SELECT * FROM bot_orders 
+        WHERE botId = ? 
+          AND symbol = ?
+          AND side = ?
+          AND orderType IN ('MARKET', 'LIMIT')
+        ORDER BY timestamp DESC
+        LIMIT 1
+      `;
+
+      const order = await OrdersService.dbService.get(query, [botId, symbol, orderSide]);
+
+      if (order) {
+        Logger.debug(
+          `🔍 [ORIGINAL_ORDER] Encontrada ordem original: ${symbol} ${orderSide} ${order.quantity} (ID: ${order.externalOrderId})`
+        );
+      } else {
+        Logger.debug(
+          `⚠️ [ORIGINAL_ORDER] Nenhuma ordem original encontrada para ${symbol} ${positionSide} (botId: ${botId})`
+        );
+      }
+
+      return order || null;
+    } catch (error) {
+      Logger.error(
+        `❌ [ORIGINAL_ORDER] Erro ao buscar ordem original para ${symbol}:`,
+        error.message
+      );
+      return null;
+    }
+  }
 }
 
 export default OrdersService;

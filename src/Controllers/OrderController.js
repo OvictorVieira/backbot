@@ -5013,7 +5013,6 @@ class OrderController {
         return { success: false, message: 'Trailing Stop ativo' };
       }
 
-      // Verifica se já existe ordem de Take Profit
       const hasTakeProfit = await OrderController.hasTakeProfitOrder(symbol, position, config);
       if (hasTakeProfit) {
         Logger.debug(`ℹ️ [TP_CREATE] ${symbol}: Take Profit já existe, pulando criação`);
@@ -5033,7 +5032,6 @@ class OrderController {
       const decimal_price = marketInfo.decimal_price || 2;
       const tickSize = marketInfo.tickSize || null;
 
-      // Obtém posições atuais da Backpack PRIMEIRO
       let currentPositions;
       try {
         currentPositions = await Futures.getOpenPositions(config.apiKey, config.apiSecret);
@@ -5061,6 +5059,37 @@ class OrderController {
       let takeProfitQuantity;
 
       if (enableHybridStopStrategy) {
+        const positionSide = currentIsLong ? 'LONG' : 'SHORT';
+        const originalOrder = await OrdersService.getOriginalOpeningOrder(
+          symbol,
+          config.id,
+          positionSide
+        );
+
+        if (originalOrder) {
+          const originalQuantity = Math.abs(parseFloat(originalOrder.quantity));
+          const currentQuantity = Math.abs(currentNetQuantity);
+
+          if (currentQuantity < originalQuantity) {
+            Logger.info(
+              `⏭️ [TP_PARTIAL_SKIP] ${symbol} (${positionSide}): Posição reduzida (${currentQuantity} < ${originalQuantity}) - TP parcial já executado`
+            );
+            return { success: false, message: 'Posição foi reduzida - TP parcial já executado' };
+          }
+
+          Logger.debug(
+            `✅ [TP_PARTIAL_CHECK] ${symbol} (${positionSide}): OK para TP parcial (${currentQuantity} >= ${originalQuantity})`
+          );
+        } else {
+          Logger.warn(
+            `⚠️ [TP_PARTIAL_SKIP] ${symbol}: Ordem original não encontrada (botId: ${config.id}, side: ${positionSide})`
+          );
+          return {
+            success: false,
+            message: 'Ordem original não encontrada - posição pode ser manual',
+          };
+        }
+
         // Modo Híbrido: Usa ATR para calcular TP parcial
         const partialTakeProfitPercentage = Number(config?.partialTakeProfitPercentage || 50);
         const atrValue = await OrderController.getAtrValue(symbol);
