@@ -1261,16 +1261,29 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
               {errors.maxNegativePnlStopPct && <p className="text-sm text-red-500">{errors.maxNegativePnlStopPct}</p>}
             </div>
 
-            <div className="space-y-2">
+            <div className={`space-y-2 ${formData.enableTrailingStop ? 'opacity-50' : ''}`}>
               <div className="flex items-center gap-2">
-                <Label htmlFor="minProfitPercentage">Lucro Mínimo (%)</Label>
+                <Label htmlFor="minProfitPercentage" className={formData.enableTrailingStop ? 'text-muted-foreground' : ''}>
+                  Lucro Mínimo (%)
+                  {formData.enableTrailingStop && (
+                    <span className="text-xs text-orange-600 dark:text-orange-400 ml-1">(Desabilitado - Trailing Stop Ativo)</span>
+                  )}
+                </Label>
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                      <HelpCircle className={`h-4 w-4 ${formData.enableTrailingStop ? 'text-muted-foreground/50' : 'text-muted-foreground'} cursor-help`} />
                     </TooltipTrigger>
                     <TooltipContent>
-                      <p className="max-w-xs">O lucro mínimo necessário para fechar uma posição automaticamente. Para farming de volume, use valores baixos (0.1-1%). Para trading tradicional, use valores maiores (2-10%).</p>
+                      <p className="max-w-xs">
+                        {formData.enableTrailingStop ? (
+                          <span>
+                            <strong>⚠️ Trailing Stop Ativo:</strong> O lucro mínimo é controlado automaticamente pelo Trailing Stop. Esta configuração não é usada quando o Trailing Stop está habilitado.
+                          </span>
+                        ) : (
+                          "O lucro mínimo necessário para fechar uma posição automaticamente. Para farming de volume, use valores baixos (0.1-1%). Para trading tradicional, use valores maiores (2-10%)."
+                        )}
+                      </p>
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
@@ -1281,8 +1294,16 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                 placeholder="Ex: 10"
                 value={formData.minProfitPercentage}
                 onChange={(e) => handleInputChange('minProfitPercentage', e.target.value)}
-                className={errors.minProfitPercentage ? "border-red-500" : ""}
+                disabled={formData.enableTrailingStop}
+                className={`${errors.minProfitPercentage ? "border-red-500" : ""} ${formData.enableTrailingStop ? 'bg-muted cursor-not-allowed' : ''}`}
               />
+              {formData.enableTrailingStop && (
+                <div className="p-2 bg-orange-50 border border-orange-200 rounded-lg dark:bg-orange-950/20 dark:border-orange-800">
+                  <p className="text-xs text-orange-700 dark:text-orange-300">
+                    <strong>ℹ️ Info:</strong> Com Trailing Stop ativo, o lucro é controlado automaticamente pela distância configurada no trailing. O valor acima é mantido para referência, mas não será usado.
+                  </p>
+                </div>
+              )}
               {errors.minProfitPercentage && <p className="text-sm text-red-500">{errors.minProfitPercentage}</p>}
             </div>
 

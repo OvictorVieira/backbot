@@ -24,7 +24,7 @@ class Decision {
 
     // Cache simples para dados de mercado
     this.marketCache = new Map();
-    this.cacheTimeout = 30000; // 30 segundos
+    this.cacheTimeout = 10000; // 10 segundos - garante que dados sejam atualizados a cada análise
   }
 
   async getDataset(Account, closed_markets, timeframe = null, logger = null, config = null) {
