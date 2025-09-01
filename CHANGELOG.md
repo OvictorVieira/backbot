@@ -5,6 +5,42 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.6.8] - 2025-09-01
+
+### 🛡️ **CORREÇÃO CRÍTICA: Sistema Anti-Loop para Trailing Stop**
+
+#### 🚨 **Problema Resolvido: Rate Limit e Loops Infinitos**
+**Problema:** Sistema de trailing stop executava simultaneamente, causando loops infinitos e atingindo rate limit da API Backpack.
+
+**Sintomas identificados:**
+- ⚠️ **Múltiplas execuções simultâneas** da função `stopLoss()`
+- 🔄 **Loop infinito** tentando fechar posições inexistentes (ex: BTC_USDC_PERP)
+- 💥 **Milhares de erros** "Reduce only order not reduced"
+- 🚫 **Rate limit (429)** por excesso de requisições à API
+
+#### 🔧 **Soluções Implementadas**
+
+**1. Proteção no Sistema Principal (app.js):**
+- 🔒 **Semáforo `trailingStopInProgress`** - Evita execuções simultâneas
+- ⏳ **Logs informativos** quando execução anterior está em andamento  
+- 🛡️ **Liberação automática** via `finally` block
+
+**2. Proteção no Sistema de Fechamento (TrailingStop.js):**
+- 📋 **Cache `closingInProgress`** - Timeout de 5 minutos
+- 🛡️ **Função `protectedForceClose()`** - Fechamentos seguros
+- 🧹 **Auto-limpeza de cache** e logs detalhados
+- 🔄 **Substituição completa** de `OrderController.forceClose`
+
+#### ✅ **Benefícios Alcançados**
+- 🚫 **Elimina loops infinitos** de fechamento
+- ⚡ **Reduz drasticamente chamadas à API** (previne rate limit)
+- 🚀 **Melhora performance** e confiabilidade do sistema
+- 📊 **Logs mais informativos** para debugging
+
+**Arquivos modificados:**
+- `app.js` - Sistema de semáforo para trailing stop
+- `src/TrailingStop/TrailingStop.js` - Proteção contra fechamentos simultâneos
+
 ## [1.6.7] - 2025-08-29
 
 ### 🎨 **UX: Campo Lucro Mínimo Inteligente no Modal**
