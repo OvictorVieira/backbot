@@ -383,9 +383,22 @@ class TrailingStop {
 
             Logger.info(`Stop loss ativo encontrado para ${symbol}. Order ID: ${externalOrderId}`);
           } else {
-            Logger.info(
-              `🔄 Trailing stop price for ${symbol} is not better than stop loss price. Stop Loss Price: ${stopLossOrder.triggerPrice}, Trailing Stop Price: ${state.trailingStopPrice}. Skipping order replacement and updating the trailing stop price.`
-            );
+            // Cache para evitar logs repetidos do mesmo símbolo
+            const logCacheKey = `${symbol}_not_better`;
+            const now = Date.now();
+            const lastLogTime = TrailingStop.logCache?.get(logCacheKey) || 0;
+
+            // Log apenas a cada 30 segundos para evitar spam
+            if (now - lastLogTime > 30000) {
+              if (!TrailingStop.logCache) {
+                TrailingStop.logCache = new Map();
+              }
+              TrailingStop.logCache.set(logCacheKey, now);
+
+              Logger.info(
+                `🔄 Trailing stop price for ${symbol} is not better than stop loss price. Stop Loss Price: ${stopLossOrder.triggerPrice}, Trailing Stop Price: ${state.trailingStopPrice}. Skipping order replacement and updating the trailing stop price.`
+              );
+            }
             state.trailingStopPrice = parseFloat(stopLossOrder.triggerPrice);
           }
         } else {
@@ -2221,13 +2234,26 @@ class TrailingStop {
                 ? trailingState.highestPrice
                 : trailingState.lowestPrice;
 
-              TrailingStop.colorLogger.trailingActive(
-                `${position.symbol} (${direction}): Trailing ativo - ` +
-                  `${priceType}: $${currentPrice.toFixed(4)}, ` +
-                  `TrailingStop: $${trailingState.trailingStopPrice?.toFixed(4) || 'N/A'}, ` +
-                  `${priceRecordLabel}: $${priceRecordValue?.toFixed(4) || 'N/A'}, ` +
-                  `Distância até Stop: ${distance}%\n`
-              );
+              // Cache para evitar logs repetidos do trailing ativo
+              const logCacheKey = `${position.symbol}_trailing_active`;
+              const now = Date.now();
+              const lastLogTime = TrailingStop.logCache?.get(logCacheKey) || 0;
+
+              // Log apenas a cada 10 segundos para reduzir spam
+              if (now - lastLogTime > 10000) {
+                if (!TrailingStop.logCache) {
+                  TrailingStop.logCache = new Map();
+                }
+                TrailingStop.logCache.set(logCacheKey, now);
+
+                TrailingStop.colorLogger.trailingActive(
+                  `${position.symbol} (${direction}): Trailing ativo - ` +
+                    `${priceType}: $${currentPrice.toFixed(4)}, ` +
+                    `TrailingStop: $${trailingState.trailingStopPrice?.toFixed(4) || 'N/A'}, ` +
+                    `${priceRecordLabel}: $${priceRecordValue?.toFixed(4) || 'N/A'}, ` +
+                    `Distância até Stop: ${distance}%\n`
+                );
+              }
             } else {
               const priceType = position.markPrice ? 'Current Price' : 'Last Price';
               const pnl = TrailingStop.calculatePnL(position, Account);
