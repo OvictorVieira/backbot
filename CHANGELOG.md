@@ -5,6 +5,31 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.6.7] - 2025-08-29
+
+### 🎨 **UX: Campo Lucro Mínimo Inteligente no Modal**
+
+#### 🎯 **Desabilitação Contextual do Lucro Mínimo**
+**Alterações:** Melhoria na interface para deixar claro quando o Trailing Stop controla o lucro automaticamente.
+
+**Melhorias implementadas:**
+- 🎨 **Indicação visual clara** - Campo fica opaco quando Trailing Stop está ativo
+- 🏷️ **Label dinâmico** - Mostra "(Desabilitado - Trailing Stop Ativo)" no título
+- 🔒 **Input desabilitado** - Campo não pode ser editado mas mantém valor visível
+- 💬 **Tooltip inteligente** - Explica dinamicamente por que está desabilitado
+- 📋 **Mensagem informativa** - Box laranja explicando o comportamento
+
+**Recursos adicionados:**
+- ✨ **UX intuitivo** - Usuário entende visualmente quando campo não é usado
+- 🔄 **Valor preservado** - Input mantém valor para referência/histórico
+- 📚 **Feedback educativo** - Interface ensina sobre funcionalidade do Trailing Stop
+- 🎭 **Estados visuais** - Consistência com outros campos condicionais
+
+**Arquivos modificados:**
+- `dashboard-ui/src/components/ConfigForm.tsx` - Lógica de desabilitação contextual
+
+**Impacto:** Interface mais intuitiva e educativa, usuários entendem melhor o comportamento das configurações.
+
 ## [1.6.6] - 2025-08-29
 
 ### 🚀 **Cache Avançado para Posições e Terminal Cleaner**
