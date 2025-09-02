@@ -18,6 +18,9 @@ class TrailingStop {
   // Cache para evitar múltiplas tentativas simultâneas de fechamento
   static closingInProgress = new Map();
 
+  // Cache para evitar múltiplas operações de stop loss simultâneas por símbolo
+  static stopLossInProgress = new Map();
+
   // Limpa entries do cache que são mais antigas que 24 horas
   static cleanupSkippedSymbolsCache() {
     const now = Date.now();
@@ -40,6 +43,19 @@ class TrailingStop {
       if (now - timestamp > maxAge) {
         TrailingStop.closingInProgress.delete(key);
         Logger.debug(`🧹 [CACHE_CLEANUP] Removido ${key} do cache de fechamento (> 5min)`);
+      }
+    }
+  }
+
+  // Limpa entries do cache de stop loss em progresso mais antigas que 2 minutos
+  static cleanupStopLossInProgressCache() {
+    const now = Date.now();
+    const maxAge = 2 * 60 * 1000; // 2 minutos
+
+    for (const [key, timestamp] of TrailingStop.stopLossInProgress.entries()) {
+      if (now - timestamp > maxAge) {
+        TrailingStop.stopLossInProgress.delete(key);
+        Logger.debug(`🧹 [CACHE_CLEANUP] Removido ${key} do cache de stop loss (> 2min)`);
       }
     }
   }
@@ -82,6 +98,51 @@ class TrailingStop {
       // Remove do cache após tentativa
       TrailingStop.closingInProgress.delete(symbol);
       Logger.info(`🔓 [CLOSING_PROTECTION] ${symbol}: Fechamento liberado (${reason})`);
+    }
+  }
+
+  // Função protegida para operações de stop loss
+  static async protectedStopLossOperation(position, config, reason = 'unknown') {
+    const symbol = position.symbol;
+    const now = Date.now();
+
+    // Limpa cache periodicamente
+    TrailingStop.cleanupStopLossInProgressCache();
+
+    // Verifica se já está criando stop loss para este símbolo
+    if (TrailingStop.stopLossInProgress.has(symbol)) {
+      const startTime = TrailingStop.stopLossInProgress.get(symbol);
+      const elapsedMs = now - startTime;
+      Logger.info(
+        `⏳ [STOP_LOSS_PROTECTION] ${symbol}: Criação de stop loss já em progresso há ${Math.round(elapsedMs / 1000)}s - ignorando tentativa adicional (${reason})`
+      );
+      return { success: false, reason: 'already_creating' };
+    }
+
+    // Marca como criação de stop loss em progresso
+    TrailingStop.stopLossInProgress.set(symbol, now);
+    Logger.info(`🔒 [STOP_LOSS_PROTECTION] ${symbol}: Iniciando criação de stop loss protegida (${reason})`);
+
+    try {
+      const result = await OrderController.validateAndCreateStopLoss(
+        position,
+        config.botName,
+        config
+      );
+      Logger.info(
+        `✅ [STOP_LOSS_PROTECTION] ${symbol}: Stop loss processado com sucesso (${reason})`
+      );
+      return { success: true, reason: 'completed', result };
+    } catch (error) {
+      Logger.error(
+        `❌ [STOP_LOSS_PROTECTION] ${symbol}: Erro na criação de stop loss (${reason}):`,
+        error.message
+      );
+      return { success: false, reason: 'error', error: error.message };
+    } finally {
+      // Remove do cache após tentativa
+      TrailingStop.stopLossInProgress.delete(symbol);
+      Logger.info(`🔓 [STOP_LOSS_PROTECTION] ${symbol}: Criação de stop loss liberada (${reason})`);
     }
   }
 
@@ -2423,10 +2484,10 @@ class TrailingStop {
               TrailingStop.debug(
                 `🛡️ [FAILSAFE_CHECK] ${position.symbol}: Verificando stop loss de proteção...`
               );
-              await OrderController.validateAndCreateStopLoss(
+              await TrailingStop.protectedStopLossOperation(
                 position,
-                this.config.botName,
-                this.config
+                this.config,
+                'failsafe_check'
               );
             }
           }
