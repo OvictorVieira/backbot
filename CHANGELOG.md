@@ -5,6 +5,33 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.6.10] - 2025-09-02
+
+### 🛡️ **CORREÇÃO: Proteção Anti-Loop Stop Loss**
+
+#### 🚨 **Problema Corrigido: Múltiplas Criações Simultâneas de Stop Loss**
+**Problema:** Sistema criava múltiplas ordens de stop loss simultaneamente causando rate limit na API.
+
+**Sintomas identificados:**
+- ❌ **Múltiplas tentativas simultâneas** → Sistema tentava criar vários stop loss para o mesmo símbolo
+- ❌ **Rate limit atingido** → "You have exceeded the rate limit" 
+- ❌ **Ordens rejeitadas** → "Order with client ID already exists"
+- ❌ **Sistema travado** → Não conseguia criar stop loss de proteção
+
+**Solução implementada:**
+- ✅ **Cache de proteção `stopLossInProgress`** → Previne múltiplas operações por símbolo
+- ✅ **Método `protectedStopLossOperation()`** → Wrapper com semáforo para operações
+- ✅ **Limpeza automática** → Cache expira em 2 minutos automaticamente
+- ✅ **Logs detalhados** → Monitoramento completo das operações protegidas
+- ✅ **Integração TrailingStop** → Substitui chamadas diretas por métodos protegidos
+
+#### 📈 **Melhorias de Performance:**
+- **Redução de rate limit** → Evita chamadas desnecessárias para API
+- **Prevenção de duplicações** → Um stop loss por símbolo por vez
+- **Logs informativos** → Melhor debugging e monitoramento
+
+---
+
 ## [1.6.9] - 2025-09-01
 
 ### 🐛 **CORREÇÃO CRÍTICA: Loop de Take Profit Parcial**
