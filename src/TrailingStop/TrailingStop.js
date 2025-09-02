@@ -150,7 +150,7 @@ class TrailingStop {
 
     // Marca como criação de stop loss em progresso
     TrailingStop.stopLossInProgress.set(symbol, now);
-    Logger.info(
+    Logger.debug(
       `🔒 [STOP_LOSS_PROTECTION] ${symbol}: Iniciando criação de stop loss protegida (${reason})`
     );
 
@@ -163,7 +163,7 @@ class TrailingStop {
       // Marca como verificado no cache
       TrailingStop.stopLossVerified.set(symbol, now);
       
-      Logger.info(
+      Logger.debug(
         `✅ [STOP_LOSS_PROTECTION] ${symbol}: Stop loss processado com sucesso (${reason}) - cache atualizado`
       );
       return { success: true, reason: 'completed', result };
@@ -176,7 +176,7 @@ class TrailingStop {
     } finally {
       // Remove do cache após tentativa
       TrailingStop.stopLossInProgress.delete(symbol);
-      Logger.info(`🔓 [STOP_LOSS_PROTECTION] ${symbol}: Criação de stop loss liberada (${reason})`);
+      Logger.debug(`🔓 [STOP_LOSS_PROTECTION] ${symbol}: Criação de stop loss liberada (${reason})`);
     }
   }
 
