@@ -1,7 +1,7 @@
 import WebSocket from 'ws';
-import Logger from '../Utils/Logger.js';
+import Logger from '../../Utils/Logger.js';
 
-class ReactiveTrailingService {
+class BackpackWebSocket {
   constructor() {
     this.ws = null;
     this.subscribedSymbols = new Set();
@@ -11,10 +11,10 @@ class ReactiveTrailingService {
     this.reconnectDelay = 1000; // 1 segundo inicial
     this.isConnected = false;
     this.heartbeatInterval = null;
-    
+
     // Throttling para evitar spam de atualizações
     this.lastUpdate = new Map(); // symbol -> timestamp
-    this.updateThrottle = 2000; // 2 segundos mínimo entre atualizações
+    this.updateThrottle = 10000; // 10 segundos mínimo entre atualizações (reduz spam de logs)
   }
 
   /**
@@ -24,28 +24,28 @@ class ReactiveTrailingService {
     return new Promise((resolve, reject) => {
       try {
         this.ws = new WebSocket('wss://ws.backpack.exchange');
-        
+
         this.ws.on('open', () => {
-          Logger.info('🔌 [REACTIVE_TRAILING] WebSocket conectado com sucesso');
+          Logger.info('🔌 [BACKPACK_WS] WebSocket conectado com sucesso');
           this.isConnected = true;
           this.reconnectAttempts = 0;
           this.startHeartbeat();
           resolve();
         });
 
-        this.ws.on('message', (data) => {
+        this.ws.on('message', data => {
           this.handleMessage(data);
         });
 
         this.ws.on('close', (code, reason) => {
-          Logger.warn(`🔌 [REACTIVE_TRAILING] WebSocket fechado: ${code} - ${reason}`);
+          Logger.warn(`🔌 [BACKPACK_WS] WebSocket fechado: ${code} - ${reason}`);
           this.isConnected = false;
           this.stopHeartbeat();
           this.handleReconnect();
         });
 
-        this.ws.on('error', (error) => {
-          Logger.error('❌ [REACTIVE_TRAILING] Erro no WebSocket:', error.message);
+        this.ws.on('error', error => {
+          Logger.error('❌ [BACKPACK_WS] Erro no WebSocket:', error.message);
           this.isConnected = false;
           reject(error);
         });
@@ -56,9 +56,8 @@ class ReactiveTrailingService {
             reject(new Error('Timeout na conexão WebSocket'));
           }
         }, 10000);
-
       } catch (error) {
-        Logger.error('❌ [REACTIVE_TRAILING] Erro ao conectar WebSocket:', error.message);
+        Logger.error('❌ [BACKPACK_WS] Erro ao conectar WebSocket:', error.message);
         reject(error);
       }
     });
@@ -70,34 +69,37 @@ class ReactiveTrailingService {
   handleMessage(data) {
     try {
       const message = JSON.parse(data.toString());
-      
-      // Resposta de subscription
-      if (message.result && message.id) {
-        Logger.debug(`✅ [REACTIVE_TRAILING] Subscription confirmada: ID ${message.id}`);
+
+      if (message.error) {
+        Logger.error(`❌ [BACKPACK_WS] Erro do servidor:`, message.error);
         return;
       }
 
-      // Dados de ticker/bookTicker
-      if (message.stream && message.data) {
-        const [streamType, symbol] = message.stream.split('.');
-        
-        if (streamType === 'bookTicker' || streamType === 'ticker') {
-          this.handlePriceUpdate(symbol, message.data, streamType);
-        }
+      if (message.result !== undefined || message.id !== undefined) {
+        Logger.debug(`✅ [BACKPACK_WS] Mensagem de controle recebida:`, message);
+        return;
       }
 
+      const messageData = message.data;
+
+      if (messageData.e === 'bookTicker') {
+        // Reduz spam de logs - só loga se for processar a atualização
+        this.handlePriceUpdate(messageData);
+      }
     } catch (error) {
-      Logger.error('❌ [REACTIVE_TRAILING] Erro ao processar mensagem:', error.message);
+      Logger.error('❌ [BACKPACK_WS] Erro ao processar mensagem:', error.message);
+      Logger.error('❌ [BACKPACK_WS] Dados raw:', data.toString());
     }
   }
 
   /**
    * Processa atualizações de preço com throttling
    */
-  handlePriceUpdate(symbol, data, streamType) {
+  handlePriceUpdate(data) {
     const now = Date.now();
+    const symbol = data.s;
     const lastUpdateTime = this.lastUpdate.get(symbol) || 0;
-    
+
     // Throttling - só processa se passou tempo suficiente
     if (now - lastUpdateTime < this.updateThrottle) {
       return;
@@ -106,24 +108,27 @@ class ReactiveTrailingService {
     this.lastUpdate.set(symbol, now);
 
     // Extrai preço dependendo do tipo de stream
-    let currentPrice;
-    if (streamType === 'bookTicker') {
-      // BookTicker tem bid/ask, usa média ou mark price se disponível
-      currentPrice = data.markPrice || ((parseFloat(data.bidPrice) + parseFloat(data.askPrice)) / 2);
-    } else if (streamType === 'ticker') {
-      // Ticker tem price direto
-      currentPrice = parseFloat(data.price || data.lastPrice);
-    }
+    if (data.e === 'bookTicker') {
+      const bidPrice = parseFloat(data.b);
+      const askPrice = parseFloat(data.a);
+      const bidQty = parseFloat(data.B);
+      const askQty = parseFloat(data.A);
 
-    if (currentPrice && this.priceCallbacks.has(symbol)) {
-      Logger.debug(`📊 [REACTIVE_TRAILING] ${symbol}: Preço atualizado para ${currentPrice}`);
-      
-      // Chama callback do trailing stop para este símbolo
-      const callback = this.priceCallbacks.get(symbol);
-      try {
-        callback(symbol, currentPrice, data);
-      } catch (error) {
-        Logger.error(`❌ [REACTIVE_TRAILING] Erro no callback para ${symbol}:`, error.message);
+      let currentPrice = (bidPrice + askPrice) / 2;
+
+      if (bidQty && askQty) {
+        currentPrice = (askPrice * bidQty + bidPrice * askQty) / (askQty + bidQty);
+      }
+
+      if (this.priceCallbacks.has(symbol)) {
+        Logger.debug(`📊 [BACKPACK_WS] ${symbol}: Preço atualizado para ${currentPrice}`);
+
+        const callback = this.priceCallbacks.get(symbol);
+        try {
+          callback(symbol, currentPrice, data);
+        } catch (error) {
+          Logger.error(`❌ [BACKPACK_WS] Erro no callback para ${symbol}:`, error.message);
+        }
       }
     }
   }
@@ -142,12 +147,11 @@ class ReactiveTrailingService {
 
     // Subscribe ao bookTicker (melhor para trailing stop)
     const subscribeMessage = {
-      method: 'subscribe',
+      method: 'SUBSCRIBE',
       params: [`bookTicker.${symbol}`],
-      id: Date.now()
     };
 
-    Logger.info(`📡 [REACTIVE_TRAILING] Subscribing to ${symbol}...`);
+    Logger.info(`📡 [BACKPACK_WS] Subscribing to ${symbol}...`);
     this.ws.send(JSON.stringify(subscribeMessage));
   }
 
@@ -160,14 +164,13 @@ class ReactiveTrailingService {
     }
 
     const unsubscribeMessage = {
-      method: 'unsubscribe',
+      method: 'UNSUBSCRIBE',
       params: [`bookTicker.${symbol}`],
-      id: Date.now()
     };
 
-    Logger.info(`📡 [REACTIVE_TRAILING] Unsubscribing from ${symbol}...`);
+    Logger.info(`📡 [BACKPACK_WS] Unsubscribing from ${symbol}...`);
     this.ws.send(JSON.stringify(unsubscribeMessage));
-    
+
     this.priceCallbacks.delete(symbol);
     this.subscribedSymbols.delete(symbol);
     this.lastUpdate.delete(symbol);
@@ -182,7 +185,7 @@ class ReactiveTrailingService {
     }
 
     const streams = symbols.map(symbol => `bookTicker.${symbol}`);
-    
+
     // Registra callbacks para todos os símbolos
     symbols.forEach(symbol => {
       this.priceCallbacks.set(symbol, callback);
@@ -190,12 +193,11 @@ class ReactiveTrailingService {
     });
 
     const subscribeMessage = {
-      method: 'subscribe',
+      method: 'SUBSCRIBE',
       params: streams,
-      id: Date.now()
     };
 
-    Logger.info(`📡 [REACTIVE_TRAILING] Subscribing to ${symbols.length} symbols: ${symbols.join(', ')}`);
+    Logger.info(`📡 [BACKPACK_WS] Subscribing to ${symbols.length} symbols: ${symbols.join(', ')}`);
     this.ws.send(JSON.stringify(subscribeMessage));
   }
 
@@ -206,7 +208,7 @@ class ReactiveTrailingService {
     this.heartbeatInterval = setInterval(() => {
       if (this.isConnected && this.ws.readyState === WebSocket.OPEN) {
         this.ws.ping();
-        Logger.debug('💓 [REACTIVE_TRAILING] Heartbeat enviado');
+        Logger.debug('💓 [BACKPACK_WS] Heartbeat enviado');
       }
     }, 30000); // 30 segundos
   }
@@ -226,36 +228,36 @@ class ReactiveTrailingService {
    */
   async handleReconnect() {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      Logger.error('❌ [REACTIVE_TRAILING] Máximo de tentativas de reconexão atingido');
+      Logger.error('❌ [BACKPACK_WS] Máximo de tentativas de reconexão atingido');
       return;
     }
 
     this.reconnectAttempts++;
     const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1); // Backoff exponencial
 
-    Logger.info(`🔄 [REACTIVE_TRAILING] Tentativa de reconexão ${this.reconnectAttempts}/${this.maxReconnectAttempts} em ${delay}ms`);
+    Logger.info(
+      `🔄 [BACKPACK_WS] Tentativa de reconexão ${this.reconnectAttempts}/${this.maxReconnectAttempts} em ${delay}ms`
+    );
 
     setTimeout(async () => {
       try {
         await this.connect();
-        
+
         // Re-subscribe aos símbolos anteriores
         if (this.subscribedSymbols.size > 0) {
           const symbols = Array.from(this.subscribedSymbols);
-          Logger.info(`🔄 [REACTIVE_TRAILING] Re-subscribing to ${symbols.length} symbols`);
-          
+          Logger.info(`🔄 [BACKPACK_WS] Re-subscribing to ${symbols.length} symbols`);
+
           const streams = symbols.map(symbol => `bookTicker.${symbol}`);
           const subscribeMessage = {
-            method: 'subscribe',
+            method: 'SUBSCRIBE',
             params: streams,
-            id: Date.now()
           };
-          
+
           this.ws.send(JSON.stringify(subscribeMessage));
         }
-        
       } catch (error) {
-        Logger.error('❌ [REACTIVE_TRAILING] Falha na reconexão:', error.message);
+        Logger.error('❌ [BACKPACK_WS] Falha na reconexão:', error.message);
         this.handleReconnect(); // Tenta novamente
       }
     }, delay);
@@ -265,16 +267,16 @@ class ReactiveTrailingService {
    * Desconecta do WebSocket
    */
   disconnect() {
-    Logger.info('🔌 [REACTIVE_TRAILING] Desconectando WebSocket...');
-    
+    Logger.info('🔌 [BACKPACK_WS] Desconectando WebSocket...');
+
     this.stopHeartbeat();
     this.isConnected = false;
-    
+
     if (this.ws) {
       this.ws.close();
       this.ws = null;
     }
-    
+
     // Limpa dados
     this.subscribedSymbols.clear();
     this.priceCallbacks.clear();
@@ -294,8 +296,8 @@ class ReactiveTrailingService {
    */
   setUpdateThrottle(milliseconds) {
     this.updateThrottle = milliseconds;
-    Logger.info(`⚡ [REACTIVE_TRAILING] Update throttle configurado para ${milliseconds}ms`);
+    Logger.info(`⚡ [BACKPACK_WS] Update throttle configurado para ${milliseconds}ms`);
   }
 }
 
-export default ReactiveTrailingService;
+export default BackpackWebSocket;

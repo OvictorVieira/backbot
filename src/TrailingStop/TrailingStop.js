@@ -8,9 +8,8 @@ import { validateLeverageForSymbol, clearLeverageAdjustLog } from '../Utils/Util
 import ColorLogger from '../Utils/ColorLogger.js';
 import Logger from '../Utils/Logger.js';
 import ConfigManagerSQLite from '../Config/ConfigManagerSQLite.js';
-import Order from '../Backpack/Authenticated/Order.js';
 import CachedOrdersService from '../Utils/CachedOrdersService.js';
-import ReactiveTrailingService from '../Services/ReactiveTrailingService.js';
+import BackpackWebSocket from '../Backpack/Public/WebSocket.js';
 
 class TrailingStop {
   // Cache estático para controlar symbols que devem ser skipados (posição fechada)
@@ -26,7 +25,20 @@ class TrailingStop {
   static stopLossVerified = new Map();
 
   // Serviço de WebSocket reativo para atualizações de preço em tempo real
-  static reactiveService = null;
+  static backpackWS = null;
+
+  // Proteção contra execução simultânea no sistema reativo
+  static reactiveProcessing = new Map(); // symbol -> processing flag
+
+  // Gerenciador de estado do trailing stop por bot (chave: botId)
+  static trailingStateByBot = new Map(); // { botKey: { symbol: state } }
+  static trailingModeLoggedByBot = new Map(); // Cache para logs de modo Trailing Stop por bot
+
+  // Instância do ColorLogger para logs coloridos
+  static colorLogger = new ColorLogger('TRAILING', 'STOP');
+
+  // Database service instance
+  static dbService = null;
 
   // Limpa entries do cache que são mais antigas que 24 horas
   static cleanupSkippedSymbolsCache() {
@@ -134,7 +146,8 @@ class TrailingStop {
     if (TrailingStop.stopLossVerified.has(symbol)) {
       const lastVerified = TrailingStop.stopLossVerified.get(symbol);
       const elapsedMs = now - lastVerified;
-      if (elapsedMs < 5 * 60 * 1000) { // 5 minutos
+      if (elapsedMs < 5 * 60 * 1000) {
+        // 5 minutos
         Logger.debug(
           `⚡ [STOP_LOSS_CACHE] ${symbol}: Verificação em cache há ${Math.round(elapsedMs / 1000)}s - pulando verificação (${reason})`
         );
@@ -159,14 +172,10 @@ class TrailingStop {
     );
 
     try {
-      const result = await OrderController.validateAndCreateStopLoss(
-        position,
-        config.botName,
-        config
-      );
+      const result = OrderController.validateAndCreateStopLoss(position, config.botName, config);
       // Marca como verificado no cache
       TrailingStop.stopLossVerified.set(symbol, now);
-      
+
       Logger.debug(
         `✅ [STOP_LOSS_PROTECTION] ${symbol}: Stop loss processado com sucesso (${reason}) - cache atualizado`
       );
@@ -180,7 +189,9 @@ class TrailingStop {
     } finally {
       // Remove do cache após tentativa
       TrailingStop.stopLossInProgress.delete(symbol);
-      Logger.debug(`🔓 [STOP_LOSS_PROTECTION] ${symbol}: Criação de stop loss liberada (${reason})`);
+      Logger.debug(
+        `🔓 [STOP_LOSS_PROTECTION] ${symbol}: Criação de stop loss liberada (${reason})`
+      );
     }
   }
 
@@ -209,23 +220,22 @@ class TrailingStop {
    * Inicializa o sistema reativo de WebSocket para trailing stop
    */
   static async initializeReactiveSystem() {
-    if (TrailingStop.reactiveService && TrailingStop.reactiveService.connected) {
+    if (TrailingStop.backpackWS && TrailingStop.backpackWS.connected) {
       Logger.debug('📡 [REACTIVE_TRAILING] Sistema já inicializado e conectado');
       return;
     }
 
     try {
-      TrailingStop.reactiveService = new ReactiveTrailingService();
-      
+      TrailingStop.backpackWS = new BackpackWebSocket();
+
       // Configurar throttling padrão (3 segundos para evitar rate limit)
-      TrailingStop.reactiveService.setUpdateThrottle(3000);
-      
-      await TrailingStop.reactiveService.connect();
+      TrailingStop.backpackWS.setUpdateThrottle(3000);
+
+      await TrailingStop.backpackWS.connect();
       Logger.info('✅ [REACTIVE_TRAILING] Sistema reativo inicializado com sucesso');
-      
     } catch (error) {
       Logger.error('❌ [REACTIVE_TRAILING] Falha ao inicializar sistema reativo:', error.message);
-      TrailingStop.reactiveService = null;
+      TrailingStop.backpackWS = null;
     }
   }
 
@@ -233,9 +243,9 @@ class TrailingStop {
    * Para o sistema reativo de WebSocket
    */
   static stopReactiveSystem() {
-    if (TrailingStop.reactiveService) {
-      TrailingStop.reactiveService.disconnect();
-      TrailingStop.reactiveService = null;
+    if (TrailingStop.backpackWS) {
+      TrailingStop.backpackWS.disconnect();
+      TrailingStop.backpackWS = null;
       Logger.info('🛑 [REACTIVE_TRAILING] Sistema reativo desconectado');
     }
   }
@@ -243,32 +253,49 @@ class TrailingStop {
   /**
    * Subscribe a uma posição para monitoramento reativo
    */
-  static async subscribePositionReactive(position, Account, config) {
-    if (!TrailingStop.reactiveService || !TrailingStop.reactiveService.connected) {
-      Logger.warn(`⚠️ [REACTIVE_TRAILING] Sistema não conectado - usando método tradicional para ${position.symbol}`);
+  static async subscribePositionReactive(position, Account, config, trailingStopInstance) {
+    if (!TrailingStop.backpackWS || !TrailingStop.backpackWS.connected) {
+      Logger.warn(
+        `⚠️ [REACTIVE_TRAILING] Sistema não conectado - usando método tradicional para ${position.symbol}`
+      );
       return false;
     }
 
     const symbol = position.symbol;
 
-    // Callback que será chamado a cada atualização de preço
     const priceUpdateCallback = async (symbol, currentPrice, rawData) => {
       try {
-        Logger.debug(`📊 [REACTIVE_TRAILING] ${symbol}: Processando preço ${currentPrice}`);
-        
-        // Processa o trailing stop de forma reativa
-        await TrailingStop.processReactiveTrailingStop(position, currentPrice, Account, config);
-        
+        if (TrailingStop.reactiveProcessing.get(symbol)) {
+          Logger.debug(
+            `⏳ [REACTIVE_TRAILING] ${symbol}: Processamento em andamento, ignorando atualização`
+          );
+          return;
+        }
+
+        TrailingStop.reactiveProcessing.set(symbol, true);
+
+        Logger.debug(
+          `📊 [REACTIVE_TRAILING] ${symbol}: Novo preço ${currentPrice} - delegando para sistema existente`
+        );
+
+        const updatedPosition = {
+          ...position,
+          markPrice: currentPrice.toString(),
+          lastPrice: currentPrice.toString(),
+        };
+
+        await trailingStopInstance.updateTrailingStopForPosition(updatedPosition);
       } catch (error) {
         Logger.error(`❌ [REACTIVE_TRAILING] Erro ao processar ${symbol}:`, error.message);
+      } finally {
+        TrailingStop.reactiveProcessing.set(symbol, false);
       }
     };
 
     try {
-      await TrailingStop.reactiveService.subscribeSymbol(symbol, priceUpdateCallback);
+      await TrailingStop.backpackWS.subscribeSymbol(symbol, priceUpdateCallback);
       Logger.info(`📡 [REACTIVE_TRAILING] ${symbol} subscribed para monitoramento reativo`);
       return true;
-      
     } catch (error) {
       Logger.error(`❌ [REACTIVE_TRAILING] Falha ao subscribe ${symbol}:`, error.message);
       return false;
@@ -276,152 +303,19 @@ class TrailingStop {
   }
 
   /**
-   * Processa trailing stop de forma reativa com preço em tempo real
-   */
-  static async processReactiveTrailingStop(position, currentPrice, Account, config) {
-    const symbol = position.symbol;
-    const trailingStateMap = TrailingStop.getTrailingState();
-    let positionState = trailingStateMap.get(symbol);
-
-    // Se não tem estado, cria um
-    if (!positionState) {
-      positionState = {
-        symbol: symbol,
-        isLong: parseFloat(position.netQuantity) > 0,
-        entryPrice: parseFloat(position.entryPrice),
-        bestPrice: currentPrice,
-        trailingStopPrice: null,
-        lastUpdate: Date.now(),
-        strategyName: config?.strategyName || 'DEFAULT'
-      };
-
-      // Calcula trailing stop inicial
-      const trailingDistance = config?.trailingStopPercentage || 1.5;
-      const trailingDistanceFactor = trailingDistance / 100;
-
-      if (positionState.isLong) {
-        positionState.trailingStopPrice = currentPrice * (1 - trailingDistanceFactor);
-      } else {
-        positionState.trailingStopPrice = currentPrice * (1 + trailingDistanceFactor);
-      }
-
-      trailingStateMap.set(symbol, positionState);
-      Logger.debug(`🎯 [REACTIVE_TRAILING] ${symbol}: Estado inicial criado - Stop: ${positionState.trailingStopPrice}`);
-    }
-
-    // Verifica se precisa atualizar o trailing stop
-    const priceImproved = TrailingStop.checkPriceImprovement(positionState, currentPrice);
-    
-    if (priceImproved) {
-      TrailingStop.updateTrailingStop(positionState, currentPrice, config);
-      Logger.info(`📈 [REACTIVE_TRAILING] ${symbol}: Trailing Stop ATUALIZADO! Novo Stop: ${positionState.trailingStopPrice} | Preço Atual: ${currentPrice}`);
-    }
-
-    // Verifica se deve fechar posição (trailing stop atingido)
-    const shouldClose = TrailingStop.checkTrailingStopTrigger(positionState, currentPrice);
-    
-    if (shouldClose) {
-      Logger.info(`🛑 [REACTIVE_TRAILING] ${symbol}: Trailing stop atingido! Fechando posição...`);
-      
-      try {
-        const result = await TrailingStop.protectedForceClose(
-          position,
-          Account,
-          config,
-          'reactive_trailing_stop'
-        );
-        
-        if (result.success) {
-          // Remove do monitoramento reativo
-          await TrailingStop.unsubscribePositionReactive(symbol);
-          await TrailingStop.onPositionClosed(position, 'reactive_trailing_stop');
-        }
-        
-      } catch (error) {
-        Logger.error(`❌ [REACTIVE_TRAILING] Erro ao fechar posição ${symbol}:`, error.message);
-      }
-    }
-
-    // Atualiza timestamp
-    positionState.lastUpdate = Date.now();
-    trailingStateMap.set(symbol, positionState);
-  }
-
-  /**
    * Unsubscribe de uma posição do monitoramento reativo
    */
   static async unsubscribePositionReactive(symbol) {
-    if (TrailingStop.reactiveService && TrailingStop.reactiveService.connected) {
+    if (TrailingStop.backpackWS && TrailingStop.backpackWS.connected) {
       try {
-        await TrailingStop.reactiveService.unsubscribeSymbol(symbol);
+        await TrailingStop.backpackWS.unsubscribeSymbol(symbol);
+        TrailingStop.reactiveProcessing.delete(symbol);
         Logger.debug(`📡 [REACTIVE_TRAILING] ${symbol} unsubscribed do monitoramento reativo`);
       } catch (error) {
         Logger.error(`❌ [REACTIVE_TRAILING] Falha ao unsubscribe ${symbol}:`, error.message);
       }
     }
   }
-
-  /**
-   * Verifica se o preço melhorou (helper method)
-   */
-  static checkPriceImprovement(positionState, currentPrice) {
-    if (positionState.isLong) {
-      // LONG: preço atual > melhor preço
-      return currentPrice > positionState.bestPrice;
-    } else {
-      // SHORT: preço atual < melhor preço  
-      return currentPrice < positionState.bestPrice;
-    }
-  }
-
-  /**
-   * Atualiza o trailing stop (helper method)
-   */
-  static updateTrailingStop(positionState, currentPrice, config) {
-    const trailingDistance = config?.trailingStopPercentage || 1.5;
-    const trailingDistanceFactor = trailingDistance / 100;
-
-    // Atualiza melhor preço
-    positionState.bestPrice = currentPrice;
-
-    // Calcula novo trailing stop
-    if (positionState.isLong) {
-      const newTrailingStop = currentPrice * (1 - trailingDistanceFactor);
-      // LONG: só atualiza se o novo stop for maior (subiu)
-      if (newTrailingStop > positionState.trailingStopPrice) {
-        positionState.trailingStopPrice = newTrailingStop;
-      }
-    } else {
-      const newTrailingStop = currentPrice * (1 + trailingDistanceFactor);
-      // SHORT: só atualiza se o novo stop for menor (desceu)  
-      if (newTrailingStop < positionState.trailingStopPrice) {
-        positionState.trailingStopPrice = newTrailingStop;
-      }
-    }
-  }
-
-  /**
-   * Verifica se o trailing stop foi atingido (helper method)
-   */
-  static checkTrailingStopTrigger(positionState, currentPrice) {
-    if (positionState.isLong) {
-      // LONG: fecha se preço atual <= trailing stop
-      return currentPrice <= positionState.trailingStopPrice;
-    } else {
-      // SHORT: fecha se preço atual >= trailing stop
-      return currentPrice >= positionState.trailingStopPrice;
-    }
-  }
-
-  // Gerenciador de estado do trailing stop por bot (chave: botId)
-  static trailingStateByBot = new Map(); // { botKey: { symbol: state } }
-  static trailingModeLoggedByBot = new Map(); // Cache para logs de modo Trailing Stop por bot
-
-  // Instância do ColorLogger para logs coloridos
-  static colorLogger = new ColorLogger('TRAILING', 'STOP');
-
-  // Database service instance
-  static dbService = null;
 
   /**
    * Obtém a chave única do bot
@@ -591,13 +485,13 @@ class TrailingStop {
 
       let externalOrderId = null;
 
-      // FORÇA consulta em tempo real ignorando cache para preços atualizados
+      // Usa cache para otimizar performance (reduz spam de chamadas à API)
       const activeOrders = await CachedOrdersService.getOpenOrders(
         symbol,
         'PERP',
         config.apiKey,
         config.apiSecret,
-        true
+        false
       );
 
       if (activeOrders && activeOrders.length > 0) {
@@ -630,6 +524,11 @@ class TrailingStop {
                 ? parseFloat(stopLossOrder.takeProfitTriggerPrice)
                 : parseFloat(stopLossOrder.price);
 
+          // Log para debug da comparação de preços
+          Logger.debug(
+            `🔍 [TRAILING_COMPARE] ${symbol}: OrderPrice=${currentOrderPrice}, TrailingPrice=${state.trailingStopPrice}, IsLong=${state.isLong}`
+          );
+
           if (state.isLong) {
             // Para uma posição LONG (comprada), um stop "melhor" é um preço MAIS ALTO.
             // Ele trava mais lucro ou reduz a perda.
@@ -640,25 +539,29 @@ class TrailingStop {
             trailingStopIsBetterThanSL = state.trailingStopPrice < currentOrderPrice;
           }
 
-          if (trailingStopIsBetterThanSL) {
-            // 2. Compara o preço do stop ATUAL (em memória) com o preço do estado SALVO
-            //    Só atualiza se o trailing stop melhorou E o preço mudou significativamente
-            const priceChangedSignificantly = foundState
-              ? Math.abs(state.trailingStopPrice - foundState.trailingStopPrice) > 0.0001
-              : true;
+          Logger.debug(
+            `🔍 [TRAILING_RESULT] ${symbol}: TrailingIsBetter=${trailingStopIsBetterThanSL} (${state.trailingStopPrice} ${state.isLong ? '>' : '<'} ${currentOrderPrice})`
+          );
 
-            if (foundState && trailingStopIsBetterThanSL && priceChangedSignificantly) {
+          if (trailingStopIsBetterThanSL) {
+            // 2. Compara o preço do trailing calculado com o preço da ordem ATUAL na corretora
+            //    Só atualiza se o trailing stop melhorou E a diferença é significativa (mín. 0.1%)
+            const priceDifference = Math.abs(state.trailingStopPrice - currentOrderPrice);
+            const percentageChange = (priceDifference / currentOrderPrice) * 100;
+            const priceChangedSignificantly = percentageChange >= 0.1; // Mínimo 0.1% de mudança
+
+            if (trailingStopIsBetterThanSL && priceChangedSignificantly) {
               Logger.info(
-                `🔄 Trailing stop price for ${symbol} has changed from ${foundState.trailingStopPrice} to ${state.trailingStopPrice}. Replacing order.`
+                `🔄 [TRAILING_UPDATE] ${symbol}: Movendo trailing stop de ${currentOrderPrice} para ${state.trailingStopPrice}. Diferença: ${priceDifference.toFixed(4)} (${percentageChange.toFixed(3)}%)`
               );
-            } else if (foundState && trailingStopIsBetterThanSL && !priceChangedSignificantly) {
+            } else if (trailingStopIsBetterThanSL && !priceChangedSignificantly) {
               Logger.debug(
-                `⏭️ [TRAILING_SKIP] ${symbol}: Trailing stop melhorou mas mudança insignificante (${Math.abs(state.trailingStopPrice - foundState.trailingStopPrice).toFixed(8)}), mantendo ordem atual`
+                `⏭️ [TRAILING_SKIP] ${symbol}: Trailing stop melhorou mas mudança insignificante (${priceDifference.toFixed(8)} = ${percentageChange.toFixed(3)}% < 0.1%), mantendo ordem atual`
               );
               return; // Não atualiza ordem nem estado
             }
 
-            if (foundState && trailingStopIsBetterThanSL && priceChangedSignificantly) {
+            if (trailingStopIsBetterThanSL && priceChangedSignificantly) {
               const apiKey = config.apiKey;
               const apiSecret = config.apiSecret;
 
@@ -2524,15 +2427,32 @@ class TrailingStop {
           continue;
         }
 
-        // 📡 SISTEMA REATIVO: Subscribe posição para monitoramento em tempo real
-        if (enableTrailingStop && TrailingStop.reactiveService && TrailingStop.reactiveService.connected) {
-          const subscribed = await TrailingStop.subscribePositionReactive(position, Account, this.config);
-          if (subscribed) {
-            Logger.debug(`📡 [REACTIVE_TRAILING] ${position.symbol}: Monitoramento reativo ativado`);
-            // Continua para próxima posição - o sistema reativo cuidará dela
-            continue;
+        // 📡 SISTEMA REATIVO: Subscribe posição para monitoramento em tempo real (se não estiver já subscrito)
+        if (enableTrailingStop && TrailingStop.backpackWS && TrailingStop.backpackWS.connected) {
+          // Verifica se já está subscrito para evitar spam de subscriptions
+          if (!TrailingStop.backpackWS.subscribedSymbols.has(position.symbol)) {
+            const subscribed = await TrailingStop.subscribePositionReactive(
+              position,
+              Account,
+              this.config,
+              this
+            );
+            if (subscribed) {
+              Logger.debug(
+                `📡 [REACTIVE_TRAILING] ${position.symbol}: Monitoramento reativo ativado`
+              );
+              // Continua para próxima posição - o sistema reativo cuidará dela
+              continue;
+            } else {
+              Logger.debug(
+                `⚠️ [REACTIVE_TRAILING] ${position.symbol}: Fallback para método tradicional`
+              );
+            }
           } else {
-            Logger.debug(`⚠️ [REACTIVE_TRAILING] ${position.symbol}: Fallback para método tradicional`);
+            Logger.debug(
+              `📡 [REACTIVE_TRAILING] ${position.symbol}: Já subscrito - sistema reativo já ativo`
+            );
+            continue; // Já está sendo monitorado pelo sistema reativo
           }
         }
 

@@ -2628,9 +2628,10 @@ class OrderController {
    * Valida se existe stop loss para uma posição e cria se não existir
    * @param {object} position - Dados da posição
    * @param {string} botName - Nome único do bot
+   * @param config
    * @returns {boolean} - True se stop loss foi criado ou já existia
    */
-  static async validateAndCreateStopLoss(position, botName, config = null) {
+  static async validateAndCreateStopLoss(position, botName, config) {
     const symbol = position.symbol;
 
     // 1. VERIFICA O LOCK
