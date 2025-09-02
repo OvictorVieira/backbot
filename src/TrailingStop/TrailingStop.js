@@ -21,6 +21,9 @@ class TrailingStop {
   // Cache para evitar múltiplas operações de stop loss simultâneas por símbolo
   static stopLossInProgress = new Map();
 
+  // Cache para evitar verificações desnecessárias de stop loss (quando já existem)
+  static stopLossVerified = new Map();
+
   // Limpa entries do cache que são mais antigas que 24 horas
   static cleanupSkippedSymbolsCache() {
     const now = Date.now();
@@ -56,6 +59,19 @@ class TrailingStop {
       if (now - timestamp > maxAge) {
         TrailingStop.stopLossInProgress.delete(key);
         Logger.debug(`🧹 [CACHE_CLEANUP] Removido ${key} do cache de stop loss (> 2min)`);
+      }
+    }
+  }
+
+  // Limpa entries do cache de verificação mais antigas que 5 minutos
+  static cleanupStopLossVerifiedCache() {
+    const now = Date.now();
+    const maxAge = 5 * 60 * 1000; // 5 minutos
+
+    for (const [key, timestamp] of TrailingStop.stopLossVerified.entries()) {
+      if (now - timestamp > maxAge) {
+        TrailingStop.stopLossVerified.delete(key);
+        Logger.debug(`🧹 [CACHE_CLEANUP] Removido ${key} do cache de verificação (> 5min)`);
       }
     }
   }
@@ -106,8 +122,21 @@ class TrailingStop {
     const symbol = position.symbol;
     const now = Date.now();
 
-    // Limpa cache periodicamente
+    // Limpa caches periodicamente
     TrailingStop.cleanupStopLossInProgressCache();
+    TrailingStop.cleanupStopLossVerifiedCache();
+
+    // Verifica se já foi verificado recentemente (cache de 5 minutos)
+    if (TrailingStop.stopLossVerified.has(symbol)) {
+      const lastVerified = TrailingStop.stopLossVerified.get(symbol);
+      const elapsedMs = now - lastVerified;
+      if (elapsedMs < 5 * 60 * 1000) { // 5 minutos
+        Logger.debug(
+          `⚡ [STOP_LOSS_CACHE] ${symbol}: Verificação em cache há ${Math.round(elapsedMs / 1000)}s - pulando verificação (${reason})`
+        );
+        return { success: true, reason: 'cached' };
+      }
+    }
 
     // Verifica se já está criando stop loss para este símbolo
     if (TrailingStop.stopLossInProgress.has(symbol)) {
@@ -121,7 +150,9 @@ class TrailingStop {
 
     // Marca como criação de stop loss em progresso
     TrailingStop.stopLossInProgress.set(symbol, now);
-    Logger.info(`🔒 [STOP_LOSS_PROTECTION] ${symbol}: Iniciando criação de stop loss protegida (${reason})`);
+    Logger.info(
+      `🔒 [STOP_LOSS_PROTECTION] ${symbol}: Iniciando criação de stop loss protegida (${reason})`
+    );
 
     try {
       const result = await OrderController.validateAndCreateStopLoss(
@@ -129,8 +160,11 @@ class TrailingStop {
         config.botName,
         config
       );
+      // Marca como verificado no cache
+      TrailingStop.stopLossVerified.set(symbol, now);
+      
       Logger.info(
-        `✅ [STOP_LOSS_PROTECTION] ${symbol}: Stop loss processado com sucesso (${reason})`
+        `✅ [STOP_LOSS_PROTECTION] ${symbol}: Stop loss processado com sucesso (${reason}) - cache atualizado`
       );
       return { success: true, reason: 'completed', result };
     } catch (error) {
