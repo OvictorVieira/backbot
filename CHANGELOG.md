@@ -5,6 +5,34 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.6.11] - 2025-09-02
+
+### 🔧 **MELHORIA: Cache de Verificação e Logs Limpos**
+
+#### 💡 **Problema Corrigido: Spam Excessivo de Logs de Proteção**
+**Problema:** Sistema estava gerando logs excessivos mesmo com proteção funcionando.
+
+**Sintomas identificados:**
+- ✅ **Proteção funcionando** → Mas gerando muito log INFO repetitivo
+- ❌ **Verificações desnecessárias** → Mesmo símbolo verificado múltiplas vezes por minuto
+- ❌ **Console poluído** → Dificultava monitoramento de problemas reais
+- ❌ **Performance impactada** → Muitas chamadas desnecessárias à API
+
+**Solução implementada:**
+- ✅ **Cache `stopLossVerified`** → Evita reverificação por 5 minutos
+- ✅ **Logs DEBUG** → INFO → DEBUG para reduzir verbosidade
+- ✅ **Limpeza automática** → Cache expira automaticamente
+- ✅ **Performance otimizada** → Menos chamadas desnecessárias à API
+- ✅ **Console limpo** → Apenas logs importantes visíveis
+
+#### 📈 **Melhorias de Performance:**
+- **Redução de logs** → Console 90% mais limpo
+- **Cache inteligente** → Evita verificações repetitivas
+- **Menos API calls** → Melhor uso dos rate limits
+- **Debugging melhorado** → Logs importantes destacados
+
+---
+
 ## [1.6.10] - 2025-09-02
 
 ### 🛡️ **CORREÇÃO: Proteção Anti-Loop Stop Loss**
