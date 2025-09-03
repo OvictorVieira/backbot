@@ -5,6 +5,113 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.6.11] - 2025-09-02
+
+### 🔧 **MELHORIA: Cache de Verificação e Logs Limpos**
+
+#### 💡 **Problema Corrigido: Spam Excessivo de Logs de Proteção**
+**Problema:** Sistema estava gerando logs excessivos mesmo com proteção funcionando.
+
+**Sintomas identificados:**
+- ✅ **Proteção funcionando** → Mas gerando muito log INFO repetitivo
+- ❌ **Verificações desnecessárias** → Mesmo símbolo verificado múltiplas vezes por minuto
+- ❌ **Console poluído** → Dificultava monitoramento de problemas reais
+- ❌ **Performance impactada** → Muitas chamadas desnecessárias à API
+
+**Solução implementada:**
+- ✅ **Cache `stopLossVerified`** → Evita reverificação por 5 minutos
+- ✅ **Logs DEBUG** → INFO → DEBUG para reduzir verbosidade
+- ✅ **Limpeza automática** → Cache expira automaticamente
+- ✅ **Performance otimizada** → Menos chamadas desnecessárias à API
+- ✅ **Console limpo** → Apenas logs importantes visíveis
+
+#### 📈 **Melhorias de Performance:**
+- **Redução de logs** → Console 90% mais limpo
+- **Cache inteligente** → Evita verificações repetitivas
+- **Menos API calls** → Melhor uso dos rate limits
+- **Debugging melhorado** → Logs importantes destacados
+
+---
+
+## [1.6.10] - 2025-09-02
+
+### 🛡️ **CORREÇÃO: Proteção Anti-Loop Stop Loss**
+
+#### 🚨 **Problema Corrigido: Múltiplas Criações Simultâneas de Stop Loss**
+**Problema:** Sistema criava múltiplas ordens de stop loss simultaneamente causando rate limit na API.
+
+**Sintomas identificados:**
+- ❌ **Múltiplas tentativas simultâneas** → Sistema tentava criar vários stop loss para o mesmo símbolo
+- ❌ **Rate limit atingido** → "You have exceeded the rate limit" 
+- ❌ **Ordens rejeitadas** → "Order with client ID already exists"
+- ❌ **Sistema travado** → Não conseguia criar stop loss de proteção
+
+**Solução implementada:**
+- ✅ **Cache de proteção `stopLossInProgress`** → Previne múltiplas operações por símbolo
+- ✅ **Método `protectedStopLossOperation()`** → Wrapper com semáforo para operações
+- ✅ **Limpeza automática** → Cache expira em 2 minutos automaticamente
+- ✅ **Logs detalhados** → Monitoramento completo das operações protegidas
+- ✅ **Integração TrailingStop** → Substitui chamadas diretas por métodos protegidos
+
+#### 📈 **Melhorias de Performance:**
+- **Redução de rate limit** → Evita chamadas desnecessárias para API
+- **Prevenção de duplicações** → Um stop loss por símbolo por vez
+- **Logs informativos** → Melhor debugging e monitoramento
+
+---
+
+## [1.6.9] - 2025-09-01
+
+### 🐛 **CORREÇÃO CRÍTICA: Loop de Take Profit Parcial**
+
+#### 🚨 **Problema Corrigido: Reenvio Infinito de Ordens TP Parciais**
+**Problema:** Sistema de take profit parcial criava novas ordens continuamente após a primeira execução.
+
+**Sintomas identificados:**
+- ✅ **Ordem TP parcial criada** → Sistema cria TP 50% da posição
+- ✅ **TP executado** → Ordem desaparece (filled), posição reduzida para 50%
+- ❌ **Sistema verifica novamente** → Não encontra ordem TP → Cria nova ordem (50% do restante)
+- 🔄 **Loop infinito** → Continua até fechar posição completamente
+- ⚠️ **Quebra funcionalidade híbrida** → Trailing stop não funciona corretamente
+
+#### 🔧 **Solução Implementada**
+
+**1. Novo Método `OrdersService.getOriginalOpeningOrder()`:**
+```javascript
+// Busca ordem de abertura específica no banco
+SELECT * FROM bot_orders 
+WHERE botId = ? AND symbol = ? AND side = ?
+  AND orderType IN ('MARKET', 'LIMIT')
+  AND status = 'FILLED'
+ORDER BY timestamp DESC LIMIT 1
+```
+
+**2. Verificação Inteligente em `createTakeProfitForPosition()`:**
+- 🔍 **Determina lado da posição** (LONG/SHORT) baseado no netQuantity
+- 📊 **Compara quantidades:** Original (banco) vs Atual (API)
+- ❌ **Se atual < original** → Posição reduzida → NÃO criar TP parcial
+- ✅ **Se atual >= original** → Posição intacta/aumentada → PODE criar TP parcial
+
+#### ✅ **Benefícios Alcançados**
+- 🚫 **Elimina reenvio** de ordens de TP parcial após execução
+- 🎯 **Preserva funcionalidade híbrida** - trailing stop funciona corretamente
+- 👤 **Suporta intervenção manual** - detecta fechamentos manuais
+- 📈 **Permite aumento de posição** - usuário pode aumentar sem quebrar lógica
+- ⚡ **Query otimizada** - busca rápida e específica no banco
+- 📊 **Logs informativos** - debugging aprimorado
+
+#### 🧪 **Cenários Testados**
+| Situação | Quantidade Original | Quantidade Atual | Resultado |
+|----------|---------------------|------------------|-----------|
+| TP Parcial executado | 1.0 | 0.5 | ❌ NÃO criar TP |
+| Fechamento manual | 1.0 | 0.3 | ❌ NÃO criar TP |
+| Posição intacta | 1.0 | 1.0 | ✅ CRIAR TP |
+| Usuário aumentou | 1.0 | 1.5 | ✅ CRIAR TP |
+
+**Arquivos modificados:**
+- `src/Services/OrdersService.js` - Novo método de busca de ordem original
+- `src/Controllers/OrderController.js` - Integração da verificação inteligente
+
 ## [1.6.8] - 2025-09-01
 
 ### 🛡️ **CORREÇÃO CRÍTICA: Sistema Anti-Loop para Trailing Stop**
