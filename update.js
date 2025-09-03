@@ -21,6 +21,7 @@ const ZIP_URL = `https://github.com/${GITHUB_REPO}/archive/refs/heads/main.zip`;
 // - persistence/: backup alternativo do banco
 // - node_modules/: dependências instaladas
 // - .update_flag: flag de controle de atualização
+// - .git/: repositório Git (NUNCA remover)
 const PRESERVE_ITEMS = [
   '.env',
   'src/',
@@ -28,6 +29,7 @@ const PRESERVE_ITEMS = [
   'persistence/',
   'node_modules/',
   '.update_flag',
+  '.git/',
 ];
 const BACKUP_DIR = 'backup_temp';
 const TEMP_DIR = 'temp_update';
