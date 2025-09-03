@@ -10,6 +10,7 @@ import Logger from '../Utils/Logger.js';
 import ConfigManagerSQLite from '../Config/ConfigManagerSQLite.js';
 import CachedOrdersService from '../Utils/CachedOrdersService.js';
 import BackpackWebSocket from '../Backpack/Public/WebSocket.js';
+import { ATR } from 'technicalindicators';
 
 class TrailingStop {
   // Cache estático para controlar symbols que devem ser skipados (posição fechada)
@@ -30,6 +31,10 @@ class TrailingStop {
   // Proteção contra execução simultânea no sistema reativo
   static reactiveProcessing = new Map(); // symbol -> processing flag
 
+  // Cache para throttling de trailing stop updates (previne concorrência)
+  static lastTrailingUpdate = new Map(); // symbol -> timestamp
+  static TRAILING_UPDATE_THROTTLE = 10000; // 10 segundos entre updates
+
   // Gerenciador de estado do trailing stop por bot (chave: botId)
   static trailingStateByBot = new Map(); // { botKey: { symbol: state } }
   static trailingModeLoggedByBot = new Map(); // Cache para logs de modo Trailing Stop por bot
@@ -39,6 +44,57 @@ class TrailingStop {
 
   // Database service instance
   static dbService = null;
+
+  /**
+   * Calcula ATR dinâmico baseado nos candles recentes
+   * @param {string} symbol - Símbolo para buscar dados
+   * @param {number} period - Período para ATR (padrão: 14)
+   * @returns {Promise<number>} - Valor do ATR
+   */
+  static async calculateDynamicATR(symbol, period = 14) {
+    try {
+      // Busca candles recentes para calcular ATR (período + buffer extra)
+      const markets = new Markets();
+      const requiredCandles = Math.max(period + 10, 25); // Mínimo 25 candles para ATR confiável
+      const candles = await markets.getKLines(symbol, '1h', requiredCandles);
+
+      if (!candles || candles.length < period) {
+        Logger.warn(
+          `⚠️ [ATR_CALC] ${symbol}: Dados insuficientes (${candles?.length || 0} < ${period}), usando ATR padrão`
+        );
+        return null; // Retorna null para fallback
+      }
+
+      // Prepara dados para ATR
+      const highs = candles.map(c => parseFloat(c.high));
+      const lows = candles.map(c => parseFloat(c.low));
+      const closes = candles.map(c => parseFloat(c.close));
+
+      // Calcula ATR
+      const atrResults = ATR.calculate({
+        period: period,
+        high: highs,
+        low: lows,
+        close: closes,
+      });
+
+      if (!atrResults || atrResults.length === 0) {
+        Logger.warn(`⚠️ [ATR_CALC] ${symbol}: Falha no cálculo do ATR`);
+        return null;
+      }
+
+      // Pega o ATR mais recente
+      const currentATR = atrResults[atrResults.length - 1];
+      Logger.debug(
+        `📊 [ATR_CALC] ${symbol}: ATR dinâmico = ${currentATR.toFixed(4)} (período: ${period})`
+      );
+
+      return currentATR;
+    } catch (error) {
+      Logger.error(`❌ [ATR_CALC] Erro ao calcular ATR para ${symbol}: ${error.message}`);
+      return null;
+    }
+  }
 
   // Limpa entries do cache que são mais antigas que 24 horas
   static cleanupSkippedSymbolsCache() {
@@ -436,10 +492,7 @@ class TrailingStop {
       if (row && row.state) {
         const state = JSON.parse(row.state);
 
-        // ✅ CORREÇÃO: Adiciona o active_stop_order_id como activeStopOrderId no state
-        if (row.active_stop_order_id) {
-          state.activeStopOrderId = row.active_stop_order_id;
-        }
+        state.activeStopOrderId = row.active_stop_order_id || null;
 
         const botKey = `bot_${botId}`;
 
@@ -551,6 +604,24 @@ class TrailingStop {
             const priceChangedSignificantly = percentageChange >= 0.1; // Mínimo 0.1% de mudança
 
             if (trailingStopIsBetterThanSL && priceChangedSignificantly) {
+              // 🚨 THROTTLING: Previne atualizações muito frequentes para evitar concorrência
+              const now = Date.now();
+              const lastUpdate = TrailingStop.lastTrailingUpdate.get(symbol) || 0;
+              const timeSinceLastUpdate = now - lastUpdate;
+
+              if (timeSinceLastUpdate < TrailingStop.TRAILING_UPDATE_THROTTLE) {
+                const timeLeft = Math.ceil(
+                  (TrailingStop.TRAILING_UPDATE_THROTTLE - timeSinceLastUpdate) / 1000
+                );
+                Logger.debug(
+                  `⏱️ [TRAILING_THROTTLE] ${symbol}: Update muito recente, aguardando ${timeLeft}s antes de atualizar trailing stop`
+                );
+                return; // Bloqueia update para prevenir concorrência
+              }
+
+              // Registra timestamp do update atual
+              TrailingStop.lastTrailingUpdate.set(symbol, now);
+
               Logger.info(
                 `🔄 [TRAILING_UPDATE] ${symbol}: Movendo trailing stop de ${currentOrderPrice} para ${state.trailingStopPrice}. Diferença: ${priceDifference.toFixed(4)} (${percentageChange.toFixed(3)}%)`
               );
@@ -606,7 +677,44 @@ class TrailingStop {
                 bodyPayload.price = formatPrice(state.trailingStopPrice);
               }
 
-              // 3. Cria a NOVA ordem (stop loss, take profit ou limit) com o preço atualizado
+              // 🚨 CORREÇÃO: CANCELA ordem antiga PRIMEIRO para evitar "Maximum stop orders per position reached"
+              const orderType = isStopLossOrder
+                ? 'stop loss'
+                : isTakeProfitOrder
+                  ? 'take profit'
+                  : 'limit';
+
+              // 3. Cancela a ordem ANTIGA primeiro (se existir)
+              if (
+                foundState &&
+                foundState.activeStopOrderId &&
+                foundState.activeStopOrderId !== 'undefined' &&
+                foundState.activeStopOrderId !== null
+              ) {
+                Logger.info(
+                  `🗑️ [TRAILING_SAFE] ${symbol}: Cancelando ordem ${orderType} antiga (${foundState.activeStopOrderId}) antes de criar nova`
+                );
+
+                try {
+                  const cancelOrderPayload = {
+                    symbol: symbol,
+                    orderId: foundState.activeStopOrderId,
+                    apiKey: apiKey,
+                    apiSecret: apiSecret,
+                  };
+                  await OrderController.ordersService.cancelOrder(cancelOrderPayload);
+
+                  // Pequena pausa para garantir que o cancelamento foi processado
+                  await new Promise(resolve => setTimeout(resolve, 500));
+                } catch (cancelError) {
+                  Logger.warn(
+                    `⚠️ [TRAILING_SAFE] ${symbol}: Erro ao cancelar ordem antiga: ${cancelError.message}`
+                  );
+                  // Continua mesmo se cancelamento falhar, pois ordem pode já ter sido executada
+                }
+              }
+
+              // 4. Agora cria a NOVA ordem (stop loss, take profit ou limit) com o preço atualizado
               let stopResult;
               if (isStopLossOrder) {
                 stopResult = await OrderController.ordersService.createStopLossOrder(bodyPayload);
@@ -616,35 +724,18 @@ class TrailingStop {
                 stopResult = await OrderController.ordersService.createOrder(bodyPayload);
               }
 
-              // 4. Se a nova ordem foi criada, cancela a ANTIGA (apenas se existir)
+              // 5. Se a nova ordem foi criada com sucesso
               if (stopResult && stopResult.id) {
-                const orderType = isStopLossOrder
-                  ? 'stop loss'
-                  : isTakeProfitOrder
-                    ? 'take profit'
-                    : 'limit';
-                if (foundState.activeStopOrderId && foundState.activeStopOrderId !== 'undefined') {
-                  Logger.info(
-                    `✅ New ${orderType} order ${stopResult.id} created. Cancelling old order ${foundState.activeStopOrderId}.`
-                  );
-                  let cancelOrderPayload = {
-                    symbol: symbol,
-                    orderId: foundState.activeStopOrderId,
-                    apiKey: apiKey,
-                    apiSecret: apiSecret,
-                  };
-
-                  await OrderController.ordersService.cancelOrder(cancelOrderPayload);
-                } else {
-                  Logger.info(
-                    `✅ New ${orderType} order ${stopResult.id} created. No old order to cancel.`
-                  );
-                }
+                Logger.info(
+                  `✅ [TRAILING_SAFE] ${symbol}: Nova ordem ${orderType} criada com sucesso (${stopResult.id})`
+                );
 
                 externalOrderId = stopResult.id;
                 state.activeStopOrderId = stopResult.id;
               } else {
-                Logger.error(`Falha ao tentar mover o Stop Loss. Erro: ${stopResult.error}`);
+                Logger.error(
+                  `❌ [TRAILING_SAFE] ${symbol}: Falha ao criar nova ordem ${orderType}. Erro: ${stopResult?.error || 'Desconhecido'}`
+                );
               }
             }
 
@@ -1597,22 +1688,71 @@ class TrailingStop {
             `✅ [HYBRID_DEBUG] ${position.symbol}: LONG - Novo preço máximo registrado: ${currentPrice}`
           );
 
-          const newTrailingStopPrice = currentPrice * (1 - trailingStopDistance / 100);
+          // 🚨 CORREÇÃO: Calcula trailing stop baseado no HIGHEST PRICE - (ATR × multiplier)
+          const trailingStopAtrMultiplier = Number(this.config?.trailingStopAtrMultiplier || 1.5);
+          const atrValue = await TrailingStop.calculateDynamicATR(position.symbol);
+
+          let newTrailingStopPrice;
+          if (atrValue) {
+            // ATR dinâmico: highest price - (ATR × trailingStopAtrMultiplier)
+            newTrailingStopPrice =
+              trailingState.highestPrice - atrValue * trailingStopAtrMultiplier;
+            Logger.debug(
+              `📊 [ATR_POS] ${position.symbol} LONG: HighestPrice=${trailingState.highestPrice.toFixed(4)}, ATR=${atrValue.toFixed(4)}, Multiplier=${trailingStopAtrMultiplier}, NewStop=${newTrailingStopPrice.toFixed(4)}`
+            );
+          } else {
+            // Fallback: usa percentual fixo se ATR não disponível
+            newTrailingStopPrice = currentPrice * (1 - trailingStopDistance / 100);
+            Logger.debug(
+              `⚠️ [ATR_FALLBACK_POS] ${position.symbol} LONG: Usando cálculo percentual ${trailingStopDistance}%`
+            );
+          }
+
           const currentStopPrice = trailingState.trailingStopPrice;
 
           const finalStopPrice = Math.max(currentStopPrice, newTrailingStopPrice);
 
+          // 🚨 CORREÇÃO: Só atualiza se a melhoria for SIGNIFICATIVA (baseada no ATR dinâmico)
           if (finalStopPrice > currentStopPrice) {
-            trailingState.trailingStopPrice = finalStopPrice;
-            TrailingStop.colorLogger.trailingUpdate(
-              `${position.symbol}: 📈 Trailing Stop ATUALIZADO! Novo Stop: $${finalStopPrice.toFixed(4)} | Preço Atual: $${currentPrice.toFixed(4)} | Máximo: $${trailingState.highestPrice.toFixed(4)}`
-            );
-            await TrailingStop.saveStateToDB(
-              position.symbol,
-              trailingState,
-              this.config?.id,
-              this.config
-            );
+            const improvement = finalStopPrice - currentStopPrice;
+            const improvementPct = (improvement / currentStopPrice) * 100;
+
+            // Calcula melhoria mínima baseada no ATR dinâmico
+            const initialStopAtrMultiplier = Number(this.config?.initialStopAtrMultiplier || 2.0);
+            const atrValue = await TrailingStop.calculateDynamicATR(position.symbol);
+            let minImprovementPct;
+
+            if (atrValue) {
+              // ATR dinâmico: 10% da distância ATR como melhoria mínima
+              const atrDistance = atrValue * initialStopAtrMultiplier;
+              minImprovementPct = (atrDistance / currentPrice) * 100 * 0.1;
+              Logger.debug(
+                `📊 [ATR_MIN] ${position.symbol}: ATR=${atrValue.toFixed(4)}, Distância=${atrDistance.toFixed(4)}, Mín=${minImprovementPct.toFixed(3)}%`
+              );
+            } else {
+              // Fallback: usa distância fixa se ATR não disponível
+              minImprovementPct = trailingStopDistance * 0.1;
+              Logger.debug(
+                `⚠️ [ATR_FALLBACK] ${position.symbol}: Usando distância fixa ${minImprovementPct.toFixed(3)}%`
+              );
+            }
+
+            if (improvementPct >= minImprovementPct) {
+              trailingState.trailingStopPrice = finalStopPrice;
+              TrailingStop.colorLogger.trailingUpdate(
+                `${position.symbol}: 📈 Trailing Stop ATUALIZADO! Novo Stop: $${finalStopPrice.toFixed(4)} | Preço Atual: $${currentPrice.toFixed(4)} | Máximo: $${trailingState.highestPrice.toFixed(4)} | Melhoria: ${improvementPct.toFixed(3)}% (ATR mín: ${minImprovementPct.toFixed(3)}%)`
+              );
+              await TrailingStop.saveStateToDB(
+                position.symbol,
+                trailingState,
+                this.config?.id,
+                this.config
+              );
+            } else {
+              Logger.debug(
+                `⏭️ [TRAILING_SKIP] ${position.symbol} LONG: Melhoria insuficiente (${improvementPct.toFixed(3)}% < ${minImprovementPct.toFixed(3)}%), mantendo stop atual`
+              );
+            }
           }
         }
       } else if (isShort) {
@@ -1626,22 +1766,70 @@ class TrailingStop {
             `✅ [HYBRID_DEBUG] ${position.symbol}: SHORT - Novo preço mínimo registrado: ${currentPrice}`
           );
 
-          const newTrailingStopPrice = currentPrice * (1 + trailingStopDistance / 100);
+          // 🚨 CORREÇÃO: Calcula trailing stop baseado no LOWEST PRICE + (ATR × multiplier)
+          const trailingStopAtrMultiplier = Number(this.config?.trailingStopAtrMultiplier || 1.5);
+          const atrValue = await TrailingStop.calculateDynamicATR(position.symbol);
+
+          let newTrailingStopPrice;
+          if (atrValue) {
+            // ATR dinâmico: lowest price + (ATR × trailingStopAtrMultiplier)
+            newTrailingStopPrice = trailingState.lowestPrice + atrValue * trailingStopAtrMultiplier;
+            Logger.debug(
+              `📊 [ATR_POS] ${position.symbol} SHORT: LowestPrice=${trailingState.lowestPrice.toFixed(4)}, ATR=${atrValue.toFixed(4)}, Multiplier=${trailingStopAtrMultiplier}, NewStop=${newTrailingStopPrice.toFixed(4)}`
+            );
+          } else {
+            // Fallback: usa percentual fixo se ATR não disponível
+            newTrailingStopPrice = currentPrice * (1 + trailingStopDistance / 100);
+            Logger.debug(
+              `⚠️ [ATR_FALLBACK_POS] ${position.symbol} SHORT: Usando cálculo percentual ${trailingStopDistance}%`
+            );
+          }
+
           const currentStopPrice = trailingState.trailingStopPrice;
 
           const finalStopPrice = Math.min(currentStopPrice, newTrailingStopPrice);
 
+          // 🚨 CORREÇÃO: Só atualiza se a melhoria for SIGNIFICATIVA (baseada no ATR dinâmico)
           if (finalStopPrice < currentStopPrice) {
-            trailingState.trailingStopPrice = finalStopPrice;
-            TrailingStop.colorLogger.trailingUpdate(
-              `${position.symbol}: 📉 Trailing Stop ATUALIZADO! Novo Stop: $${finalStopPrice.toFixed(4)} | Preço Atual: $${currentPrice.toFixed(4)} | Mínimo: $${trailingState.lowestPrice.toFixed(4)}`
-            );
-            await TrailingStop.saveStateToDB(
-              position.symbol,
-              trailingState,
-              this.config?.id,
-              this.config
-            );
+            const improvement = currentStopPrice - finalStopPrice;
+            const improvementPct = (improvement / currentStopPrice) * 100;
+
+            // Calcula melhoria mínima baseada no ATR dinâmico
+            const initialStopAtrMultiplier = Number(this.config?.initialStopAtrMultiplier || 2.0);
+            const atrValue = await TrailingStop.calculateDynamicATR(position.symbol);
+            let minImprovementPct;
+
+            if (atrValue) {
+              // ATR dinâmico: 10% da distância ATR como melhoria mínima
+              const atrDistance = atrValue * initialStopAtrMultiplier;
+              minImprovementPct = (atrDistance / currentPrice) * 100 * 0.1;
+              Logger.debug(
+                `📊 [ATR_MIN] ${position.symbol}: ATR=${atrValue.toFixed(4)}, Distância=${atrDistance.toFixed(4)}, Mín=${minImprovementPct.toFixed(3)}%`
+              );
+            } else {
+              // Fallback: usa distância fixa se ATR não disponível
+              minImprovementPct = trailingStopDistance * 0.1;
+              Logger.debug(
+                `⚠️ [ATR_FALLBACK] ${position.symbol}: Usando distância fixa ${minImprovementPct.toFixed(3)}%`
+              );
+            }
+
+            if (improvementPct >= minImprovementPct) {
+              trailingState.trailingStopPrice = finalStopPrice;
+              TrailingStop.colorLogger.trailingUpdate(
+                `${position.symbol}: 📉 Trailing Stop ATUALIZADO! Novo Stop: $${finalStopPrice.toFixed(4)} | Preço Atual: $${currentPrice.toFixed(4)} | Mínimo: $${trailingState.lowestPrice.toFixed(4)} | Melhoria: ${improvementPct.toFixed(3)}% (ATR mín: ${minImprovementPct.toFixed(3)}%)`
+              );
+              await TrailingStop.saveStateToDB(
+                position.symbol,
+                trailingState,
+                this.config?.id,
+                this.config
+              );
+            } else {
+              Logger.debug(
+                `⏭️ [TRAILING_SKIP] ${position.symbol} SHORT: Melhoria insuficiente (${improvementPct.toFixed(3)}% < ${minImprovementPct.toFixed(3)}%), mantendo stop atual`
+              );
+            }
           }
         }
       }
@@ -1766,7 +1954,26 @@ class TrailingStop {
             `✅ [TRAILING_DEBUG] ${position.symbol}: LONG - Novo preço máximo registrado: ${currentPrice}`
           );
 
-          const newTrailingStopPrice = currentPrice * (1 - trailingStopDistance / 100);
+          // 🚨 CORREÇÃO: Calcula trailing stop baseado no HIGHEST PRICE - (ATR × multiplier)
+          const trailingStopAtrMultiplier = Number(this.config?.trailingStopAtrMultiplier || 1.5);
+          const atrValue = await TrailingStop.calculateDynamicATR(position.symbol);
+
+          let newTrailingStopPrice;
+          if (atrValue) {
+            // ATR dinâmico: highest price - (ATR × trailingStopAtrMultiplier)
+            newTrailingStopPrice =
+              trailingState.highestPrice - atrValue * trailingStopAtrMultiplier;
+            Logger.debug(
+              `📊 [ATR_POS] ${position.symbol} LONG: HighestPrice=${trailingState.highestPrice.toFixed(4)}, ATR=${atrValue.toFixed(4)}, Multiplier=${trailingStopAtrMultiplier}, NewStop=${newTrailingStopPrice.toFixed(4)}`
+            );
+          } else {
+            // Fallback: usa percentual fixo se ATR não disponível
+            newTrailingStopPrice = currentPrice * (1 - trailingStopDistance / 100);
+            Logger.debug(
+              `⚠️ [ATR_FALLBACK_POS] ${position.symbol} LONG: Usando cálculo percentual ${trailingStopDistance}%`
+            );
+          }
+
           const currentStopPrice = trailingState.trailingStopPrice;
 
           const finalStopPrice = Math.max(currentStopPrice, newTrailingStopPrice);
@@ -1775,46 +1982,76 @@ class TrailingStop {
             `🔍 [TRAILING_DEBUG] ${position.symbol}: LONG - NewTrailingStop: ${newTrailingStopPrice}, CurrentStop: ${currentStopPrice}, FinalStop: ${finalStopPrice}`
           );
 
+          // 🚨 CORREÇÃO: Só atualiza se a melhoria for SIGNIFICATIVA (baseada no ATR dinâmico)
           if (finalStopPrice > currentStopPrice) {
-            // Se OrdersService estiver disponível, usa o sistema ativo
-            if (this.ordersService) {
-              const activeStopResult = await this.manageActiveStopOrder(
-                position,
-                finalStopPrice,
-                this.config?.id
+            const improvement = finalStopPrice - currentStopPrice;
+            const improvementPct = (improvement / currentStopPrice) * 100;
+
+            // Calcula melhoria mínima baseada no ATR dinâmico
+            const initialStopAtrMultiplier = Number(this.config?.initialStopAtrMultiplier || 2.0);
+            const atrValue = await TrailingStop.calculateDynamicATR(position.symbol);
+            let minImprovementPct;
+
+            if (atrValue) {
+              // ATR dinâmico: 10% da distância ATR como melhoria mínima
+              const atrDistance = atrValue * initialStopAtrMultiplier;
+              minImprovementPct = (atrDistance / currentPrice) * 100 * 0.1;
+              Logger.debug(
+                `📊 [ATR_MIN] ${position.symbol}: ATR=${atrValue.toFixed(4)}, Distância=${atrDistance.toFixed(4)}, Mín=${minImprovementPct.toFixed(3)}%`
               );
-              if (activeStopResult) {
-                trailingState.trailingStopPrice = finalStopPrice;
-                trailingState.activated = true;
-                TrailingStop.colorLogger.trailingUpdate(
-                  `${position.symbol}: LONG - Preço melhorou para $${currentPrice.toFixed(4)}, Stop ATIVO movido para: $${finalStopPrice.toFixed(4)}`
-                );
-              } else {
-                Logger.warn(
-                  `⚠️ [ACTIVE_STOP] ${position.symbol}: Falha ao mover stop ativo, mantendo modo passivo`
-                );
-                trailingState.trailingStopPrice = finalStopPrice;
-                trailingState.activated = true;
-                TrailingStop.colorLogger.trailingUpdate(
-                  `${position.symbol}: LONG - Preço melhorou para $${currentPrice.toFixed(4)}, Novo Stop PASSIVO para: $${finalStopPrice.toFixed(4)}`
-                );
-              }
             } else {
-              // Modo passivo tradicional
-              trailingState.trailingStopPrice = finalStopPrice;
-              trailingState.activated = true;
-              TrailingStop.colorLogger.trailingUpdate(
-                `${position.symbol}: LONG - Preço melhorou para $${currentPrice.toFixed(4)}, Novo Stop PASSIVO para: $${finalStopPrice.toFixed(4)}`
+              // Fallback: usa distância fixa se ATR não disponível
+              minImprovementPct = trailingStopDistance * 0.1;
+              Logger.debug(
+                `⚠️ [ATR_FALLBACK] ${position.symbol}: Usando distância fixa ${minImprovementPct.toFixed(3)}%`
               );
             }
 
-            // Salva o estado atualizado no banco
-            await TrailingStop.saveStateToDB(
-              position.symbol,
-              trailingState,
-              this.config?.id,
-              this.config
-            );
+            if (improvementPct >= minImprovementPct) {
+              // Se OrdersService estiver disponível, usa o sistema ativo
+              if (this.ordersService) {
+                const activeStopResult = await this.manageActiveStopOrder(
+                  position,
+                  finalStopPrice,
+                  this.config?.id
+                );
+                if (activeStopResult) {
+                  trailingState.trailingStopPrice = finalStopPrice;
+                  trailingState.activated = true;
+                  TrailingStop.colorLogger.trailingUpdate(
+                    `${position.symbol}: LONG - Preço melhorou para $${currentPrice.toFixed(4)}, Stop ATIVO movido para: $${finalStopPrice.toFixed(4)} | Melhoria: ${improvementPct.toFixed(3)}% (ATR mín: ${minImprovementPct.toFixed(3)}%)`
+                  );
+                } else {
+                  Logger.warn(
+                    `⚠️ [ACTIVE_STOP] ${position.symbol}: Falha ao mover stop ativo, mantendo modo passivo`
+                  );
+                  trailingState.trailingStopPrice = finalStopPrice;
+                  trailingState.activated = true;
+                  TrailingStop.colorLogger.trailingUpdate(
+                    `${position.symbol}: LONG - Preço melhorou para $${currentPrice.toFixed(4)}, Novo Stop PASSIVO para: $${finalStopPrice.toFixed(4)} | Melhoria: ${improvementPct.toFixed(3)}%`
+                  );
+                }
+              } else {
+                // Modo passivo tradicional
+                trailingState.trailingStopPrice = finalStopPrice;
+                trailingState.activated = true;
+                TrailingStop.colorLogger.trailingUpdate(
+                  `${position.symbol}: LONG - Preço melhorou para $${currentPrice.toFixed(4)}, Novo Stop PASSIVO para: $${finalStopPrice.toFixed(4)} | Melhoria: ${improvementPct.toFixed(3)}%`
+                );
+              }
+
+              // Salva o estado atualizado no banco
+              await TrailingStop.saveStateToDB(
+                position.symbol,
+                trailingState,
+                this.config?.id,
+                this.config
+              );
+            } else {
+              Logger.debug(
+                `⏭️ [TRAILING_SKIP] ${position.symbol} LONG: Melhoria insuficiente (${improvementPct.toFixed(3)}% < ${minImprovementPct.toFixed(3)}%), mantendo stop atual`
+              );
+            }
           }
         }
       } else if (isShort) {
@@ -1828,7 +2065,24 @@ class TrailingStop {
             `✅ [TRAILING_DEBUG] ${position.symbol}: SHORT - Novo preço mínimo registrado: ${currentPrice}`
           );
 
-          const newTrailingStopPrice = trailingState.lowestPrice * (1 + trailingStopDistance / 100);
+          // 🚨 CORREÇÃO: Calcula trailing stop baseado no LOWEST PRICE + (ATR × multiplier)
+          const trailingStopAtrMultiplier = Number(this.config?.trailingStopAtrMultiplier || 1.5);
+          const atrValue = await TrailingStop.calculateDynamicATR(position.symbol);
+
+          let newTrailingStopPrice;
+          if (atrValue) {
+            // ATR dinâmico: lowest price + (ATR × trailingStopAtrMultiplier)
+            newTrailingStopPrice = trailingState.lowestPrice + atrValue * trailingStopAtrMultiplier;
+            Logger.debug(
+              `📊 [ATR_POS] ${position.symbol} SHORT: LowestPrice=${trailingState.lowestPrice.toFixed(4)}, ATR=${atrValue.toFixed(4)}, Multiplier=${trailingStopAtrMultiplier}, NewStop=${newTrailingStopPrice.toFixed(4)}`
+            );
+          } else {
+            // Fallback: usa percentual fixo se ATR não disponível
+            newTrailingStopPrice = trailingState.lowestPrice * (1 + trailingStopDistance / 100);
+            Logger.debug(
+              `⚠️ [ATR_FALLBACK_POS] ${position.symbol} SHORT: Usando cálculo percentual ${trailingStopDistance}%`
+            );
+          }
 
           const currentStopPrice = trailingState.trailingStopPrice;
           const finalStopPrice = Math.min(currentStopPrice, newTrailingStopPrice);
@@ -1837,56 +2091,104 @@ class TrailingStop {
             `🔍 [TRAILING_DEBUG] ${position.symbol}: SHORT - NewTrailingStop: ${newTrailingStopPrice}, CurrentStop: ${currentStopPrice}, FinalStop: ${finalStopPrice}`
           );
 
+          // 🚨 CORREÇÃO: Só atualiza se a melhoria for SIGNIFICATIVA (baseada no ATR dinâmico)
           if (finalStopPrice < currentStopPrice) {
-            // Se OrdersService estiver disponível, usa o sistema ativo
-            if (this.ordersService) {
-              const activeStopResult = await this.manageActiveStopOrder(
-                position,
-                finalStopPrice,
-                this.config?.id
+            const improvement = currentStopPrice - finalStopPrice;
+            const improvementPct = (improvement / currentStopPrice) * 100;
+
+            // Calcula melhoria mínima baseada no ATR dinâmico
+            const initialStopAtrMultiplier = Number(this.config?.initialStopAtrMultiplier || 2.0);
+            const atrValue = await TrailingStop.calculateDynamicATR(position.symbol);
+            let minImprovementPct;
+
+            if (atrValue) {
+              // ATR dinâmico: 10% da distância ATR como melhoria mínima
+              const atrDistance = atrValue * initialStopAtrMultiplier;
+              minImprovementPct = (atrDistance / currentPrice) * 100 * 0.1;
+              Logger.debug(
+                `📊 [ATR_MIN] ${position.symbol}: ATR=${atrValue.toFixed(4)}, Distância=${atrDistance.toFixed(4)}, Mín=${minImprovementPct.toFixed(3)}%`
               );
-              if (activeStopResult) {
-                trailingState.trailingStopPrice = finalStopPrice;
-                trailingState.activated = true;
-                TrailingStop.colorLogger.trailingUpdate(
-                  `${position.symbol}: SHORT - Preço melhorou para $${currentPrice.toFixed(4)}, Stop ATIVO movido para $${finalStopPrice.toFixed(4)}`
-                );
-              } else {
-                Logger.warn(
-                  `⚠️ [ACTIVE_STOP] ${position.symbol}: Falha ao mover stop ativo, mantendo modo passivo`
-                );
-                trailingState.trailingStopPrice = finalStopPrice;
-                trailingState.activated = true;
-                TrailingStop.colorLogger.trailingUpdate(
-                  `${position.symbol}: SHORT - Preço melhorou para $${currentPrice.toFixed(4)}, Stop PASSIVO para $${finalStopPrice.toFixed(4)}`
-                );
-              }
             } else {
-              // Modo passivo tradicional
-              trailingState.trailingStopPrice = finalStopPrice;
-              trailingState.activated = true;
-              TrailingStop.colorLogger.trailingUpdate(
-                `${position.symbol}: SHORT - Preço melhorou para $${currentPrice.toFixed(4)}, Stop PASSIVO para $${finalStopPrice.toFixed(4)}`
+              // Fallback: usa distância fixa se ATR não disponível
+              minImprovementPct = trailingStopDistance * 0.1;
+              Logger.debug(
+                `⚠️ [ATR_FALLBACK] ${position.symbol}: Usando distância fixa ${minImprovementPct.toFixed(3)}%`
               );
             }
 
-            // Salva o estado atualizado no banco
-            await TrailingStop.saveStateToDB(
-              position.symbol,
-              trailingState,
-              this.config?.id,
-              this.config
-            );
+            if (improvementPct >= minImprovementPct) {
+              // Se OrdersService estiver disponível, usa o sistema ativo
+              if (this.ordersService) {
+                const activeStopResult = await this.manageActiveStopOrder(
+                  position,
+                  finalStopPrice,
+                  this.config?.id
+                );
+                if (activeStopResult) {
+                  trailingState.trailingStopPrice = finalStopPrice;
+                  trailingState.activated = true;
+                  TrailingStop.colorLogger.trailingUpdate(
+                    `${position.symbol}: SHORT - Preço melhorou para $${currentPrice.toFixed(4)}, Stop ATIVO movido para $${finalStopPrice.toFixed(4)} | Melhoria: ${improvementPct.toFixed(3)}%`
+                  );
+                } else {
+                  Logger.warn(
+                    `⚠️ [ACTIVE_STOP] ${position.symbol}: Falha ao mover stop ativo, mantendo modo passivo`
+                  );
+                  trailingState.trailingStopPrice = finalStopPrice;
+                  trailingState.activated = true;
+                  TrailingStop.colorLogger.trailingUpdate(
+                    `${position.symbol}: SHORT - Preço melhorou para $${currentPrice.toFixed(4)}, Stop PASSIVO para $${finalStopPrice.toFixed(4)} | Melhoria: ${improvementPct.toFixed(3)}%`
+                  );
+                }
+              } else {
+                // Modo passivo tradicional
+                trailingState.trailingStopPrice = finalStopPrice;
+                trailingState.activated = true;
+                TrailingStop.colorLogger.trailingUpdate(
+                  `${position.symbol}: SHORT - Preço melhorou para $${currentPrice.toFixed(4)}, Stop PASSIVO para $${finalStopPrice.toFixed(4)} | Melhoria: ${improvementPct.toFixed(3)}%`
+                );
+              }
+
+              // Salva o estado atualizado no banco
+              await TrailingStop.saveStateToDB(
+                position.symbol,
+                trailingState,
+                this.config?.id,
+                this.config
+              );
+            } else {
+              Logger.debug(
+                `⏭️ [TRAILING_SKIP] ${position.symbol} SHORT: Melhoria insuficiente (${improvementPct.toFixed(3)}% < ${minImprovementPct.toFixed(3)}%), mantendo stop atual`
+              );
+            }
           }
         }
 
         if (pnl > 0 && !trailingState.activated) {
-          const newTrailingStopPrice = currentPrice * (1 + trailingStopDistance / 100);
+          // 🚨 CORREÇÃO: Ativação inicial usa ATR dinâmico para SHORT
+          const trailingStopAtrMultiplier = Number(this.config?.trailingStopAtrMultiplier || 1.5);
+          const atrValue = await TrailingStop.calculateDynamicATR(position.symbol);
+
+          let newTrailingStopPrice;
+          if (atrValue) {
+            // ATR dinâmico: current price + (ATR × trailingStopAtrMultiplier) para ativação inicial
+            newTrailingStopPrice = currentPrice + atrValue * trailingStopAtrMultiplier;
+            Logger.debug(
+              `📊 [ATR_INIT] ${position.symbol} SHORT: CurrentPrice=${currentPrice.toFixed(4)}, ATR=${atrValue.toFixed(4)}, Multiplier=${trailingStopAtrMultiplier}, InitialStop=${newTrailingStopPrice.toFixed(4)}`
+            );
+          } else {
+            // Fallback: usa percentual fixo se ATR não disponível
+            newTrailingStopPrice = currentPrice * (1 + trailingStopDistance / 100);
+            Logger.debug(
+              `⚠️ [ATR_FALLBACK_INIT] ${position.symbol} SHORT: Usando cálculo percentual ${trailingStopDistance}%`
+            );
+          }
+
           const finalStopPrice = Math.min(trailingState.initialStopLossPrice, newTrailingStopPrice);
           trailingState.trailingStopPrice = finalStopPrice;
           trailingState.activated = true;
           TrailingStop.colorLogger.trailingActivate(
-            `${position.symbol}: SHORT - Ativando Trailing Stop com lucro existente! Preço: $${currentPrice.toFixed(4)}, Stop inicial: $${finalStopPrice.toFixed(4)}`
+            `${position.symbol}: SHORT - Ativando Trailing Stop com lucro existente! Preço: $${currentPrice.toFixed(4)}, Stop inicial: $${finalStopPrice.toFixed(4)} (ATR: ${atrValue ? atrValue.toFixed(4) : 'N/A'})`
           );
 
           // Salva o estado atualizado no banco
