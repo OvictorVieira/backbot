@@ -192,7 +192,7 @@ class OrdersService {
 
   /**
    * Cria uma ordem de Take Profit
-   * @param {Object} params - Parâmetros da ordem
+   * @param {{symbol: *, side: (string), orderType: string, quantity: *, clientId: number, apiKey: *, apiSecret: *}} params - Parâmetros da ordem
    * @param {string} params.symbol - Símbolo do mercado
    * @param {string} params.side - Lado da ordem (oposto à posição)
    * @param {string} params.quantity - Quantidade da ordem

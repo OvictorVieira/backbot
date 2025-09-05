@@ -3413,7 +3413,7 @@ class OrderController {
               Logger.info(`📋 [STRATEGY_TAG] ${market}: Bot marcado como "${orderResult.botName}"`);
             }
 
-            await TrailingStop.saveStateToDB(market, trailingState, config?.id, config);
+            await TrailingStop.createTrailingStopOrder(position, trailingState, config?.id, config);
           }
         } catch (trailingError) {
           Logger.warn(
