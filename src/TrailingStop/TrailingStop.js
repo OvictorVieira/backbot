@@ -1229,11 +1229,23 @@ class TrailingStop {
     try {
       Logger.info(`🧹 [TRAILING_CLEANER] Iniciando limpeza de estados órfãos para bot ${botId}`);
 
-      const botKey = `bot_${botId}`;
-      const trailingStateMap = TrailingStop.trailingStateByBot.get(botKey);
+      // Inicializa database se necessário
+      if (!TrailingStop.dbService || !TrailingStop.dbService.isInitialized()) {
+        Logger.warn(`❌ [DB_SAVE] Serviço de banco não inicializado para limpeza`);
+        TrailingStop.dbService = new DatabaseService();
+        await TrailingStop.dbService.init();
+      }
 
-      if (!trailingStateMap || trailingStateMap.size === 0) {
-        Logger.debug(`[TRAILING_CLEANER] Nenhum estado de trailing stop para bot ${botId}`);
+      // Busca todos os estados do bot diretamente do banco de dados
+      const dbStates = await TrailingStop.dbService.getAll(
+        'SELECT symbol FROM trailing_state WHERE botId = ?',
+        [botId]
+      );
+
+      if (!dbStates || dbStates.length === 0) {
+        Logger.debug(
+          `[TRAILING_CLEANER] Nenhum estado de trailing stop para bot ${botId} no banco`
+        );
         return;
       }
 
@@ -1244,14 +1256,15 @@ class TrailingStop {
       let cleanedCount = 0;
       const symbolsToClean = [];
 
-      // Verifica cada estado de trailing stop
-      for (const [symbol, state] of trailingStateMap.entries()) {
+      // Verifica cada estado do banco contra posições abertas
+      for (const row of dbStates) {
+        const symbol = row.symbol;
         if (!openSymbols.has(symbol)) {
           symbolsToClean.push(symbol);
         }
       }
 
-      // Limpa os estados órfãos
+      // Limpa os estados órfãos (remove do banco E da memória)
       for (const symbol of symbolsToClean) {
         await TrailingStop.clearTrailingState(symbol, 'órfão - sem posição aberta');
         cleanedCount++;
@@ -1785,6 +1798,10 @@ class TrailingStop {
           }
         }
       }
+
+      Logger.debug(
+        `📊 [TRAILING_STOP] ${position.symbol}: CurrentPrice: ${currentPrice?.toFixed(5)}, ${trailingState.lowestPrice ? `LowestPrice: ${trailingState.lowestPrice.toFixed(5)}` : `HighestPrice: ${trailingState.highestPrice.toFixed(5)}`}, InitialStopLoss: ${trailingState.initialStopLossPrice?.toFixed(5)}, TrailingStopPrice: ${trailingState.trailingStopPrice?.toFixed(5)}`
+      );
 
       return trailingState;
     } catch (error) {
