@@ -225,6 +225,20 @@ class Decision {
 
   async analyze(timeframe = null, logger = null, config = null) {
     try {
+      // VERIFICAÇÃO CRÍTICA: Se o bot foi pausado, interrompe imediatamente
+      if (config?.botId) {
+        try {
+          const { default: ConfigManagerSQLite } = await import('../Config/ConfigManagerSQLite.js');
+          const botStatus = await ConfigManagerSQLite.getBotStatusById(config.botId);
+          if (botStatus === 'stopped') {
+            Logger.info(`🛑 [${config?.botName || 'BOT'}] Bot pausado - interrompendo análise`);
+            return;
+          }
+        } catch (statusError) {
+          Logger.debug(`⚠️ Erro ao verificar status do bot: ${statusError.message}`);
+        }
+      }
+
       // Usa o timeframe passado como parâmetro ou fallback para configuração da conta
       let currentTimeframe = timeframe;
 
@@ -464,6 +478,24 @@ class Decision {
         return;
       }
 
+      // VERIFICAÇÃO CRÍTICA: Antes de executar qualquer ordem, verifica se bot foi pausado
+      if (config?.botId) {
+        try {
+          const { default: ConfigManagerSQLite } = await import('../Config/ConfigManagerSQLite.js');
+          const botStatus = await ConfigManagerSQLite.getBotStatusById(config.botId);
+          if (botStatus === 'stopped') {
+            Logger.info(
+              `🛑 [${config?.botName || 'BOT'}] Bot pausado - cancelando execução de ${rows.length} ordens`
+            );
+            return;
+          }
+        } catch (statusError) {
+          Logger.debug(
+            `⚠️ Erro ao verificar status do bot antes da execução: ${statusError.message}`
+          );
+        }
+      }
+
       // ✅ CORREÇÃO: Executa ordens SEQUENCIALMENTE para respeitar maxOpenOrders
       Logger.debug(`🔄 Processando ${rows.length} ordens sequencialmente (1 por vez)...`);
 
@@ -471,6 +503,24 @@ class Decision {
 
       // Processa cada ordem individualmente de forma sequencial
       for (let index = 0; index < rows.length; index++) {
+        // VERIFICAÇÃO: A cada iteração, verifica se o bot foi pausado
+        if (config?.botId) {
+          try {
+            const { default: ConfigManagerSQLite } = await import(
+              '../Config/ConfigManagerSQLite.js'
+            );
+            const botStatus = await ConfigManagerSQLite.getBotStatusById(config.botId);
+            if (botStatus === 'stopped') {
+              Logger.info(
+                `🛑 [${config?.botName || 'BOT'}] Bot pausado durante execução - interrompendo na ordem ${index + 1}/${rows.length}`
+              );
+              break;
+            }
+          } catch (statusError) {
+            Logger.debug(`⚠️ Erro ao verificar status durante execução: ${statusError.message}`);
+          }
+        }
+
         const row = rows[index];
         try {
           // Determina o market baseado na estrutura do objeto

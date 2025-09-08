@@ -40,7 +40,9 @@ export class BaseStopLoss {
    */
   async monitorTakeProfitMinimum(position, account) {
     try {
-      const ENABLE_TP_VALIDATION = this.config?.enableTpValidation === 'true';
+      // Usa variáveis de ambiente ou config se disponível
+      const ENABLE_TP_VALIDATION =
+        process.env.ENABLE_TP_VALIDATION === 'true' || this.config?.enableTpValidation === 'true';
       if (!ENABLE_TP_VALIDATION) {
         return null;
       }
@@ -56,8 +58,12 @@ export class BaseStopLoss {
         return null;
       }
 
-      const MIN_TAKE_PROFIT_PCT = Number(this.config?.minTakeProfitPct || 0.5);
-      const TP_PARTIAL_PERCENTAGE = Number(this.config?.tpPartialPercentage || 50); // % da posição para realizar
+      const MIN_TAKE_PROFIT_PCT = Number(
+        process.env.MIN_TAKE_PROFIT_PCT || this.config?.minTakeProfitPct || 0.5
+      );
+      const TP_PARTIAL_PERCENTAGE = Number(
+        process.env.TP_PARTIAL_PERCENTAGE || this.config?.tpPartialPercentage || 50
+      ); // % da posição para realizar
 
       // Verifica se atende ao critério mínimo de take profit
       const isValidPct = pnlPct >= MIN_TAKE_PROFIT_PCT;

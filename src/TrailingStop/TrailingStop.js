@@ -2647,29 +2647,8 @@ class TrailingStop {
       });
 
       for (const position of activePositions) {
-        const stopLossStrategy = await this.initializeStopLoss();
-        const stopLossDecision = stopLossStrategy.shouldClosePosition(
-          position,
-          Account,
-          null,
-          this.config
-        );
-
-        if (stopLossDecision && stopLossDecision.shouldClose) {
-          TrailingStop.colorLogger.positionClosed(
-            `🛑 [STOP_LOSS] ${position.symbol}: Fechando por stop loss principal - ${stopLossDecision.reason}`
-          );
-          const result = await TrailingStop.protectedForceClose(
-            position,
-            Account,
-            this.config,
-            `stop_loss_${stopLossDecision.reason}`
-          );
-          if (result.success) {
-            await TrailingStop.onPositionClosed(position, 'stop_loss');
-          }
-          continue;
-        }
+        // Stop loss é gerenciado pela corretora através das orders criadas
+        // Não fechamos manualmente por stop loss - apenas monitoramos
 
         // 📡 SISTEMA REATIVO: Subscribe posição para monitoramento em tempo real (se não estiver já subscrito)
         if (enableTrailingStop && TrailingStop.backpackWS && TrailingStop.backpackWS.connected) {
@@ -2700,18 +2679,8 @@ class TrailingStop {
           }
         }
 
-        if (!enableTrailingStop && stopLossDecision && stopLossDecision.shouldTakePartialProfit) {
-          TrailingStop.colorLogger.positionClosed(
-            `💰 [PARTIAL_PROFIT] ${position.symbol}: Tomando profit parcial`
-          );
-          await OrderController.closePartialPosition(
-            position,
-            stopLossDecision.partialPercentage,
-            Account,
-            this.config
-          );
-          continue;
-        }
+        // Profit parcial é gerenciado pela corretora através das orders criadas
+        // Não fechamos manualmente - apenas monitoramos
 
         const trailingStateMap = this.getTrailingState();
         const positionState = trailingStateMap.get(position.symbol);
@@ -2847,21 +2816,8 @@ class TrailingStop {
               continue;
             }
 
-            if (await this.shouldCloseForMinimumProfit(position)) {
-              TrailingStop.colorLogger.positionClosed(
-                `🚨 [STOP_LOSS_EMERGENCY] ${position.symbol}: Fechando por stop loss emergencial`
-              );
-              const result = await TrailingStop.protectedForceClose(
-                position,
-                Account,
-                this.config,
-                'stop_loss_emergency'
-              );
-              if (result.success) {
-                await TrailingStop.onPositionClosed(position, 'stop_loss_emergency');
-              }
-              continue;
-            }
+            // Stop loss emergencial é gerenciado pela corretora através das orders criadas
+            // Não fechamos manualmente - apenas monitoramos
 
             const adxCrossoverDecision = await this.checkADXCrossover(position);
             if (adxCrossoverDecision && adxCrossoverDecision.shouldClose) {

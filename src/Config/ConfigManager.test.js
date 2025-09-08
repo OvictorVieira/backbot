@@ -11,7 +11,8 @@ describe('ConfigManager', () => {
     it('should create default config for strategy', () => {
       const result = ConfigManager.createDefaultConfig('DEFAULT');
 
-      expect(result).toEqual({
+      // Verifica apenas os campos principais, ignorando campos gerados dinamicamente
+      expect(result).toMatchObject({
         strategyName: 'DEFAULT',
         botName: 'DEFAULT Bot',
         apiKey: '',
@@ -19,11 +20,13 @@ describe('ConfigManager', () => {
         capitalPercentage: 20,
         time: '30m',
         enabled: true,
+        executionMode: 'REALTIME',
         maxNegativePnlStopPct: -10,
+        minProfitPercentage: 0.5,
         enableHybridStopStrategy: false,
         initialStopAtrMultiplier: 2.0,
         trailingStopAtrMultiplier: 1.5,
-        partialTakeProfitAtrMultiplier: 3.0,
+        partialTakeProfitAtrMultiplier: 1.5,
         partialTakeProfitPercentage: 50,
         enableTrailingStop: false,
         trailingStopDistance: 1.5,
@@ -31,7 +34,14 @@ describe('ConfigManager', () => {
         enableMarketFallback: true,
         enableOrphanOrderMonitor: true,
         enablePendingOrdersMonitor: true,
+        orderCounter: 0,
+        maxOpenOrders: 5,
+        maxSlippagePct: 0.5,
       });
+
+      // Verifica que os campos dinâmicos foram criados
+      expect(result.botClientOrderId).toBeGreaterThan(0);
+      expect(result.botClientOrderId).toBeLessThan(10000);
     });
   });
 

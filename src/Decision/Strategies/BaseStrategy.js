@@ -34,14 +34,14 @@ export class BaseStrategy {
     // Verifica estrutura do VWAP (pode ser direto ou com current/previous)
     const vwapData = data.vwap.current || data.vwap;
 
-    if (!vwapData) {
+    if (!vwapData || typeof vwapData !== 'object') {
       return false;
     }
 
     // Verifica se tem os campos necessários
     const hasVwap = vwapData.vwap != null;
-    const hasLowerBands = vwapData.lowerBands && vwapData.lowerBands.length > 0;
-    const hasUpperBands = vwapData.upperBands && vwapData.upperBands.length > 0;
+    const hasLowerBands = Array.isArray(vwapData.lowerBands) && vwapData.lowerBands.length > 0;
+    const hasUpperBands = Array.isArray(vwapData.upperBands) && vwapData.upperBands.length > 0;
 
     return hasVwap && hasLowerBands && hasUpperBands;
   }
@@ -58,7 +58,9 @@ export class BaseStrategy {
    */
   validateTakeProfit(action, entry, stop, target, investmentUSD, fee) {
     // Configurações do take profit mínimo (apenas porcentagem e R/R)
-    const MIN_TAKE_PROFIT_PCT = Number(this.config?.minTakeProfitPct || 0.5);
+    const MIN_TAKE_PROFIT_PCT = Number(
+      process.env.MIN_TAKE_PROFIT_PCT || this.config?.minTakeProfitPct || 0.5
+    );
 
     const { pnl, risk } = this.calculatePnLAndRisk(action, entry, stop, target, investmentUSD, fee);
 

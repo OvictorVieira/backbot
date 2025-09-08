@@ -779,6 +779,58 @@ class OrdersService {
   }
 
   /**
+   * Obtém estatísticas das ordens
+   * @returns {Promise<Object>} Objeto com estatísticas das ordens
+   */
+  static async getStats() {
+    try {
+      if (!OrdersService.dbService || !OrdersService.dbService.isInitialized()) {
+        throw new Error('Database service not initialized');
+      }
+
+      const allOrders = await OrdersService.dbService.getAll('SELECT * FROM bot_orders');
+
+      const stats = {
+        total: allOrders.length,
+        byBot: {},
+        bySymbol: {},
+        bySide: {},
+        byType: {},
+        byStatus: {},
+      };
+
+      allOrders.forEach(order => {
+        // Por bot
+        stats.byBot[order.botId] = (stats.byBot[order.botId] || 0) + 1;
+
+        // Por símbolo
+        stats.bySymbol[order.symbol] = (stats.bySymbol[order.symbol] || 0) + 1;
+
+        // Por lado (BUY/SELL)
+        stats.bySide[order.side] = (stats.bySide[order.side] || 0) + 1;
+
+        // Por tipo
+        stats.byType[order.orderType] = (stats.byType[order.orderType] || 0) + 1;
+
+        // Por status
+        stats.byStatus[order.status] = (stats.byStatus[order.status] || 0) + 1;
+      });
+
+      return stats;
+    } catch (error) {
+      console.error(`❌ [ORDERS_SERVICE] Erro ao obter estatísticas:`, error.message);
+      return {
+        total: 0,
+        byBot: {},
+        bySymbol: {},
+        bySide: {},
+        byType: {},
+        byStatus: {},
+      };
+    }
+  }
+
+  /**
    * Remove todas as ordens de um bot específico
    * @param {number} botId - ID do bot
    * @returns {Promise<number>} Número de ordens removidas
