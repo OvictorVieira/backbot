@@ -61,7 +61,7 @@ export class DefaultStrategy extends BaseStrategy {
     }
 
     // 2. ANÁLISE DE SINAIS
-    const signals = this.analyzeSignals(data);
+    const signals = this.analyzeSignals(data, { isBTCAnalysis: false, config });
     validationTrace.push({
       layer: '2. Análise de Sinais',
       status: signals.hasSignal ? 'PASS' : 'FAIL',
@@ -79,7 +79,7 @@ export class DefaultStrategy extends BaseStrategy {
     const moneyFlowValidation = this.validateMoneyFlowConfirmation(
       data,
       signals.isLong,
-      data.market.symbol === 'BTC_USDC_PERP'
+      { isBTCAnalysis: data.market.symbol === 'BTC_USDC_PERP', config }
     );
     validationTrace.push({
       layer: '3. Money Flow Filter',
@@ -96,7 +96,7 @@ export class DefaultStrategy extends BaseStrategy {
     const vwapValidation = this.validateVWAPTrend(
       data,
       signals.isLong,
-      data.market.symbol === 'BTC_USDC_PERP'
+      { isBTCAnalysis: data.market.symbol === 'BTC_USDC_PERP', config }
     );
     validationTrace.push({
       layer: '4. VWAP Filter',
@@ -113,7 +113,13 @@ export class DefaultStrategy extends BaseStrategy {
     if (data.market.symbol !== 'BTC_USDC_PERP') {
       let btcValidation = { isValid: true, details: 'BTC não é o ativo analisado' };
 
-      if (btcTrend === 'NEUTRAL') {
+      // Se BTC Trend Filter está desabilitado, pula validação
+      if (config.enableBtcTrendFilter === false) {
+        btcValidation = {
+          isValid: true,
+          details: 'BTC Trend Filter desabilitado pela configuração'
+        };
+      } else if (btcTrend === 'NEUTRAL') {
         btcValidation = {
           isValid: false,
           details: 'BTC em tendência NEUTRAL (não permite operações em altcoins)',
@@ -252,7 +258,7 @@ export class DefaultStrategy extends BaseStrategy {
       }
 
       // COMPORTAMENTO NORMAL (alta performance) - retorna null no primeiro filtro que falhar
-      const signals = this.analyzeSignals(data);
+      const signals = this.analyzeSignals(data, { isBTCAnalysis: false, config });
 
       if (!signals.hasSignal) {
         return null;
@@ -262,7 +268,7 @@ export class DefaultStrategy extends BaseStrategy {
       const moneyFlowValidation = this.validateMoneyFlowConfirmation(
         data,
         signals.isLong,
-        data.market.symbol === 'BTC_USDC_PERP'
+        { isBTCAnalysis: data.market.symbol === 'BTC_USDC_PERP', config }
       );
 
       if (!moneyFlowValidation.isValid) {
@@ -281,7 +287,7 @@ export class DefaultStrategy extends BaseStrategy {
       const vwapValidation = this.validateVWAPTrend(
         data,
         signals.isLong,
-        data.market.symbol === 'BTC_USDC_PERP'
+        { isBTCAnalysis: data.market.symbol === 'BTC_USDC_PERP', config }
       );
 
       if (!vwapValidation.isValid) {
@@ -297,7 +303,7 @@ export class DefaultStrategy extends BaseStrategy {
       );
 
       // FILTRO DE TENDÊNCIA DO BTC (usando tendência já calculada)
-      if (data.market.symbol !== 'BTC_USDC_PERP') {
+      if (data.market.symbol !== 'BTC_USDC_PERP' && config.enableBtcTrendFilter !== false) {
         // Só permite operações quando BTC tem tendência clara (BULLISH ou BEARISH)
         if (btcTrend === 'NEUTRAL') {
           return null; // BTC neutro - não operar em altcoins
@@ -411,10 +417,11 @@ export class DefaultStrategy extends BaseStrategy {
   /**
    * Analisa os sinais baseados nas novas regras com validação de cruzamentos
    * @param {object} data - Dados de mercado com indicadores
-   * @param {boolean} isBTCAnalysis - Se é análise do BTC (para logs diferentes)
+   * @param {object} options - Opções de análise: { isBTCAnalysis, config }
    * @returns {object} - Resultado da análise de sinais
    */
-  analyzeSignals(data, isBTCAnalysis = false) {
+  analyzeSignals(data, options = {}) {
+    const { isBTCAnalysis = false, config = {} } = options;
     const rsi = data.rsi;
     const stoch = data.stoch;
     const macd = data.macd;
@@ -466,6 +473,7 @@ export class DefaultStrategy extends BaseStrategy {
     const momentum = data.momentum;
 
     if (
+      config.enableMomentumSignals !== false && // Default: true
       momentum &&
       momentum.current &&
       momentum.current.wt1 !== null &&
@@ -529,12 +537,14 @@ export class DefaultStrategy extends BaseStrategy {
           `Momentum: WT1=${(currentMomentum.wt1 || 0).toFixed(3)}, WT2=${(currentMomentum.wt2 || 0).toFixed(3)} (neutro)`
         );
       }
+    } else if (config.enableMomentumSignals === false) {
+      analysisDetails.push(`Momentum: Desabilitado pela configuração`);
     } else {
       analysisDetails.push(`Momentum: Não disponível`);
     }
 
     // 2. Slow Stochastic com validação de cruzamentos (se disponível)
-    if (!isLong && !isShort && hasStoch) {
+    if (!isLong && !isShort && config.enableStochasticSignals !== false && hasStoch) {
       const stochK = stoch.k;
       const stochD = stoch.d;
       const stochKPrev = stoch.kPrev;
@@ -588,6 +598,8 @@ export class DefaultStrategy extends BaseStrategy {
           `Stoch: K=${(stochK || 0).toFixed(1)}, D=${(stochD || 0).toFixed(1)} (neutro)`
         );
       }
+    } else if (config.enableStochasticSignals === false) {
+      analysisDetails.push(`Stoch: Desabilitado pela configuração`);
     } else if (hasStoch) {
       analysisDetails.push(
         `Stoch: K=${(stoch.k || 0).toFixed(1)}, D=${(stoch.d || 0).toFixed(1)} (já definido por Momentum)`
@@ -597,7 +609,7 @@ export class DefaultStrategy extends BaseStrategy {
     }
 
     // 3. MACD com validação de momentum e tendência (CORRIGIDO)
-    if (!isLong && !isShort && hasMacd) {
+    if (!isLong && !isShort && config.enableMacdSignals !== false && hasMacd) {
       const macdValue = macd.MACD;
       const macdSignal = macd.MACD_signal;
       const macdHistogram = macd.MACD_histogram;
@@ -706,6 +718,8 @@ export class DefaultStrategy extends BaseStrategy {
           );
         }
       }
+    } else if (config.enableMacdSignals === false) {
+      analysisDetails.push(`MACD: Desabilitado pela configuração`);
     } else if (hasMacd) {
       analysisDetails.push(
         `MACD: Hist=${(macd.MACD_histogram || 0).toFixed(3)} (já definido anteriormente)`
@@ -715,7 +729,7 @@ export class DefaultStrategy extends BaseStrategy {
     }
 
     // 4. ADX com validação da EMA (ou sem EMA se não disponível)
-    if (!isLong && !isShort && hasAdx) {
+    if (!isLong && !isShort && config.enableAdxSignals !== false && hasAdx) {
       const adxValue = adx.adx;
       const diPlus = adx.diPlus;
       const diMinus = adx.diMinus;
@@ -774,6 +788,8 @@ export class DefaultStrategy extends BaseStrategy {
           analysisDetails.push(`ADX: ${(adxValue || 0).toFixed(1)} < 25 (tendência fraca)`);
         }
       }
+    } else if (config.enableAdxSignals === false) {
+      analysisDetails.push(`ADX: Desabilitado pela configuração`);
     } else if (hasAdx) {
       analysisDetails.push(`ADX: ${(adx.adx || 0).toFixed(1)} (já definido anteriormente)`);
     } else {
@@ -793,10 +809,21 @@ export class DefaultStrategy extends BaseStrategy {
    * Valida se o VWAP confirma a tendência intradiária
    * @param {object} data - Dados de mercado com indicadores
    * @param {boolean} isLong - Se é sinal de compra
-   * @param {boolean} isBTCAnalysis - Se é análise do BTC (para logs diferentes)
+   * @param {object} options - Opções: { isBTCAnalysis, config }
    * @returns {object} - Resultado da validação
    */
-  validateVWAPTrend(data, isLong, isBTCAnalysis = false) {
+  validateVWAPTrend(data, isLong, options = {}) {
+    const { isBTCAnalysis = false, config = {} } = options;
+    
+    // Se VWAP está desabilitado, pula validação
+    if (config.enableVwapFilter === false) {
+      return {
+        isValid: true,
+        reason: 'VWAP Filter desabilitado',
+        details: 'Validação pulada pela configuração do bot'
+      };
+    }
+    
     const vwap = data.vwap;
     const currentPrice = parseFloat(data.marketPrice);
 
@@ -869,10 +896,21 @@ export class DefaultStrategy extends BaseStrategy {
    * Valida se o Money Flow confirma a convicção do sinal
    * @param {object} data - Dados de mercado com indicadores
    * @param {boolean} isLong - Se é sinal de compra
-   * @param {boolean} isBTCAnalysis - Se é análise do BTC (para logs diferentes)
+   * @param {object} options - Opções: { isBTCAnalysis, config }
    * @returns {object} - Resultado da validação
    */
-  validateMoneyFlowConfirmation(data, isLong, isBTCAnalysis = false) {
+  validateMoneyFlowConfirmation(data, isLong, options = {}) {
+    const { isBTCAnalysis = false, config = {} } = options;
+    
+    // Se Money Flow está desabilitado, pula validação
+    if (config.enableMoneyFlowFilter === false) {
+      return {
+        isValid: true,
+        reason: 'Money Flow Filter desabilitado',
+        details: 'Validação pulada pela configuração do bot'
+      };
+    }
+    
     const moneyFlow = data.moneyFlow;
 
     // Verifica se o Money Flow está disponível
@@ -975,7 +1013,7 @@ export class DefaultStrategy extends BaseStrategy {
       );
 
       // Análise de tendência do BTC usando a mesma lógica da estratégia
-      const btcSignals = this.analyzeSignals(btcIndicators, true);
+      const btcSignals = this.analyzeSignals(btcIndicators, { isBTCAnalysis: true, config });
 
       // Determina tendência do BTC
       let btcTrend = 'NEUTRAL';

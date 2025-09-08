@@ -35,6 +35,15 @@ interface BotConfig {
   authorizedTokens?: string[];
   // Próxima validação
   nextValidationAt?: string;
+  // Configurações de Validação de Sinais
+  enableMomentumSignals?: boolean;
+  enableStochasticSignals?: boolean;
+  enableMacdSignals?: boolean;
+  enableAdxSignals?: boolean;
+  // Configurações de Filtros de Confirmação
+  enableMoneyFlowFilter?: boolean;
+  enableVwapFilter?: boolean;
+  enableBtcTrendFilter?: boolean;
 }
 
 

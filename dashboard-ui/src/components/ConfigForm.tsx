@@ -35,6 +35,15 @@ interface BotConfig {
   // leverageLimit: number; // TODO: Removido temporariamente
   botClientOrderId?: number;
   maxOpenOrders: number;
+  // Configurações de Validação de Sinais
+  enableMomentumSignals?: boolean;
+  enableStochasticSignals?: boolean;
+  enableMacdSignals?: boolean;
+  enableAdxSignals?: boolean;
+  // Configurações de Filtros de Confirmação
+  enableMoneyFlowFilter?: boolean;
+  enableVwapFilter?: boolean;
+  enableBtcTrendFilter?: boolean;
 }
 
 interface ConfigFormProps {
@@ -67,7 +76,15 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
     enablePostOnly: config.enablePostOnly !== undefined ? config.enablePostOnly : true,
     enableMarketFallback: config.enableMarketFallback !== undefined ? config.enableMarketFallback : true,
     enableOrphanOrderMonitor: config.enableOrphanOrderMonitor !== undefined ? config.enableOrphanOrderMonitor : true,
-    enablePendingOrdersMonitor: config.enablePendingOrdersMonitor !== undefined ? config.enablePendingOrdersMonitor : true
+    enablePendingOrdersMonitor: config.enablePendingOrdersMonitor !== undefined ? config.enablePendingOrdersMonitor : true,
+    // Configurações de Validação (default: true para manter compatibilidade)
+    enableMomentumSignals: config.enableMomentumSignals !== undefined ? config.enableMomentumSignals : true,
+    enableStochasticSignals: config.enableStochasticSignals !== undefined ? config.enableStochasticSignals : true,
+    enableMacdSignals: config.enableMacdSignals !== undefined ? config.enableMacdSignals : true,
+    enableAdxSignals: config.enableAdxSignals !== undefined ? config.enableAdxSignals : true,
+    enableMoneyFlowFilter: config.enableMoneyFlowFilter !== undefined ? config.enableMoneyFlowFilter : true,
+    enableVwapFilter: config.enableVwapFilter !== undefined ? config.enableVwapFilter : true,
+    enableBtcTrendFilter: config.enableBtcTrendFilter !== undefined ? config.enableBtcTrendFilter : true
   });
   const [showApiKey, setShowApiKey] = useState(false);
   const [showApiSecret, setShowApiSecret] = useState(false);
@@ -936,6 +953,245 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                 </p>
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Configurações de Validação */}
+        <div className="space-y-4">
+          <h3 className="text-lg font-medium">Configurações de Validação</h3>
+          <div className="text-sm text-muted-foreground mb-4">
+            Configure quais validações o bot deve usar para filtrar sinais. Por padrão, todas estão habilitadas para máxima segurança.
+          </div>
+          
+          {/* Sinais de Entrada */}
+          <div className="border rounded-lg p-4">
+            <h4 className="font-medium mb-3">Sinais de Entrada</h4>
+            <div className="space-y-3">
+              
+              {/* Momentum */}
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="enableMomentumSignals" className="font-medium">Sinais de Momentum</Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-xs">WaveTrend é um indicador que mede a velocidade e direção dos movimentos de preço. Ele identifica quando o momentum está mudando - como se fosse um "velocímetro" do mercado que mostra se o preço está acelerando para cima ou para baixo.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Detecta quando o preço está ganhando força para subir ou descer
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="enableMomentumSignals"
+                    checked={formData.enableMomentumSignals}
+                    onChange={(e) => handleInputChange('enableMomentumSignals', e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2 focus:ring-offset-2 transition-colors"
+                  />
+                </div>
+              </div>
+              
+              {/* Stochastic */}
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="enableStochasticSignals" className="font-medium">Sinais de Sobrecompra/Sobrevenda</Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-xs">Stochastic é como um "termômetro" do mercado que mede se o preço está em uma zona extrema. Valores acima de 80 indicam que o ativo pode estar "superaquecido" (caro demais), e abaixo de 20 que pode estar "muito frio" (barato demais). Ajuda a identificar momentos de possível reversão de preço.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Detecta quando o ativo está muito caro ou muito barato
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="enableStochasticSignals"
+                    checked={formData.enableStochasticSignals}
+                    onChange={(e) => handleInputChange('enableStochasticSignals', e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2 focus:ring-offset-2 transition-colors"
+                  />
+                </div>
+              </div>
+              
+              {/* MACD */}
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="enableMacdSignals" className="font-medium">Sinais de Tendência MACD</Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-xs">MACD é como dois carros correndo numa pista: uma linha rápida e uma linha lenta. Quando a linha rápida ultrapassa a lenta, indica que a tendência pode estar mudando. É usado para confirmar se uma nova tendência de alta ou baixa está realmente começando.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Detecta mudanças na direção da tendência do preço
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="enableMacdSignals"
+                    checked={formData.enableMacdSignals}
+                    onChange={(e) => handleInputChange('enableMacdSignals', e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2 focus:ring-offset-2 transition-colors"
+                  />
+                </div>
+              </div>
+              
+              {/* ADX */}
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="enableAdxSignals" className="font-medium">Sinais de Força da Tendência</Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-xs">ADX (Average Directional Index) é como um "medidor de força" da tendência. Valores acima de 25 indicam uma tendência forte (como um rio com correnteza forte), enquanto valores abaixo indicam um mercado "sem direção" (como água parada). Ajuda a evitar operar quando o mercado está indeciso.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Detecta se a tendência atual é forte o suficiente
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="enableAdxSignals"
+                    checked={formData.enableAdxSignals}
+                    onChange={(e) => handleInputChange('enableAdxSignals', e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2 focus:ring-offset-2 transition-colors"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Filtros de Confirmação */}
+          <div className="border rounded-lg p-4">
+            <h4 className="font-medium mb-3">Filtros de Confirmação</h4>
+            <div className="space-y-3">
+              
+              {/* Money Flow */}
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="enableMoneyFlowFilter" className="font-medium">Filtro de Fluxo de Dinheiro</Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-xs">MFI (Money Flow Index) é como um "detector de movimento de dinheiro" que combina preço e volume. Ele mostra se o dinheiro está realmente entrando (compradores ativos) ou saindo (vendedores ativos) do ativo. É como contar quantas pessoas estão entrando e saindo de uma loja, não apenas olhando o preço.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Confirma se há dinheiro entrando/saindo do ativo
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="enableMoneyFlowFilter"
+                    checked={formData.enableMoneyFlowFilter}
+                    onChange={(e) => handleInputChange('enableMoneyFlowFilter', e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2 focus:ring-offset-2 transition-colors"
+                  />
+                </div>
+              </div>
+              
+              {/* VWAP */}
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="enableVwapFilter" className="font-medium">Filtro de Preço Médio do Dia</Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-xs">VWAP (Volume Weighted Average Price) é o "preço médio verdadeiro" do dia, calculado considerando o volume de cada negociação. É como calcular o preço médio de todas as vendas de um produto, dando mais peso às vendas maiores. Ajuda a identificar se o preço atual está caro ou barato em relação ao dia.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Confirma se o preço está acima/abaixo da média do dia
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="enableVwapFilter"
+                    checked={formData.enableVwapFilter}
+                    onChange={(e) => handleInputChange('enableVwapFilter', e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2 focus:ring-offset-2 transition-colors"
+                  />
+                </div>
+              </div>
+              
+              {/* BTC Trend */}
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="enableBtcTrendFilter" className="font-medium">Filtro de Tendência do Bitcoin</Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-xs">Bitcoin é o "rei" das criptomoedas e geralmente influencia todo o mercado. Quando Bitcoin sobe, a maioria das altcoins também sobem, e vice-versa. Este filtro garante que o bot só faça operações em altcoins quando a direção do Bitcoin está alinhada, evitando "nadar contra a correnteza" do mercado.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Só opera altcoins quando Bitcoin está favorável
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="enableBtcTrendFilter"
+                    checked={formData.enableBtcTrendFilter}
+                    onChange={(e) => handleInputChange('enableBtcTrendFilter', e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2 focus:ring-offset-2 transition-colors"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
