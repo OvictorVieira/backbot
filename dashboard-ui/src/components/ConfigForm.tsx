@@ -47,6 +47,9 @@ interface BotConfig {
   enableBtcTrendFilter?: boolean;
   // Configuração do Heikin Ashi
   enableHeikinAshi?: boolean;
+  // Configuração de Confluência
+  enableConfluenceMode?: boolean;
+  minConfluences?: number;
 }
 
 interface ConfigFormProps {
@@ -88,7 +91,10 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
     enableAdxSignals: config.enableAdxSignals !== undefined ? config.enableAdxSignals : true,
     enableMoneyFlowFilter: config.enableMoneyFlowFilter !== undefined ? config.enableMoneyFlowFilter : true,
     enableVwapFilter: config.enableVwapFilter !== undefined ? config.enableVwapFilter : true,
-    enableBtcTrendFilter: config.enableBtcTrendFilter !== undefined ? config.enableBtcTrendFilter : true
+    enableBtcTrendFilter: config.enableBtcTrendFilter !== undefined ? config.enableBtcTrendFilter : true,
+    // Configurações de Confluência (default: false para manter comportamento atual)
+    enableConfluenceMode: config.enableConfluenceMode !== undefined ? config.enableConfluenceMode : false,
+    minConfluences: config.minConfluences !== undefined ? config.minConfluences : 2
   });
   const [showApiKey, setShowApiKey] = useState(false);
   const [showApiSecret, setShowApiSecret] = useState(false);
@@ -175,13 +181,27 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
       ...prev,
       capitalPercentage: 20,
       time: '15m',
-      maxNegativePnlStopPct: -10,
-      minProfitPercentage: 10,
+      maxNegativePnlStopPct: -3, // 🔥 MUDANÇA: -10% → -3% para farmar mais volume
+      minProfitPercentage: 3, // 🔥 MUDANÇA: 10% → 3% para farmar mais volume  
       maxSlippagePct: 0.5,
       executionMode: 'REALTIME',
       enableHybridStopStrategy: false,
       enableTrailingStop: false,
-      maxOpenOrders: 5
+      maxOpenOrders: 5,
+      // 🎯 CONFIGURAÇÕES DE SINAIS (padrão = habilitados)
+      enableMomentumSignals: true,
+      enableRsiSignals: true,
+      enableStochasticSignals: true,
+      enableMacdSignals: true,
+      enableAdxSignals: true,
+      // 📊 FILTROS DE CONFIRMAÇÃO (padrão = habilitados)
+      enableMoneyFlowFilter: true,
+      enableVwapFilter: true,
+      enableBtcTrendFilter: true,
+      // ❌ FUNCIONALIDADES AVANÇADAS (desabilitadas para volume)
+      enableHeikinAshi: false, // 🔥 DESABILITADO para modo volume
+      enableConfluenceMode: false, // 🔥 DESABILITADO para modo volume
+      minConfluences: 2 // Valor padrão mesmo desabilitado
     }));
   };
 
@@ -197,8 +217,24 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
       executionMode: 'REALTIME',
       enableHybridStopStrategy: true,
       enableTrailingStop: true,
+      trailingStopDistance: 1, // 🔥 PADRÃO: 1% trailing distance
       partialTakeProfitAtrMultiplier: 2.0,
-      maxOpenOrders: 3
+      partialTakeProfitPercentage: 30, // 🔥 PADRÃO: 30% para fechamento parcial
+      maxOpenOrders: 3,
+      // 🎯 CONFIGURAÇÕES DE SINAIS (padrão = habilitados para máxima precisão)
+      enableMomentumSignals: true,
+      enableRsiSignals: true,
+      enableStochasticSignals: true,
+      enableMacdSignals: true,
+      enableAdxSignals: true,
+      // 📊 FILTROS DE CONFIRMAÇÃO (padrão = habilitados)
+      enableMoneyFlowFilter: true,
+      enableVwapFilter: true,
+      enableBtcTrendFilter: true,
+      // ✅ FUNCIONALIDADES AVANÇADAS (habilitadas para máxima segurança)
+      enableHeikinAshi: true, // 🔥 HABILITADO para filtrar melhor as tendências
+      enableConfluenceMode: true, // 🔥 HABILITADO com 2 indicadores mínimos
+      minConfluences: 2 // 🔥 PADRÃO: 2 indicadores para confluência
     }));
   };
 
@@ -1262,6 +1298,131 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
               </div>
             </div>
           </div>
+
+          {/* 🎯 CONFLUÊNCIA DE SINAIS - NOVA FUNCIONALIDADE DESTACADA */}
+          <div className="border-2 border-yellow-300 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg p-4 shadow-md">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="bg-yellow-500 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">
+                ⚡
+              </div>
+              <h4 className="font-bold text-lg text-gray-800">Confluência de Sinais</h4>
+              <span className="bg-green-100 text-green-800 text-xs font-medium px-2 py-1 rounded-full">
+                NOVO!
+              </span>
+            </div>
+            
+            <div className="bg-white rounded-md p-3 mb-4 border border-yellow-200">
+              <p className="text-sm text-gray-700 mb-2">
+                <strong>🚀 Revolucione seu trading!</strong> Ao invés de usar apenas 1 indicador por vez, 
+                a confluência combina múltiplos indicadores para sinais mais precisos e seguros.
+              </p>
+              <p className="text-xs text-gray-600">
+                💡 <strong>Exemplo:</strong> Momentum + RSI concordando = Sinal muito mais confiável que apenas Momentum sozinho
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              {/* Toggle Principal */}
+              <div className="flex items-center justify-between p-3 bg-white rounded-md border border-gray-200">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="enableConfluenceMode" className="font-medium text-gray-800">
+                      🎯 Habilitar Confluência de Sinais
+                    </Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 text-gray-500 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-sm">
+                            <strong>Modo Atual (sem confluência):</strong> Bot usa o primeiro indicador que der sinal<br/><br/>
+                            <strong>Modo Confluência:</strong> Bot exige que pelo menos 2+ indicadores concordem antes de abrir posição. 
+                            Muito mais seguro, mas pode ter menos sinais.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {formData.enableConfluenceMode 
+                      ? "✅ Ativo - Exige concordância entre indicadores" 
+                      : "❌ Desativo - Usa prioridade individual (padrão atual)"
+                    }
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="enableConfluenceMode"
+                    checked={formData.enableConfluenceMode}
+                    onChange={(e) => handleInputChange('enableConfluenceMode', e.target.checked)}
+                    className="w-5 h-5 rounded border-gray-300 text-yellow-600 focus:ring-yellow-500 focus:ring-2 focus:ring-offset-2 transition-colors"
+                  />
+                </div>
+              </div>
+
+              {/* Configuração do Mínimo de Confluências */}
+              {formData.enableConfluenceMode && (
+                <div className="p-3 bg-white rounded-md border border-gray-200 ml-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Label htmlFor="minConfluences" className="font-medium text-gray-700">
+                      📊 Mínimo de Indicadores Concordando
+                    </Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 text-gray-500 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-sm">
+                            <strong>2 indicadores:</strong> Mais sinais, menos filtros<br/>
+                            <strong>3+ indicadores:</strong> Menos sinais, mas muito mais seguros<br/><br/>
+                            <em>Recomendação: Comece com 2 para testar</em>
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <input
+                      type="range"
+                      id="minConfluences"
+                      min="2"
+                      max="5"
+                      step="1"
+                      value={formData.minConfluences}
+                      onChange={(e) => handleInputChange('minConfluences', parseInt(e.target.value))}
+                      className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider-thumb"
+                    />
+                    <div className="min-w-0 flex items-center gap-2">
+                      <span className="text-lg font-bold text-yellow-600">
+                        {formData.minConfluences}
+                      </span>
+                      <span className="text-sm text-gray-600">
+                        {formData.minConfluences === 2 && "Balanceado"}
+                        {formData.minConfluences === 3 && "Conservador"}
+                        {formData.minConfluences === 4 && "Muito Seguro"}
+                        {formData.minConfluences === 5 && "Ultra Seguro"}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-2">
+                    ⚖️ Quanto maior o número, mais seguros mas menos frequentes serão os sinais
+                  </p>
+                </div>
+              )}
+
+              {!formData.enableConfluenceMode && (
+                <div className="p-3 bg-gray-50 rounded-md border border-gray-200 ml-4">
+                  <p className="text-sm text-gray-600">
+                    💡 <strong>Dica:</strong> Habilite a confluência para sinais mais seguros. 
+                    O sistema atual usa prioridade: primeiro indicador que der sinal é executado.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Trading Configuration */}
@@ -1288,7 +1449,14 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p className="max-w-xs">Configurações básicas para foco em volume de trades. Stop loss simples e lucro mínimo baixo para mais oportunidades.</p>
+                    <p className="max-w-xs">
+                      <strong>🔥 Modo VOLUME - Farming otimizado:</strong><br/>
+                      • Stop Loss: -3% (era -10%)<br/>  
+                      • Lucro Mínimo: +3% (era +10%)<br/>
+                      • Todos indicadores habilitados<br/>
+                      • Heikin Ashi e Confluência desabilitados<br/>
+                      <em>Ideal para gerar muito volume com trades frequentes!</em>
+                    </p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -1310,7 +1478,17 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p className="max-w-xs">Configurações avançadas para foco em lucro. Trailing stop, estratégia híbrida e lucro mínimo alto para proteger ganhos.</p>
+                    <p className="max-w-xs">
+                      <strong>💎 Modo LUCRO - Configuração profissional:</strong><br/>
+                      • Stop Loss: -10% (seguro)<br/>
+                      • Lucro Mínimo: +10% (conservador)<br/>
+                      • Trailing Distance: 1% (otimizado)<br/>
+                      • Fechamento Parcial: 30%<br/>
+                      • Todos indicadores habilitados<br/>
+                      • ✅ Heikin Ashi ativo<br/>
+                      • ✅ Confluência ativa (2+ indicadores)<br/>
+                      <em>Configuração ultra segura para lucros máximos!</em>
+                    </p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>

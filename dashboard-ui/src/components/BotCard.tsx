@@ -47,6 +47,9 @@ interface BotConfig {
   enableBtcTrendFilter?: boolean;
   // Configuração do Heikin Ashi
   enableHeikinAshi?: boolean;
+  // Configuração de Confluência
+  enableConfluenceMode?: boolean;
+  minConfluences?: number;
 }
 
 
@@ -439,6 +442,15 @@ export const BotCard: React.FC<BotCardProps> = ({
           <div className="flex items-center gap-1">
             <div className={`w-2 h-2 rounded-full ${config.enableHeikinAshi ? 'bg-blue-500' : 'bg-gray-300'}`} />
             <span className="truncate">Filtro Heikin Ashi</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className={`w-2 h-2 rounded-full ${config.enableConfluenceMode ? 'bg-yellow-500' : 'bg-gray-300'}`} />
+            <span className="truncate">
+              {config.enableConfluenceMode 
+                ? `Confluência (${config.minConfluences || 2}+ sinais)` 
+                : 'Confluência Desabilitada'
+              }
+            </span>
           </div>
         </div>
 

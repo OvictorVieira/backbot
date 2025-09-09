@@ -411,6 +411,117 @@ export class DefaultStrategy extends BaseStrategy {
   }
 
   /**
+   * 🎯 ANÁLISE POR CONFLUÊNCIA - Combina múltiplos indicadores para sinais mais seguros
+   * Ao invés de usar o primeiro indicador que der sinal, exige que vários concordem
+   * @param {object} data - Dados de mercado com indicadores
+   * @param {object} options - Opções de análise: { isBTCAnalysis, config }
+   * @returns {object} - Resultado da análise combinada
+   */
+  analyzeSignalsByConfluence(data, options = {}) {
+    const { isBTCAnalysis = false, config = {} } = options;
+    const minConfluences = config.minConfluences || 2;
+
+    // Coleta sinais individuais de cada indicador
+    const signals = {
+      momentum: this.analyzeMomentumSignal(data, { isBTCAnalysis }),
+      rsi: this.analyzeRsiSignal(data, { isBTCAnalysis }),
+      stochastic: this.analyzeStochasticSignal(data, { isBTCAnalysis }),
+      macd: this.analyzeMacdSignal(data, { isBTCAnalysis }),
+      adx: this.analyzeAdxSignal(data, { isBTCAnalysis }),
+    };
+
+    // Filtra apenas sinais habilitados na configuração
+    const enabledSignals = {};
+    if (config.enableMomentumSignals !== false) enabledSignals.momentum = signals.momentum;
+    if (config.enableRsiSignals !== false) enabledSignals.rsi = signals.rsi;
+    if (config.enableStochasticSignals !== false) enabledSignals.stochastic = signals.stochastic;
+    if (config.enableMacdSignals !== false) enabledSignals.macd = signals.macd;
+    if (config.enableAdxSignals !== false) enabledSignals.adx = signals.adx;
+
+    // Conta quantos indicadores concordam em cada direção
+    let longSignals = [];
+    let shortSignals = [];
+    let analysisDetails = [];
+
+    for (const [indicatorName, signal] of Object.entries(enabledSignals)) {
+      if (signal && signal.hasSignal) {
+        if (signal.isLong) {
+          longSignals.push({ indicator: indicatorName, signal });
+        } else if (signal.isShort) {
+          shortSignals.push({ indicator: indicatorName, signal });
+        }
+
+        // Adiciona detalhes do indicador individual
+        analysisDetails.push(`${indicatorName}: ${signal.signalType}`);
+      } else {
+        analysisDetails.push(`${indicatorName}: Sem sinal`);
+      }
+    }
+
+    // Log de debug para confluência
+    if (isBTCAnalysis) {
+      console.log(
+        `   🎯 [CONFLUÊNCIA] LONG: ${longSignals.length}, SHORT: ${shortSignals.length}, Mín: ${minConfluences}`
+      );
+      longSignals.forEach(s =>
+        console.log(`      ✅ LONG: ${s.indicator} - ${s.signal.signalType}`)
+      );
+      shortSignals.forEach(s =>
+        console.log(`      ✅ SHORT: ${s.indicator} - ${s.signal.signalType}`)
+      );
+    }
+
+    // Verifica se há confluência suficiente
+    if (longSignals.length >= minConfluences) {
+      const signalNames = longSignals.map(s => s.indicator).join('+');
+      return {
+        hasSignal: true,
+        isLong: true,
+        isShort: false,
+        signalType: `Confluência LONG (${longSignals.length}/${Object.keys(enabledSignals).length}): ${signalNames}`,
+        analysisDetails,
+        confluenceData: {
+          direction: 'LONG',
+          count: longSignals.length,
+          total: Object.keys(enabledSignals).length,
+          indicators: longSignals.map(s => s.indicator),
+        },
+      };
+    }
+
+    if (shortSignals.length >= minConfluences) {
+      const signalNames = shortSignals.map(s => s.indicator).join('+');
+      return {
+        hasSignal: true,
+        isLong: false,
+        isShort: true,
+        signalType: `Confluência SHORT (${shortSignals.length}/${Object.keys(enabledSignals).length}): ${signalNames}`,
+        analysisDetails,
+        confluenceData: {
+          direction: 'SHORT',
+          count: shortSignals.length,
+          total: Object.keys(enabledSignals).length,
+          indicators: shortSignals.map(s => s.indicator),
+        },
+      };
+    }
+
+    // Não há confluência suficiente
+    return {
+      hasSignal: false,
+      signalType: `Confluência insuficiente (LONG: ${longSignals.length}, SHORT: ${shortSignals.length}, Mín: ${minConfluences})`,
+      analysisDetails,
+      confluenceData: {
+        direction: null,
+        longCount: longSignals.length,
+        shortCount: shortSignals.length,
+        minRequired: minConfluences,
+        total: Object.keys(enabledSignals).length,
+      },
+    };
+  }
+
+  /**
    * Analisa os sinais baseados nas novas regras com validação de cruzamentos
    * @param {object} data - Dados de mercado com indicadores
    * @param {object} options - Opções de análise: { isBTCAnalysis, config }
@@ -418,6 +529,13 @@ export class DefaultStrategy extends BaseStrategy {
    */
   analyzeSignals(data, options = {}) {
     const { isBTCAnalysis = false, config = {} } = options;
+
+    // 🎯 CONFLUÊNCIA: Se habilitada, usa análise combinada ao invés de prioridade
+    if (config.enableConfluenceMode === true) {
+      return this.analyzeSignalsByConfluence(data, options);
+    }
+
+    // COMPORTAMENTO ORIGINAL: Sistema de prioridade (primeiro que der sinal ganha)
     const rsi = data.rsi;
     const stoch = data.stoch;
     const macd = data.macd;
@@ -860,6 +978,248 @@ export class DefaultStrategy extends BaseStrategy {
       signalType,
       analysisDetails: analysisDetails || [],
     };
+  }
+
+  /**
+   * 🎯 CONFLUÊNCIA: Análise isolada do Momentum (WaveTrend)
+   * @param {object} data - Dados de mercado com indicadores
+   * @param {object} options - Opções de análise: { isBTCAnalysis }
+   * @returns {object|null} - Resultado do sinal do Momentum ou null
+   */
+  analyzeMomentumSignal(data, options = {}) {
+    const { isBTCAnalysis = false } = options;
+    const momentum = data.momentum;
+
+    if (
+      !momentum ||
+      !momentum.current ||
+      momentum.current.wt1 === null ||
+      momentum.current.wt2 === null
+    ) {
+      return null;
+    }
+
+    const currentMomentum = momentum.current;
+
+    // SINAL DE LONG (Compra) - LÓGICA WAVETREND
+    if (currentMomentum.cross === 'BULLISH') {
+      return {
+        hasSignal: true,
+        isLong: true,
+        isShort: false,
+        signalType: 'Momentum Cruzamento BULLISH',
+        strength: 'forte',
+      };
+    } else if (currentMomentum.direction === 'UP' && currentMomentum.isBullish) {
+      return {
+        hasSignal: true,
+        isLong: true,
+        isShort: false,
+        signalType: 'Momentum Direção UP + Confirmação',
+        strength: 'médio',
+      };
+    }
+
+    // SINAL DE SHORT (Venda) - LÓGICA WAVETREND
+    else if (currentMomentum.cross === 'BEARISH') {
+      return {
+        hasSignal: true,
+        isLong: false,
+        isShort: true,
+        signalType: 'Momentum Cruzamento BEARISH',
+        strength: 'forte',
+      };
+    } else if (currentMomentum.direction === 'DOWN' && currentMomentum.isBearish) {
+      return {
+        hasSignal: true,
+        isLong: false,
+        isShort: true,
+        signalType: 'Momentum Direção DOWN + Confirmação',
+        strength: 'médio',
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * 🎯 CONFLUÊNCIA: Análise isolada do RSI
+   * @param {object} data - Dados de mercado com indicadores
+   * @param {object} options - Opções de análise: { isBTCAnalysis }
+   * @returns {object|null} - Resultado do sinal do RSI ou null
+   */
+  analyzeRsiSignal(data, options = {}) {
+    const { isBTCAnalysis = false } = options;
+    const rsi = data.rsi;
+
+    if (
+      !rsi ||
+      rsi.value === null ||
+      rsi.prev === null ||
+      rsi.avg === null ||
+      rsi.avgPrev === null
+    ) {
+      return null;
+    }
+
+    // SINAL LONG: RSI saindo de sobrevendido com cruzamento da média
+    if (rsi.value < 30 && rsi.prev <= rsi.avgPrev && rsi.value > rsi.avg) {
+      return {
+        hasSignal: true,
+        isLong: true,
+        isShort: false,
+        signalType: 'RSI Sobrevendido + Cruzamento Média',
+        strength: 'forte',
+      };
+    }
+
+    // SINAL SHORT: RSI saindo de sobrecomprado com cruzamento da média
+    if (rsi.value > 70 && rsi.prev >= rsi.avgPrev && rsi.value < rsi.avg) {
+      return {
+        hasSignal: true,
+        isLong: false,
+        isShort: true,
+        signalType: 'RSI Sobrecomprado + Cruzamento Média',
+        strength: 'forte',
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * 🎯 CONFLUÊNCIA: Análise isolada do Stochastic
+   * @param {object} data - Dados de mercado com indicadores
+   * @param {object} options - Opções de análise: { isBTCAnalysis }
+   * @returns {object|null} - Resultado do sinal do Stochastic ou null
+   */
+  analyzeStochasticSignal(data, options = {}) {
+    const { isBTCAnalysis = false } = options;
+    const stoch = data.stoch;
+
+    if (
+      !stoch ||
+      stoch.k === null ||
+      stoch.d === null ||
+      stoch.kPrev === null ||
+      stoch.dPrev === null
+    ) {
+      return null;
+    }
+
+    // SINAL LONG: K > D em região sobrevendida com cruzamento
+    if (stoch.k < 20 && stoch.d < 20 && stoch.kPrev <= stoch.dPrev && stoch.k > stoch.d) {
+      return {
+        hasSignal: true,
+        isLong: true,
+        isShort: false,
+        signalType: 'Stochastic K>D Sobrevendido',
+        strength: 'médio',
+      };
+    }
+
+    // SINAL SHORT: K < D em região sobrecomprada com cruzamento
+    if (stoch.k > 80 && stoch.d > 80 && stoch.kPrev >= stoch.dPrev && stoch.k < stoch.d) {
+      return {
+        hasSignal: true,
+        isLong: false,
+        isShort: true,
+        signalType: 'Stochastic K<D Sobrecomprado',
+        strength: 'médio',
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * 🎯 CONFLUÊNCIA: Análise isolada do MACD
+   * @param {object} data - Dados de mercado com indicadores
+   * @param {object} options - Opções de análise: { isBTCAnalysis }
+   * @returns {object|null} - Resultado do sinal do MACD ou null
+   */
+  analyzeMacdSignal(data, options = {}) {
+    const { isBTCAnalysis = false } = options;
+    const macd = data.macd;
+
+    if (!macd || macd.MACD_histogram === null || macd.histogramPrev === null) {
+      return null;
+    }
+
+    const histogram = macd.MACD_histogram;
+    const histogramPrev = macd.histogramPrev;
+
+    // SINAL LONG: Histograma positivo e crescendo
+    if (histogram > 0 && histogramPrev !== null && histogramPrev < histogram) {
+      return {
+        hasSignal: true,
+        isLong: true,
+        isShort: false,
+        signalType: 'MACD Histograma Bullish + Crescendo',
+        strength: 'médio',
+      };
+    }
+
+    // SINAL SHORT: Histograma negativo e decrescendo
+    if (histogram < 0 && histogramPrev !== null && histogramPrev > histogram) {
+      return {
+        hasSignal: true,
+        isLong: false,
+        isShort: true,
+        signalType: 'MACD Histograma Bearish + Decrescendo',
+        strength: 'médio',
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * 🎯 CONFLUÊNCIA: Análise isolada do ADX
+   * @param {object} data - Dados de mercado com indicadores
+   * @param {object} options - Opções de análise: { isBTCAnalysis }
+   * @returns {object|null} - Resultado do sinal do ADX ou null
+   */
+  analyzeAdxSignal(data, options = {}) {
+    const { isBTCAnalysis = false } = options;
+    const adx = data.adx;
+
+    if (!adx || adx.adx === null || adx.diPlus === null || adx.diMinus === null) {
+      return null;
+    }
+
+    const adxValue = adx.adx;
+    const diPlus = adx.diPlus;
+    const diMinus = adx.diMinus;
+
+    // Só considera sinais quando ADX > 25 (tendência forte)
+    if (adxValue < 25) {
+      return null;
+    }
+
+    // SINAL LONG: DI+ > DI- com ADX forte
+    if (diPlus > diMinus && diPlus - diMinus > 5) {
+      return {
+        hasSignal: true,
+        isLong: true,
+        isShort: false,
+        signalType: 'ADX Tendência Alta Forte',
+        strength: 'médio',
+      };
+    }
+
+    // SINAL SHORT: DI- > DI+ com ADX forte
+    if (diMinus > diPlus && diMinus - diPlus > 5) {
+      return {
+        hasSignal: true,
+        isLong: false,
+        isShort: true,
+        signalType: 'ADX Tendência Baixa Forte',
+        strength: 'médio',
+      };
+    }
+
+    return null;
   }
 
   /**
