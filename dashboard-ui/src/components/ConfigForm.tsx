@@ -37,6 +37,7 @@ interface BotConfig {
   maxOpenOrders: number;
   // Configurações de Validação de Sinais
   enableMomentumSignals?: boolean;
+  enableRsiSignals?: boolean;
   enableStochasticSignals?: boolean;
   enableMacdSignals?: boolean;
   enableAdxSignals?: boolean;
@@ -44,6 +45,8 @@ interface BotConfig {
   enableMoneyFlowFilter?: boolean;
   enableVwapFilter?: boolean;
   enableBtcTrendFilter?: boolean;
+  // Configuração do Heikin Ashi
+  enableHeikinAshi?: boolean;
 }
 
 interface ConfigFormProps {
@@ -79,6 +82,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
     enablePendingOrdersMonitor: config.enablePendingOrdersMonitor !== undefined ? config.enablePendingOrdersMonitor : true,
     // Configurações de Validação (default: true para manter compatibilidade)
     enableMomentumSignals: config.enableMomentumSignals !== undefined ? config.enableMomentumSignals : true,
+    enableRsiSignals: config.enableRsiSignals !== undefined ? config.enableRsiSignals : true,
     enableStochasticSignals: config.enableStochasticSignals !== undefined ? config.enableStochasticSignals : true,
     enableMacdSignals: config.enableMacdSignals !== undefined ? config.enableMacdSignals : true,
     enableAdxSignals: config.enableAdxSignals !== undefined ? config.enableAdxSignals : true,
@@ -966,26 +970,29 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
           {/* Sinais de Entrada */}
           <div className="border rounded-lg p-4">
             <h4 className="font-medium mb-3">Sinais de Entrada</h4>
+            <p className="text-xs text-muted-foreground mb-4 bg-blue-50 p-2 rounded">
+              ℹ️ <strong>Ordem de Prioridade:</strong> O bot testa os indicadores nesta ordem exata. Quando um indicador gera sinal, os demais são ignorados. Use todos habilitados para máxima cobertura de oportunidades.
+            </p>
             <div className="space-y-3">
               
-              {/* Momentum */}
+              {/* 1. Momentum - PRIORIDADE MÁXIMA */}
               <div className="flex items-center justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <Label htmlFor="enableMomentumSignals" className="font-medium">Sinais de Momentum</Label>
+                    <Label htmlFor="enableMomentumSignals" className="font-medium">🥇 Sinais de Momentum (WaveTrend)</Label>
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
                         </TooltipTrigger>
                         <TooltipContent>
-                          <p className="max-w-xs">WaveTrend é um indicador que mede a velocidade e direção dos movimentos de preço. Ele identifica quando o momentum está mudando - como se fosse um "velocímetro" do mercado que mostra se o preço está acelerando para cima ou para baixo.</p>
+                          <p className="max-w-xs">WaveTrend é o indicador PRINCIPAL do bot. Mede a velocidade e direção dos movimentos de preço identificando quando o momentum está mudando - como um "velocímetro" do mercado. Tem a maior prioridade na decisão de entrada.</p>
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    Detecta quando o preço está ganhando força para subir ou descer
+                    🏆 Indicador principal - Detecta mudanças de momentum com alta precisão
                   </p>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -999,24 +1006,55 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                 </div>
               </div>
               
-              {/* Stochastic */}
+              {/* 2. RSI - ALTA PRIORIDADE */}
               <div className="flex items-center justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <Label htmlFor="enableStochasticSignals" className="font-medium">Sinais de Sobrecompra/Sobrevenda</Label>
+                    <Label htmlFor="enableRsiSignals" className="font-medium">🥈 Sinais de Reversão (RSI)</Label>
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
                         </TooltipTrigger>
                         <TooltipContent>
-                          <p className="max-w-xs">Stochastic é como um "termômetro" do mercado que mede se o preço está em uma zona extrema. Valores acima de 80 indicam que o ativo pode estar "superaquecido" (caro demais), e abaixo de 20 que pode estar "muito frio" (barato demais). Ajuda a identificar momentos de possível reversão de preço.</p>
+                          <p className="max-w-xs">RSI detecta reversões de preço com alta precisão. Opera apenas quando RSI está em região extrema (&gt;70 sobrecomprado ou &lt;30 sobrevendido) E cruza sua média, confirmando mudança de direção. Prioridade alta após o Momentum.</p>
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    Detecta quando o ativo está muito caro ou muito barato
+                    ⚡ Alta precisão - Só opera com cruzamento da média em regiões extremas
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="enableRsiSignals"
+                    checked={formData.enableRsiSignals}
+                    onChange={(e) => handleInputChange('enableRsiSignals', e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2 focus:ring-offset-2 transition-colors"
+                  />
+                </div>
+              </div>
+              
+              {/* 3. Stochastic - MÉDIA PRIORIDADE */}
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="enableStochasticSignals" className="font-medium">🥉 Sinais de Extremos (Slow Stochastic)</Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-xs">Stochastic é como um "termômetro" que detecta zonas extremas. Opera quando K e D estão em região extrema (&gt;80 ou &lt;20) E há cruzamento entre eles, indicando possível reversão. Terceira prioridade no sistema.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    📊 Complementar - Detecta extremos com cruzamento K/D
                   </p>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -1030,24 +1068,24 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                 </div>
               </div>
               
-              {/* MACD */}
+              {/* 4. MACD - MÉDIA-BAIXA PRIORIDADE */}
               <div className="flex items-center justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <Label htmlFor="enableMacdSignals" className="font-medium">Sinais de Tendência MACD</Label>
+                    <Label htmlFor="enableMacdSignals" className="font-medium">🏅 Sinais de Tendência (MACD)</Label>
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
                         </TooltipTrigger>
                         <TooltipContent>
-                          <p className="max-w-xs">MACD é como dois carros correndo numa pista: uma linha rápida e uma linha lenta. Quando a linha rápida ultrapassa a lenta, indica que a tendência pode estar mudando. É usado para confirmar se uma nova tendência de alta ou baixa está realmente começando.</p>
+                          <p className="max-w-xs">MACD detecta mudanças de tendência através do cruzamento de médias móveis. Analisa o histograma para identificar momentum crescente ou decrescente. Quarta prioridade - usado quando os indicadores principais não geram sinais.</p>
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    Detecta mudanças na direção da tendência do preço
+                    📈 Confirmação - Detecta mudanças de tendência e momentum
                   </p>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -1061,24 +1099,24 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                 </div>
               </div>
               
-              {/* ADX */}
+              {/* 5. ADX - BAIXA PRIORIDADE */}
               <div className="flex items-center justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <Label htmlFor="enableAdxSignals" className="font-medium">Sinais de Força da Tendência</Label>
+                    <Label htmlFor="enableAdxSignals" className="font-medium">🎖️ Sinais de Força (ADX)</Label>
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
                         </TooltipTrigger>
                         <TooltipContent>
-                          <p className="max-w-xs">ADX (Average Directional Index) é como um "medidor de força" da tendência. Valores acima de 25 indicam uma tendência forte (como um rio com correnteza forte), enquanto valores abaixo indicam um mercado "sem direção" (como água parada). Ajuda a evitar operar quando o mercado está indeciso.</p>
+                          <p className="max-w-xs">ADX mede a força da tendência, não a direção. Opera apenas quando ADX &gt; 25 (tendência forte) e D+ vs D- indica direção. Quinta prioridade - usado como último recurso quando outros indicadores estão neutros.</p>
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    Detecta se a tendência atual é forte o suficiente
+                    🔍 Último recurso - Opera apenas em tendências muito fortes
                   </p>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -1187,6 +1225,37 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                     id="enableBtcTrendFilter"
                     checked={formData.enableBtcTrendFilter}
                     onChange={(e) => handleInputChange('enableBtcTrendFilter', e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2 focus:ring-offset-2 transition-colors"
+                  />
+                </div>
+              </div>
+
+              {/* Heikin Ashi */}
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="enableHeikinAshi" className="font-medium">Filtro de Mudança de Tendência (Heikin Ashi)</Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-xs">Heikin Ashi é como um "filtro visual" que suaviza os movimentos do preço, tornando mais fácil identificar a verdadeira direção da tendência. É como ver o mercado através de óculos especiais que removem o "ruído". O bot só abrirá posições quando detectar uma mudança clara de tendência (de velas vermelhas para verdes, ou vice-versa), evitando entrar no meio de um movimento.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Só opera quando há mudança clara de tendência nas velas
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="enableHeikinAshi"
+                    checked={formData.enableHeikinAshi}
+                    onChange={(e) => handleInputChange('enableHeikinAshi', e.target.checked)}
                     className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2 focus:ring-offset-2 transition-colors"
                   />
                 </div>

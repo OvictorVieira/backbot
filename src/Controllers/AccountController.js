@@ -10,6 +10,13 @@ class AccountController {
   static cacheDuration = 10000; // 10 segundos em milissegundos
   static capitalLoggedByBot = new Map(); // Log por bot
 
+  // 🚨 ANTI-RATE-LIMIT: Sistema de debounce global para evitar múltiplas chamadas simultâneas
+  static pendingRequests = new Map(); // Requisições em andamento por botKey
+  static globalRateLimit = {
+    lastApiCall: 0,
+    minInterval: 2000, // Mínimo 2 segundos entre chamadas da API por qualquer bot
+  };
+
   static async get(config = null) {
     // SEMPRE usa credenciais do config - lança exceção se não disponível
     if (!config?.apiKey || !config?.apiSecret) {
@@ -46,129 +53,39 @@ class AccountController {
     }
 
     try {
+      // 🚨 ANTI-RATE-LIMIT: Se já existe uma requisição em andamento para este bot, aguarda
+      if (AccountController.pendingRequests.has(botKey)) {
+        Logger.warn(`⏳ [ACCOUNT_DEBOUNCE] ${strategy}: Aguardando requisição em andamento...`);
+        const pendingPromise = AccountController.pendingRequests.get(botKey);
+        return await pendingPromise;
+      }
+
+      // 🚨 RATE-LIMIT GLOBAL: Garante mínimo 2s entre chamadas de API de qualquer bot
+      const now = Date.now();
+      const timeSinceLastGlobalCall = now - AccountController.globalRateLimit.lastApiCall;
+      if (timeSinceLastGlobalCall < AccountController.globalRateLimit.minInterval) {
+        const waitTime = AccountController.globalRateLimit.minInterval - timeSinceLastGlobalCall;
+        Logger.warn(
+          `⏱️ [GLOBAL_RATE_LIMIT] ${strategy}: Aguardando ${Math.round(waitTime / 1000)}s para evitar rate limit...`
+        );
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
+
       // ✅ NOVA RODADA: Busca dados da exchange quando inicia nova rodada (55+ segundos)
-      Logger.info(
-        `🔄 [ACCOUNT_FRESH] ${strategy}: Nova rodada iniciada (${Math.round(cacheAge / 1000)}s) - Buscando dados para TODOS os tokens...`
+      const refreshPromise = AccountController._performAccountRefresh(
+        config,
+        botKey,
+        strategy,
+        cacheAge
       );
+      AccountController.pendingRequests.set(botKey, refreshPromise);
 
-      const Accounts = await Account.getAccount(strategy, apiKey, apiSecret);
-      const Collateral = await Capital.getCollateral(strategy, apiKey, apiSecret);
-
-      // ✅ FALHA SEGURA: Se não conseguir dados da conta, PARA a operação
-      if (!Accounts || !Collateral) {
-        const errorMsg = '❌ DADOS DE CONTA INDISPONÍVEIS - Operação BLOQUEADA para evitar perdas';
-        Logger.error(errorMsg);
-        throw new Error(
-          'Dados críticos da conta não disponíveis - operação abortada por segurança'
-        );
+      try {
+        const result = await refreshPromise;
+        return result;
+      } finally {
+        AccountController.pendingRequests.delete(botKey);
       }
-
-      const marketsInstance = new Markets();
-      let markets = await marketsInstance.getMarkets();
-      if (!markets) {
-        Logger.error(
-          '❌ AccountController.get - Markets.getMarkets() retornou null. API pode estar offline.'
-        );
-        return null;
-      }
-
-      // Usa authorizedTokens do config se disponível, senão usa variável de ambiente
-      const authorizedTokens = config?.authorizedTokens || [];
-
-      markets = markets
-        .filter(
-          el =>
-            el.marketType === 'PERP' &&
-            el.orderBookState === 'Open' &&
-            (authorizedTokens.length === 0 || authorizedTokens.includes(el.symbol))
-        )
-        .map(el => {
-          const decimal_quantity = String(el.filters.quantity.stepSize).includes('.')
-            ? String(el.filters.quantity.stepSize.split('.')[1]).length
-            : 0;
-
-          // Calcula decimal_price baseado no tickSize, mas limita a um máximo de 6 casas decimais
-          let decimal_price = String(el.filters.price.tickSize).includes('.')
-            ? String(el.filters.price.tickSize.split('.')[1]).length
-            : 0;
-
-          // Limita o decimal_price para evitar erro "Price decimal too long"
-          if (decimal_price > 6) {
-            Logger.warn(
-              `⚠️ [ACCOUNT] ${el.symbol}: decimal_price muito alto (${decimal_price}), limitando a 6 casas decimais`
-            );
-            decimal_price = 6;
-          }
-
-          return {
-            symbol: el.symbol,
-            decimal_quantity: decimal_quantity,
-            decimal_price: decimal_price,
-            stepSize_quantity: Number(el.filters.quantity.stepSize),
-            tickSize: Number(el.filters.price.tickSize),
-          };
-        });
-
-      const makerFee = parseFloat(Accounts.futuresMakerFee) / 10000;
-      const leverage = parseInt(Accounts.leverageLimit); // Alavancagem definida pelo usuário na corretora
-      const netEquityAvailable = parseFloat(Collateral.netEquityAvailable);
-
-      // 💡 USANDO ALAVANCAGEM DA CORRETORA: Usuário define a alavancagem que quer usar
-      // Respeitamos a configuração do usuário sem impor limites arbitrários
-      const marginSafety = 0.95; // 95% como margem de segurança
-      const realCapital = netEquityAvailable * marginSafety; // Capital real para controle de risco
-      const capitalAvailable = realCapital * leverage; // Capital para cálculo usando alavancagem do usuário
-
-      // 🔍 LOG DETALHADO DO CÁLCULO
-      Logger.debug(`📊 [ACCOUNT_CALC] Dados da rodada para TODOS os tokens:`);
-      Logger.debug(`   • netEquityAvailable (API): $${netEquityAvailable.toFixed(2)}`);
-      Logger.debug(`   • marginSafety: ${marginSafety}`);
-      Logger.debug(`   • leverage (definida pelo usuário): ${leverage}x`);
-      Logger.debug(
-        `   • realCapital = $${netEquityAvailable.toFixed(2)} × ${marginSafety} = $${realCapital.toFixed(2)}`
-      );
-      Logger.debug(
-        `   • capitalAvailable = $${realCapital.toFixed(2)} × ${leverage}x = $${capitalAvailable.toFixed(2)}`
-      );
-
-      // Log explicativo do cálculo do capital (apenas na primeira vez para este bot)
-      if (!AccountController.capitalLoggedByBot.get(botKey)) {
-        Logger.info(`\n📊 [${strategy}] NOVA RODADA - DADOS PARA TODOS OS TOKENS:
-   • Patrimônio Líquido Disponível: $${netEquityAvailable.toFixed(2)}
-   • Margem de segurança: ${(marginSafety * 100).toFixed(0)}%
-   • Capital real (controle de risco): $${realCapital.toFixed(2)}
-   • Alavancagem (definida pelo usuário): ${leverage}x
-   • Capital para cálculo de posição: $${realCapital.toFixed(2)} × ${leverage}x = $${capitalAvailable.toFixed(2)}`);
-        Logger.info(`   💡 Estes dados serão reutilizados por TODOS os tokens desta rodada (55s)`);
-        Logger.info(
-          `   💡 Initial Margin será deduzido do capital real ($${realCapital.toFixed(2)})`
-        );
-        AccountController.capitalLoggedByBot.set(botKey, true);
-      }
-
-      // Usa configuração passada como parâmetro (prioridade) ou fallback para variável de ambiente
-      const maxOpenOrders = config?.maxOpenOrders || 5;
-      const minVolumeDollar = capitalAvailable / maxOpenOrders;
-
-      const obj = {
-        maxOpenOrders,
-        minVolumeDollar,
-        fee: makerFee,
-        leverage, // Alavancagem definida pelo usuário na corretora
-        capitalAvailable, // Capital para cálculo de posição
-        realCapital, // Capital real para controle de risco
-        markets,
-      };
-
-      // 💾 SALVA CACHE por 55 segundos - 1 chamada por rodada para TODOS os tokens
-      AccountController.accountCacheByBot.set(botKey, obj);
-      AccountController.lastCacheTimeByBot.set(botKey, now);
-
-      Logger.info(
-        `✅ [ACCOUNT_CACHED] RODADA: Capital real: $${realCapital.toFixed(2)}, Capital p/ posição: $${capitalAvailable.toFixed(2)} (${leverage}x) - Cache para próximos 55s`
-      );
-
-      return obj;
     } catch (error) {
       Logger.error('❌ AccountController.get - Error:', error.message);
 
@@ -185,6 +102,139 @@ class AccountController {
 
       return null;
     }
+  }
+
+  /**
+   * 🚨 ANTI-RATE-LIMIT: Função privada que faz o refresh real da conta
+   * Inclui rate limiting global e logs detalhados
+   */
+  static async _performAccountRefresh(config, botKey, strategy, cacheAge) {
+    const { apiKey, apiSecret } = config;
+
+    Logger.info(
+      `🔄 [ACCOUNT_FRESH] ${strategy}: Nova rodada iniciada (${Math.round(cacheAge / 1000)}s) - Buscando dados para TODOS os tokens...`
+    );
+
+    // 🚨 ATUALIZA TIMESTAMP GLOBAL para rate limiting
+    AccountController.globalRateLimit.lastApiCall = Date.now();
+
+    const Accounts = await Account.getAccount(strategy, apiKey, apiSecret);
+    const Collateral = await Capital.getCollateral(strategy, apiKey, apiSecret);
+
+    // ✅ FALHA SEGURA: Se não conseguir dados da conta, PARA a operação
+    if (!Accounts || !Collateral) {
+      const errorMsg = '❌ DADOS DE CONTA INDISPONÍVEIS - Operação BLOQUEADA para evitar perdas';
+      Logger.error(errorMsg);
+      throw new Error('Dados críticos da conta não disponíveis - operação abortada por segurança');
+    }
+
+    const marketsInstance = new Markets();
+    let markets = await marketsInstance.getMarkets();
+    if (!markets) {
+      Logger.error(
+        '❌ AccountController._performAccountRefresh - Markets.getMarkets() retornou null. API pode estar offline.'
+      );
+      return null;
+    }
+
+    // Usa authorizedTokens do config se disponível, senão usa variável de ambiente
+    const authorizedTokens = config?.authorizedTokens || [];
+
+    markets = markets
+      .filter(
+        el =>
+          el.marketType === 'PERP' &&
+          el.orderBookState === 'Open' &&
+          (authorizedTokens.length === 0 || authorizedTokens.includes(el.symbol))
+      )
+      .map(el => {
+        const decimal_quantity = String(el.filters.quantity.stepSize).includes('.')
+          ? String(el.filters.quantity.stepSize.split('.')[1]).length
+          : 0;
+
+        // Calcula decimal_price baseado no tickSize, mas limita a um máximo de 6 casas decimais
+        let decimal_price = String(el.filters.price.tickSize).includes('.')
+          ? String(el.filters.price.tickSize.split('.')[1]).length
+          : 0;
+
+        // Limita o decimal_price para evitar erro "Price decimal too long"
+        if (decimal_price > 6) {
+          Logger.warn(
+            `⚠️ [ACCOUNT] ${el.symbol}: decimal_price muito alto (${decimal_price}), limitando a 6 casas decimais`
+          );
+          decimal_price = 6;
+        }
+
+        return {
+          symbol: el.symbol,
+          decimal_quantity: decimal_quantity,
+          decimal_price: decimal_price,
+          stepSize_quantity: Number(el.filters.quantity.stepSize),
+          tickSize: Number(el.filters.price.tickSize),
+        };
+      });
+
+    const makerFee = parseFloat(Accounts.futuresMakerFee) / 10000;
+    const leverage = parseInt(Accounts.leverageLimit); // Alavancagem definida pelo usuário na corretora
+    const netEquityAvailable = parseFloat(Collateral.netEquityAvailable);
+
+    // 💡 USANDO ALAVANCAGEM DA CORRETORA: Usuário define a alavancagem que quer usar
+    // Respeitamos a configuração do usuário sem impor limites arbitrários
+    const marginSafety = 0.95; // 95% como margem de segurança
+    const realCapital = netEquityAvailable * marginSafety; // Capital real para controle de risco
+    const capitalAvailable = realCapital * leverage; // Capital para cálculo usando alavancagem do usuário
+
+    // 🔍 LOG DETALHADO DO CÁLCULO
+    Logger.debug(`📊 [ACCOUNT_CALC] Dados da rodada para TODOS os tokens:`);
+    Logger.debug(`   • netEquityAvailable (API): $${netEquityAvailable.toFixed(2)}`);
+    Logger.debug(`   • marginSafety: ${marginSafety}`);
+    Logger.debug(`   • leverage (definida pelo usuário): ${leverage}x`);
+    Logger.debug(
+      `   • realCapital = $${netEquityAvailable.toFixed(2)} × ${marginSafety} = $${realCapital.toFixed(2)}`
+    );
+    Logger.debug(
+      `   • capitalAvailable = $${realCapital.toFixed(2)} × ${leverage}x = $${capitalAvailable.toFixed(2)}`
+    );
+
+    // Log explicativo do cálculo do capital (apenas na primeira vez para este bot)
+    if (!AccountController.capitalLoggedByBot.get(botKey)) {
+      Logger.info(`\n📊 [${strategy}] NOVA RODADA - DADOS PARA TODOS OS TOKENS:
+   • Patrimônio Líquido Disponível: $${netEquityAvailable.toFixed(2)}
+   • Margem de segurança: ${(marginSafety * 100).toFixed(0)}%
+   • Capital real (controle de risco): $${realCapital.toFixed(2)}
+   • Alavancagem (definida pelo usuário): ${leverage}x
+   • Capital para cálculo de posição: $${realCapital.toFixed(2)} × ${leverage}x = $${capitalAvailable.toFixed(2)}`);
+      Logger.info(`   💡 Estes dados serão reutilizados por TODOS os tokens desta rodada (55s)`);
+      Logger.info(
+        `   💡 Initial Margin será deduzido do capital real ($${realCapital.toFixed(2)})`
+      );
+      AccountController.capitalLoggedByBot.set(botKey, true);
+    }
+
+    // Usa configuração passada como parâmetro (prioridade) ou fallback para variável de ambiente
+    const maxOpenOrders = config?.maxOpenOrders || 5;
+    const minVolumeDollar = capitalAvailable / maxOpenOrders;
+
+    const obj = {
+      maxOpenOrders,
+      minVolumeDollar,
+      fee: makerFee,
+      leverage, // Alavancagem definida pelo usuário na corretora
+      capitalAvailable, // Capital para cálculo de posição
+      realCapital, // Capital real para controle de risco
+      markets,
+    };
+
+    // 💾 SALVA CACHE por 55 segundos - 1 chamada por rodada para TODOS os tokens
+    const now = Date.now();
+    AccountController.accountCacheByBot.set(botKey, obj);
+    AccountController.lastCacheTimeByBot.set(botKey, now);
+
+    Logger.info(
+      `✅ [ACCOUNT_CACHED] RODADA: Capital real: $${realCapital.toFixed(2)}, Capital p/ posição: $${capitalAvailable.toFixed(2)} (${leverage}x) - Cache para próximos 55s`
+    );
+
+    return obj;
   }
 
   static async getallMarkets(ignore) {
@@ -241,8 +291,10 @@ class AccountController {
   static clearCache() {
     AccountController.accountCacheByBot.clear();
     AccountController.lastCacheTimeByBot.clear();
+    AccountController.pendingRequests.clear();
+    AccountController.globalRateLimit.lastApiCall = 0;
     Logger.info(
-      `🔄 [ACCOUNT] Cache limpo para todos os bots - próxima chamada buscará dados frescos`
+      `🔄 [ACCOUNT] Cache e rate limit limpos para todos os bots - próxima chamada buscará dados frescos`
     );
   }
 
@@ -273,6 +325,7 @@ class AccountController {
     AccountController.accountCacheByBot.delete(botKey);
     AccountController.lastCacheTimeByBot.delete(botKey);
     AccountController.capitalLoggedByBot.delete(botKey);
+    AccountController.pendingRequests.delete(botKey);
     Logger.info(
       `🔄 [ACCOUNT] Cache limpo para bot ${strategyName} - próxima chamada buscará dados frescos`
     );

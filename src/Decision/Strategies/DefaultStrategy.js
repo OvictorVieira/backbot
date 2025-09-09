@@ -76,11 +76,10 @@ export class DefaultStrategy extends BaseStrategy {
     }
 
     // 3. FILTRO DE CONFIRMAÇÃO MONEY FLOW
-    const moneyFlowValidation = this.validateMoneyFlowConfirmation(
-      data,
-      signals.isLong,
-      { isBTCAnalysis: data.market.symbol === 'BTC_USDC_PERP', config }
-    );
+    const moneyFlowValidation = this.validateMoneyFlowConfirmation(data, signals.isLong, {
+      isBTCAnalysis: data.market.symbol === 'BTC_USDC_PERP',
+      config,
+    });
     validationTrace.push({
       layer: '3. Money Flow Filter',
       status: moneyFlowValidation.isValid ? 'PASS' : 'FAIL',
@@ -93,11 +92,10 @@ export class DefaultStrategy extends BaseStrategy {
     }
 
     // 4. FILTRO DE TENDÊNCIA VWAP
-    const vwapValidation = this.validateVWAPTrend(
-      data,
-      signals.isLong,
-      { isBTCAnalysis: data.market.symbol === 'BTC_USDC_PERP', config }
-    );
+    const vwapValidation = this.validateVWAPTrend(data, signals.isLong, {
+      isBTCAnalysis: data.market.symbol === 'BTC_USDC_PERP',
+      config,
+    });
     validationTrace.push({
       layer: '4. VWAP Filter',
       status: vwapValidation.isValid ? 'PASS' : 'FAIL',
@@ -117,7 +115,7 @@ export class DefaultStrategy extends BaseStrategy {
       if (config.enableBtcTrendFilter === false) {
         btcValidation = {
           isValid: true,
-          details: 'BTC Trend Filter desabilitado pela configuração'
+          details: 'BTC Trend Filter desabilitado pela configuração',
         };
       } else if (btcTrend === 'NEUTRAL') {
         btcValidation = {
@@ -265,11 +263,10 @@ export class DefaultStrategy extends BaseStrategy {
       }
 
       // FILTRO DE CONFIRMAÇÃO MONEY FLOW
-      const moneyFlowValidation = this.validateMoneyFlowConfirmation(
-        data,
-        signals.isLong,
-        { isBTCAnalysis: data.market.symbol === 'BTC_USDC_PERP', config }
-      );
+      const moneyFlowValidation = this.validateMoneyFlowConfirmation(data, signals.isLong, {
+        isBTCAnalysis: data.market.symbol === 'BTC_USDC_PERP',
+        config,
+      });
 
       if (!moneyFlowValidation.isValid) {
         Logger.info(
@@ -284,11 +281,10 @@ export class DefaultStrategy extends BaseStrategy {
       );
 
       // FILTRO DE TENDÊNCIA VWAP (sentimento intradiário)
-      const vwapValidation = this.validateVWAPTrend(
-        data,
-        signals.isLong,
-        { isBTCAnalysis: data.market.symbol === 'BTC_USDC_PERP', config }
-      );
+      const vwapValidation = this.validateVWAPTrend(data, signals.isLong, {
+        isBTCAnalysis: data.market.symbol === 'BTC_USDC_PERP',
+        config,
+      });
 
       if (!vwapValidation.isValid) {
         Logger.info(
@@ -543,54 +539,115 @@ export class DefaultStrategy extends BaseStrategy {
       analysisDetails.push(`Momentum: Não disponível`);
     }
 
-    // 2. Slow Stochastic com validação de cruzamentos (se disponível)
+    // 2. RSI com validação de cruzamento da média em sobrecompra/sobrevenda
+    if (!isLong && !isShort && config.enableRsiSignals !== false && hasEssentialIndicators) {
+      const rsiValue = rsi.value;
+      const rsiPrev = rsi.prev;
+      const rsiAvg = rsi.avg;
+      const rsiAvgPrev = rsi.avgPrev;
+
+      // Log detalhado do RSI para debug
+      if (isBTCAnalysis) {
+        console.log(
+          `      • RSI Debug: Value=${(rsiValue || 0).toFixed(1)}, Prev=${(rsiPrev || 0).toFixed(1)}, Avg=${(rsiAvg || 0).toFixed(1)}, AvgPrev=${(rsiAvgPrev || 0).toFixed(1)}`
+        );
+      }
+
+      // RSI Sobrevendido para LONG (RSI < 30 + cruzamento RSI acima da média)
+      if (rsiValue <= 30 && rsiAvg !== null && rsiAvgPrev !== null) {
+        // Verifica se RSI está cruzando acima da sua média (saindo da sobrevendido)
+        if (rsiPrev <= rsiAvgPrev && rsiValue > rsiAvg) {
+          isLong = true;
+          signalType = 'RSI Sobrevendido + Cruzamento Acima da Média';
+          analysisDetails.push(
+            `RSI: ${(rsiValue || 0).toFixed(1)} > Média(${(rsiAvg || 0).toFixed(1)}) | Cruzou acima em região sobrevendida (<30)`
+          );
+        } else {
+          analysisDetails.push(
+            `RSI: ${(rsiValue || 0).toFixed(1)} (sobrevendido, mas sem cruzamento acima da média)`
+          );
+        }
+      }
+      // RSI Sobrecomprado para SHORT (RSI > 70 + cruzamento RSI abaixo da média)
+      else if (rsiValue >= 70 && rsiAvg !== null && rsiAvgPrev !== null) {
+        // Verifica se RSI está cruzando abaixo da sua média (saindo da sobrecomprado)
+        if (rsiPrev >= rsiAvgPrev && rsiValue < rsiAvg) {
+          isShort = true;
+          signalType = 'RSI Sobrecomprado + Cruzamento Abaixo da Média';
+          analysisDetails.push(
+            `RSI: ${(rsiValue || 0).toFixed(1)} < Média(${(rsiAvg || 0).toFixed(1)}) | Cruzou abaixo em região sobrecomprada (>70)`
+          );
+        } else {
+          analysisDetails.push(
+            `RSI: ${(rsiValue || 0).toFixed(1)} (sobrecomprado, mas sem cruzamento abaixo da média)`
+          );
+        }
+      } else {
+        analysisDetails.push(
+          `RSI: ${(rsiValue || 0).toFixed(1)} | Média: ${(rsiAvg || 0).toFixed(1)} (neutro - fora das regiões de sobrecompra/sobrevenda)`
+        );
+      }
+    } else if (config.enableRsiSignals === false) {
+      analysisDetails.push(`RSI: Desabilitado pela configuração`);
+    } else {
+      analysisDetails.push(`RSI: Não disponível`);
+    }
+
+    // 3. Slow Stochastic com validação de cruzamentos CORRIGIDA (se disponível)
     if (!isLong && !isShort && config.enableStochasticSignals !== false && hasStoch) {
       const stochK = stoch.k;
       const stochD = stoch.d;
       const stochKPrev = stoch.kPrev;
       const stochDPrev = stoch.dPrev;
 
-      // Slow Stochastic Sobrevendido para LONG (D cruzando acima do K estando sobrevendido)
+      // Log detalhado do Stochastic para debug
+      if (isBTCAnalysis) {
+        console.log(
+          `      • Stoch Debug: K=${(stochK || 0).toFixed(1)}, D=${(stochD || 0).toFixed(1)}, KPrev=${(stochKPrev || 0).toFixed(1)}, DPrev=${(stochDPrev || 0).toFixed(1)}`
+        );
+      }
+
+      // Slow Stochastic Sobrevendido para LONG (ambos K e D <= 20 + cruzamento bullish)
       if (stochK <= 20 && stochD <= 20) {
-        // Verifica se D está cruzando acima do K (reversão de sobrevendido)
+        // Verifica se K está cruzando acima do D (reversão de sobrevendido)
         if (
-          stochDPrev !== null &&
-          stochDPrev !== undefined &&
           stochKPrev !== null &&
           stochKPrev !== undefined &&
-          stochDPrev <= stochKPrev &&
-          stochD > stochK
+          stochDPrev !== null &&
+          stochDPrev !== undefined &&
+          stochKPrev <= stochDPrev && // K estava abaixo do D
+          stochK > stochD // K agora está acima do D
         ) {
           isLong = true;
-          signalType = 'Stochastic Sobrevendido + Cruzamento D>K';
+          signalType = 'Stochastic Sobrevendido + Cruzamento K>D';
           analysisDetails.push(
-            `Stoch: D(${(stochD || 0).toFixed(1)}) > K(${(stochK || 0).toFixed(1)}) | D cruzou acima (sobrevendido)`
+            `Stoch: K(${(stochK || 0).toFixed(1)}) > D(${(stochD || 0).toFixed(1)}) | K cruzou acima em sobrevendido`
           );
         } else {
           analysisDetails.push(
-            `Stoch: K=${(stochK || 0).toFixed(1)}, D=${(stochD || 0).toFixed(1)} (sobrevendido, mas sem cruzamento)`
+            `Stoch: K=${(stochK || 0).toFixed(1)}, D=${(stochD || 0).toFixed(1)} (sobrevendido, mas sem cruzamento K>D)`
           );
         }
       }
-      // Slow Stochastic Sobrecomprado para SHORT (K cruzando acima do D estando sobrevendido)
+      // Slow Stochastic Sobrecomprado para SHORT (ambos K e D >= 80 + cruzamento bearish)
       else if (stochK >= 80 && stochD >= 80) {
-        // Verifica se K está cruzando acima do D (reversão de sobrecomprado)
+        // Verifica se K está cruzando abaixo do D (reversão de sobrecomprado)
         if (
-          stochDPrev !== null &&
-          stochDPrev !== undefined &&
           stochKPrev !== null &&
           stochKPrev !== undefined &&
-          stochKPrev <= stochDPrev &&
-          stochK > stochD
+          stochDPrev !== null &&
+          stochDPrev !== undefined &&
+          stochKPrev >= stochDPrev && // K estava acima do D
+          stochK < stochD // K agora está abaixo do D
         ) {
           isShort = true;
-          signalType = 'Stochastic Sobrecomprado + Cruzamento K>D';
+          signalType = 'Stochastic Sobrecomprado + Cruzamento K<D';
           analysisDetails.push(
-            `Stoch: K(${(stochK || 0).toFixed(1)}) > D(${(stochD || 0).toFixed(1)}) | K cruzou acima (sobrecomprado)`
+            `Stoch: K(${(stochK || 0).toFixed(1)}) < D(${(stochD || 0).toFixed(1)}) | K cruzou abaixo em sobrecomprado`
           );
         } else {
           analysisDetails.push(
-            `Stoch: K=${(stochK || 0).toFixed(1)}, D=${(stochD || 0).toFixed(1)} (sobrecomprado, mas sem cruzamento)`
+            `Stoch: K=${(stochK || 0).toFixed(1)}, D=${(stochD || 0).toFixed(1)} (sobrecomprado, mas sem cruzamento K<D)`
           );
         }
       } else {
@@ -608,7 +665,7 @@ export class DefaultStrategy extends BaseStrategy {
       analysisDetails.push(`Stoch: Não disponível`);
     }
 
-    // 3. MACD com validação de momentum e tendência (CORRIGIDO)
+    // 4. MACD com validação de momentum e tendência (CORRIGIDO)
     if (!isLong && !isShort && config.enableMacdSignals !== false && hasMacd) {
       const macdValue = macd.MACD;
       const macdSignal = macd.MACD_signal;
@@ -728,7 +785,7 @@ export class DefaultStrategy extends BaseStrategy {
       analysisDetails.push(`MACD: Não disponível`);
     }
 
-    // 4. ADX com validação da EMA (ou sem EMA se não disponível)
+    // 5. ADX com validação da EMA (ou sem EMA se não disponível)
     if (!isLong && !isShort && config.enableAdxSignals !== false && hasAdx) {
       const adxValue = adx.adx;
       const diPlus = adx.diPlus;
@@ -814,16 +871,16 @@ export class DefaultStrategy extends BaseStrategy {
    */
   validateVWAPTrend(data, isLong, options = {}) {
     const { isBTCAnalysis = false, config = {} } = options;
-    
+
     // Se VWAP está desabilitado, pula validação
     if (config.enableVwapFilter === false) {
       return {
         isValid: true,
         reason: 'VWAP Filter desabilitado',
-        details: 'Validação pulada pela configuração do bot'
+        details: 'Validação pulada pela configuração do bot',
       };
     }
-    
+
     const vwap = data.vwap;
     const currentPrice = parseFloat(data.marketPrice);
 
@@ -901,16 +958,16 @@ export class DefaultStrategy extends BaseStrategy {
    */
   validateMoneyFlowConfirmation(data, isLong, options = {}) {
     const { isBTCAnalysis = false, config = {} } = options;
-    
+
     // Se Money Flow está desabilitado, pula validação
     if (config.enableMoneyFlowFilter === false) {
       return {
         isValid: true,
         reason: 'Money Flow Filter desabilitado',
-        details: 'Validação pulada pela configuração do bot'
+        details: 'Validação pulada pela configuração do bot',
       };
     }
-    
+
     const moneyFlow = data.moneyFlow;
 
     // Verifica se o Money Flow está disponível

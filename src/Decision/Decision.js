@@ -329,9 +329,14 @@ class Decision {
       );
 
       // ANÁLISE DO BTC PRIMEIRO (antes das altcoins)
-      // Pula análise do BTC para AlphaFlow (cada moeda tem suas particularidades)
       let btcTrend = 'NEUTRAL';
-      if (this.strategy.constructor.name !== 'AlphaFlowStrategy') {
+      const isAlphaFlow = this.strategy.constructor.name === 'AlphaFlowStrategy';
+
+      // Para AlphaFlow, só analisa BTC se Heikin Ashi estiver habilitado
+      const shouldAnalyzeBTC =
+        !isAlphaFlow || config?.enableHeikinAshi === true || config?.enableHeikinAshi === 'true';
+
+      if (shouldAnalyzeBTC) {
         Logger.debug(`\n📊 ANÁLISE DO BTC (${currentTimeframe}):`);
         try {
           // Usa 100 candles para garantir que todos os indicadores tenham dados suficientes
@@ -354,15 +359,33 @@ class Decision {
             ) {
               Logger.debug(`   ⚠️ BTC: Dados de indicadores insuficientes`);
             } else {
-              const btcAnalysis = this.strategy.analyzeSignals(btcIndicators, true, config);
+              // Para AlphaFlow com Heikin Ashi, usa direção da tendência confirmada
+              if (isAlphaFlow && btcIndicators.heikinAshi) {
+                const btcHeikinAshi = btcIndicators.heikinAshi;
+                const confirmedTrend = btcHeikinAshi.trendChange?.confirmedTrend || 'NEUTRAL';
 
-              if (btcAnalysis && btcAnalysis.hasSignal) {
-                Logger.debug(`   🟢 BTC: ${btcAnalysis.signalType}`);
-                // Define tendência do BTC baseada no sinal
-                btcTrend = btcAnalysis.isLong ? 'BULLISH' : 'BEARISH';
+                if (confirmedTrend === 'UP') {
+                  btcTrend = 'UP';
+                  Logger.debug(`   🟢 BTC Heikin Ashi: ALTA (${confirmedTrend})`);
+                } else if (confirmedTrend === 'DOWN') {
+                  btcTrend = 'DOWN';
+                  Logger.debug(`   🔴 BTC Heikin Ashi: BAIXA (${confirmedTrend})`);
+                } else {
+                  btcTrend = 'NEUTRAL';
+                  Logger.debug(`   ⚪ BTC Heikin Ashi: NEUTRO (${confirmedTrend})`);
+                }
               } else {
-                Logger.debug(`⚪ BTC: Sem sinais (NEUTRO)`);
-                btcTrend = 'NEUTRAL';
+                // Lógica tradicional para outras estratégias
+                const btcAnalysis = this.strategy.analyzeSignals(btcIndicators, true, config);
+
+                if (btcAnalysis && btcAnalysis.hasSignal) {
+                  Logger.debug(`   🟢 BTC: ${btcAnalysis.signalType}`);
+                  // Define tendência do BTC baseada no sinal
+                  btcTrend = btcAnalysis.isLong ? 'BULLISH' : 'BEARISH';
+                } else {
+                  Logger.debug(`⚪ BTC: Sem sinais (NEUTRO)`);
+                  btcTrend = 'NEUTRAL';
+                }
               }
             }
           } else {

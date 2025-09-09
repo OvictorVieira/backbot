@@ -1,4 +1,14 @@
-import { EMA, RSI, MACD, BollingerBands, ATR, Stochastic, ADX, MFI } from 'technicalindicators';
+import {
+  EMA,
+  RSI,
+  MACD,
+  BollingerBands,
+  ATR,
+  Stochastic,
+  ADX,
+  MFI,
+  HeikinAshi,
+} from 'technicalindicators';
 import axios from 'axios';
 import Logger from '../Utils/Logger.js';
 
@@ -1048,6 +1058,168 @@ function findCvdDivergences(candles, cvdValues) {
   };
 }
 
+/**
+ * Calcula os candles Heikin Ashi e detecta mudanças de tendência
+ * @param {Array<Object>} candles - Array de candles tradicionais
+ * @returns {Object} - Objeto com dados dos Heikin Ashi e tendência
+ */
+function calculateHeikinAshi(candles) {
+  if (!candles || candles.length < 2) {
+    return {
+      current: {
+        open: null,
+        high: null,
+        low: null,
+        close: null,
+        isBullish: false,
+        isBearish: false,
+        direction: 'NEUTRAL',
+      },
+      previous: {
+        open: null,
+        high: null,
+        low: null,
+        close: null,
+        isBullish: false,
+        isBearish: false,
+        direction: 'NEUTRAL',
+      },
+      trendChange: {
+        hasChanged: false,
+        changeType: null, // 'BULLISH' or 'BEARISH'
+        confirmedTrend: 'NEUTRAL', // 'UP', 'DOWN', 'NEUTRAL'
+      },
+      history: [],
+    };
+  }
+
+  // Converte candles para formato esperado pela biblioteca (arrays separados)
+  const candleData = {
+    open: candles.map(c => parseFloat(c.open)),
+    high: candles.map(c => parseFloat(c.high)),
+    low: candles.map(c => parseFloat(c.low)),
+    close: candles.map(c => parseFloat(c.close)),
+  };
+
+  // Calcula os candles Heikin Ashi
+  let heikinAshiCandles;
+  try {
+    heikinAshiCandles = HeikinAshi.calculate(candleData);
+  } catch (error) {
+    Logger.debug(`❌ [HEIKIN_ASHI] Erro ao calcular: ${error.message}`);
+    return {
+      current: {
+        open: null,
+        high: null,
+        low: null,
+        close: null,
+        isBullish: false,
+        isBearish: false,
+        direction: 'NEUTRAL',
+      },
+      previous: {
+        open: null,
+        high: null,
+        low: null,
+        close: null,
+        isBullish: false,
+        isBearish: false,
+        direction: 'NEUTRAL',
+      },
+      trendChange: {
+        hasChanged: false,
+        changeType: null,
+        confirmedTrend: 'NEUTRAL',
+      },
+      history: [],
+    };
+  }
+
+  // Obter dados atuais e anteriores (HeikinAshi retorna arrays separados)
+  const currentIndex = heikinAshiCandles.open.length - 1;
+  const previousIndex = currentIndex - 1;
+
+  const current = {
+    open: heikinAshiCandles.open[currentIndex] || null,
+    high: heikinAshiCandles.high[currentIndex] || null,
+    low: heikinAshiCandles.low[currentIndex] || null,
+    close: heikinAshiCandles.close[currentIndex] || null,
+  };
+
+  const previous = {
+    open: previousIndex >= 0 ? heikinAshiCandles.open[previousIndex] : null,
+    high: previousIndex >= 0 ? heikinAshiCandles.high[previousIndex] : null,
+    low: previousIndex >= 0 ? heikinAshiCandles.low[previousIndex] : null,
+    close: previousIndex >= 0 ? heikinAshiCandles.close[previousIndex] : null,
+  };
+
+  // Determinar direção dos candles (verde = close > open, vermelho = close < open)
+  const currentDirection =
+    current.close > current.open ? 'UP' : current.close < current.open ? 'DOWN' : 'NEUTRAL';
+  const previousDirection =
+    previous.close > previous.open ? 'UP' : previous.close < previous.open ? 'DOWN' : 'NEUTRAL';
+
+  // Detectar mudança de tendência (mudança de cor)
+  let hasChanged = false;
+  let changeType = null;
+  let confirmedTrend = 'NEUTRAL';
+
+  if (currentDirection !== 'NEUTRAL' && previousDirection !== 'NEUTRAL') {
+    // Mudança de vermelho para verde (reversão bullish)
+    if (previousDirection === 'DOWN' && currentDirection === 'UP') {
+      hasChanged = true;
+      changeType = 'BULLISH';
+      confirmedTrend = 'UP';
+    }
+    // Mudança de verde para vermelho (reversão bearish)
+    else if (previousDirection === 'UP' && currentDirection === 'DOWN') {
+      hasChanged = true;
+      changeType = 'BEARISH';
+      confirmedTrend = 'DOWN';
+    }
+    // Sem mudança, mantém tendência atual
+    else {
+      confirmedTrend = currentDirection;
+    }
+  }
+
+  Logger.debug(
+    `📊 [HEIKIN_ASHI] Atual: ${currentDirection}, Anterior: ${previousDirection}, Mudança: ${hasChanged ? changeType : 'NENHUMA'}, Tendência: ${confirmedTrend}`
+  );
+
+  return {
+    current: {
+      open: current.open,
+      high: current.high,
+      low: current.low,
+      close: current.close,
+      isBullish: currentDirection === 'UP',
+      isBearish: currentDirection === 'DOWN',
+      direction: currentDirection,
+    },
+    previous: {
+      open: previous.open,
+      high: previous.high,
+      low: previous.low,
+      close: previous.close,
+      isBullish: previousDirection === 'UP',
+      isBearish: previousDirection === 'DOWN',
+      direction: previousDirection,
+    },
+    trendChange: {
+      hasChanged,
+      changeType,
+      confirmedTrend,
+    },
+    history: heikinAshiCandles.open.map((_, index) => ({
+      open: heikinAshiCandles.open[index],
+      high: heikinAshiCandles.high[index],
+      low: heikinAshiCandles.low[index],
+      close: heikinAshiCandles.close[index],
+    })),
+  };
+}
+
 export async function calculateIndicators(candles, timeframe = '5m', symbol = null) {
   // Validação de entrada
   if (!candles || !Array.isArray(candles) || candles.length === 0) {
@@ -1178,6 +1350,32 @@ export async function calculateIndicators(candles, timeframe = '5m', symbol = nu
         bullish: false,
         bearish: false,
       },
+      heikinAshi: {
+        current: {
+          open: null,
+          high: null,
+          low: null,
+          close: null,
+          isBullish: false,
+          isBearish: false,
+          direction: 'NEUTRAL',
+        },
+        previous: {
+          open: null,
+          high: null,
+          low: null,
+          close: null,
+          isBullish: false,
+          isBearish: false,
+          direction: 'NEUTRAL',
+        },
+        trendChange: {
+          hasChanged: false,
+          changeType: null,
+          confirmedTrend: 'NEUTRAL',
+        },
+        history: [],
+      },
       macroMoneyFlow: {
         macroBias: 0,
         mfiCurrent: 50,
@@ -1283,6 +1481,9 @@ export async function calculateIndicators(candles, timeframe = '5m', symbol = nu
   // NOVO: CVD Periódico e Divergências
   const cvdValues = calculateCVD(candles, 8);
   const cvdDivergence = findCvdDivergences(candles, cvdValues);
+
+  // NOVO: Heikin Ashi
+  const heikinAshi = calculateHeikinAshi(candles);
 
   // Macro Money Flow (MFI diário)
   const macroMoneyFlow = symbol
@@ -1399,6 +1600,13 @@ export async function calculateIndicators(candles, timeframe = '5m', symbol = nu
     cvdDivergence: {
       bullish: cvdDivergence.bullish,
       bearish: cvdDivergence.bearish,
+    },
+    // NOVO: Heikin Ashi
+    heikinAshi: {
+      current: heikinAshi.current,
+      previous: heikinAshi.previous,
+      trendChange: heikinAshi.trendChange,
+      history: heikinAshi.history,
     },
     // NOVO: Macro Money Flow (MFI diário)
     macroMoneyFlow: macroMoneyFlow, // Usa dados diários reais quando symbol disponível

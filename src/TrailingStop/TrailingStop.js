@@ -27,6 +27,10 @@ class TrailingStop {
   // Cache para evitar verificações desnecessárias de stop loss (quando já existem)
   static stopLossVerified = new Map();
 
+  // Cache para evitar loops infinitos ao detectar posições que devem ser fechadas por profit configurado
+  // Armazena symbols que já foram identificados para fechamento nos últimos 30 segundos
+  static profitClosureDetected = new Map();
+
   // Serviço de WebSocket reativo para atualizações de preço em tempo real
   static backpackWS = null;
 
@@ -139,6 +143,18 @@ class TrailingStop {
     for (const [key, timestamp] of TrailingStop.stopLossVerified.entries()) {
       if (now - timestamp > maxAge) {
         TrailingStop.stopLossVerified.delete(key);
+      }
+    }
+  }
+
+  // Limpa entries do cache de profit closure detectado mais antigas que 30 segundos
+  static cleanupProfitClosureDetectedCache() {
+    const now = Date.now();
+    const maxAge = 30 * 1000; // 30 segundos
+
+    for (const [key, timestamp] of TrailingStop.profitClosureDetected.entries()) {
+      if (now - timestamp > maxAge) {
+        TrailingStop.profitClosureDetected.delete(key);
       }
     }
   }
@@ -1182,6 +1198,12 @@ class TrailingStop {
   static async onPositionClosed(position, closeReason) {
     if (position && position.symbol) {
       await TrailingStop.clearTrailingState(position.symbol, `posição fechada: ${closeReason}`);
+
+      // Limpa do cache de profit closure detectado ao fechar a posição
+      TrailingStop.profitClosureDetected.delete(position.symbol);
+
+      // Limpa do cache de fechamento em progresso se estiver lá
+      TrailingStop.closingInProgress.delete(position.symbol);
 
       clearLeverageAdjustLog(position.symbol);
     }
@@ -2495,6 +2517,26 @@ class TrailingStop {
    */
   async shouldCloseForConfiguredProfit(position) {
     try {
+      const symbol = position.symbol;
+      const now = Date.now();
+
+      // Limpa cache de profit closure detectado periodicamente
+      TrailingStop.cleanupProfitClosureDetectedCache();
+
+      // Verifica se esta posição já foi marcada para fechamento recentemente (30s)
+      // Evita loops infinitos quando o fechamento real demora mais que a verificação
+      if (TrailingStop.profitClosureDetected.has(symbol)) {
+        const lastDetected = TrailingStop.profitClosureDetected.get(symbol);
+        const elapsedMs = now - lastDetected;
+        if (elapsedMs < 30 * 1000) {
+          // 30 segundos
+          Logger.debug(
+            `⏩ [PROFIT_CACHE] ${symbol}: Fechamento já detectado há ${Math.round(elapsedMs / 1000)}s - pulando verificação`
+          );
+          return false;
+        }
+      }
+
       // SEMPRE usa credenciais do config - lança exceção se não disponível
       if (!this.config?.apiKey || !this.config?.apiSecret) {
         throw new Error(
@@ -2541,6 +2583,8 @@ class TrailingStop {
 
         if (pnlPct <= maxNegativePnlStopPct) {
           Logger.info(`${position.symbol}: Fechando por stop loss - PnL ${pnlPct.toFixed(3)}%`);
+          // Marca no cache que esta posição foi detectada para fechamento
+          TrailingStop.profitClosureDetected.set(symbol, now);
           return true;
         }
       }
@@ -2569,6 +2613,8 @@ class TrailingStop {
           `\n✅ [CONFIG_PROFIT] ${position.symbol}: Fechando por lucro ${netProfitPct.toFixed(3)}% >= mínimo ${minProfitPct.toFixed(3)}%`
         );
         Logger.debug(`   💰 Lucro líquido após taxas: $${netProfit.toFixed(4)}`);
+        // Marca no cache que esta posição foi detectada para fechamento
+        TrailingStop.profitClosureDetected.set(symbol, now);
         return true;
       }
 
@@ -2714,6 +2760,12 @@ class TrailingStop {
               );
               if (result.success) {
                 await TrailingStop.onPositionClosed(position, 'alpha_flow_target');
+              } else if (result.reason === 'already_closing') {
+                // Se o fechamento já está em progresso, pula para evitar loop infinito
+                // mas não chama onPositionClosed para evitar limpeza prematura
+                Logger.debug(
+                  `⏭️ [ALPHA_FLOW_TARGET] ${position.symbol}: Pulando - fechamento em progresso`
+                );
               }
               continue;
             }
@@ -2812,6 +2864,12 @@ class TrailingStop {
               );
               if (result.success) {
                 await TrailingStop.onPositionClosed(position, 'profit_configured');
+              } else if (result.reason === 'already_closing') {
+                // Se o fechamento já está em progresso, pula para evitar loop infinito
+                // mas não chama onPositionClosed para evitar limpeza prematura
+                Logger.debug(
+                  `⏭️ [PROFIT_CONFIGURED] ${position.symbol}: Pulando - fechamento em progresso`
+                );
               }
               continue;
             }
@@ -2832,6 +2890,12 @@ class TrailingStop {
               );
               if (result.success) {
                 await TrailingStop.onPositionClosed(position, 'adx_crossover');
+              } else if (result.reason === 'already_closing') {
+                // Se o fechamento já está em progresso, pula para evitar loop infinito
+                // mas não chama onPositionClosed para evitar limpeza prematura
+                Logger.debug(
+                  `⏭️ [ADX_CROSSOVER] ${position.symbol}: Pulando - fechamento em progresso`
+                );
               }
               continue;
             }
