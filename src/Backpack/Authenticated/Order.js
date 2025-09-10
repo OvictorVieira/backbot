@@ -3,6 +3,7 @@ import GlobalRequestQueue from '../../Utils/GlobalRequestQueue.js';
 import OrdersCache from '../../Utils/OrdersCache.js';
 import CacheInvalidator from '../../Utils/CacheInvalidator.js';
 import requestManager from '../../Utils/RequestManager.js';
+import { auth } from './Authentication.js';
 
 class Order {
   async getOpenOrder(symbol, orderId, clientId = null, apiKey, apiSecret) {
