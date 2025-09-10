@@ -225,6 +225,20 @@ class Decision {
 
   async analyze(timeframe = null, logger = null, config = null) {
     try {
+      // VERIFICAÇÃO CRÍTICA: Se o bot foi pausado, interrompe imediatamente
+      if (config?.botId) {
+        try {
+          const { default: ConfigManagerSQLite } = await import('../Config/ConfigManagerSQLite.js');
+          const botStatus = await ConfigManagerSQLite.getBotStatusById(config.botId);
+          if (botStatus === 'stopped') {
+            Logger.info(`🛑 [${config?.botName || 'BOT'}] Bot pausado - interrompendo análise`);
+            return;
+          }
+        } catch (statusError) {
+          Logger.debug(`⚠️ Erro ao verificar status do bot: ${statusError.message}`);
+        }
+      }
+
       // Usa o timeframe passado como parâmetro ou fallback para configuração da conta
       let currentTimeframe = timeframe;
 
@@ -315,9 +329,14 @@ class Decision {
       );
 
       // ANÁLISE DO BTC PRIMEIRO (antes das altcoins)
-      // Pula análise do BTC para AlphaFlow (cada moeda tem suas particularidades)
       let btcTrend = 'NEUTRAL';
-      if (this.strategy.constructor.name !== 'AlphaFlowStrategy') {
+      const isAlphaFlow = this.strategy.constructor.name === 'AlphaFlowStrategy';
+
+      // Para AlphaFlow, só analisa BTC se Heikin Ashi estiver habilitado
+      const shouldAnalyzeBTC =
+        !isAlphaFlow || config?.enableHeikinAshi === true || config?.enableHeikinAshi === 'true';
+
+      if (shouldAnalyzeBTC) {
         Logger.debug(`\n📊 ANÁLISE DO BTC (${currentTimeframe}):`);
         try {
           // Usa 100 candles para garantir que todos os indicadores tenham dados suficientes
@@ -340,15 +359,33 @@ class Decision {
             ) {
               Logger.debug(`   ⚠️ BTC: Dados de indicadores insuficientes`);
             } else {
-              const btcAnalysis = this.strategy.analyzeSignals(btcIndicators, true, config);
+              // Para AlphaFlow com Heikin Ashi, usa direção da tendência confirmada
+              if (isAlphaFlow && btcIndicators.heikinAshi) {
+                const btcHeikinAshi = btcIndicators.heikinAshi;
+                const confirmedTrend = btcHeikinAshi.trendChange?.confirmedTrend || 'NEUTRAL';
 
-              if (btcAnalysis && btcAnalysis.hasSignal) {
-                Logger.debug(`   🟢 BTC: ${btcAnalysis.signalType}`);
-                // Define tendência do BTC baseada no sinal
-                btcTrend = btcAnalysis.isLong ? 'BULLISH' : 'BEARISH';
+                if (confirmedTrend === 'UP') {
+                  btcTrend = 'UP';
+                  Logger.debug(`   🟢 BTC Heikin Ashi: ALTA (${confirmedTrend})`);
+                } else if (confirmedTrend === 'DOWN') {
+                  btcTrend = 'DOWN';
+                  Logger.debug(`   🔴 BTC Heikin Ashi: BAIXA (${confirmedTrend})`);
+                } else {
+                  btcTrend = 'NEUTRAL';
+                  Logger.debug(`   ⚪ BTC Heikin Ashi: NEUTRO (${confirmedTrend})`);
+                }
               } else {
-                Logger.debug(`⚪ BTC: Sem sinais (NEUTRO)`);
-                btcTrend = 'NEUTRAL';
+                // Lógica tradicional para outras estratégias
+                const btcAnalysis = this.strategy.analyzeSignals(btcIndicators, true, config);
+
+                if (btcAnalysis && btcAnalysis.hasSignal) {
+                  Logger.debug(`   🟢 BTC: ${btcAnalysis.signalType}`);
+                  // Define tendência do BTC baseada no sinal
+                  btcTrend = btcAnalysis.isLong ? 'BULLISH' : 'BEARISH';
+                } else {
+                  Logger.debug(`⚪ BTC: Sem sinais (NEUTRO)`);
+                  btcTrend = 'NEUTRAL';
+                }
               }
             }
           } else {
@@ -464,6 +501,24 @@ class Decision {
         return;
       }
 
+      // VERIFICAÇÃO CRÍTICA: Antes de executar qualquer ordem, verifica se bot foi pausado
+      if (config?.botId) {
+        try {
+          const { default: ConfigManagerSQLite } = await import('../Config/ConfigManagerSQLite.js');
+          const botStatus = await ConfigManagerSQLite.getBotStatusById(config.botId);
+          if (botStatus === 'stopped') {
+            Logger.info(
+              `🛑 [${config?.botName || 'BOT'}] Bot pausado - cancelando execução de ${rows.length} ordens`
+            );
+            return;
+          }
+        } catch (statusError) {
+          Logger.debug(
+            `⚠️ Erro ao verificar status do bot antes da execução: ${statusError.message}`
+          );
+        }
+      }
+
       // ✅ CORREÇÃO: Executa ordens SEQUENCIALMENTE para respeitar maxOpenOrders
       Logger.debug(`🔄 Processando ${rows.length} ordens sequencialmente (1 por vez)...`);
 
@@ -471,6 +526,24 @@ class Decision {
 
       // Processa cada ordem individualmente de forma sequencial
       for (let index = 0; index < rows.length; index++) {
+        // VERIFICAÇÃO: A cada iteração, verifica se o bot foi pausado
+        if (config?.botId) {
+          try {
+            const { default: ConfigManagerSQLite } = await import(
+              '../Config/ConfigManagerSQLite.js'
+            );
+            const botStatus = await ConfigManagerSQLite.getBotStatusById(config.botId);
+            if (botStatus === 'stopped') {
+              Logger.info(
+                `🛑 [${config?.botName || 'BOT'}] Bot pausado durante execução - interrompendo na ordem ${index + 1}/${rows.length}`
+              );
+              break;
+            }
+          } catch (statusError) {
+            Logger.debug(`⚠️ Erro ao verificar status durante execução: ${statusError.message}`);
+          }
+        }
+
         const row = rows[index];
         try {
           // Determina o market baseado na estrutura do objeto

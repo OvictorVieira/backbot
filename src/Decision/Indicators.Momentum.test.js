@@ -37,38 +37,39 @@ describe('calculateMomentum - WaveTrend Oscillator', () => {
 
       // Validações básicas
       expect(result).toBeDefined();
-      expect(result.wt1).toBeDefined();
-      expect(result.wt2).toBeDefined();
-      expect(result.direction).toBeDefined();
-      expect(result.cross).toBeDefined();
-      expect(result.isBullish).toBeDefined();
-      expect(result.isBearish).toBeDefined();
+      expect(result.current).toBeDefined();
+      expect(result.current.wt1).toBeDefined();
+      expect(result.current.wt2).toBeDefined();
+      expect(result.current.direction).toBeDefined();
+      expect(result.current.cross).toBeDefined();
+      expect(result.current.isBullish).toBeDefined();
+      expect(result.current.isBearish).toBeDefined();
       expect(result.history).toBeDefined();
       expect(result.history.wt1).toBeDefined();
       expect(result.history.wt2).toBeDefined();
 
       // Validações de tipo
-      expect(typeof result.wt1).toBe('number');
-      expect(typeof result.wt2).toBe('number');
-      expect(typeof result.direction).toBe('string');
+      expect(typeof result.current.wt1).toBe('number');
+      expect(typeof result.current.wt2).toBe('number');
+      expect(typeof result.current.direction).toBe('string');
       expect(Array.isArray(result.history.wt1)).toBe(true);
       expect(Array.isArray(result.history.wt2)).toBe(true);
 
       // Validações de lógica
-      expect(['UP', 'DOWN', 'NEUTRAL']).toContain(result.direction);
-      expect([null, 'BULLISH', 'BEARISH']).toContain(result.cross);
-      expect(typeof result.isBullish).toBe('boolean');
-      expect(typeof result.isBearish).toBe('boolean');
+      expect(['UP', 'DOWN', 'NEUTRAL']).toContain(result.current.direction);
+      expect([null, 'BULLISH', 'BEARISH']).toContain(result.current.cross);
+      expect(typeof result.current.isBullish).toBe('boolean');
+      expect(typeof result.current.isBearish).toBe('boolean');
 
       // Validação da lógica de direção
-      if (result.wt1 > result.wt2) {
-        expect(result.direction).toBe('UP');
-        expect(result.isBullish).toBe(true);
-        expect(result.isBearish).toBe(false);
-      } else if (result.wt1 < result.wt2) {
-        expect(result.direction).toBe('DOWN');
-        expect(result.isBullish).toBe(false);
-        expect(result.isBearish).toBe(true);
+      if (result.current.wt1 > result.current.wt2) {
+        expect(result.current.direction).toBe('UP');
+        expect(result.current.isBullish).toBe(true);
+        expect(result.current.isBearish).toBe(false);
+      } else if (result.current.wt1 < result.current.wt2) {
+        expect(result.current.direction).toBe('DOWN');
+        expect(result.current.isBullish).toBe(false);
+        expect(result.current.isBearish).toBe(true);
       }
     });
 
@@ -77,24 +78,24 @@ describe('calculateMomentum - WaveTrend Oscillator', () => {
       const result = calculateMomentum(shortCandles, 10, 21);
 
       expect(result).toBeDefined();
-      expect(result.wt1).toBeNull();
-      expect(result.wt2).toBeNull();
-      expect(result.cross).toBeNull();
-      expect(result.direction).toBe('NEUTRAL');
-      expect(result.isBullish).toBe(false);
-      expect(result.isBearish).toBe(false);
+      expect(result.current.wt1).toBeNull();
+      expect(result.current.wt2).toBeNull();
+      expect(result.current.cross).toBeNull();
+      expect(result.current.direction).toBe('NEUTRAL');
+      expect(result.current.isBullish).toBe(false);
+      expect(result.current.isBearish).toBe(false);
     });
 
     it('deve retornar estrutura válida com dados vazios', () => {
       const result = calculateMomentum([], 10, 21);
 
       expect(result).toBeDefined();
-      expect(result.wt1).toBeNull();
-      expect(result.wt2).toBeNull();
-      expect(result.cross).toBeNull();
-      expect(result.direction).toBe('NEUTRAL');
-      expect(result.isBullish).toBe(false);
-      expect(result.isBearish).toBe(false);
+      expect(result.current.wt1).toBeNull();
+      expect(result.current.wt2).toBeNull();
+      expect(result.current.cross).toBeNull();
+      expect(result.current.direction).toBe('NEUTRAL');
+      expect(result.current.isBullish).toBe(false);
+      expect(result.current.isBearish).toBe(false);
       expect(result.history.wt1).toEqual([]);
       expect(result.history.wt2).toEqual([]);
     });
@@ -137,17 +138,17 @@ describe('calculateMomentum - WaveTrend Oscillator', () => {
       const result = calculateMomentum(bullishCandles, 10, 21);
 
       // Verifica se detectou o cruzamento bullish
-      if (result.cross === 'BULLISH') {
-        expect(result.cross).toBe('BULLISH');
-        expect(result.direction).toBe('UP');
-        expect(result.isBullish).toBe(true);
-        expect(result.isBearish).toBe(false);
+      if (result.current.cross === 'BULLISH') {
+        expect(result.current.cross).toBe('BULLISH');
+        expect(result.current.direction).toBe('UP');
+        expect(result.current.isBullish).toBe(true);
+        expect(result.current.isBearish).toBe(false);
       } else {
         // Se não detectou cruzamento, pelo menos verifica a estrutura
-        expect(result.cross).toBeDefined();
-        expect(result.direction).toBeDefined();
-        expect(result.isBullish).toBeDefined();
-        expect(result.isBearish).toBeDefined();
+        expect(result.current.cross).toBeDefined();
+        expect(result.current.direction).toBeDefined();
+        expect(result.current.isBullish).toBeDefined();
+        expect(result.current.isBearish).toBeDefined();
       }
     });
 
@@ -187,17 +188,17 @@ describe('calculateMomentum - WaveTrend Oscillator', () => {
       const result = calculateMomentum(bearishCandles, 10, 21);
 
       // Verifica se detectou o cruzamento bearish
-      if (result.cross === 'BEARISH') {
-        expect(result.cross).toBe('BEARISH');
-        expect(result.direction).toBe('DOWN');
-        expect(result.isBullish).toBe(false);
-        expect(result.isBearish).toBe(true);
+      if (result.current.cross === 'BEARISH') {
+        expect(result.current.cross).toBe('BEARISH');
+        expect(result.current.direction).toBe('DOWN');
+        expect(result.current.isBullish).toBe(false);
+        expect(result.current.isBearish).toBe(true);
       } else {
         // Se não detectou cruzamento, pelo menos verifica a estrutura
-        expect(result.cross).toBeDefined();
-        expect(result.direction).toBeDefined();
-        expect(result.isBullish).toBeDefined();
-        expect(result.isBearish).toBeDefined();
+        expect(result.current.cross).toBeDefined();
+        expect(result.current.direction).toBeDefined();
+        expect(result.current.isBullish).toBeDefined();
+        expect(result.current.isBearish).toBeDefined();
       }
     });
   });
@@ -209,18 +210,18 @@ describe('calculateMomentum - WaveTrend Oscillator', () => {
 
       expect(result1).toBeDefined();
       expect(result2).toBeDefined();
-      expect(result1.wt1).toBeDefined();
-      expect(result2.wt1).toBeDefined();
-      expect(result1.wt2).toBeDefined();
-      expect(result2.wt2).toBeDefined();
+      expect(result1.current.wt1).toBeDefined();
+      expect(result2.current.wt1).toBeDefined();
+      expect(result1.current.wt2).toBeDefined();
+      expect(result2.current.wt2).toBeDefined();
     });
 
     it('deve usar valores padrão quando parâmetros não são fornecidos', () => {
       const result = calculateMomentum(mockCandles);
 
       expect(result).toBeDefined();
-      expect(result.wt1).toBeDefined();
-      expect(result.wt2).toBeDefined();
+      expect(result.current.wt1).toBeDefined();
+      expect(result.current.wt2).toBeDefined();
     });
   });
 
@@ -248,10 +249,10 @@ describe('calculateMomentum - WaveTrend Oscillator', () => {
       const result1 = calculateMomentum(mockCandles, 10, 21);
       const result2 = calculateMomentum(mockCandles, 10, 21);
 
-      expect(result1.wt1).toBe(result2.wt1);
-      expect(result1.wt2).toBe(result2.wt2);
-      expect(result1.direction).toBe(result2.direction);
-      expect(result1.cross).toBe(result2.cross);
+      expect(result1.current.wt1).toBe(result2.current.wt1);
+      expect(result1.current.wt2).toBe(result2.current.wt2);
+      expect(result1.current.direction).toBe(result2.current.direction);
+      expect(result1.current.cross).toBe(result2.current.cross);
     });
 
     it('deve calcular valores diferentes para parâmetros diferentes', () => {
@@ -259,8 +260,8 @@ describe('calculateMomentum - WaveTrend Oscillator', () => {
       const result2 = calculateMomentum(mockCandles, 15, 30);
 
       // Os valores devem ser diferentes devido aos parâmetros diferentes
-      expect(result1.wt1).not.toBe(result2.wt1);
-      expect(result1.wt2).not.toBe(result2.wt2);
+      expect(result1.current.wt1).not.toBe(result2.current.wt1);
+      expect(result1.current.wt2).not.toBe(result2.current.wt2);
     });
   });
 });

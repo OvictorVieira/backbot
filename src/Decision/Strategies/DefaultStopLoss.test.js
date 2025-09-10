@@ -249,7 +249,9 @@ describe('DefaultStopLoss', () => {
         ],
       };
 
-      const result = defaultStopLoss.shouldClosePosition(position, account, null, mockConfig);
+      // Sobrescrever config para este teste específico
+      const testConfig = { ...mockConfig, maxNegativePnlStopPct: -4.0 };
+      const result = defaultStopLoss.shouldClosePosition(position, account, null, testConfig);
 
       expect(result).not.toBeNull();
       expect(result.shouldClose).toBe(true);
@@ -354,7 +356,10 @@ describe('DefaultStopLoss', () => {
 
       DefaultStopLoss.debug('Test debug message');
 
-      expect(consoleSpy).toHaveBeenCalledWith('Test debug message');
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/\[DEBUG\]/),
+        'Test debug message'
+      );
 
       // Restore
       consoleSpy.mockRestore();
@@ -364,7 +369,9 @@ describe('DefaultStopLoss', () => {
     test('should not log debug message when LOG_TYPE is not debug', () => {
       // Mock process.env
       const originalLogType = process.env.LOG_TYPE;
+      const originalLogLevel = process.env.LOG_LEVEL;
       process.env.LOG_TYPE = 'info';
+      process.env.LOG_LEVEL = 'INFO';
 
       // Mock console.log usando jest.spyOn
       const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
@@ -376,6 +383,7 @@ describe('DefaultStopLoss', () => {
       // Restore
       consoleSpy.mockRestore();
       process.env.LOG_TYPE = originalLogType;
+      process.env.LOG_LEVEL = originalLogLevel;
     });
   });
 });

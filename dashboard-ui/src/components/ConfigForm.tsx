@@ -35,6 +35,21 @@ interface BotConfig {
   // leverageLimit: number; // TODO: Removido temporariamente
   botClientOrderId?: number;
   maxOpenOrders: number;
+  // Configurações de Validação de Sinais
+  enableMomentumSignals?: boolean;
+  enableRsiSignals?: boolean;
+  enableStochasticSignals?: boolean;
+  enableMacdSignals?: boolean;
+  enableAdxSignals?: boolean;
+  // Configurações de Filtros de Confirmação
+  enableMoneyFlowFilter?: boolean;
+  enableVwapFilter?: boolean;
+  enableBtcTrendFilter?: boolean;
+  // Configuração do Heikin Ashi
+  enableHeikinAshi?: boolean;
+  // Configuração de Confluência
+  enableConfluenceMode?: boolean;
+  minConfluences?: number;
 }
 
 interface ConfigFormProps {
@@ -67,7 +82,19 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
     enablePostOnly: config.enablePostOnly !== undefined ? config.enablePostOnly : true,
     enableMarketFallback: config.enableMarketFallback !== undefined ? config.enableMarketFallback : true,
     enableOrphanOrderMonitor: config.enableOrphanOrderMonitor !== undefined ? config.enableOrphanOrderMonitor : true,
-    enablePendingOrdersMonitor: config.enablePendingOrdersMonitor !== undefined ? config.enablePendingOrdersMonitor : true
+    enablePendingOrdersMonitor: config.enablePendingOrdersMonitor !== undefined ? config.enablePendingOrdersMonitor : true,
+    // Configurações de Validação (default: true para manter compatibilidade)
+    enableMomentumSignals: config.enableMomentumSignals !== undefined ? config.enableMomentumSignals : true,
+    enableRsiSignals: config.enableRsiSignals !== undefined ? config.enableRsiSignals : true,
+    enableStochasticSignals: config.enableStochasticSignals !== undefined ? config.enableStochasticSignals : true,
+    enableMacdSignals: config.enableMacdSignals !== undefined ? config.enableMacdSignals : true,
+    enableAdxSignals: config.enableAdxSignals !== undefined ? config.enableAdxSignals : true,
+    enableMoneyFlowFilter: config.enableMoneyFlowFilter !== undefined ? config.enableMoneyFlowFilter : true,
+    enableVwapFilter: config.enableVwapFilter !== undefined ? config.enableVwapFilter : true,
+    enableBtcTrendFilter: config.enableBtcTrendFilter !== undefined ? config.enableBtcTrendFilter : true,
+    // Configurações de Confluência (default: false para manter comportamento atual)
+    enableConfluenceMode: config.enableConfluenceMode !== undefined ? config.enableConfluenceMode : false,
+    minConfluences: config.minConfluences !== undefined ? config.minConfluences : 2
   });
   const [showApiKey, setShowApiKey] = useState(false);
   const [showApiSecret, setShowApiSecret] = useState(false);
@@ -154,13 +181,27 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
       ...prev,
       capitalPercentage: 20,
       time: '15m',
-      maxNegativePnlStopPct: -10,
-      minProfitPercentage: 10,
+      maxNegativePnlStopPct: -3, // 🔥 MUDANÇA: -10% → -3% para farmar mais volume
+      minProfitPercentage: 3, // 🔥 MUDANÇA: 10% → 3% para farmar mais volume  
       maxSlippagePct: 0.5,
       executionMode: 'REALTIME',
       enableHybridStopStrategy: false,
       enableTrailingStop: false,
-      maxOpenOrders: 5
+      maxOpenOrders: 5,
+      // 🎯 CONFIGURAÇÕES DE SINAIS (padrão = habilitados)
+      enableMomentumSignals: true,
+      enableRsiSignals: true,
+      enableStochasticSignals: true,
+      enableMacdSignals: true,
+      enableAdxSignals: true,
+      // 📊 FILTROS DE CONFIRMAÇÃO (padrão = habilitados)
+      enableMoneyFlowFilter: true,
+      enableVwapFilter: true,
+      enableBtcTrendFilter: true,
+      // ❌ FUNCIONALIDADES AVANÇADAS (desabilitadas para volume)
+      enableHeikinAshi: false, // 🔥 DESABILITADO para modo volume
+      enableConfluenceMode: false, // 🔥 DESABILITADO para modo volume
+      minConfluences: 2 // Valor padrão mesmo desabilitado
     }));
   };
 
@@ -176,8 +217,24 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
       executionMode: 'REALTIME',
       enableHybridStopStrategy: true,
       enableTrailingStop: true,
+      trailingStopDistance: 1, // 🔥 PADRÃO: 1% trailing distance
       partialTakeProfitAtrMultiplier: 2.0,
-      maxOpenOrders: 3
+      partialTakeProfitPercentage: 30, // 🔥 PADRÃO: 30% para fechamento parcial
+      maxOpenOrders: 3,
+      // 🎯 CONFIGURAÇÕES DE SINAIS (padrão = habilitados para máxima precisão)
+      enableMomentumSignals: true,
+      enableRsiSignals: true,
+      enableStochasticSignals: true,
+      enableMacdSignals: true,
+      enableAdxSignals: true,
+      // 📊 FILTROS DE CONFIRMAÇÃO (padrão = habilitados)
+      enableMoneyFlowFilter: true,
+      enableVwapFilter: true,
+      enableBtcTrendFilter: true,
+      // ✅ FUNCIONALIDADES AVANÇADAS (habilitadas para máxima segurança)
+      enableHeikinAshi: true, // 🔥 HABILITADO para filtrar melhor as tendências
+      enableConfluenceMode: true, // 🔥 HABILITADO com 2 indicadores mínimos
+      minConfluences: 2 // 🔥 PADRÃO: 2 indicadores para confluência
     }));
   };
 
@@ -939,6 +996,435 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
           </div>
         </div>
 
+        {/* Configurações de Validação */}
+        <div className="space-y-4">
+          <h3 className="text-lg font-medium">Configurações de Validação</h3>
+          <div className="text-sm text-muted-foreground mb-4">
+            Configure quais validações o bot deve usar para filtrar sinais. Por padrão, todas estão habilitadas para máxima segurança.
+          </div>
+          
+          {/* Sinais de Entrada */}
+          <div className="border rounded-lg p-4">
+            <h4 className="font-medium mb-3">Sinais de Entrada</h4>
+            <p className="text-xs text-muted-foreground mb-4 bg-blue-50 p-2 rounded">
+              ℹ️ <strong>Ordem de Prioridade:</strong> O bot testa os indicadores nesta ordem exata. Quando um indicador gera sinal, os demais são ignorados. Use todos habilitados para máxima cobertura de oportunidades.
+            </p>
+            <div className="space-y-3">
+              
+              {/* 1. Momentum - PRIORIDADE MÁXIMA */}
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="enableMomentumSignals" className="font-medium">🥇 Sinais de Momentum (WaveTrend)</Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-xs">WaveTrend é o indicador PRINCIPAL do bot. Mede a velocidade e direção dos movimentos de preço identificando quando o momentum está mudando - como um "velocímetro" do mercado. Tem a maior prioridade na decisão de entrada.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    🏆 Indicador principal - Detecta mudanças de momentum com alta precisão
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="enableMomentumSignals"
+                    checked={formData.enableMomentumSignals}
+                    onChange={(e) => handleInputChange('enableMomentumSignals', e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2 focus:ring-offset-2 transition-colors"
+                  />
+                </div>
+              </div>
+              
+              {/* 2. RSI - ALTA PRIORIDADE */}
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="enableRsiSignals" className="font-medium">🥈 Sinais de Reversão (RSI)</Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-xs">RSI detecta reversões de preço com alta precisão. Opera apenas quando RSI está em região extrema (&gt;70 sobrecomprado ou &lt;30 sobrevendido) E cruza sua média, confirmando mudança de direção. Prioridade alta após o Momentum.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    ⚡ Alta precisão - Só opera com cruzamento da média em regiões extremas
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="enableRsiSignals"
+                    checked={formData.enableRsiSignals}
+                    onChange={(e) => handleInputChange('enableRsiSignals', e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2 focus:ring-offset-2 transition-colors"
+                  />
+                </div>
+              </div>
+              
+              {/* 3. Stochastic - MÉDIA PRIORIDADE */}
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="enableStochasticSignals" className="font-medium">🥉 Sinais de Extremos (Slow Stochastic)</Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-xs">Stochastic é como um "termômetro" que detecta zonas extremas. Opera quando K e D estão em região extrema (&gt;80 ou &lt;20) E há cruzamento entre eles, indicando possível reversão. Terceira prioridade no sistema.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    📊 Complementar - Detecta extremos com cruzamento K/D
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="enableStochasticSignals"
+                    checked={formData.enableStochasticSignals}
+                    onChange={(e) => handleInputChange('enableStochasticSignals', e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2 focus:ring-offset-2 transition-colors"
+                  />
+                </div>
+              </div>
+              
+              {/* 4. MACD - MÉDIA-BAIXA PRIORIDADE */}
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="enableMacdSignals" className="font-medium">🏅 Sinais de Tendência (MACD)</Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-xs">MACD detecta mudanças de tendência através do cruzamento de médias móveis. Analisa o histograma para identificar momentum crescente ou decrescente. Quarta prioridade - usado quando os indicadores principais não geram sinais.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    📈 Confirmação - Detecta mudanças de tendência e momentum
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="enableMacdSignals"
+                    checked={formData.enableMacdSignals}
+                    onChange={(e) => handleInputChange('enableMacdSignals', e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2 focus:ring-offset-2 transition-colors"
+                  />
+                </div>
+              </div>
+              
+              {/* 5. ADX - BAIXA PRIORIDADE */}
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="enableAdxSignals" className="font-medium">🎖️ Sinais de Força (ADX)</Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-xs">ADX mede a força da tendência, não a direção. Opera apenas quando ADX &gt; 25 (tendência forte) e D+ vs D- indica direção. Quinta prioridade - usado como último recurso quando outros indicadores estão neutros.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    🔍 Último recurso - Opera apenas em tendências muito fortes
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="enableAdxSignals"
+                    checked={formData.enableAdxSignals}
+                    onChange={(e) => handleInputChange('enableAdxSignals', e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2 focus:ring-offset-2 transition-colors"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Filtros de Confirmação */}
+          <div className="border rounded-lg p-4">
+            <h4 className="font-medium mb-3">Filtros de Confirmação</h4>
+            <div className="space-y-3">
+              
+              {/* Money Flow */}
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="enableMoneyFlowFilter" className="font-medium">Filtro de Fluxo de Dinheiro</Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-xs">MFI (Money Flow Index) é como um "detector de movimento de dinheiro" que combina preço e volume. Ele mostra se o dinheiro está realmente entrando (compradores ativos) ou saindo (vendedores ativos) do ativo. É como contar quantas pessoas estão entrando e saindo de uma loja, não apenas olhando o preço.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Confirma se há dinheiro entrando/saindo do ativo
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="enableMoneyFlowFilter"
+                    checked={formData.enableMoneyFlowFilter}
+                    onChange={(e) => handleInputChange('enableMoneyFlowFilter', e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2 focus:ring-offset-2 transition-colors"
+                  />
+                </div>
+              </div>
+              
+              {/* VWAP */}
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="enableVwapFilter" className="font-medium">Filtro de Preço Médio do Dia</Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-xs">VWAP (Volume Weighted Average Price) é o "preço médio verdadeiro" do dia, calculado considerando o volume de cada negociação. É como calcular o preço médio de todas as vendas de um produto, dando mais peso às vendas maiores. Ajuda a identificar se o preço atual está caro ou barato em relação ao dia.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Confirma se o preço está acima/abaixo da média do dia
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="enableVwapFilter"
+                    checked={formData.enableVwapFilter}
+                    onChange={(e) => handleInputChange('enableVwapFilter', e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2 focus:ring-offset-2 transition-colors"
+                  />
+                </div>
+              </div>
+              
+              {/* BTC Trend */}
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="enableBtcTrendFilter" className="font-medium">Filtro de Tendência do Bitcoin</Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-xs">Bitcoin é o "rei" das criptomoedas e geralmente influencia todo o mercado. Quando Bitcoin sobe, a maioria das altcoins também sobem, e vice-versa. Este filtro garante que o bot só faça operações em altcoins quando a direção do Bitcoin está alinhada, evitando "nadar contra a correnteza" do mercado.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Só opera altcoins quando Bitcoin está favorável
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="enableBtcTrendFilter"
+                    checked={formData.enableBtcTrendFilter}
+                    onChange={(e) => handleInputChange('enableBtcTrendFilter', e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2 focus:ring-offset-2 transition-colors"
+                  />
+                </div>
+              </div>
+
+              {/* Heikin Ashi */}
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="enableHeikinAshi" className="font-medium">Filtro de Mudança de Tendência (Heikin Ashi)</Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-xs">Heikin Ashi é como um "filtro visual" que suaviza os movimentos do preço, tornando mais fácil identificar a verdadeira direção da tendência. É como ver o mercado através de óculos especiais que removem o "ruído". O bot só abrirá posições quando detectar uma mudança clara de tendência (de velas vermelhas para verdes, ou vice-versa), evitando entrar no meio de um movimento.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Só opera quando há mudança clara de tendência nas velas
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="enableHeikinAshi"
+                    checked={formData.enableHeikinAshi}
+                    onChange={(e) => handleInputChange('enableHeikinAshi', e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2 focus:ring-offset-2 transition-colors"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 🎯 CONFLUÊNCIA DE SINAIS - NOVA FUNCIONALIDADE DESTACADA */}
+          <div className="border-2 border-yellow-300 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg p-4 shadow-md">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="bg-yellow-500 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">
+                ⚡
+              </div>
+              <h4 className="font-bold text-lg text-gray-800">Confluência de Sinais</h4>
+              <span className="bg-green-100 text-green-800 text-xs font-medium px-2 py-1 rounded-full">
+                NOVO!
+              </span>
+            </div>
+            
+            <div className="bg-white rounded-md p-3 mb-4 border border-yellow-200">
+              <p className="text-sm text-gray-700 mb-2">
+                <strong>🚀 Revolucione seu trading!</strong> Ao invés de usar apenas 1 indicador por vez, 
+                a confluência combina múltiplos indicadores para sinais mais precisos e seguros.
+              </p>
+              <p className="text-xs text-gray-600">
+                💡 <strong>Exemplo:</strong> Momentum + RSI concordando = Sinal muito mais confiável que apenas Momentum sozinho
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              {/* Toggle Principal */}
+              <div className="flex items-center justify-between p-3 bg-white rounded-md border border-gray-200">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="enableConfluenceMode" className="font-medium text-gray-800">
+                      🎯 Habilitar Confluência de Sinais
+                    </Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 text-gray-500 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-sm">
+                            <strong>Modo Atual (sem confluência):</strong> Bot usa o primeiro indicador que der sinal<br/><br/>
+                            <strong>Modo Confluência:</strong> Bot exige que pelo menos 2+ indicadores concordem antes de abrir posição. 
+                            Muito mais seguro, mas pode ter menos sinais.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {formData.enableConfluenceMode 
+                      ? "✅ Ativo - Exige concordância entre indicadores" 
+                      : "❌ Desativo - Usa prioridade individual (padrão atual)"
+                    }
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="enableConfluenceMode"
+                    checked={formData.enableConfluenceMode}
+                    onChange={(e) => handleInputChange('enableConfluenceMode', e.target.checked)}
+                    className="w-5 h-5 rounded border-gray-300 text-yellow-600 focus:ring-yellow-500 focus:ring-2 focus:ring-offset-2 transition-colors"
+                  />
+                </div>
+              </div>
+
+              {/* Configuração do Mínimo de Confluências */}
+              {formData.enableConfluenceMode && (
+                <div className="p-3 bg-white rounded-md border border-gray-200 ml-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Label htmlFor="minConfluences" className="font-medium text-gray-700">
+                      📊 Mínimo de Indicadores Concordando
+                    </Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 text-gray-500 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-sm">
+                            <strong>2 indicadores:</strong> Mais sinais, menos filtros<br/>
+                            <strong>3+ indicadores:</strong> Menos sinais, mas muito mais seguros<br/><br/>
+                            <em>Recomendação: Comece com 2 para testar</em>
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <input
+                      type="range"
+                      id="minConfluences"
+                      min="2"
+                      max="5"
+                      step="1"
+                      value={formData.minConfluences}
+                      onChange={(e) => handleInputChange('minConfluences', parseInt(e.target.value))}
+                      className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider-thumb"
+                    />
+                    <div className="min-w-0 flex items-center gap-2">
+                      <span className="text-lg font-bold text-yellow-600">
+                        {formData.minConfluences}
+                      </span>
+                      <span className="text-sm text-gray-600">
+                        {formData.minConfluences === 2 && "Balanceado"}
+                        {formData.minConfluences === 3 && "Conservador"}
+                        {formData.minConfluences === 4 && "Muito Seguro"}
+                        {formData.minConfluences === 5 && "Ultra Seguro"}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-2">
+                    ⚖️ Quanto maior o número, mais seguros mas menos frequentes serão os sinais
+                  </p>
+                </div>
+              )}
+
+              {!formData.enableConfluenceMode && (
+                <div className="p-3 bg-gray-50 rounded-md border border-gray-200 ml-4">
+                  <p className="text-sm text-gray-600">
+                    💡 <strong>Dica:</strong> Habilite a confluência para sinais mais seguros. 
+                    O sistema atual usa prioridade: primeiro indicador que der sinal é executado.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* Trading Configuration */}
         <div className="space-y-4">
           <div className="flex items-center justify-between">
@@ -963,7 +1449,14 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p className="max-w-xs">Configurações básicas para foco em volume de trades. Stop loss simples e lucro mínimo baixo para mais oportunidades.</p>
+                    <p className="max-w-xs">
+                      <strong>🔥 Modo VOLUME - Farming otimizado:</strong><br/>
+                      • Stop Loss: -3% (era -10%)<br/>  
+                      • Lucro Mínimo: +3% (era +10%)<br/>
+                      • Todos indicadores habilitados<br/>
+                      • Heikin Ashi e Confluência desabilitados<br/>
+                      <em>Ideal para gerar muito volume com trades frequentes!</em>
+                    </p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -985,7 +1478,17 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p className="max-w-xs">Configurações avançadas para foco em lucro. Trailing stop, estratégia híbrida e lucro mínimo alto para proteger ganhos.</p>
+                    <p className="max-w-xs">
+                      <strong>💎 Modo LUCRO - Configuração profissional:</strong><br/>
+                      • Stop Loss: -10% (seguro)<br/>
+                      • Lucro Mínimo: +10% (conservador)<br/>
+                      • Trailing Distance: 1% (otimizado)<br/>
+                      • Fechamento Parcial: 30%<br/>
+                      • Todos indicadores habilitados<br/>
+                      • ✅ Heikin Ashi ativo<br/>
+                      • ✅ Confluência ativa (2+ indicadores)<br/>
+                      <em>Configuração ultra segura para lucros máximos!</em>
+                    </p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>

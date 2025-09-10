@@ -51,6 +51,7 @@ describe('DatabaseService', () => {
     });
 
     it('deve conseguir inserir, obter e apagar um registo da tabela trailing_state', async () => {
+      const testBotId = 1;
       const testSymbol = 'BTC_USDC_PERP';
       const testState = {
         symbol: testSymbol,
@@ -61,36 +62,41 @@ describe('DatabaseService', () => {
 
       // Insert test data
       const insertResult = await dbService.run(
-        'INSERT OR REPLACE INTO trailing_state (symbol, state, updatedAt) VALUES (?, ?, ?)',
-        [testSymbol, JSON.stringify(testState), new Date().toISOString()]
+        'INSERT OR REPLACE INTO trailing_state (botId, symbol, state, updatedAt) VALUES (?, ?, ?, ?)',
+        [testBotId, testSymbol, JSON.stringify(testState), new Date().toISOString()]
       );
       expect(insertResult.changes).toBe(1);
 
       // Get the inserted data
-      const retrievedData = await dbService.get('SELECT * FROM trailing_state WHERE symbol = ?', [
-        testSymbol,
-      ]);
+      const retrievedData = await dbService.get(
+        'SELECT * FROM trailing_state WHERE symbol = ? AND botId = ?',
+        [testSymbol, testBotId]
+      );
       expect(retrievedData).toBeTruthy();
       expect(retrievedData.symbol).toBe(testSymbol);
+      expect(retrievedData.botId).toBe(testBotId);
 
       const retrievedState = JSON.parse(retrievedData.state);
       expect(retrievedState.trailingStopPrice).toBe(50000);
       expect(retrievedState.activated).toBe(true);
 
       // Delete the test data
-      const deleteResult = await dbService.run('DELETE FROM trailing_state WHERE symbol = ?', [
-        testSymbol,
-      ]);
+      const deleteResult = await dbService.run(
+        'DELETE FROM trailing_state WHERE symbol = ? AND botId = ?',
+        [testSymbol, testBotId]
+      );
       expect(deleteResult.changes).toBe(1);
 
       // Verify deletion
-      const deletedData = await dbService.get('SELECT * FROM trailing_state WHERE symbol = ?', [
-        testSymbol,
-      ]);
+      const deletedData = await dbService.get(
+        'SELECT * FROM trailing_state WHERE symbol = ? AND botId = ?',
+        [testSymbol, testBotId]
+      );
       expect(deletedData).toBeUndefined();
     });
 
     it('deve conseguir executar queries getAll', async () => {
+      const testBotId = 1;
       const testData = [
         { symbol: 'BTC_USDC_PERP', state: JSON.stringify({ price: 50000 }) },
         { symbol: 'ETH_USDC_PERP', state: JSON.stringify({ price: 3000 }) },
@@ -99,8 +105,8 @@ describe('DatabaseService', () => {
       // Insert test data
       for (const data of testData) {
         await dbService.run(
-          'INSERT OR REPLACE INTO trailing_state (symbol, state, updatedAt) VALUES (?, ?, ?)',
-          [data.symbol, data.state, new Date().toISOString()]
+          'INSERT OR REPLACE INTO trailing_state (botId, symbol, state, updatedAt) VALUES (?, ?, ?, ?)',
+          [testBotId, data.symbol, data.state, new Date().toISOString()]
         );
       }
 

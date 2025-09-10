@@ -37,8 +37,20 @@ export class AlphaFlowStrategy extends BaseStrategy {
     Logger.debug(
       `      • CVD Divergence: ${data.cvdDivergence?.bullish ? 'BULLISH' : data.cvdDivergence?.bearish ? 'BEARISH' : 'NEUTRAL'}`
     );
+    Logger.debug(
+      `      • Heikin Ashi: ${data.heikinAshi?.current?.direction || 'NEUTRAL'} (Mudança: ${data.heikinAshi?.trendChange?.hasChanged ? data.heikinAshi?.trendChange?.changeType : 'NENHUMA'})`
+    );
     Logger.debug(`      • VWAP: ${data.vwap?.vwap ? 'OK' : 'MISSING'}`);
     Logger.debug(`      • ATR: ${data.atr?.atr ? 'OK' : 'MISSING'}`);
+
+    // HEIKIN ASHI FILTER: Verifica se deve aplicar filtro de Heikin Ashi
+    const heikinAshiFilter = this.shouldApplyHeikinAshiFilter(config);
+    if (heikinAshiFilter && !this.validateHeikinAshiTrend(data, btcTrend, symbol)) {
+      Logger.debug(
+        `   ❌ ${symbol}: Heikin Ashi bloqueou operação - não há mudança de tendência válida`
+      );
+      return null;
+    }
 
     // Análise de confluência para sinais LONG
     Logger.debug(`   🔍 ${symbol}: Verificando sinais LONG...`);
@@ -665,6 +677,66 @@ export class AlphaFlowStrategy extends BaseStrategy {
       isShort: false,
       analysisDetails: ['AlphaFlow: Análise BTC não aplicável'],
     };
+  }
+
+  /**
+   * Verifica se deve aplicar filtro de Heikin Ashi
+   * @param {object} config - Configuração da conta
+   * @returns {boolean} - True se deve aplicar o filtro
+   */
+  shouldApplyHeikinAshiFilter(config) {
+    // Verifica se Heikin Ashi está habilitado na configuração
+    return config?.enableHeikinAshi === true || config?.enableHeikinAshi === 'true';
+  }
+
+  /**
+   * Valida tendência usando Heikin Ashi como filtro principal
+   * @param {object} data - Dados de mercado
+   * @param {string} btcTrend - Tendência do BTC (do Heikin Ashi do BTC)
+   * @param {string} symbol - Símbolo do ativo
+   * @returns {boolean} - True se a operação é permitida
+   */
+  validateHeikinAshiTrend(data, btcTrend, symbol) {
+    const heikinAshi = data.heikinAshi;
+
+    // Se não há dados de Heikin Ashi, permite operação (fallback)
+    if (!heikinAshi || !heikinAshi.trendChange) {
+      Logger.debug(`   ⚠️ ${symbol}: Sem dados Heikin Ashi - permitindo operação`);
+      return true;
+    }
+
+    // REGRA PRINCIPAL: Só opera em mudanças de tendência
+    const hasRecentTrendChange = heikinAshi.trendChange.hasChanged;
+
+    if (!hasRecentTrendChange) {
+      Logger.debug(`   ❌ ${symbol}: Heikin Ashi - Sem mudança de tendência recente`);
+      return false;
+    }
+
+    const trendDirection = heikinAshi.trendChange.changeType; // 'BULLISH' or 'BEARISH'
+    const confirmedTrend = heikinAshi.trendChange.confirmedTrend; // 'UP', 'DOWN', 'NEUTRAL'
+
+    Logger.debug(
+      `   📊 ${symbol}: Heikin Ashi - Mudança detectada: ${trendDirection}, Tendência confirmada: ${confirmedTrend}`
+    );
+
+    // REGRA ESPECIAL PARA BTC: Só bloqueia se BTC e ALT têm tendências opostas específicas
+    if (btcTrend && btcTrend !== 'NEUTRAL') {
+      // Se BTC está em queda (DOWN) e vem reversão para alta no ALT, bloqueia
+      if (btcTrend === 'DOWN' && trendDirection === 'BULLISH') {
+        Logger.debug(
+          `   ❌ ${symbol}: BTC em queda (${btcTrend}) com reversão bullish da ALT - bloqueado`
+        );
+        return false;
+      }
+
+      // Para outras combinações, permite
+      Logger.debug(`   ✅ ${symbol}: BTC: ${btcTrend}, ALT: ${trendDirection} - permitido`);
+    }
+
+    // Se passou em todas as validações, permite a operação
+    Logger.debug(`   ✅ ${symbol}: Heikin Ashi validação passou - mudança: ${trendDirection}`);
+    return true;
   }
 
   /**

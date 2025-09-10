@@ -35,6 +35,21 @@ interface BotConfig {
   authorizedTokens?: string[];
   // Próxima validação
   nextValidationAt?: string;
+  // Configurações de Validação de Sinais
+  enableMomentumSignals?: boolean;
+  enableRsiSignals?: boolean;
+  enableStochasticSignals?: boolean;
+  enableMacdSignals?: boolean;
+  enableAdxSignals?: boolean;
+  // Configurações de Filtros de Confirmação
+  enableMoneyFlowFilter?: boolean;
+  enableVwapFilter?: boolean;
+  enableBtcTrendFilter?: boolean;
+  // Configuração do Heikin Ashi
+  enableHeikinAshi?: boolean;
+  // Configuração de Confluência
+  enableConfluenceMode?: boolean;
+  minConfluences?: number;
 }
 
 
@@ -419,6 +434,23 @@ export const BotCard: React.FC<BotCardProps> = ({
           <div className="flex items-center gap-1">
             <div className={`w-2 h-2 rounded-full ${config.enableMarketFallback ? 'bg-green-500' : 'bg-gray-300'}`} />
             <span className="truncate">Market Orders Fallback</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className={`w-2 h-2 rounded-full ${config.enableRsiSignals ? 'bg-purple-500' : 'bg-gray-300'}`} />
+            <span className="truncate">Sinais RSI</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className={`w-2 h-2 rounded-full ${config.enableHeikinAshi ? 'bg-blue-500' : 'bg-gray-300'}`} />
+            <span className="truncate">Filtro Heikin Ashi</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className={`w-2 h-2 rounded-full ${config.enableConfluenceMode ? 'bg-yellow-500' : 'bg-gray-300'}`} />
+            <span className="truncate">
+              {config.enableConfluenceMode 
+                ? `Confluência (${config.minConfluences || 2}+ sinais)` 
+                : 'Confluência Desabilitada'
+              }
+            </span>
           </div>
         </div>
 

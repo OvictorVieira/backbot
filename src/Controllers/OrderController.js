@@ -3413,7 +3413,7 @@ class OrderController {
               Logger.info(`📋 [STRATEGY_TAG] ${market}: Bot marcado como "${orderResult.botName}"`);
             }
 
-            await TrailingStop.saveStateToDB(market, trailingState, config?.id, config);
+            await TrailingStop.createTrailingStopOrder(position, trailingState, config?.id, config);
           }
         } catch (trailingError) {
           Logger.warn(
@@ -4863,6 +4863,46 @@ class OrderController {
     } catch (error) {
       Logger.warn(`⚠️  [PRICE] Erro ao obter preço atual para ${market}:`, error.message);
       return null;
+    }
+  }
+
+  /**
+   * Verifica se uma ordem está posicionada corretamente como stop loss
+   * @param {object} order - Dados da ordem
+   * @param {object} position - Dados da posição
+   * @returns {boolean} - True se a ordem está posicionada corretamente como stop loss
+   */
+  static isOrderCorrectlyPositionedAsStopLoss(order, position) {
+    try {
+      // Validações básicas
+      if (!order || !position) {
+        return false;
+      }
+
+      // Precisa ter pelo menos um dos preços
+      if (!order.limitPrice && !order.triggerPrice) {
+        return false;
+      }
+
+      // Determina se é posição LONG ou SHORT
+      const isLongPosition = parseFloat(position.netQuantity) > 0;
+      const entryPrice = parseFloat(position.avgEntryPrice || position.entryPrice);
+      const orderPrice = parseFloat(order.triggerPrice || order.limitPrice);
+
+      if (!entryPrice || !orderPrice) {
+        return false;
+      }
+
+      // Para posição LONG: stop loss deve estar ABAIXO do preço de entrada
+      // Para posição SHORT: stop loss deve estar ACIMA do preço de entrada
+      if (isLongPosition) {
+        return orderPrice < entryPrice; // Stop loss abaixo da entrada para LONG
+      } else {
+        return orderPrice > entryPrice; // Stop loss acima da entrada para SHORT
+      }
+    } catch (error) {
+      Logger.error('❌ [ORDER_CONTROLLER] Erro ao validar posição do stop loss:', error.message);
+      return false;
     }
   }
 

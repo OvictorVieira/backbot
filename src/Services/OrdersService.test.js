@@ -122,7 +122,7 @@ describe('OrdersService', () => {
       expect(allOrders.length).toBe(1);
 
       // Remove ordens do bot 1
-      const removedCount = await OrdersService.clearOrdersByBotId(1);
+      const removedCount = await OrdersService.removeOrdersByBotId(1);
 
       expect(removedCount).toBe(1);
 
