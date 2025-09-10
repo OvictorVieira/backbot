@@ -1,7 +1,7 @@
 import axios from 'axios';
 import https from 'https';
 import http from 'http';
-const { auth } = await import('../Backpack/Authenticated/Authentication.js');
+import { auth } from '../Backpack/Authenticated/Authentication.js';
 import Logger from './Logger.js';
 
 /**
