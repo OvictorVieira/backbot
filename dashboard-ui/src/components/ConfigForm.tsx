@@ -392,6 +392,13 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
     }
   };
 
+  // Função para formatar porcentagem de change
+  const formatChangePercent = (changePercent: string): string => {
+    const num = parseFloat(changePercent);
+    if (isNaN(num)) return '0.00%';
+    return `${num > 0 ? '+' : ''}${(num * 100).toFixed(2)}%`;
+  };
+
   // Função para limpar todos os tokens autorizados (permitir todos)
   const clearAuthorizedTokens = () => {
     setFormData(prev => ({
@@ -915,10 +922,17 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                       }
                       
                       const isSelected = formData.authorizedTokens.includes(token.symbol);
+                      const changePercent = parseFloat(token.priceChangePercent24h || '0');
+                      const changeColor = changePercent > 0 
+                        ? 'text-green-600 dark:text-green-400' 
+                        : changePercent < 0 
+                          ? 'text-red-600 dark:text-red-400'
+                          : 'text-gray-600 dark:text-gray-400';
+                      
                       return (
                         <div
                           key={token.symbol}
-                          className={`flex items-center justify-between p-2 rounded cursor-pointer transition-colors ${
+                          className={`flex items-center justify-between p-3 rounded cursor-pointer transition-colors ${
                             isSelected 
                               ? 'bg-blue-50 border border-blue-200 dark:bg-blue-950/20 dark:border-blue-800' 
                               : 'hover:bg-gray-50 dark:hover:bg-gray-800'
@@ -928,23 +942,28 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                             : addTokenToAuthorized(token.symbol)
                           }
                         >
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-3">
                             <div className={`w-3 h-3 rounded-full border-2 ${
                               isSelected 
                                 ? 'bg-blue-500 border-blue-500' 
                                 : 'border-gray-300'
                             }`} />
-                            <div>
-                              <div className="font-medium text-sm">
-                                {token.symbol.replace('_USDC_PERP', '')}-PERP
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <div className="font-medium text-sm">
+                                  {token.symbol.replace('_USDC_PERP', '')}-PERP
+                                </div>
+                                <div className={`text-xs font-medium ${changeColor}`}>
+                                  {formatChangePercent(token.priceChangePercent24h || '0')}
+                                </div>
                               </div>
-                              <div className="text-xs text-muted-foreground">
-                                {token.baseSymbol} • {token.marketType || 'PERP'}
+                              <div className="text-xs text-muted-foreground mt-0.5">
+                                Vol: {formatVolume(token.quoteVolume24h || '0')} USDC
                               </div>
                             </div>
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {isSelected ? 'Selecionado' : 'Clique para selecionar'}
+                            {isSelected ? '✓ Selecionado' : 'Clique para selecionar'}
                           </div>
                         </div>
                       );

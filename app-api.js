@@ -2282,10 +2282,10 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-// GET /api/tokens/available - Retorna tokens/markets disponíveis
+// GET /api/tokens/available - Retorna tokens/markets disponíveis com dados de volume e change 24h
 app.get('/api/tokens/available', async (req, res) => {
   try {
-    Logger.info('🔍 [API] Buscando tokens disponíveis...');
+    Logger.info('🔍 [API] Buscando tokens disponíveis com dados de volume...');
 
     // Usar a classe Markets para obter dados da Backpack API
     const Markets = await import('./src/Backpack/Public/Markets.js');
@@ -2294,8 +2294,13 @@ app.get('/api/tokens/available', async (req, res) => {
     const marketsInstance = new Markets.default();
     Logger.debug('✅ [API] Instância Markets criada');
 
-    const markets = await marketsInstance.getMarkets();
-    Logger.debug(`📊 [API] Dados recebidos da API: ${markets ? markets.length : 0} mercados`);
+    // Buscar dados de mercados e tickers em paralelo
+    const [markets, tickers] = await Promise.all([
+      marketsInstance.getMarkets(),
+      marketsInstance.getTickers('1d')
+    ]);
+
+    Logger.debug(`📊 [API] Dados recebidos - Markets: ${markets ? markets.length : 0}, Tickers: ${tickers ? tickers.length : 0}`);
 
     if (!markets || !Array.isArray(markets)) {
       Logger.error('❌ [API] Dados inválidos recebidos da API:', markets);
@@ -2305,30 +2310,49 @@ app.get('/api/tokens/available', async (req, res) => {
       });
     }
 
-    // Filtrar apenas mercados PERP ativos
-    Logger.debug(`🔍 [API] Filtrando ${markets.length} mercados...`);
-    Logger.debug(
-      `🔍 [API] Primeiros 3 mercados:`,
-      markets.slice(0, 3).map(m => ({
-        symbol: m.symbol,
-        marketType: m.marketType,
-        orderBookState: m.orderBookState,
-      }))
-    );
+    // Criar map dos tickers para busca rápida por symbol
+    const tickersMap = new Map();
+    if (tickers && Array.isArray(tickers)) {
+      tickers.forEach(ticker => {
+        if (ticker.symbol) {
+          tickersMap.set(ticker.symbol, ticker);
+        }
+      });
+    }
 
+    // Filtrar apenas mercados PERP ativos e enriquecer com dados de ticker
+    Logger.debug(`🔍 [API] Filtrando ${markets.length} mercados...`);
+    
     const availableTokens = markets
       .filter(market => market.marketType === 'PERP' && market.orderBookState === 'Open')
-      .map(market => ({
-        symbol: market.symbol,
-        baseSymbol: market.baseSymbol,
-        quoteSymbol: market.quoteSymbol,
-        marketType: market.marketType,
-        orderBookState: market.orderBookState,
-        status: market.status || 'Unknown',
-      }))
-      .sort((a, b) => a.symbol.localeCompare(b.symbol));
+      .map(market => {
+        const ticker = tickersMap.get(market.symbol) || {};
+        return {
+          symbol: market.symbol,
+          baseSymbol: market.baseSymbol,
+          quoteSymbol: market.quoteSymbol,
+          marketType: market.marketType,
+          orderBookState: market.orderBookState,
+          status: market.status || 'Unknown',
+          // Dados de volume e change das últimas 24h
+          volume24h: ticker.volume || '0',
+          quoteVolume24h: ticker.quoteVolume || '0',
+          priceChange24h: ticker.priceChange || '0',
+          priceChangePercent24h: ticker.priceChangePercent || '0',
+          high24h: ticker.high || '0',
+          low24h: ticker.low || '0',
+          lastPrice: ticker.lastPrice || '0',
+          trades24h: ticker.trades || '0'
+        };
+      })
+      // Ordenar por volume (maior para menor)
+      .sort((a, b) => {
+        const volumeA = parseFloat(a.quoteVolume24h) || 0;
+        const volumeB = parseFloat(b.quoteVolume24h) || 0;
+        return volumeB - volumeA;
+      });
 
-    Logger.debug(`✅ [API] Tokens filtrados: ${availableTokens.length} PERP ativos`);
+    Logger.debug(`✅ [API] Tokens filtrados e ordenados por volume: ${availableTokens.length} PERP ativos`);
 
     res.json({
       success: true,
