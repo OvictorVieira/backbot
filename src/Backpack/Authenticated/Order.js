@@ -1,9 +1,8 @@
-import axios from 'axios';
-import { auth } from './Authentication.js';
 import Logger from '../../Utils/Logger.js';
 import GlobalRequestQueue from '../../Utils/GlobalRequestQueue.js';
 import OrdersCache from '../../Utils/OrdersCache.js';
 import CacheInvalidator from '../../Utils/CacheInvalidator.js';
+import requestManager from '../../Utils/RequestManager.js';
 
 class Order {
   async getOpenOrder(symbol, orderId, clientId = null, apiKey, apiSecret) {
@@ -36,10 +35,15 @@ class Order {
     });
 
     try {
-      const response = await axios.get(`${process.env.API_URL}/api/v1/order`, {
-        headers,
-        params,
-      });
+      const response = await requestManager.get(
+        `${process.env.API_URL}/api/v1/order`,
+        {
+          headers,
+          params,
+        },
+        'Get Open Order',
+        1
+      );
       return response.data;
     } catch (error) {
       Logger.error('getOpenOrder - ERROR!', error.response?.data || error.message);
@@ -71,26 +75,24 @@ class Order {
       `🔍 [ORDERS_CACHE] Cache miss para getOpenOrders(${symbol || 'ALL'}), buscando da API...`
     );
 
-    const timestamp = Date.now();
-
     const params = {};
     // OTIMIZAÇÃO: Se não tem símbolo específico, busca TODAS as ordens (mais eficiente)
     if (symbol) params.symbol = symbol;
     if (marketType) params.marketType = marketType;
 
-    const headers = auth({
-      instruction: 'orderQueryAll',
-      timestamp,
-      params,
-      apiKey,
-      apiSecret,
-    });
-
-    const response = await axios.get(`${process.env.API_URL}/api/v1/orders`, {
-      headers,
-      params,
-      timeout: 15000, // 15 segundos de timeout
-    });
+    // ✅ FIX: Using authenticated request with fresh timestamp generated in RequestManager
+    const response = await requestManager.authenticatedGet(
+      `${process.env.API_URL}/api/v1/orders`,
+      { params, timeout: 15000 },
+      {
+        instruction: 'orderQueryAll',
+        params,
+        apiKey,
+        apiSecret,
+      },
+      'Get Open Orders',
+      1
+    );
 
     const orders = response.data || [];
 
@@ -198,11 +200,16 @@ class Order {
 
       for (const endpoint of possibleEndpoints) {
         try {
-          const response = await axios.get(`${process.env.API_URL}${endpoint}`, {
-            headers,
-            params,
-            timeout: 15000,
-          });
+          const response = await requestManager.get(
+            `${process.env.API_URL}${endpoint}`,
+            {
+              headers,
+              params,
+              timeout: 15000,
+            },
+            `Get Trigger Orders ${endpoint}`,
+            2
+          );
 
           Logger.debug(`[TRIGGER_ORDERS] Sucesso com endpoint: ${endpoint}`);
           return response.data;
@@ -228,9 +235,15 @@ class Order {
     });
 
     try {
-      const { data } = await axios.post(`${process.env.API_URL}/api/v1/order`, body, {
-        headers,
-      });
+      const { data } = await requestManager.post(
+        `${process.env.API_URL}/api/v1/order`,
+        body,
+        {
+          headers,
+        },
+        'Execute Order',
+        0
+      );
 
       return data;
     } catch (err) {
@@ -273,10 +286,15 @@ class Order {
     });
 
     try {
-      const response = await axios.delete(`${process.env.API_URL}/api/v1/order`, {
-        headers,
-        data: params,
-      });
+      const response = await requestManager.delete(
+        `${process.env.API_URL}/api/v1/order`,
+        {
+          headers,
+          data: params,
+        },
+        'Cancel Order',
+        1
+      );
 
       // Invalida cache após cancelar ordem com sucesso
       if (response.data && symbol) {
@@ -311,10 +329,15 @@ class Order {
     });
 
     try {
-      const response = await axios.delete(`${process.env.API_URL}/api/v1/orders`, {
-        headers,
-        data: params,
-      });
+      const response = await requestManager.delete(
+        `${process.env.API_URL}/api/v1/orders`,
+        {
+          headers,
+          data: params,
+        },
+        'Cancel All Orders',
+        1
+      );
       return response.data;
     } catch (error) {
       Logger.error('cancelOpenOrders - ERROR!', error.response?.data || error.message);

@@ -1,6 +1,5 @@
-import axios from 'axios';
-import { auth } from './Authentication.js';
 import Logger from '../../Utils/Logger.js';
+import requestManager from '../../Utils/RequestManager.js';
 
 class Futures {
   constructor() {
@@ -26,24 +25,23 @@ class Futures {
       return this.positionsCache.get(cacheKey);
     }
 
-    const timestamp = Date.now();
+    Logger.debug(
+      `🔄 [POSITIONS_FRESH] Cache expirado (${Math.round(cacheAge / 1000)}s) - Buscando posições da API...`
+    );
 
     try {
-      const headers = auth({
-        instruction: 'positionQuery',
-        timestamp,
-        apiKey: apiKey,
-        apiSecret: apiSecret,
-      });
-
-      Logger.debug(
-        `🔄 [POSITIONS_FRESH] Cache expirado (${Math.round(cacheAge / 1000)}s) - Buscando posições da API...`
+      // ✅ FIX: Using authenticated request with fresh timestamp generated in RequestManager
+      const response = await requestManager.authenticatedGet(
+        `${process.env.API_URL}/api/v1/position`,
+        { timeout: 15000 },
+        {
+          instruction: 'positionQuery',
+          apiKey: apiKey,
+          apiSecret: apiSecret,
+        },
+        'Get Open Positions',
+        1
       );
-
-      const response = await axios.get(`${process.env.API_URL}/api/v1/position`, {
-        headers,
-        timeout: 15000,
-      });
 
       // Salva no cache por 10 segundos
       this.positionsCache.set(cacheKey, response.data);
@@ -57,17 +55,18 @@ class Futures {
         // Retry após 2 segundos
         await new Promise(resolve => setTimeout(resolve, 2000));
         try {
-          const retryHeaders = auth({
-            instruction: 'positionQuery',
-            timestamp: Date.now(),
-            apiKey: apiKey,
-            apiSecret: apiSecret,
-          });
-
-          const retryResponse = await axios.get(`${process.env.API_URL}/api/v1/position`, {
-            headers: retryHeaders,
-            timeout: 20000, // Timeout maior na segunda tentativa
-          });
+          // ✅ FIX: Using authenticated request for retry with fresh timestamp
+          const retryResponse = await requestManager.authenticatedGet(
+            `${process.env.API_URL}/api/v1/position`,
+            { timeout: 20000 }, // Timeout maior na segunda tentativa
+            {
+              instruction: 'positionQuery',
+              apiKey: apiKey,
+              apiSecret: apiSecret,
+            },
+            'Get Open Positions Retry',
+            0
+          );
 
           // Salva no cache por 10 segundos
           this.positionsCache.set(cacheKey, retryResponse.data);

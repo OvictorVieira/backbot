@@ -196,7 +196,11 @@ class Decision {
   async getMarketInfo(symbol, config = null) {
     try {
       // Adiciona symbol ao config para cálculo correto da alavancagem
-      const configWithSymbol = { ...config, symbol };
+      const configWithSymbol = {
+        ...config,
+        symbol,
+        strategy: config?.strategyName || this.strategy.constructor.name || 'DEFAULT',
+      };
 
       // Obtém os dados da conta
       const Account = await AccountController.get(configWithSymbol);
@@ -255,7 +259,12 @@ class Decision {
         }
       }
 
-      const Account = await AccountController.get(config);
+      const configWithStrategy = {
+        ...config,
+        strategy: config?.strategyName || this.strategy.constructor.name || 'DEFAULT',
+      };
+
+      const Account = await AccountController.get(configWithStrategy);
 
       // Verifica se os dados da conta foram carregados com sucesso
       if (!Account) {
@@ -273,8 +282,10 @@ class Decision {
       const apiKey = config?.apiKey;
       const apiSecret = config?.apiSecret;
 
-      // NOVA ABORDAGEM: Busca apenas posições do próprio bot
+      // NOVA ABORDAGEM: Busca apenas posições do próprio bot com proteção contra cache stale
       let positions = [];
+      let shouldForceRefresh = false;
+
       if (config?.botId) {
         try {
           // Importa dinamicamente o PositionTrackingService
@@ -284,31 +295,75 @@ class Decision {
           const { default: ConfigManagerSQLite } = await import('../Config/ConfigManagerSQLite.js');
 
           const positionTracker = new PositionTrackingService(ConfigManagerSQLite.dbService);
-          positions = await positionTracker.getBotOpenPositions(config.botId);
+          const botPositions = await positionTracker.getBotOpenPositions(config.botId);
 
-          Logger.debug(
-            `📊 [${config?.botName || 'DEFAULT'}] Usando ${positions.length} posições do bot`
-          );
+          // Verifica se temos posições no tracking interno do bot
+          if (botPositions && botPositions.length > 0) {
+            positions = botPositions;
+            Logger.debug(
+              `📊 [${config?.botName || 'DEFAULT'}] Usando ${positions.length} posições do bot (tracking interno)`
+            );
+          } else {
+            // Se não temos posições no tracking, força refresh da exchange para verificar se há posições órfãs
+            Logger.warn(
+              `⚠️ [${config?.botName || 'DEFAULT'}] Sem posições no tracking interno - forçando verificação na exchange`
+            );
+            shouldForceRefresh = true;
+            positions = await Futures.getOpenPositionsForceRefresh(apiKey, apiSecret);
+
+            // Filtra apenas posições reais (com netQuantity != 0)
+            const realPositions = positions.filter(
+              pos => pos.netQuantity && parseFloat(pos.netQuantity) !== 0
+            );
+
+            if (realPositions.length > 0) {
+              Logger.warn(
+                `🚨 [${config?.botName || 'DEFAULT'}] POSIÇÕES ÓRFÃS DETECTADAS: ${realPositions.length} posições abertas na exchange mas não no bot!`
+              );
+              Logger.warn(
+                `🔍 [${config?.botName || 'DEFAULT'}] Símbolos órfãos: ${realPositions.map(p => `${p.symbol}(${p.netQuantity})`).join(', ')}`
+              );
+              positions = realPositions;
+            } else {
+              positions = [];
+              Logger.debug(
+                `✅ [${config?.botName || 'DEFAULT'}] Confirmado: nenhuma posição aberta na exchange`
+              );
+            }
+          }
         } catch (error) {
           Logger.debug(
             `⚠️ [${config?.botName || 'DEFAULT'}] Erro ao buscar posições do bot: ${error.message}`
           );
-          positions = await Futures.getOpenPositions(apiKey, apiSecret);
+          shouldForceRefresh = true;
+          positions = await Futures.getOpenPositionsForceRefresh(apiKey, apiSecret);
         }
       } else {
-        // Fallback para método antigo se não tiver botId
-        Logger.debug(`⚠️ [${config?.botName || 'DEFAULT'}] Sem botId, usando posições da exchange`);
-        positions = await Futures.getOpenPositions(apiKey, apiSecret);
+        // Fallback para método antigo se não tiver botId - sempre força refresh para segurança
+        Logger.debug(
+          `⚠️ [${config?.botName || 'DEFAULT'}] Sem botId, forçando verificação na exchange`
+        );
+        shouldForceRefresh = true;
+        positions = await Futures.getOpenPositionsForceRefresh(apiKey, apiSecret);
+      }
+
+      // Log de debugging sobre o método usado
+      if (shouldForceRefresh) {
+        Logger.debug(
+          `🔄 [${config?.botName || 'DEFAULT'}] Forçou refresh da exchange - posições encontradas: ${positions.length}`
+        );
       }
 
       const closed_markets = positions.map(el => el.symbol);
 
       // VALIDAÇÃO: Máximo de ordens - Controla quantidade máxima de posições abertas
+      // Usa forceRefresh se já forçamos refresh das posições (evita inconsistências)
       const maxTradesValidation = await OrderController.validateMaxOpenTrades(
         config?.botName || 'DEFAULT',
         apiKey,
         apiSecret,
-        config
+        config,
+        shouldForceRefresh // Usa o mesmo flag de force refresh
       );
       if (!maxTradesValidation.isValid) {
         Logger.warn(maxTradesValidation.message);
@@ -573,6 +628,19 @@ class Decision {
             continue;
           }
 
+          // ✅ DEFENSIVE CHECK: Se Account ou markets não disponíveis
+          if (!Account || !Account.markets) {
+            Logger.debug(
+              `⚠️ [${config?.botName || 'DEFAULT'}] Dados da conta não disponíveis para ${marketSymbol}`
+            );
+            orderResults.push({
+              index,
+              market: marketSymbol,
+              result: { error: 'Dados da conta não disponíveis' },
+            });
+            continue;
+          }
+
           const marketInfo = Account.markets.find(el => el.symbol === marketSymbol);
 
           // Verifica se o market foi encontrado
@@ -620,11 +688,13 @@ class Decision {
             );
 
             // VALIDAÇÃO CRÍTICA: Re-verifica maxOpenTrades antes de executar cada ordem
+            // Força refresh para garantir dados atualizados antes de nova execução
             const maxTradesRecheck = await OrderController.validateMaxOpenTrades(
               config?.botName || 'DEFAULT',
               apiKey,
               apiSecret,
-              config
+              config,
+              true // Sempre força refresh em re-validações durante execução
             );
             if (!maxTradesRecheck.isValid) {
               Logger.warn(`   🚫 ${marketSymbol}: ${maxTradesRecheck.message} - Pulando ordem`);
@@ -745,11 +815,13 @@ class Decision {
           } else {
             // Processa ordem única (estratégias tradicionais)
             // VALIDAÇÃO CRÍTICA: Re-verifica maxOpenTrades antes de executar ordem tradicional
+            // Força refresh para garantir dados atualizados antes de nova execução
             const maxTradesRecheck = await OrderController.validateMaxOpenTrades(
               config?.botName || 'DEFAULT',
               apiKey,
               apiSecret,
-              config
+              config,
+              true // Sempre força refresh em re-validações durante execução
             );
             if (!maxTradesRecheck.isValid) {
               Logger.warn(`   🚫 ${marketSymbol}: ${maxTradesRecheck.message} - Pulando ordem`);

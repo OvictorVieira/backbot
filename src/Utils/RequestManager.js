@@ -1,9 +1,12 @@
 import axios from 'axios';
+import https from 'https';
+import http from 'http';
+const { auth } = await import('../Backpack/Authenticated/Authentication.js');
 import Logger from './Logger.js';
 
 /**
  * RequestManager - Sistema centralizado para gerenciar todas as requests da API Backpack
- * Inclui circuit breaker, rate limiting inteligente, e recovery automático
+ * Inclui circuit breaker, rate limiting inteligente, recovery automático e connection pooling
  */
 class RequestManager {
   constructor() {
@@ -11,6 +14,41 @@ class RequestManager {
     this.isProcessing = false;
     this.requestCount = 0;
     this.lastRequestTime = 0;
+
+    // HTTP/HTTPS Agents com Keep-Alive para connection pooling
+    this.httpsAgent = new https.Agent({
+      keepAlive: true,
+      keepAliveMsecs: 30000, // 30 segundos entre keep-alive packets
+      maxSockets: 50, // Máximo de sockets por host
+      maxFreeSockets: 10, // Máximo de sockets livres no pool
+      timeout: 60000, // 60 segundos timeout para sockets
+      freeSocketTimeout: 30000, // 30 segundos para liberar socket idle
+      socketActiveTTL: 300000, // 5 minutos TTL para sockets ativos
+    });
+
+    this.httpAgent = new http.Agent({
+      keepAlive: true,
+      keepAliveMsecs: 30000,
+      maxSockets: 50,
+      maxFreeSockets: 10,
+      timeout: 60000,
+      freeSocketTimeout: 30000,
+      socketActiveTTL: 300000,
+    });
+
+    // Configuração padrão do Axios com agents
+    this.axiosDefaults = {
+      httpsAgent: this.httpsAgent,
+      httpAgent: this.httpAgent,
+      timeout: 30000,
+      headers: {
+        Connection: 'keep-alive',
+        'Keep-Alive': 'timeout=30, max=100',
+      },
+    };
+
+    // Instância configurada do axios
+    this.httpClient = axios.create(this.axiosDefaults);
 
     // Rate Limiting
     this.minDelay = 1500; // 1.5 segundos mínimo entre requests
@@ -35,7 +73,10 @@ class RequestManager {
     this.startTime = Date.now();
 
     Logger.info(
-      `🔧 [REQUEST_MANAGER] Sistema iniciado - Min delay: ${this.minDelay}ms, Circuit breaker: ${this.circuitBreakerDuration / 1000}s`
+      `🔧 [REQUEST_MANAGER] Sistema iniciado - Keep-Alive ativado, Min delay: ${this.minDelay}ms, Circuit breaker: ${this.circuitBreakerDuration / 1000}s`
+    );
+    Logger.info(
+      `🌐 [CONNECTION_POOL] HTTPS Agent: maxSockets=${this.httpsAgent?.maxSockets}, maxFreeSockets=${this.httpsAgent?.maxFreeSockets}, keepAlive=${this.httpsAgent?.keepAlive}`
     );
   }
 
@@ -205,9 +246,8 @@ class RequestManager {
       );
 
       await this.delay(retryDelay);
-      this.queue.unshift(request); // Recoloca no início da fila
+      this.queue.unshift(request);
     } else {
-      // Erro final
       Logger.error(`❌ [REQUEST_MANAGER] Erro final em: ${request.description} - ${error.message}`);
       request.reject(error);
     }
@@ -322,14 +362,28 @@ class RequestManager {
    */
   shouldRetry(error) {
     const retryableCodes = [502, 503, 504, 408, 429];
-    const retryableMessages = ['timeout', 'network', 'connection', 'econnreset'];
+    const retryableMessages = [
+      'timeout',
+      'network',
+      'connection',
+      'econnreset',
+      'econnrefused',
+      'socket hang up',
+    ];
 
     if (error?.response?.status && retryableCodes.includes(error.response.status)) {
       return true;
     }
 
     const errorString = String(error?.message || error).toLowerCase();
-    return retryableMessages.some(msg => errorString.includes(msg));
+    const shouldRetryResult = retryableMessages.some(msg => errorString.includes(msg));
+
+    // Log específico para ECONNREFUSED para debugging
+    if (errorString.includes('econnrefused')) {
+      Logger.warn(`🔌 [CONNECTION_RETRY] ECONNREFUSED detectado - tentando retry com keep-alive`);
+    }
+
+    return shouldRetryResult;
   }
 
   /**
@@ -342,11 +396,21 @@ class RequestManager {
   }
 
   /**
-   * Wrapper para requests HTTP com configuração automática
+   * Wrapper para requests HTTP com configuração automática e keep-alive
    */
   async request(config, description = 'HTTP Request', priority = 5) {
     const requestFunction = async () => {
-      return await axios(config);
+      // Merge configurações do usuário com defaults (keep-alive agents)
+      const finalConfig = {
+        ...this.axiosDefaults,
+        ...config,
+        headers: {
+          ...this.axiosDefaults.headers,
+          ...config.headers,
+        },
+      };
+
+      return await axios(finalConfig);
     };
 
     return this.enqueue(requestFunction, description, priority);
@@ -381,6 +445,40 @@ class RequestManager {
   }
 
   /**
+   * Requisição direta (sem fila) para casos específicos como dashboard
+   * Use apenas quando precisar de resposta imediata
+   */
+  async directRequest(method, url, config = {}) {
+    try {
+      const finalConfig = {
+        ...this.axiosDefaults,
+        ...config,
+        headers: {
+          ...this.axiosDefaults.headers,
+          ...config.headers,
+        },
+      };
+
+      if (method === 'GET') {
+        return await this.httpClient.get(url, finalConfig);
+      } else if (method === 'POST') {
+        return await this.httpClient.post(url, finalConfig.data || {}, finalConfig);
+      } else if (method === 'DELETE') {
+        return await this.httpClient.delete(url, finalConfig);
+      }
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  /**
+   * GET direto (sem fila)
+   */
+  async directGet(url, config = {}) {
+    return this.directRequest('GET', url, config);
+  }
+
+  /**
    * Utilitário de delay
    */
   delay(ms) {
@@ -392,6 +490,70 @@ class RequestManager {
    */
   generateRequestId() {
     return Math.random().toString(36).substr(2, 9);
+  }
+
+  /**
+   * ✅ FIX: Authenticated request with FRESH timestamp
+   * Generates timestamp immediately before HTTP call to prevent expiration
+   */
+  async authenticatedRequest(method, url, config = {}, authParams, description, priority = 5) {
+    const requestFunction = async () => {
+      // 🚀 CRITICAL: Generate timestamp RIGHT before the HTTP call
+      const timestamp = Date.now();
+      const headers = auth({
+        ...authParams,
+        timestamp,
+      });
+
+      // Merge auth headers with any existing headers
+      const finalConfig = {
+        ...config,
+        headers: {
+          ...headers,
+          ...(config.headers || {}),
+        },
+      };
+
+      if (method === 'GET') {
+        return await this.httpClient.get(url, finalConfig);
+      } else if (method === 'POST') {
+        return await this.httpClient.post(url, finalConfig.data || {}, finalConfig);
+      } else if (method === 'DELETE') {
+        return await this.httpClient.delete(url, finalConfig);
+      } else {
+        throw new Error(`Unsupported HTTP method: ${method}`);
+      }
+    };
+
+    return this.enqueue(requestFunction, description, priority);
+  }
+
+  /**
+   * Authenticated GET wrapper
+   */
+  async authenticatedGet(url, config = {}, authParams, description, priority = 5) {
+    return this.authenticatedRequest('GET', url, config, authParams, description, priority);
+  }
+
+  /**
+   * Authenticated POST wrapper
+   */
+  async authenticatedPost(url, data, config = {}, authParams, description, priority = 5) {
+    return this.authenticatedRequest(
+      'POST',
+      url,
+      { ...config, data },
+      authParams,
+      description,
+      priority
+    );
+  }
+
+  /**
+   * Authenticated DELETE wrapper
+   */
+  async authenticatedDelete(url, config = {}, authParams, description, priority = 5) {
+    return this.authenticatedRequest('DELETE', url, config, authParams, description, priority);
   }
 
   /**
@@ -428,6 +590,15 @@ class RequestManager {
       // Performance
       lastRequestTime: this.lastRequestTime,
       avgDelay: this.adaptiveDelay,
+
+      // Connection Pool
+      keepAliveEnabled: this.httpsAgent.keepAlive,
+      maxSockets: this.httpsAgent.maxSockets,
+      maxFreeSockets: this.httpsAgent.maxFreeSockets,
+      activeSockets: this.httpsAgent.sockets ? Object.keys(this.httpsAgent.sockets).length : 0,
+      freeSockets: this.httpsAgent.freeSockets
+        ? Object.keys(this.httpsAgent.freeSockets).length
+        : 0,
     };
   }
 
@@ -461,6 +632,37 @@ class RequestManager {
     Logger.info(
       `📊 [REQUEST_MANAGER] Status: Fila(${status.queueLength}) | Delay(${status.adaptiveDelay}ms) | Success(${status.successRate}) | RateLimit(${status.rateLimitCount}) | CircuitBreaker(${status.circuitBreakerActive}) | Uptime(${status.uptime})`
     );
+    Logger.info(
+      `🔌 [CONNECTION_POOL] KeepAlive(${status.keepAliveEnabled}) | ActiveSockets(${status.activeSockets}) | FreeSockets(${status.freeSockets}) | Max(${status.maxSockets})`
+    );
+  }
+
+  /**
+   * Obtém estatísticas detalhadas das conexões
+   */
+  getConnectionStats() {
+    return {
+      https: {
+        keepAlive: this.httpsAgent.keepAlive,
+        maxSockets: this.httpsAgent.maxSockets,
+        maxFreeSockets: this.httpsAgent.maxFreeSockets,
+        activeSockets: this.httpsAgent.sockets ? Object.keys(this.httpsAgent.sockets).length : 0,
+        freeSockets: this.httpsAgent.freeSockets
+          ? Object.keys(this.httpsAgent.freeSockets).length
+          : 0,
+        requests: this.httpsAgent.requests ? Object.keys(this.httpsAgent.requests).length : 0,
+      },
+      http: {
+        keepAlive: this.httpAgent.keepAlive,
+        maxSockets: this.httpAgent.maxSockets,
+        maxFreeSockets: this.httpAgent.maxFreeSockets,
+        activeSockets: this.httpAgent.sockets ? Object.keys(this.httpAgent.sockets).length : 0,
+        freeSockets: this.httpAgent.freeSockets
+          ? Object.keys(this.httpAgent.freeSockets).length
+          : 0,
+        requests: this.httpAgent.requests ? Object.keys(this.httpAgent.requests).length : 0,
+      },
+    };
   }
 }
 

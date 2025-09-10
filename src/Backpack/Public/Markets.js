@@ -1,10 +1,10 @@
-import axios from 'axios';
 import Utils from '../../Utils/Utils.js';
+import requestManager from '../../Utils/RequestManager.js';
 
 class Markets {
   async getMarkets() {
     try {
-      const response = await axios.get(`${process.env.API_URL}/api/v1/markets`);
+      const response = await requestManager.directGet(`${process.env.API_URL}/api/v1/markets`);
       return response.data;
     } catch (error) {
       console.error('getMarkets - ERROR!', error.response?.data || error.message);
@@ -19,9 +19,14 @@ class Markets {
     }
 
     try {
-      const response = await axios.get(`${process.env.API_URL}/api/v1/market`, {
-        params: { symbol },
-      });
+      const response = await requestManager.get(
+        `${process.env.API_URL}/api/v1/market`,
+        {
+          params: { symbol },
+        },
+        'Get Market',
+        7
+      );
       return response.data;
     } catch (error) {
       console.error('getMarket - ERROR!', error.response?.data || error.message);
@@ -31,9 +36,14 @@ class Markets {
 
   async getTickers(interval = '1d') {
     try {
-      const response = await axios.get(`${process.env.API_URL}/api/v1/tickers`, {
-        params: { interval },
-      });
+      const response = await requestManager.get(
+        `${process.env.API_URL}/api/v1/tickers`,
+        {
+          params: { interval },
+        },
+        'Get Tickers',
+        6
+      );
 
       return response.data;
     } catch (error) {
@@ -49,9 +59,14 @@ class Markets {
     }
 
     try {
-      const response = await axios.get(`${process.env.API_URL}/api/v1/ticker`, {
-        params: { symbol, interval },
-      });
+      const response = await requestManager.get(
+        `${process.env.API_URL}/api/v1/ticker`,
+        {
+          params: { symbol, interval },
+        },
+        'Get Ticker',
+        6
+      );
 
       return response.data;
     } catch (error) {
@@ -67,9 +82,14 @@ class Markets {
     }
 
     try {
-      const response = await axios.get(`${process.env.API_URL}/api/v1/depth`, {
-        params: { symbol },
-      });
+      const response = await requestManager.get(
+        `${process.env.API_URL}/api/v1/depth`,
+        {
+          params: { symbol },
+        },
+        'Get Depth',
+        6
+      );
       return response.data;
     } catch (error) {
       console.error('getDepth - ERROR!', error.response?.data || error.message);
@@ -102,14 +122,19 @@ class Markets {
 
       const url = `${process.env.API_URL}/api/v1/klines`;
 
-      const response = await axios.get(url, {
-        params: {
-          symbol,
-          interval,
-          startTime,
-          endTime,
+      const response = await requestManager.get(
+        url,
+        {
+          params: {
+            symbol,
+            interval,
+            startTime,
+            endTime,
+          },
         },
-      });
+        `Get KLines ${symbol}`,
+        7
+      );
 
       const data = response.data;
       return data;
@@ -121,9 +146,14 @@ class Markets {
 
   async getAllMarkPrices(symbol) {
     try {
-      const response = await axios.get(`${process.env.API_URL}/api/v1/markPrices`, {
-        params: { symbol },
-      });
+      const response = await requestManager.get(
+        `${process.env.API_URL}/api/v1/markPrices`,
+        {
+          params: { symbol },
+        },
+        'Get All Mark Prices',
+        6
+      );
       return response.data;
     } catch (error) {
       console.error('getAllMarkPrices - ERROR!', error.response?.data || error.message);
@@ -133,9 +163,14 @@ class Markets {
 
   async getOpenInterest(symbol) {
     try {
-      const response = await axios.get(`${process.env.API_URL}/api/v1/openInterest`, {
-        params: { symbol },
-      });
+      const response = await requestManager.get(
+        `${process.env.API_URL}/api/v1/openInterest`,
+        {
+          params: { symbol },
+        },
+        'Get Open Interest',
+        6
+      );
       return response.data;
     } catch (error) {
       console.error('getOpenInterest - ERROR!', error.response?.data || error.message);
@@ -150,9 +185,14 @@ class Markets {
     }
 
     try {
-      const response = await axios.get(`${process.env.API_URL}/api/v1/fundingRates`, {
-        params: { symbol, limit, offset },
-      });
+      const response = await requestManager.get(
+        `${process.env.API_URL}/api/v1/fundingRates`,
+        {
+          params: { symbol, limit, offset },
+        },
+        'Get Funding Rates',
+        6
+      );
       return response.data;
     } catch (error) {
       console.error('getFundingIntervalRates - ERROR!', error.response?.data || error.message);

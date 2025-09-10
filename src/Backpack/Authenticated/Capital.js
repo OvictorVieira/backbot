@@ -1,6 +1,5 @@
-import axios from 'axios';
-import { auth } from './Authentication.js';
 import Logger from '../../Utils/Logger.js';
+import requestManager from '../../Utils/RequestManager.js';
 
 class Capital {
   async getBalances() {
@@ -24,20 +23,20 @@ class Capital {
   }
 
   async getCollateral(strategy = null, apiKey = null, apiSecret = null) {
-    const timestamp = Date.now();
-
-    const headers = auth({
-      instruction: 'collateralQuery',
-      timestamp,
-      params: {}, // Sem parâmetros nesse caso
-      apiKey,
-      apiSecret,
-    });
-
     try {
-      const response = await axios.get(`${process.env.API_URL}/api/v1/capital/collateral`, {
-        headers,
-      });
+      // ✅ FIX: Using authenticated request with fresh timestamp generated in RequestManager
+      const response = await requestManager.authenticatedGet(
+        `${process.env.API_URL}/api/v1/capital/collateral`,
+        {},
+        {
+          instruction: 'collateralQuery',
+          params: {}, // Sem parâmetros nesse caso
+          apiKey,
+          apiSecret,
+        },
+        'Get Collateral',
+        2
+      );
 
       return response.data;
     } catch (error) {
