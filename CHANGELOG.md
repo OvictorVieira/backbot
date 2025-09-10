@@ -5,6 +5,33 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.7.1] - 2025-09-10
+
+### 🔧 **CORREÇÕES CRÍTICAS: Conectividade e Validação de Posições**
+
+#### 🌐 **Correções de Conectividade**
+- ✅ **HTTP Keep-Alive:** Implementado connection pooling no RequestManager
+- ✅ **ECONNREFUSED Fix:** Corrigido erro de instância axios não criada  
+- ✅ **Dashboard API:** Método direto para requisições imediatas (bypass da fila)
+- ✅ **WebSocket Resiliente:** Reconexão automática melhorada
+
+#### 🛡️ **Validação de Posições Aprimorada**
+- ✅ **Force Refresh:** Mecanismo para detectar posições órfãs
+- ✅ **Multi-bot Safe:** Cada bot valida independentemente seus limites
+- ✅ **Position Tracking:** Sincronização robusta entre cache e exchange
+- ✅ **Security Fix:** Prevenção de abertura de posições além dos limites
+
+#### 🔄 **Melhorias no Sistema**
+- ✅ **ACCOUNT_DEBOUNCE:** Corrigido loop infinito com validação de strategy
+- ✅ **Log Throttling:** Redução de spam nos logs de debounce
+- ✅ **Connection Pool:** Estatísticas de conexão e monitoramento
+- ✅ **Rate Limiting:** Sistema inteligente com recovery automático
+
+#### 📊 **Dashboard Fixes**
+- ✅ **Token Loading:** Carregamento instantâneo de tokens disponíveis
+- ✅ **API Response:** Requisições diretas para dados da dashboard
+- ✅ **Modal Performance:** Eliminado "Carregando tokens..." infinito
+
 ## [1.7.0] - 2025-09-09
 
 ### 🎯 **NOVA FUNCIONALIDADE: Sistema de Confluência e Modos de Trading Otimizados**

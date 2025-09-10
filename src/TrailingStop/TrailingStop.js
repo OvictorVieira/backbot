@@ -1082,6 +1082,18 @@ class TrailingStop {
    */
   static calculatePnL(position, account) {
     try {
+      // ✅ DEFENSIVE CHECK: Se account é null, retorna valores seguros
+      if (!account || !account.leverage) {
+        Logger.debug(
+          `⚠️ [PNL_CALC] ${position.symbol}: Dados da conta não disponíveis - usando PnL da exchange`
+        );
+        return {
+          pnl: parseFloat(position.pnlRealized ?? '0') + parseFloat(position.pnlUnrealized ?? '0'),
+          pnlPct: 0, // Não podemos calcular % sem alavancagem
+          costBasis: 0,
+        };
+      }
+
       // Usa pnlRealized + pnlUnrealized para obter o PnL total correto
       const pnlRealized = parseFloat(position.pnlRealized ?? '0');
       const pnlUnrealized = parseFloat(position.pnlUnrealized ?? '0');
@@ -1089,7 +1101,7 @@ class TrailingStop {
 
       const notionalValue = Math.abs(parseFloat(position.netCost ?? '0'));
 
-      const rawLeverage = Number(account?.leverage);
+      const rawLeverage = Number(account.leverage);
 
       const leverage = validateLeverageForSymbol(position.symbol, rawLeverage);
 

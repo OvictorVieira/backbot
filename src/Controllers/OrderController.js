@@ -469,6 +469,15 @@ class OrderController {
             apiSecret,
             strategy: config?.strategyName || 'DEFAULT',
           });
+
+          // ✅ DEFENSIVE CHECK: Se Account ou markets não disponíveis, pula processamento
+          if (!Account || !Account.markets) {
+            Logger.debug(
+              `⚠️ [ORDER_MONITOR] ${market}: Dados da conta não disponíveis - pulando processamento`
+            );
+            continue;
+          }
+
           const marketInfo = Account.markets.find(m => m.symbol === market);
 
           // Verifica se marketInfo existe antes de acessar a propriedade fee
@@ -3021,18 +3030,24 @@ class OrderController {
     botName = 'DEFAULT',
     apiKey = null,
     apiSecret = null,
-    config = null
+    config = null,
+    forceRefresh = false
   ) {
     try {
-      const positions = await Futures.getOpenPositions(apiKey, apiSecret);
+      // Se forceRefresh for true, força busca na exchange (usado quando há suspeita de dados stale)
+      const positions = forceRefresh
+        ? await Futures.getOpenPositionsForceRefresh(apiKey, apiSecret)
+        : await Futures.getOpenPositions(apiKey, apiSecret);
+
       const maxOpenTrades = Number(config?.maxOpenOrders || 5);
       const currentOpenPositions = positions.filter(
         p => Math.abs(Number(p.netQuantity)) > 0
       ).length;
 
       // Debug log para verificar a validação
+      const refreshMethod = forceRefresh ? 'FORCE_REFRESH' : 'CACHE_OK';
       Logger.debug(
-        `🔍 [MAX_ORDERS_CHECK] ${botName}: ${currentOpenPositions}/${maxOpenTrades} posições abertas (config.maxOpenOrders: ${config?.maxOpenOrders})`
+        `🔍 [MAX_ORDERS_CHECK] ${botName}: ${currentOpenPositions}/${maxOpenTrades} posições abertas (${refreshMethod}, config.maxOpenOrders: ${config?.maxOpenOrders})`
       );
 
       if (currentOpenPositions >= maxOpenTrades) {

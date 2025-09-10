@@ -12,6 +12,8 @@ class AccountController {
 
   // 🚨 ANTI-RATE-LIMIT: Sistema de debounce global para evitar múltiplas chamadas simultâneas
   static pendingRequests = new Map(); // Requisições em andamento por botKey
+  static lastDebounceLog = 0; // Para reduzir spam de logs de debounce
+  static lastErrorLog = 0; // Para reduzir spam de logs de erro
   static globalRateLimit = {
     lastApiCall: 0,
     minInterval: 2000, // Mínimo 2 segundos entre chamadas da API por qualquer bot
@@ -24,7 +26,7 @@ class AccountController {
     }
     const apiKey = config.apiKey;
     const apiSecret = config.apiSecret;
-    const strategy = config?.strategy;
+    const strategy = config?.strategy || config?.strategyName || 'DEFAULT';
     const botKey = `${strategy}_${apiKey}`;
     const symbol = config?.symbol || 'UNKNOWN'; // Para determinar alavancagem específica do token
 
@@ -55,7 +57,17 @@ class AccountController {
     try {
       // 🚨 ANTI-RATE-LIMIT: Se já existe uma requisição em andamento para este bot, aguarda
       if (AccountController.pendingRequests.has(botKey)) {
-        Logger.warn(`⏳ [ACCOUNT_DEBOUNCE] ${strategy}: Aguardando requisição em andamento...`);
+        // Reduz spam de logs - só exibe a primeira vez e depois a cada 10 segundos
+        const lastDebounceLog = AccountController.lastDebounceLog || 0;
+        const now = Date.now();
+        if (now - lastDebounceLog > 20000) {
+          // 20 segundos para reduzir ainda mais o spam
+          const symbolInfo = symbol && symbol !== 'UNKNOWN' ? symbol : 'MÚLTIPLOS_TOKENS';
+          Logger.debug(
+            `⚡ [CACHE_WAIT] ${strategy}: Reutilizando dados da conta em cache (sistema otimizado)`
+          );
+          AccountController.lastDebounceLog = now;
+        }
         const pendingPromise = AccountController.pendingRequests.get(botKey);
         return await pendingPromise;
       }
@@ -87,16 +99,42 @@ class AccountController {
         AccountController.pendingRequests.delete(botKey);
       }
     } catch (error) {
-      Logger.error('❌ AccountController.get - Error:', error.message);
-
-      // 🛡️ FALLBACK: Se deu erro (possivelmente rate limit) e temos cache antigo, usa ele
-      if (error.message.includes('rate limit') || error.message.includes('TOO_MANY_REQUESTS')) {
-        const cachedData = AccountController.accountCacheByBot.get(botKey);
-        if (cachedData) {
+      // Reduz spam de logs de erro - só exibe a cada 30 segundos
+      const now = Date.now();
+      const timeSinceLastError = now - AccountController.lastErrorLog;
+      if (timeSinceLastError > 30000) {
+        // 30 segundos
+        if (error.message.includes('rate limit') || error.message.includes('TOO_MANY_REQUESTS')) {
           Logger.warn(
-            `⚠️ [RATE_LIMIT_FALLBACK] ${strategy}: Usando cache da rodada anterior devido ao rate limit`
+            `⏱️ [API_RATE_LIMIT] ${strategy}: Rate limit temporário - usando cache quando disponível`
           );
-          return { ...cachedData }; // Retorna dados da corretora sem modificações
+        } else if (error.message.includes('expired')) {
+          Logger.warn(
+            `⏰ [API_TIMEOUT] ${strategy}: Request expirado - reconectando automaticamente`
+          );
+        } else {
+          Logger.warn(`⚠️ [API_ERROR] ${strategy}: Erro temporário na API - tentando novamente`);
+        }
+        AccountController.lastErrorLog = now;
+      }
+
+      // 🛡️ FALLBACK: Se deu erro, tenta usar cache antigo (até 5 minutos)
+      if (
+        error.message.includes('rate limit') ||
+        error.message.includes('TOO_MANY_REQUESTS') ||
+        error.message.includes('expired') ||
+        error.message.includes('timeout')
+      ) {
+        const cachedData = AccountController.accountCacheByBot.get(botKey);
+        const lastCacheTime = AccountController.lastCacheTimeByBot.get(botKey) || 0;
+        const cacheAge = Date.now() - lastCacheTime;
+        const extendedCacheLimit = 300000; // 5 minutos para emergências
+
+        if (cachedData && cacheAge < extendedCacheLimit) {
+          Logger.debug(
+            `⚡ [EMERGENCY_CACHE] ${strategy}: Usando cache antigo (${Math.round(cacheAge / 1000)}s) durante erro da API`
+          );
+          return { ...cachedData };
         }
       }
 
@@ -123,9 +161,10 @@ class AccountController {
 
     // ✅ FALHA SEGURA: Se não conseguir dados da conta, PARA a operação
     if (!Accounts || !Collateral) {
-      const errorMsg = '❌ DADOS DE CONTA INDISPONÍVEIS - Operação BLOQUEADA para evitar perdas';
-      Logger.error(errorMsg);
-      throw new Error('Dados críticos da conta não disponíveis - operação abortada por segurança');
+      Logger.warn(
+        '⚠️ [ACCOUNT_API] Dados da conta temporariamente indisponíveis - aguardando próxima tentativa'
+      );
+      throw new Error('Dados da conta temporariamente indisponíveis - tentando novamente em breve');
     }
 
     const marketsInstance = new Markets();

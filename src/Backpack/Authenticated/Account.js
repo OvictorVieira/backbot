@@ -1,23 +1,22 @@
-import axios from 'axios';
-import { auth } from './Authentication.js';
 import Logger from '../../Utils/Logger.js';
+import requestManager from '../../Utils/RequestManager.js';
 
 class Account {
   async getAccount(strategy = null, apiKey = null, apiSecret = null) {
-    const timestamp = Date.now();
-
-    const headers = auth({
-      instruction: 'accountQuery',
-      timestamp,
-      params: {},
-      apiKey,
-      apiSecret,
-    });
-
     try {
-      const response = await axios.get(`${process.env.API_URL}/api/v1/account`, {
-        headers,
-      });
+      // ✅ FIX: Using authenticated request with fresh timestamp generated in RequestManager
+      const response = await requestManager.authenticatedGet(
+        `${process.env.API_URL}/api/v1/account`,
+        {},
+        {
+          instruction: 'accountQuery',
+          params: {},
+          apiKey,
+          apiSecret,
+        },
+        'Get Account',
+        2
+      );
 
       return response.data;
     } catch (error) {
