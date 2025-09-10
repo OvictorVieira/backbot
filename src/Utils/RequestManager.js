@@ -21,7 +21,7 @@ class RequestManager {
       keepAliveMsecs: 30000, // 30 segundos entre keep-alive packets
       maxSockets: 50, // Máximo de sockets por host
       maxFreeSockets: 10, // Máximo de sockets livres no pool
-      timeout: 60000, // 60 segundos timeout para sockets
+      timeout: 45000, // 45 segundos timeout para sockets
       freeSocketTimeout: 30000, // 30 segundos para liberar socket idle
       socketActiveTTL: 300000, // 5 minutos TTL para sockets ativos
     });
@@ -31,7 +31,7 @@ class RequestManager {
       keepAliveMsecs: 30000,
       maxSockets: 50,
       maxFreeSockets: 10,
-      timeout: 60000,
+      timeout: 45000,
       freeSocketTimeout: 30000,
       socketActiveTTL: 300000,
     });
@@ -40,7 +40,7 @@ class RequestManager {
     this.axiosDefaults = {
       httpsAgent: this.httpsAgent,
       httpAgent: this.httpAgent,
-      timeout: 30000,
+      timeout: 40000, // 40 segundos timeout para axios (menor que socket)
       headers: {
         Connection: 'keep-alive',
         'Keep-Alive': 'timeout=30, max=100',
@@ -364,6 +364,7 @@ class RequestManager {
     const retryableCodes = [502, 503, 504, 408, 429];
     const retryableMessages = [
       'timeout',
+      'etimedout',
       'network',
       'connection',
       'econnreset',
@@ -378,9 +379,11 @@ class RequestManager {
     const errorString = String(error?.message || error).toLowerCase();
     const shouldRetryResult = retryableMessages.some(msg => errorString.includes(msg));
 
-    // Log específico para ECONNREFUSED para debugging
+    // Log específico para conexões com problema
     if (errorString.includes('econnrefused')) {
       Logger.warn(`🔌 [CONNECTION_RETRY] ECONNREFUSED detectado - tentando retry com keep-alive`);
+    } else if (errorString.includes('etimedout')) {
+      Logger.warn(`⏱️ [TIMEOUT_RETRY] ETIMEDOUT detectado - tentando retry com timeout estendido`);
     }
 
     return shouldRetryResult;
