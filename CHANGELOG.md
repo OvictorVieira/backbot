@@ -5,6 +5,24 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.8.0] - 2025-09-10
+
+### 📊 **NEW FEATURES: Token Volume & Change Data**
+
+#### 💹 **Enhanced Token Selection**
+- ✅ **Volume Integration:** Endpoint `/api/tokens/available` now includes 24h volume data
+- ✅ **Price Change Display:** Added 24h price change percentage with color indicators
+- ✅ **Smart Sorting:** Tokens automatically sorted by volume (highest to lowest)
+- ✅ **Parallel Data Fetching:** Markets and tickers data fetched simultaneously for better performance
+- ✅ **Visual Improvements:** Enhanced token selection UI with volume and change info
+- ✅ **Real-time Data:** Live volume and price change from Backpack Exchange API
+
+#### 🎨 **UI/UX Enhancements**
+- ✅ **Color-coded Changes:** Green for positive, red for negative price changes
+- ✅ **Volume Formatting:** Human-readable volume display (K/M notation)
+- ✅ **Better Hierarchy:** Improved visual layout for token information
+- ✅ **Selection Indicators:** Enhanced selected state with checkmarks
+
 ## [1.7.2] - 2025-09-10
 
 ### 🛠️ **HOTFIXES: ETIMEDOUT e Auth Import**

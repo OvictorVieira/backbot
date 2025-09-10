@@ -54,8 +54,12 @@ const server = http.createServer(app);
 const PORT = process.env.API_PORT || 3001;
 
 // Debug: Verificar se as variáveis de ambiente estão sendo carregadas
-Logger.info(`🔧 [ENV] API_PORT configurada: ${process.env.API_PORT || 'não definida (usando padrão 3001)'}`);
-Logger.info(`🔧 [ENV] FRONTEND_PORT configurada: ${process.env.FRONTEND_PORT || 'não definida (usando padrão 5173)'}`);
+Logger.info(
+  `🔧 [ENV] API_PORT configurada: ${process.env.API_PORT || 'não definida (usando padrão 3001)'}`
+);
+Logger.info(
+  `🔧 [ENV] FRONTEND_PORT configurada: ${process.env.FRONTEND_PORT || 'não definida (usando padrão 5173)'}`
+);
 Logger.info(`🔧 [ENV] Porta final utilizada: ${PORT}`);
 
 // Função para verificar e matar processos na porta
@@ -2297,10 +2301,12 @@ app.get('/api/tokens/available', async (req, res) => {
     // Buscar dados de mercados e tickers em paralelo
     const [markets, tickers] = await Promise.all([
       marketsInstance.getMarkets(),
-      marketsInstance.getTickers('1d')
+      marketsInstance.getTickers('1d'),
     ]);
 
-    Logger.debug(`📊 [API] Dados recebidos - Markets: ${markets ? markets.length : 0}, Tickers: ${tickers ? tickers.length : 0}`);
+    Logger.debug(
+      `📊 [API] Dados recebidos - Markets: ${markets ? markets.length : 0}, Tickers: ${tickers ? tickers.length : 0}`
+    );
 
     if (!markets || !Array.isArray(markets)) {
       Logger.error('❌ [API] Dados inválidos recebidos da API:', markets);
@@ -2322,7 +2328,7 @@ app.get('/api/tokens/available', async (req, res) => {
 
     // Filtrar apenas mercados PERP ativos e enriquecer com dados de ticker
     Logger.debug(`🔍 [API] Filtrando ${markets.length} mercados...`);
-    
+
     const availableTokens = markets
       .filter(market => market.marketType === 'PERP' && market.orderBookState === 'Open')
       .map(market => {
@@ -2342,7 +2348,7 @@ app.get('/api/tokens/available', async (req, res) => {
           high24h: ticker.high || '0',
           low24h: ticker.low || '0',
           lastPrice: ticker.lastPrice || '0',
-          trades24h: ticker.trades || '0'
+          trades24h: ticker.trades || '0',
         };
       })
       // Ordenar por volume (maior para menor)
@@ -2352,7 +2358,9 @@ app.get('/api/tokens/available', async (req, res) => {
         return volumeB - volumeA;
       });
 
-    Logger.debug(`✅ [API] Tokens filtrados e ordenados por volume: ${availableTokens.length} PERP ativos`);
+    Logger.debug(
+      `✅ [API] Tokens filtrados e ordenados por volume: ${availableTokens.length} PERP ativos`
+    );
 
     res.json({
       success: true,

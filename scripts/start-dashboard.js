@@ -16,7 +16,7 @@ let frontendPort = '5173';
 try {
   const envContent = readFileSync(envPath, 'utf-8');
   const envLines = envContent.split('\n');
-  
+
   for (const line of envLines) {
     const [key, value] = line.split('=');
     if (key === 'API_PORT') {
@@ -42,16 +42,16 @@ const env = {
 
 try {
   // Instala dependências e executa o dev server
-  execSync('npm install', { 
+  execSync('npm install', {
     cwd: resolve(__dirname, '../dashboard-ui'),
     stdio: 'inherit',
-    env 
+    env,
   });
-  
-  execSync('npm run dev', { 
+
+  execSync('npm run dev', {
     cwd: resolve(__dirname, '../dashboard-ui'),
     stdio: 'inherit',
-    env 
+    env,
   });
 } catch (error) {
   console.error('❌ Erro ao executar dashboard:', error.message);

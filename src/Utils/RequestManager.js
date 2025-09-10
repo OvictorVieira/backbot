@@ -503,13 +503,13 @@ class RequestManager {
     const requestFunction = async () => {
       // 🚀 CRITICAL: Generate timestamp RIGHT before the HTTP call
       const timestamp = Date.now();
-      
+
       // Debug: verificar se auth está disponível
       if (!auth || typeof auth !== 'function') {
         Logger.error(`❌ [AUTH_ERROR] auth is not available: ${typeof auth}`);
         throw new Error('auth function is not available');
       }
-      
+
       const headers = auth({
         ...authParams,
         timestamp,
