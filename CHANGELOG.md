@@ -5,6 +5,21 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.7.2] - 2025-09-10
+
+### 🛠️ **HOTFIXES: ETIMEDOUT e Auth Import**
+
+#### ⏱️ **Timeout Improvements**
+- ✅ **ETIMEDOUT Retry:** Adicionado ETIMEDOUT à lista de erros que fazem retry
+- ✅ **Extended Timeouts:** Socket timeout aumentado para 45s, Axios para 40s
+- ✅ **Timeout Logging:** Log específico para identificar retries de ETIMEDOUT
+- ✅ **Connection Stability:** Prevenção de conflitos entre socket e axios timeouts
+
+#### 🔐 **Authentication Fixes**
+- ✅ **Static Import:** Corrigido import dinâmico `await import()` para import estático
+- ✅ **Auth Debugging:** Adicionado verificação e logs para disponibilidade da função auth
+- ✅ **Import Reliability:** Eliminado problema de escopo com importação dinâmica
+
 ## [1.7.1] - 2025-09-10
 
 ### 🔧 **CORREÇÕES CRÍTICAS: Conectividade e Validação de Posições**
