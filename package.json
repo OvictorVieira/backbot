@@ -9,7 +9,7 @@
     "start:bot": "cross-env NODE_TLS_REJECT_UNAUTHORIZED=0 TRADING_STRATEGY=DEFAULT nodemon bootstrap-app.js",
     "alphaflow": "cross-env NODE_TLS_REJECT_UNAUTHORIZED=0 TRADING_STRATEGY=ALPHA_FLOW nodemon bootstrap-app.js",
     "api": "cross-env NODE_TLS_REJECT_UNAUTHORIZED=0 nodemon app-api.js",
-    "dashboard": "cd dashboard-ui && npm install && cross-env FRONTEND_PORT=${FRONTEND_PORT:-5173} VITE_API_BASE_URL=http://localhost:${API_PORT:-3001} npm run dev",
+    "dashboard": "node scripts/start-dashboard.js",
     "dashboard:build": "cd dashboard-ui && npm run build",
     "dashboard:install": "cd dashboard-ui && npm install",
     "test:api": "node test-dashboard-api.js",

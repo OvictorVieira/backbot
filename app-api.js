@@ -53,6 +53,11 @@ const app = express();
 const server = http.createServer(app);
 const PORT = process.env.API_PORT || 3001;
 
+// Debug: Verificar se as variáveis de ambiente estão sendo carregadas
+Logger.info(`🔧 [ENV] API_PORT configurada: ${process.env.API_PORT || 'não definida (usando padrão 3001)'}`);
+Logger.info(`🔧 [ENV] FRONTEND_PORT configurada: ${process.env.FRONTEND_PORT || 'não definida (usando padrão 5173)'}`);
+Logger.info(`🔧 [ENV] Porta final utilizada: ${PORT}`);
+
 // Função para verificar e matar processos na porta
 function killProcessOnPort(port) {
   try {
