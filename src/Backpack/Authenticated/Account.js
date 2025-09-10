@@ -1,5 +1,6 @@
 import Logger from '../../Utils/Logger.js';
 import requestManager from '../../Utils/RequestManager.js';
+import { auth } from './Authentication.js';
 
 class Account {
   async getAccount(strategy = null, apiKey = null, apiSecret = null) {
@@ -159,7 +160,7 @@ class Account {
       const response = await axios.patch(`${process.env.API_URL}/api/v1/account`, params, {
         headers,
       });
-      
+
       // Se a resposta está vazia mas o status é 200, consideramos sucesso
       if (response.status === 200) {
         return { success: true, message: 'Alavancagem atualizada com sucesso' };

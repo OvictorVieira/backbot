@@ -1,5 +1,6 @@
 import Logger from '../../Utils/Logger.js';
 import requestManager from '../../Utils/RequestManager.js';
+import { auth } from './Authentication.js';
 
 class Capital {
   async getBalances() {

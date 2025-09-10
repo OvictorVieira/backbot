@@ -5,6 +5,16 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.8.1] - 2025-09-10
+
+### 🛠️ **HOTFIX: Authentication Import**
+
+#### 🔐 **Critical Bug Fix**
+- ✅ **Auth Import Fix:** Fixed missing import of `auth` function in Order.js
+- ✅ **Order Execution:** Resolved "auth is not defined" error during order placement
+- ✅ **Trading Functionality:** Bot now properly executes buy/sell orders
+- ✅ **API Authentication:** All authenticated API calls now work correctly
+
 ## [1.8.0] - 2025-09-10
 
 ### 📊 **NEW FEATURES: Token Volume & Change Data**
