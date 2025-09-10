@@ -33,14 +33,25 @@ npm run dev
 
 ### Pré-requisitos
 
-1. **Backend API**: O servidor BackBot API deve estar rodando em `http://localhost:3001`
+1. **Backend API**: O servidor BackBot API deve estar rodando (porta configurável via .env)
 2. **Node.js**: Versão 16 ou superior
 
 ### Variáveis de Ambiente
 
-Crie um arquivo `.env` na raiz do projeto:
+As portas são configuradas via arquivos `.env`:
 
+**Arquivo principal `.env` (raiz do projeto):**
 ```env
+# Porta para API do backend
+API_PORT=3001
+
+# Porta para o dashboard/frontend  
+FRONTEND_PORT=5173
+```
+
+**Arquivo `dashboard-ui/.env` (gerado automaticamente):**
+```env
+# URL da API (configurada automaticamente pelos scripts)
 VITE_API_BASE_URL=http://localhost:3001
 ```
 
@@ -140,8 +151,9 @@ O sistema valida automaticamente:
 ## 🐛 Troubleshooting
 
 ### Erro de Conexão com API
-- Verifique se o backend está rodando em `http://localhost:3001`
-- Confirme se não há firewall bloqueando a porta
+- Verifique se o backend está rodando na porta configurada (padrão: 3001)
+- Confirme se não há firewall bloqueando as portas configuradas
+- Verifique se as variáveis de ambiente API_PORT e FRONTEND_PORT estão corretas
 
 ### Erro de Validação
 - Verifique se todos os campos obrigatórios estão preenchidos

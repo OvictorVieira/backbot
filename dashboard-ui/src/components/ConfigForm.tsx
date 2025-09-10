@@ -7,6 +7,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Eye, EyeOff, Save, X, HelpCircle, TestTube, BarChart3, DollarSign, RotateCcw, ChevronDown } from 'lucide-react';
 import axios from 'axios';
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+
 interface BotConfig {
   id?: number;
   botName: string;
@@ -140,7 +142,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
   const fetchAvailableTokens = async () => {
     try {
       setLoadingTokens(true);
-      const response = await axios.get('http://localhost:3001/api/tokens/available');
+      const response = await axios.get(`${API_BASE_URL}/api/tokens/available`);
       
       if (response.data.success) {
         setAvailableTokens(response.data.tokens);
@@ -483,7 +485,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
     setApiKeysTestResult(null);
 
     try {
-              const response = await axios.post('http://localhost:3001/api/validate-credentials', {
+              const response = await axios.post(`${API_BASE_URL}/api/validate-credentials`, {
         apiKey: formData.apiKey,
         apiSecret: formData.apiSecret
       });
@@ -544,7 +546,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
       /*
       if (formData.apiKey && formData.apiSecret) {
         try {
-          const leverageResponse = await axios.post('http://localhost:3001/api/account/update-leverage', {
+          const leverageResponse = await axios.post(`${API_BASE_URL}/api/account/update-leverage`, {
             apiKey: formData.apiKey,
             apiSecret: formData.apiSecret,
             leverageLimit: formattedData.leverageLimit
