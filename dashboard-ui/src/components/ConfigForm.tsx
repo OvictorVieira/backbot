@@ -1299,6 +1299,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                         </TooltipTrigger>
                         <TooltipContent>
                           <p className="max-w-xs">Heikin Ashi é como um "filtro visual" que suaviza os movimentos do preço, tornando mais fácil identificar a verdadeira direção da tendência. É como ver o mercado através de óculos especiais que removem o "ruído". O bot só abrirá posições quando detectar uma mudança clara de tendência (de velas vermelhas para verdes, ou vice-versa), evitando entrar no meio de um movimento.</p>
+                          <p className="max-w-xs mt-2 text-yellow-600 font-medium">⚠️ IMPORTANTE: Quando habilitado, o bot automaticamente usará modo ON_CANDLE_CLOSE e filtrará velas não fechadas para garantir decisões precisas.</p>
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
@@ -1306,6 +1307,11 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                   <p className="text-sm text-muted-foreground">
                     Só opera quando há mudança clara de tendência nas velas
                   </p>
+                  {formData.enableHeikinAshi && (
+                    <p className="text-xs text-yellow-600 font-medium mt-1">
+                      ⚠️ Modo ON_CANDLE_CLOSE + filtro de velas fechadas aplicado automaticamente
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center space-x-2">
                   <input

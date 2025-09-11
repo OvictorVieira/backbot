@@ -254,6 +254,18 @@ async function recoverBot(botId, config, startTime) {
     // Configura o intervalo de execução baseado no executionMode
     let executionInterval;
     const timeframeConfig = new TimeframeConfig(config);
+
+    // Força ON_CANDLE_CLOSE para estratégias que dependem de velas fechadas
+    if (config.strategyName === 'ALPHA_FLOW') {
+      Logger.info(`🧠 [ALPHA_FLOW] Bot ${botId}: Modo ON_CANDLE_CLOSE forçado automaticamente`);
+      config.executionMode = 'ON_CANDLE_CLOSE';
+    } else if (config.enableHeikinAshi === true || config.enableHeikinAshi === 'true') {
+      Logger.info(
+        `📊 [HEIKIN_ASHI] Bot ${botId}: Modo ON_CANDLE_CLOSE forçado automaticamente (Heikin Ashi habilitado)`
+      );
+      config.executionMode = 'ON_CANDLE_CLOSE';
+    }
+
     const executionMode = config.executionMode || 'REALTIME';
 
     if (executionMode === 'ON_CANDLE_CLOSE') {
@@ -1164,6 +1176,18 @@ async function startBot(botId, forceRestart = false) {
     // Configura o intervalo de execução baseado no executionMode
     let executionInterval;
     const timeframeConfig = new TimeframeConfig(botConfig);
+
+    // Força ON_CANDLE_CLOSE para estratégias que dependem de velas fechadas
+    if (botConfig.strategyName === 'ALPHA_FLOW') {
+      Logger.info(`🧠 [ALPHA_FLOW] Bot ${botId}: Modo ON_CANDLE_CLOSE forçado automaticamente`);
+      botConfig.executionMode = 'ON_CANDLE_CLOSE';
+    } else if (botConfig.enableHeikinAshi === true || botConfig.enableHeikinAshi === 'true') {
+      Logger.info(
+        `📊 [HEIKIN_ASHI] Bot ${botId}: Modo ON_CANDLE_CLOSE forçado automaticamente (Heikin Ashi habilitado)`
+      );
+      botConfig.executionMode = 'ON_CANDLE_CLOSE';
+    }
+
     const executionMode = botConfig.executionMode || 'REALTIME';
 
     if (executionMode === 'ON_CANDLE_CLOSE') {
@@ -3260,6 +3284,7 @@ async function initializeServer() {
     // Inicializa o PositionSyncService
     Logger.info('🔄 [SERVER] Inicializando PositionSyncService...');
     PositionSyncService = new PositionSyncServiceClass(ConfigManagerSQLite.dbService);
+
 
     // Verifica e libera a porta antes de iniciar o servidor
     await killProcessOnPort(PORT);

@@ -1059,12 +1059,46 @@ function findCvdDivergences(candles, cvdValues) {
 }
 
 /**
+ * Filtra velas para usar apenas velas fechadas para Heikin Ashi
+ * @param {Array<Object>} candles - Array de candles
+ * @param {string} timeframe - Timeframe das velas (ex: '5m', '30m')
+ * @returns {Array<Object>} - Array de candles apenas com velas fechadas
+ */
+function filterClosedCandles(candles, timeframe) {
+  if (!candles || candles.length === 0) return candles;
+  
+  // Converte timeframe para milissegundos
+  const timeframeMs = {
+    '1m': 60 * 1000,
+    '5m': 5 * 60 * 1000,
+    '15m': 15 * 60 * 1000,
+    '30m': 30 * 60 * 1000,
+    '1h': 60 * 60 * 1000,
+    '2h': 2 * 60 * 60 * 1000,
+    '4h': 4 * 60 * 60 * 1000,
+    '1d': 24 * 60 * 60 * 1000,
+  }[timeframe] || 5 * 60 * 1000; // default 5m
+  
+  const now = new Date();
+  
+  return candles.filter(candle => {
+    const candleEndTime = new Date(candle.end);
+    // Só inclui velas que já fecharam (com margem de 1 segundo)
+    return candleEndTime.getTime() <= now.getTime() - 1000;
+  });
+}
+
+/**
  * Calcula os candles Heikin Ashi e detecta mudanças de tendência
  * @param {Array<Object>} candles - Array de candles tradicionais
+ * @param {string} timeframe - Timeframe das velas (opcional)
  * @returns {Object} - Objeto com dados dos Heikin Ashi e tendência
  */
-function calculateHeikinAshi(candles) {
-  if (!candles || candles.length < 2) {
+function calculateHeikinAshi(candles, timeframe = '5m') {
+  // A Backpack já retorna apenas candles fechados, não precisa filtrar
+  let processedCandles = candles;
+
+  if (!processedCandles || processedCandles.length < 2) {
     return {
       current: {
         open: null,
@@ -1095,10 +1129,10 @@ function calculateHeikinAshi(candles) {
 
   // Converte candles para formato esperado pela biblioteca (arrays separados)
   const candleData = {
-    open: candles.map(c => parseFloat(c.open)),
-    high: candles.map(c => parseFloat(c.high)),
-    low: candles.map(c => parseFloat(c.low)),
-    close: candles.map(c => parseFloat(c.close)),
+    open: processedCandles.map(c => parseFloat(c.open)),
+    high: processedCandles.map(c => parseFloat(c.high)),
+    low: processedCandles.map(c => parseFloat(c.low)),
+    close: processedCandles.map(c => parseFloat(c.close)),
   };
 
   // Calcula os candles Heikin Ashi
@@ -1219,6 +1253,9 @@ function calculateHeikinAshi(candles) {
     })),
   };
 }
+
+// Exporta a função calculateHeikinAshi para uso em testes
+export { calculateHeikinAshi };
 
 export async function calculateIndicators(candles, timeframe = '5m', symbol = null) {
   // Validação de entrada
@@ -1482,8 +1519,8 @@ export async function calculateIndicators(candles, timeframe = '5m', symbol = nu
   const cvdValues = calculateCVD(candles, 8);
   const cvdDivergence = findCvdDivergences(candles, cvdValues);
 
-  // NOVO: Heikin Ashi
-  const heikinAshi = calculateHeikinAshi(candles);
+  // NOVO: Heikin Ashi (usa todos os candles já que a Backpack retorna apenas fechados)
+  const heikinAshi = calculateHeikinAshi(candles, timeframe);
 
   // Macro Money Flow (MFI diário)
   const macroMoneyFlow = symbol
