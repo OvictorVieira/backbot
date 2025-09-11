@@ -1066,21 +1066,22 @@ function findCvdDivergences(candles, cvdValues) {
  */
 function filterClosedCandles(candles, timeframe) {
   if (!candles || candles.length === 0) return candles;
-  
+
   // Converte timeframe para milissegundos
-  const timeframeMs = {
-    '1m': 60 * 1000,
-    '5m': 5 * 60 * 1000,
-    '15m': 15 * 60 * 1000,
-    '30m': 30 * 60 * 1000,
-    '1h': 60 * 60 * 1000,
-    '2h': 2 * 60 * 60 * 1000,
-    '4h': 4 * 60 * 60 * 1000,
-    '1d': 24 * 60 * 60 * 1000,
-  }[timeframe] || 5 * 60 * 1000; // default 5m
-  
+  const timeframeMs =
+    {
+      '1m': 60 * 1000,
+      '5m': 5 * 60 * 1000,
+      '15m': 15 * 60 * 1000,
+      '30m': 30 * 60 * 1000,
+      '1h': 60 * 60 * 1000,
+      '2h': 2 * 60 * 60 * 1000,
+      '4h': 4 * 60 * 60 * 1000,
+      '1d': 24 * 60 * 60 * 1000,
+    }[timeframe] || 5 * 60 * 1000; // default 5m
+
   const now = new Date();
-  
+
   return candles.filter(candle => {
     const candleEndTime = new Date(candle.end);
     // Só inclui velas que já fecharam (com margem de 1 segundo)

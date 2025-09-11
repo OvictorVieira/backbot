@@ -502,8 +502,13 @@ async function startBot() {
     if (activeBotConfig.strategyName === 'ALPHA_FLOW') {
       console.log('🧠 [ALPHA_FLOW] Modo ON_CANDLE_CLOSE forçado automaticamente');
       activeBotConfig.executionMode = 'ON_CANDLE_CLOSE';
-    } else if (activeBotConfig.enableHeikinAshi === true || activeBotConfig.enableHeikinAshi === 'true') {
-      console.log('📊 [HEIKIN_ASHI] Modo ON_CANDLE_CLOSE forçado automaticamente (Heikin Ashi habilitado)');
+    } else if (
+      activeBotConfig.enableHeikinAshi === true ||
+      activeBotConfig.enableHeikinAshi === 'true'
+    ) {
+      console.log(
+        '📊 [HEIKIN_ASHI] Modo ON_CANDLE_CLOSE forçado automaticamente (Heikin Ashi habilitado)'
+      );
       activeBotConfig.executionMode = 'ON_CANDLE_CLOSE';
     } else {
       console.log(`⚙️ [EXECUTION_MODE] Modo configurado: ${executionMode}`);

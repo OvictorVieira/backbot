@@ -3285,7 +3285,6 @@ async function initializeServer() {
     Logger.info('🔄 [SERVER] Inicializando PositionSyncService...');
     PositionSyncService = new PositionSyncServiceClass(ConfigManagerSQLite.dbService);
 
-
     // Verifica e libera a porta antes de iniciar o servidor
     await killProcessOnPort(PORT);
 
