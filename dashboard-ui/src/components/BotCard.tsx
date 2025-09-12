@@ -65,7 +65,7 @@ interface NextExecution {
 
 interface BotCardProps {
   config: BotConfig;
-  isRunning: boolean;
+  // REMOVIDO: isRunning - usar config.status === 'running'
   isLoading?: boolean;
   isRestarting?: boolean; // Novo estado para reinicialização
   botStatus?: any; // Status completo do bot incluindo nextValidationAt
@@ -79,7 +79,7 @@ interface BotCardProps {
 
 export const BotCard: React.FC<BotCardProps> = ({
   config,
-  isRunning,
+  isRunning, // DEPRECATED: será removido
   isLoading = false,
   isRestarting = false,
   botStatus,
@@ -88,14 +88,23 @@ export const BotCard: React.FC<BotCardProps> = ({
   onEdit,
   onDelete,
 }) => {
+  // Calcula isRunning baseado no botStatus (sempre atualizado) ou config como fallback  
+  const currentStatus = botStatus?.status || config.status;
+  const actualIsRunning = currentStatus === 'running';
+  
+  // DEBUG: Log para identificar problema
+  React.useEffect(() => {
+    console.log(`[DEBUG] Bot ${config.id}: config.status="${config.status}", botStatus.status="${botStatus?.status}", currentStatus="${currentStatus}" -> actualIsRunning=${actualIsRunning}, isLoading=${isLoading}`);
+  }, [config.status, botStatus?.status, currentStatus, actualIsRunning, config.id, isLoading]);
   const [nextExecution, setNextExecution] = useState<NextExecution | null>(null);
   const [countdown, setCountdown] = useState<string>('');
+  const [calculatingTimeout, setCalculatingTimeout] = useState<boolean>(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
   // Calcular próximo tempo de execução baseado no nextValidationAt do status
   useEffect(() => {
-    if (!isRunning || !botStatus?.config?.nextValidationAt) {
+    if (!actualIsRunning || !botStatus?.config?.nextValidationAt) {
       setNextExecution(null);
       return;
     }
@@ -130,11 +139,24 @@ export const BotCard: React.FC<BotCardProps> = ({
     };
 
     setNextExecution(nextExec);
-  }, [config.id, isRunning, botStatus?.config?.nextValidationAt]);
+  }, [config.id, actualIsRunning, botStatus?.config?.nextValidationAt]);
+
+  // Timeout para "Calculando..." não ficar travado
+  useEffect(() => {
+    if (botStatus?.config?.nextValidationAt && (!countdown || countdown === '')) {
+      setCalculatingTimeout(false);
+      
+      const timeout = setTimeout(() => {
+        setCalculatingTimeout(true);
+      }, 5000); // Se após 5 segundos ainda estiver "Calculando...", mostra timeout
+      
+      return () => clearTimeout(timeout);
+    }
+  }, [botStatus?.config?.nextValidationAt, countdown]);
 
   // Atualizar countdown a cada segundo
   useEffect(() => {
-    if (!nextExecution || !isRunning) {
+    if (!nextExecution || !actualIsRunning) {
       setCountdown('');
       return;
     }
@@ -164,7 +186,7 @@ export const BotCard: React.FC<BotCardProps> = ({
     updateCountdown();
     const interval = setInterval(updateCountdown, 1000);
     return () => clearInterval(interval);
-  }, [nextExecution, isRunning]);
+  }, [nextExecution, actualIsRunning]);
 
   const getStatusBadge = () => {
     if (!config.enabled) {
@@ -175,7 +197,7 @@ export const BotCard: React.FC<BotCardProps> = ({
         <div className="w-3 h-3 bg-orange-500 rounded-full animate-spin"></div>
       );
     }
-    if (isRunning) {
+    if (actualIsRunning) {
       return (
         <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
       );
@@ -212,7 +234,7 @@ export const BotCard: React.FC<BotCardProps> = ({
       );
     }
 
-    if (isRunning) {
+    if (actualIsRunning) {
       return (
         <Button
           variant="destructive"
@@ -400,19 +422,51 @@ export const BotCard: React.FC<BotCardProps> = ({
           )}
 
           {/* Status de próxima atualização */}
-          {isRunning && (
+          {actualIsRunning && (
             <div className="text-xs text-muted-foreground border-t pt-2">
-              {countdown && countdown !== '' ? (
-                <span>
-                  Próxima Atualização em: <span className="font-bold text-blue-600 dark:text-blue-400">{countdown}</span>
-                </span>
-              ) : botStatus?.config?.nextValidationAt ? (
-                <span>
-                  Próxima Atualização em: <span className="font-bold text-blue-600 dark:text-blue-400">Calculando...</span>
-                </span>
-              ) : (
-                <span>Aguardando próxima execução...</span>
-              )}
+              {(() => {
+                if (countdown && countdown !== '') {
+                  return (
+                    <span>
+                      Próxima Atualização em: <span className="font-bold text-blue-600 dark:text-blue-400">{countdown}</span>
+                    </span>
+                  );
+                }
+                
+                if (botStatus?.config?.nextValidationAt) {
+                  // Verificar se nextValidationAt é válido
+                  try {
+                    const nextDate = new Date(botStatus.config.nextValidationAt);
+                    const now = Date.now();
+                    const diff = nextDate.getTime() - now;
+                    
+                    if (diff <= 0) {
+                      return (
+                        <span>
+                          Próxima Atualização em: <span className="font-bold text-orange-600 dark:text-orange-400">Executando...</span>
+                        </span>
+                      );
+                    } else if (diff > 0) {
+                      if (calculatingTimeout) {
+                        return (
+                          <span>
+                            Próxima Atualização em: <span className="font-bold text-yellow-600 dark:text-yellow-400">Aguardando dados...</span>
+                          </span>
+                        );
+                      }
+                      return (
+                        <span>
+                          Próxima Atualização em: <span className="font-bold text-blue-600 dark:text-blue-400">Calculando...</span>
+                        </span>
+                      );
+                    }
+                  } catch (error) {
+                    console.warn('Invalid nextValidationAt format:', botStatus.config.nextValidationAt);
+                  }
+                }
+                
+                return <span>Aguardando próxima execução...</span>;
+              })()}
             </div>
           )}
         </div>

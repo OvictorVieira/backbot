@@ -313,8 +313,14 @@ function calculateMoneyFlow(candles, mfiPeriod = 14, signalPeriod = 9) {
     const totalNegativeFlow = slice.reduce((sum, val) => sum + val.negative, 0);
 
     if (totalNegativeFlow === 0) {
-      console.warn(`⚠️ [MFI] Fluxo negativo zero no período ${i}, definindo MFI como 100`);
+      Logger.debug(`📊 [MFI] Apenas fluxo positivo no período ${i}, MFI=100 (sobrecomprado)`);
       mfiHistory.push(100);
+      continue;
+    }
+
+    if (totalPositiveFlow === 0) {
+      Logger.debug(`📊 [MFI] Apenas fluxo negativo no período ${i}, MFI=0 (sobrevendido)`);
+      mfiHistory.push(0);
       continue;
     }
 

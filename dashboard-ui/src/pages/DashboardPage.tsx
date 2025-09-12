@@ -133,9 +133,28 @@ export function DashboardPage() {
 
       await axios.post(`${API_BASE_URL}/api/bot/start`, { botId: parseInt(botId) })
 
-      // Recarregar status após iniciar
-      const response = await axios.get(`${API_BASE_URL}/api/bot/status`)
-      setBotStatuses(response.data.data)
+      // Aguarda um tempo para o backend processar completamente
+      await new Promise(resolve => setTimeout(resolve, 1500))
+
+      // Recarregar status após iniciar (com retry se necessário)
+      let retries = 3
+      let statusUpdated = false
+      
+      while (retries > 0 && !statusUpdated) {
+        const response = await axios.get(`${API_BASE_URL}/api/bot/status`)
+        setBotStatuses(response.data.data)
+        
+        // Verifica se o status foi realmente atualizado
+        const botStatus = response.data.data.find((bot: any) => bot.id?.toString() === botId)
+        if (botStatus && botStatus.status === 'running') {
+          statusUpdated = true
+        } else {
+          retries--
+          if (retries > 0) {
+            await new Promise(resolve => setTimeout(resolve, 500))
+          }
+        }
+      }
 
     } catch (error: any) {
       let errorMessage = 'Erro ao iniciar o bot. Tente novamente.';
@@ -161,9 +180,32 @@ export function DashboardPage() {
 
       await axios.post(`${API_BASE_URL}/api/bot/stop`, { botId: parseInt(botId) })
 
-      // Recarregar status após parar
-      const response = await axios.get(`${API_BASE_URL}/api/bot/status`)
-      setBotStatuses(response.data.data)
+      // Aguarda um tempo para o backend processar completamente
+      await new Promise(resolve => setTimeout(resolve, 1000))
+
+      // Recarregar status após parar (com retry se necessário)
+      let retries = 3
+      let statusUpdated = false
+      
+      while (retries > 0 && !statusUpdated) {
+        const response = await axios.get(`${API_BASE_URL}/api/bot/status`)
+        console.log(`[DEBUG STOP] Bot ${botId} - Setting bot statuses, data length: ${response.data.data.length}`);
+        setBotStatuses(response.data.data)
+        
+        // Verifica se o status foi realmente atualizado
+        const botStatus = response.data.data.find((bot: any) => bot.id?.toString() === botId)
+        console.log(`[DEBUG STOP] Bot ${botId} - API returned status: "${botStatus?.status}", attempt: ${4-retries}`);
+        
+        if (botStatus && botStatus.status === 'stopped') {
+          statusUpdated = true
+          console.log(`[DEBUG STOP] Bot ${botId} - Status confirmed as stopped!`);
+        } else {
+          retries--
+          if (retries > 0) {
+            await new Promise(resolve => setTimeout(resolve, 500))
+          }
+        }
+      }
 
     } catch (error: any) {
       let errorMessage = 'Erro ao parar o bot. Tente novamente.';
@@ -544,7 +586,7 @@ export function DashboardPage() {
                 <BotCard
                   key={config.id || config.strategyName}
                   config={config}
-                  isRunning={status?.isRunning || false}
+                  // REMOVIDO: isRunning - BotCard usa config.status
                   isLoading={loadingBots[config.id?.toString() || config.strategyName] || false}
                   isRestarting={restartingBots[config.id?.toString() || config.strategyName] || false}
                   botStatus={status}

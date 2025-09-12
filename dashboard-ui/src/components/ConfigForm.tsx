@@ -177,6 +177,19 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
     };
   }, []);
 
+  // Gerenciar modo de execução quando Heikin Ashi é ativado/desativado
+  useEffect(() => {
+    if (formData.enableHeikinAshi) {
+      // Força ON_CANDLE_CLOSE quando Heikin Ashi é habilitado
+      if (formData.executionMode !== 'ON_CANDLE_CLOSE') {
+        setFormData(prev => ({
+          ...prev,
+          executionMode: 'ON_CANDLE_CLOSE'
+        }));
+      }
+    }
+  }, [formData.enableHeikinAshi]);
+
   const applyVolumeMode = () => {
     setSelectedMode('volume');
     setFormData(prev => ({
@@ -594,7 +607,8 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
     placeholder, 
     isOpen, 
     onToggle, 
-    error 
+    error,
+    disabled = false
   }: {
     id: string;
     value: string;
@@ -604,14 +618,19 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
     isOpen: boolean;
     onToggle: () => void;
     error?: string;
+    disabled?: boolean;
   }) => {
     const selectedOption = options.find(option => option.value === value);
     
     return (
       <div className="relative custom-select">
         <div
-          className={`w-full h-11 px-4 py-2.5 text-sm font-medium bg-background border border-input rounded-md shadow-sm focus:ring-2 focus:ring-ring focus:border-ring transition-all duration-200 cursor-pointer hover:border-ring ${error ? "border-red-500 focus:ring-red-500 focus:border-red-500" : ""}`}
-          onClick={onToggle}
+          className={`w-full h-11 px-4 py-2.5 text-sm font-medium bg-background border border-input rounded-md shadow-sm transition-all duration-200 ${
+            disabled 
+              ? "opacity-50 cursor-not-allowed bg-muted" 
+              : "cursor-pointer hover:border-ring focus:ring-2 focus:ring-ring focus:border-ring"
+          } ${error ? "border-red-500 focus:ring-red-500 focus:border-red-500" : ""}`}
+          onClick={disabled ? undefined : onToggle}
         >
           <div className="flex items-center justify-between">
             <span className={selectedOption ? "text-foreground" : "text-muted-foreground"}>
@@ -621,7 +640,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
           </div>
         </div>
         
-        {isOpen && (
+        {isOpen && !disabled && (
           <div className="absolute z-50 w-full mt-1 bg-background border border-input rounded-md shadow-lg max-h-60 overflow-auto">
             {options.map((option) => (
               <div
@@ -1762,8 +1781,14 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                 isOpen={executionModeDropdownOpen}
                 onToggle={() => setExecutionModeDropdownOpen(!executionModeDropdownOpen)}
                 error={errors.executionMode}
+                disabled={formData.enableHeikinAshi}
               />
               {errors.executionMode && <p className="text-sm text-red-500">{errors.executionMode}</p>}
+              {formData.enableHeikinAshi && (
+                <p className="text-xs text-blue-600 font-medium">
+                  ⚠️ Modo automaticamente definido como ON_CANDLE_CLOSE (Heikin Ashi ativo)
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
