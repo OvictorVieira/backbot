@@ -41,6 +41,10 @@ class TrailingStop {
   static lastTrailingUpdate = new Map(); // symbol -> timestamp
   static TRAILING_UPDATE_THROTTLE = 10000; // 10 segundos entre updates
 
+  // Cache para throttling de logs (evita spam)
+  static lastTrailingLog = new Map(); // symbol -> timestamp
+  static TRAILING_LOG_THROTTLE = 30000; // 30 segundos entre logs
+
   // Gerenciador de estado do trailing stop por bot (chave: botId)
   static trailingStateByBot = new Map(); // { botKey: { symbol: state } }
   static trailingModeLoggedByBot = new Map(); // Cache para logs de modo Trailing Stop por bot
@@ -266,20 +270,22 @@ class TrailingStop {
    * Inicializa o sistema reativo de WebSocket para trailing stop
    */
   static async initializeReactiveSystem() {
-    if (TrailingStop.backpackWS && TrailingStop.backpackWS.connected) {
+    if (TrailingStop.backpackWS && TrailingStop.backpackWS.isConnected) {
+      Logger.debug('🔌 [REACTIVE_SYSTEM] WebSocket já conectado, reutilizando conexão');
       return;
     }
 
     try {
+      Logger.info('🚀 [REACTIVE_SYSTEM] Inicializando sistema reativo WebSocket...');
       TrailingStop.backpackWS = new BackpackWebSocket();
 
       // Configurar throttling padrão (3 segundos para evitar rate limit)
       TrailingStop.backpackWS.setUpdateThrottle(3000);
 
       await TrailingStop.backpackWS.connect();
-      Logger.info('Sistema reativo inicializado');
+      Logger.info('✅ [REACTIVE_SYSTEM] Sistema reativo WebSocket inicializado com sucesso');
     } catch (error) {
-      Logger.error('Falha ao inicializar sistema reativo:', error.message);
+      Logger.error('❌ [REACTIVE_SYSTEM] Falha ao inicializar sistema reativo:', error.message);
       TrailingStop.backpackWS = null;
     }
   }
@@ -1415,16 +1421,26 @@ class TrailingStop {
   async updateTrailingStopForPosition(position) {
     let trailingState = null;
     try {
-      Logger.debug(
-        `🚀 [TRAILING_START] ${position.symbol}: Iniciando atualização do trailing stop`
-      );
+      // Throttling para logs (evita spam)
+      const now = Date.now();
+      const lastLog = TrailingStop.lastTrailingLog.get(position.symbol) || 0;
+      const shouldLog = now - lastLog > TrailingStop.TRAILING_LOG_THROTTLE;
+
+      if (shouldLog) {
+        Logger.debug(
+          `🚀 [TRAILING_START] ${position.symbol}: Iniciando atualização do trailing stop`
+        );
+        TrailingStop.lastTrailingLog.set(position.symbol, now);
+      }
 
       const enableTrailingStop = this.config?.enableTrailingStop || false;
       const enableHybridStrategy = this.config?.enableHybridStopStrategy || false;
 
-      Logger.debug(
-        `🔧 [TRAILING_CONFIG] ${position.symbol}: enableTrailingStop=${enableTrailingStop}, enableHybridStrategy=${enableHybridStrategy}`
-      );
+      if (shouldLog) {
+        Logger.debug(
+          `🔧 [TRAILING_CONFIG] ${position.symbol}: enableTrailingStop=${enableTrailingStop}, enableHybridStrategy=${enableHybridStrategy}`
+        );
+      }
 
       if (!enableTrailingStop) {
         Logger.debug(`⚠️ [TRAILING_SKIP] ${position.symbol}: Trailing stop desabilitado`);
@@ -2654,12 +2670,19 @@ class TrailingStop {
 
   async stopLoss() {
     try {
+      Logger.debug(
+        `🔄 [TRAILING_START] ${this.strategyType}: Iniciando verificação de trailing stop...`
+      );
+
       // Verifica se a configuração está presente
       if (!this.config) {
         throw new Error('Configuração do bot é obrigatória - deve ser passada no construtor');
       }
 
       const enableTrailingStop = this.config.enableTrailingStop || false;
+      Logger.debug(
+        `🔍 [TRAILING_CONFIG] ${this.strategyType}: enableTrailingStop=${enableTrailingStop}`
+      );
 
       // SEMPRE usa credenciais do config - lança exceção se não disponível
       if (!this.config.apiKey || !this.config.apiSecret) {
@@ -2682,9 +2705,28 @@ class TrailingStop {
         return Math.abs(netQuantity) > 0;
       });
 
-      // 📡 SISTEMA REATIVO: Inicializa WebSocket se não estiver ativo
-      if (enableTrailingStop && this.config.enableReactiveTrailing !== false) {
+      // 📡 SISTEMA REATIVO: Inicializa WebSocket se trailing stop estiver ativo
+      Logger.debug(
+        `🔍 [REACTIVE_DEBUG] ${this.strategyType}: enableTrailingStop=${enableTrailingStop}, activePositions=${activePositions.length}`
+      );
+
+      if (enableTrailingStop) {
+        Logger.info(
+          `🚀 [REACTIVE_INIT] ${this.strategyType}: Inicializando sistema reativo do WebSocket...`
+        );
         await TrailingStop.initializeReactiveSystem();
+
+        if (TrailingStop.backpackWS && TrailingStop.backpackWS.isConnected) {
+          Logger.info(
+            `✅ [REACTIVE_WS] ${this.strategyType}: WebSocket conectado e pronto para monitoramento`
+          );
+        } else {
+          Logger.warn(`❌ [REACTIVE_WS] ${this.strategyType}: Falha ao conectar WebSocket`);
+        }
+      } else {
+        Logger.debug(
+          `⏸️ [REACTIVE_SKIP] ${this.strategyType}: Trailing stop não habilitado - sistema reativo desabilitado`
+        );
       }
 
       if (activePositions.length === 0) {

@@ -301,13 +301,19 @@ async function recoverBot(botId, config, startTime) {
         const currentBotConfig = await ConfigManagerSQLite.getBotConfigById(botId);
         const timeframeConfig = new TimeframeConfig(currentBotConfig);
         let currentExecutionInterval;
-        
+
         if (currentBotConfig.executionMode === 'ON_CANDLE_CLOSE') {
-          currentExecutionInterval = timeframeConfig.getTimeUntilNextCandleClose(currentBotConfig.time || '5m');
-          Logger.debug(`⏰ [RECOVERY_EXECUTION] Bot ${botId}: Próxima análise ON_CANDLE_CLOSE em ${Math.floor(currentExecutionInterval / 1000)}s`);
+          currentExecutionInterval = timeframeConfig.getTimeUntilNextCandleClose(
+            currentBotConfig.time || '5m'
+          );
+          Logger.debug(
+            `⏰ [RECOVERY_EXECUTION] Bot ${botId}: Próxima análise ON_CANDLE_CLOSE em ${Math.floor(currentExecutionInterval / 1000)}s`
+          );
         } else {
           currentExecutionInterval = 60000; // REALTIME: 60 segundos
-          Logger.debug(`⏰ [RECOVERY_EXECUTION] Bot ${botId}: Próxima análise REALTIME em ${Math.floor(currentExecutionInterval / 1000)}s`);
+          Logger.debug(
+            `⏰ [RECOVERY_EXECUTION] Bot ${botId}: Próxima análise REALTIME em ${Math.floor(currentExecutionInterval / 1000)}s`
+          );
         }
 
         // Calcula e salva o próximo horário de validação
@@ -465,6 +471,7 @@ async function startDecision(botId) {
 
 // Função para inicializar e executar o TrailingStop
 async function startStops(botId) {
+  Logger.debug(`🔧 [START_STOPS] Executando trailing stop para bot ${botId}...`);
   let botConfig = null;
   try {
     // Carrega configuração do bot
@@ -1245,19 +1252,25 @@ async function startBot(botId, forceRestart = false) {
         } catch (pnlError) {
           Logger.warn(`⚠️ [BOT] Erro no PnL Controller para bot ${botId}:`, pnlError.message);
         }
-        
+
         // Recalcula o intervalo baseado na configuração atual
         const timeframeConfig = new TimeframeConfig(currentBotConfig);
         let currentExecutionInterval;
-        
+
         if (currentBotConfig.executionMode === 'ON_CANDLE_CLOSE') {
-          currentExecutionInterval = timeframeConfig.getTimeUntilNextCandleClose(currentBotConfig.time || '5m');
-          Logger.debug(`⏰ [EXECUTION] Bot ${botId}: Próxima análise ON_CANDLE_CLOSE em ${Math.floor(currentExecutionInterval / 1000)}s`);
+          currentExecutionInterval = timeframeConfig.getTimeUntilNextCandleClose(
+            currentBotConfig.time || '5m'
+          );
+          Logger.debug(
+            `⏰ [EXECUTION] Bot ${botId}: Próxima análise ON_CANDLE_CLOSE em ${Math.floor(currentExecutionInterval / 1000)}s`
+          );
         } else {
           currentExecutionInterval = 60000; // REALTIME: 60 segundos
-          Logger.debug(`⏰ [EXECUTION] Bot ${botId}: Próxima análise REALTIME em ${Math.floor(currentExecutionInterval / 1000)}s`);
+          Logger.debug(
+            `⏰ [EXECUTION] Bot ${botId}: Próxima análise REALTIME em ${Math.floor(currentExecutionInterval / 1000)}s`
+          );
         }
-        
+
         // Calcula e salva o próximo horário de validação
         const nextValidationAt = new Date(Date.now() + currentExecutionInterval);
         await ConfigManagerSQLite.updateBotConfigById(botId, {
@@ -1298,7 +1311,7 @@ async function startBot(botId, forceRestart = false) {
     await executeBot();
 
     let intervalId;
-    
+
     if (botConfig.executionMode === 'ON_CANDLE_CLOSE') {
       // Para ON_CANDLE_CLOSE: usa setTimeout recursivo para recalcular sempre
       const scheduleNextExecution = async () => {
@@ -1308,25 +1321,29 @@ async function startBot(botId, forceRestart = false) {
           if (currentConfig.executionMode !== 'ON_CANDLE_CLOSE') {
             return; // Se mudou o modo, para
           }
-          
+
           const timeframeConfig = new TimeframeConfig(currentConfig);
-          const nextInterval = timeframeConfig.getTimeUntilNextCandleClose(currentConfig.time || '5m');
-          
+          const nextInterval = timeframeConfig.getTimeUntilNextCandleClose(
+            currentConfig.time || '5m'
+          );
+
           const timeoutId = setTimeout(async () => {
             await executeBot();
             scheduleNextExecution(); // Reagenda para próxima vela
           }, nextInterval);
-          
+
           // Salva para poder cancelar depois
           intervalId = timeoutId;
         } catch (error) {
-          Logger.error(`❌ [ON_CANDLE_CLOSE] Erro ao agendar próxima execução do bot ${botId}:`, error.message);
+          Logger.error(
+            `❌ [ON_CANDLE_CLOSE] Erro ao agendar próxima execução do bot ${botId}:`,
+            error.message
+          );
         }
       };
-      
+
       // Inicia o agendamento
       scheduleNextExecution();
-      
     } else {
       // Para REALTIME: usa setInterval normal
       intervalId = setInterval(executeBot, executionInterval);
@@ -1485,23 +1502,23 @@ async function stopBot(botId, updateStatus = true) {
 app.post('/api/bot/debug/fix-status', async (req, res) => {
   try {
     const fixes = [];
-    
+
     for (const [botId, instance] of activeBotInstances.entries()) {
       if (instance && instance.status === 'running') {
         await ConfigManagerSQLite.updateBotStatusById(botId, 'running');
         fixes.push(`Bot ${botId}: status atualizado para 'running'`);
       }
     }
-    
+
     res.json({
       success: true,
       message: 'Status corrigidos',
-      fixes
+      fixes,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -1514,19 +1531,19 @@ app.get('/api/bot/debug/active', async (req, res) => {
       botId,
       hasInstance: !!instance,
       hasConfig: !!instance.config,
-      status: instance.status || 'unknown'
+      status: instance.status || 'unknown',
     }));
-    
+
     res.json({
       success: true,
       activeInstancesCount: activeBotInstances.size,
       activeInstancesIds: activeInstances,
-      details: instancesDetails
+      details: instancesDetails,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -1911,35 +1928,41 @@ app.post('/api/bot/update-running', async (req, res) => {
     // Recalcula nextValidationAt se necessário (modo ou timeframe mudaram)
     const currentConfig = await ConfigManagerSQLite.getBotConfigById(botId);
     let updatedConfig = { ...config };
-    
+
     // Força ON_CANDLE_CLOSE para estratégias que dependem de velas fechadas
     if (config.strategyName === 'ALPHA_FLOW') {
       Logger.info(`🧠 [ALPHA_FLOW] Bot ${botId}: Modo ON_CANDLE_CLOSE forçado automaticamente`);
       updatedConfig.executionMode = 'ON_CANDLE_CLOSE';
     } else if (config.enableHeikinAshi === true || config.enableHeikinAshi === 'true') {
-      Logger.info(`📊 [HEIKIN_ASHI] Bot ${botId}: Modo ON_CANDLE_CLOSE forçado automaticamente (Heikin Ashi habilitado)`);
+      Logger.info(
+        `📊 [HEIKIN_ASHI] Bot ${botId}: Modo ON_CANDLE_CLOSE forçado automaticamente (Heikin Ashi habilitado)`
+      );
       updatedConfig.executionMode = 'ON_CANDLE_CLOSE';
     }
-    
+
     const modeChanged = currentConfig?.executionMode !== updatedConfig.executionMode;
     const timeframeChanged = currentConfig?.time !== config.time;
-    
+
     if (modeChanged || timeframeChanged) {
-      Logger.info(`🔄 [BOT_UPDATE] Bot ${botId}: Recalculando nextValidationAt (modo: ${updatedConfig.executionMode}, timeframe: ${config.time})`);
-      
+      Logger.info(
+        `🔄 [BOT_UPDATE] Bot ${botId}: Recalculando nextValidationAt (modo: ${updatedConfig.executionMode}, timeframe: ${config.time})`
+      );
+
       const timeframeConfig = new TimeframeConfig(updatedConfig);
       let executionInterval;
-      
+
       if (updatedConfig.executionMode === 'ON_CANDLE_CLOSE') {
         executionInterval = timeframeConfig.getTimeUntilNextCandleClose(config.time || '5m');
       } else {
         executionInterval = 60000; // REALTIME: 60 segundos
       }
-      
+
       const nextValidationAt = new Date(Date.now() + executionInterval);
       updatedConfig.nextValidationAt = nextValidationAt.toISOString();
-      
-      Logger.info(`⏰ [BOT_UPDATE] Bot ${botId}: Próximo execução recalculada para ${nextValidationAt.toISOString()}`);
+
+      Logger.info(
+        `⏰ [BOT_UPDATE] Bot ${botId}: Próximo execução recalculada para ${nextValidationAt.toISOString()}`
+      );
     }
 
     // Atualiza a configuração no banco de dados

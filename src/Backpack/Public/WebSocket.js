@@ -121,7 +121,14 @@ class BackpackWebSocket {
       }
 
       if (this.priceCallbacks.has(symbol)) {
-        Logger.debug(`📊 [BACKPACK_WS] ${symbol}: Preço atualizado para ${currentPrice}`);
+        // Throttling para logs (evita spam)
+        const now = Date.now();
+        const lastLog = this.lastUpdate.get(symbol) || 0;
+
+        if (now - lastLog > this.updateThrottle) {
+          Logger.info(`📊 [BACKPACK_WS] ${symbol}: Preço atualizado para ${currentPrice}`);
+          this.lastUpdate.set(symbol, now);
+        }
 
         const callback = this.priceCallbacks.get(symbol);
         try {

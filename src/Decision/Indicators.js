@@ -8,6 +8,7 @@ import {
   ADX,
   MFI,
   HeikinAshi,
+  SMA,
 } from 'technicalindicators';
 import axios from 'axios';
 import Logger from '../Utils/Logger.js';
@@ -242,135 +243,6 @@ function calculateWaveTrend(candles, channelLen = 9, avgLen = 12, maLen = 3) {
  * @param {number} signalPeriod - Período para a média móvel (SMA) do MFI (padrão: 9).
  * @returns {Object} - Um objeto contendo os dados do Money Flow.
  */
-function calculateMoneyFlow(candles, mfiPeriod = 14, signalPeriod = 9) {
-  // A validação de quantidade de velas está correta
-  if (candles.length < mfiPeriod + 1) {
-    return {
-      current: {
-        value: 0,
-        mfi: 50,
-        mfiAvg: 50,
-        isBullish: false,
-        isBearish: false,
-        isStrong: false,
-        direction: 'NEUTRAL',
-      },
-      previous: {
-        value: 0,
-        mfi: 50,
-        mfiAvg: 50,
-        isBullish: false,
-        isBearish: false,
-        isStrong: false,
-        direction: 'NEUTRAL',
-      },
-      history: [],
-    };
-  }
-
-  // --- Passo 1: Calcular o Fluxo de Dinheiro Bruto com conversão de dados ---
-  const moneyFlows = [];
-  for (let i = 1; i < candles.length; i++) {
-    const c = candles[i];
-    const p = candles[i - 1];
-
-    // **A CORREÇÃO ESTÁ AQUI**
-    const high = parseFloat(c.high);
-    const low = parseFloat(c.low);
-    const close = parseFloat(c.close);
-    const volume = parseFloat(c.volume);
-
-    const prevHigh = parseFloat(p.high);
-    const prevLow = parseFloat(p.low);
-    const prevClose = parseFloat(p.close);
-
-    // Validar se os dados são numéricos após a conversão
-    if (isNaN(high) || isNaN(low) || isNaN(close) || isNaN(volume)) {
-      console.warn(
-        `⚠️ [MFI] Dados inválidos no candle ${i}: high=${c.high}, low=${c.low}, close=${c.close}, volume=${c.volume}`
-      );
-      continue;
-    }
-
-    const typicalPrice = (high + low + close) / 3;
-    const prevTypicalPrice = (prevHigh + prevLow + prevClose) / 3;
-    const rawMoneyFlow = typicalPrice * volume;
-
-    moneyFlows.push({
-      positive: typicalPrice > prevTypicalPrice ? rawMoneyFlow : 0,
-      negative: typicalPrice < prevTypicalPrice ? rawMoneyFlow : 0,
-    });
-  }
-
-  // O resto da função continua igual, pois agora ela receberá os dados corretos...
-
-  // --- Passo 2: Calcular o histórico de MFI ---
-  const mfiHistory = [];
-  // (código omitido para brevidade, continua o mesmo da resposta anterior)
-  for (let i = mfiPeriod - 1; i < moneyFlows.length; i++) {
-    const slice = moneyFlows.slice(i - mfiPeriod + 1, i + 1);
-    const totalPositiveFlow = slice.reduce((sum, val) => sum + val.positive, 0);
-    const totalNegativeFlow = slice.reduce((sum, val) => sum + val.negative, 0);
-
-    if (totalNegativeFlow === 0) {
-      Logger.debug(`📊 [MFI] Apenas fluxo positivo no período ${i}, MFI=100 (sobrecomprado)`);
-      mfiHistory.push(100);
-      continue;
-    }
-
-    if (totalPositiveFlow === 0) {
-      Logger.debug(`📊 [MFI] Apenas fluxo negativo no período ${i}, MFI=0 (sobrevendido)`);
-      mfiHistory.push(0);
-      continue;
-    }
-
-    const moneyRatio = totalPositiveFlow / totalNegativeFlow;
-    const mfi = 100 - 100 / (1 + moneyRatio);
-    mfiHistory.push(mfi);
-  }
-
-  // --- Passo 3: Calcular a média (linha de sinal) do MFI ---
-  const mfiAvgHistory = [];
-  if (mfiHistory.length >= signalPeriod) {
-    for (let i = signalPeriod - 1; i < mfiHistory.length; i++) {
-      const smaSlice = mfiHistory.slice(i - signalPeriod + 1, i + 1);
-      const sma = smaSlice.reduce((sum, val) => sum + val, 0) / signalPeriod;
-      mfiAvgHistory.push(sma);
-    }
-  }
-
-  // --- Passo 4: Obter os valores atuais e anteriores ---
-  const currentMfi = mfiHistory[mfiHistory.length - 1] || 50;
-  const currentMfiAvg = mfiAvgHistory[mfiAvgHistory.length - 1] || 50;
-  const currentMfiValue = currentMfi - currentMfiAvg;
-
-  const previousMfi = mfiHistory[mfiHistory.length - 2] || 50;
-  const previousMfiAvg = mfiAvgHistory[mfiAvgHistory.length - 2] || 50;
-  const previousMfiValue = previousMfi - previousMfiAvg;
-
-  // --- Passo 5: Montar o objeto de retorno com dados atuais e anteriores ---
-  return {
-    current: {
-      value: currentMfiValue,
-      mfi: currentMfi,
-      mfiAvg: currentMfiAvg,
-      isBullish: currentMfiValue > 0,
-      isBearish: currentMfiValue < 0,
-      isStrong: Math.abs(currentMfiValue) > 10,
-      direction: currentMfiValue > 0 ? 'UP' : currentMfiValue < 0 ? 'DOWN' : 'NEUTRAL',
-    },
-    previous: {
-      value: previousMfiValue,
-      mfi: previousMfi,
-      mfiAvg: previousMfiAvg,
-      isBullish: previousMfiValue > 0,
-      isBearish: previousMfiValue < 0,
-      isStrong: Math.abs(previousMfiValue) > 10,
-      direction: previousMfiValue > 0 ? 'UP' : previousMfiValue < 0 ? 'DOWN' : 'NEUTRAL',
-    },
-    history: mfiHistory,
-  };
-}
 
 /**
  * REFATORADO: Calcula o Macro Money Flow baseado em dados diários reais
@@ -401,7 +273,7 @@ async function calculateMacroMoneyFlow(candles, timeframe = '5m', symbol = null)
     }
 
     // Busca diretamente da Binance apenas os últimos 22 candles
-    const binanceCandles = await getBinanceCandles(symbol, timeframe, 22);
+    const binanceCandles = await getBinanceCandles(symbol, timeframe, 100);
 
     if (!binanceCandles || binanceCandles.length < 14) {
       console.warn(
@@ -422,8 +294,7 @@ async function calculateMacroMoneyFlow(candles, timeframe = '5m', symbol = null)
       };
     }
 
-    // Calcula MFI com período 14 nos dados do timeframe
-    const mfiResult = calculateMoneyFlow(binanceCandles, 14, 9);
+    const mfiResult = calculateHeikinAshiMoneyFlow(binanceCandles, timeframe);
 
     if (!mfiResult.history || mfiResult.history.length < 8) {
       console.error(
@@ -472,9 +343,9 @@ async function calculateMacroMoneyFlow(candles, timeframe = '5m', symbol = null)
 
     const mfiEma = EMA.calculate({ period: emaPeriod, values: mfiValues });
 
-    // Obtém valores atuais e anteriores
-    const mfiCurrent = mfiResult.current.mfi;
-    const mfiPrevious = mfiResult.previous.mfi;
+    // Obtém valores atuais e anteriores (converte de value para compatibilidade)
+    const mfiCurrent = mfiResult.current?.value || 0;
+    const mfiPrevious = mfiResult.previous?.value || 0;
     const mfiEmaCurrent = mfiEma[mfiEma.length - 1];
     const mfiEmaPrevious = mfiEma[mfiEma.length - 2];
 
@@ -1261,6 +1132,216 @@ function calculateHeikinAshi(candles, timeframe = '5m') {
   };
 }
 
+/**
+ * Calcula o Money Flow baseado em candles Heikin Ashi
+ * Replica o comportamento do Pine Script usando Heikin Ashi para reduzir ruídos
+ *
+ * Pine Script equivalente:
+ * OC(tf) => request.security(ticker.heikinashi(syminfo.tickerid), timeframe.period, close - open)
+ * HL(tf) => request.security(ticker.heikinashi(syminfo.tickerid), timeframe.period, high - low)
+ * m = ta.sma(hlc3, 5)
+ * f = ta.sma(math.abs(hlc3 - m), 5)
+ * i = (hlc3 - m) / (0.015 * f)
+ * mf = ta.sma(i, 60)
+ *
+ * @param {Array<Object>} candles - Array de candles tradicionais
+ * @param {string} timeframe - Timeframe usado para calcular Heikin Ashi
+ * @returns {Object} - Money Flow baseado em Heikin Ashi com current/previous
+ */
+function calculateHeikinAshiMoneyFlow(candles, timeframe = '5m') {
+  // Validação de entrada - exatamente como o Pine Script
+  if (!candles || candles.length < 70) {
+    // Precisa de pelo menos 70 velas para SMA(60) + margem
+    return {
+      current: {
+        value: 0,
+        isPositive: false,
+        isNegative: false,
+        isBullish: false,
+        isBearish: false,
+        direction: 'NEUTRAL',
+      },
+      previous: {
+        value: 0,
+        isPositive: false,
+        isNegative: false,
+        isBullish: false,
+        isBearish: false,
+        direction: 'NEUTRAL',
+      },
+      history: [],
+      heikinAshiData: null,
+      error: 'Dados insuficientes para Heikin Ashi Money Flow',
+    };
+  }
+
+  try {
+    // 1. Calcular Heikin Ashi dos candles
+    const heikinAshi = calculateHeikinAshi(candles, timeframe);
+
+    if (!heikinAshi.history || heikinAshi.history.length < 70) {
+      Logger.debug(
+        `⚠️ [HEIKIN_ASHI_MF] Histórico Heikin Ashi insuficiente: ${heikinAshi.history?.length || 0} velas`
+      );
+      return {
+        current: {
+          value: 0,
+          isPositive: false,
+          isNegative: false,
+          isBullish: false,
+          isBearish: false,
+          direction: 'NEUTRAL',
+        },
+        previous: {
+          value: 0,
+          isPositive: false,
+          isNegative: false,
+          isBullish: false,
+          isBearish: false,
+          direction: 'NEUTRAL',
+        },
+        history: [],
+        heikinAshiData: heikinAshi,
+        error: 'Histórico Heikin Ashi insuficiente',
+      };
+    }
+
+    // 2. Extrair dados dos Heikin Ashi e calcular hlc3
+    const heikinCandles = heikinAshi.history;
+    const hlc3 = heikinCandles.map(ha => (ha.high + ha.low + ha.close) / 3);
+
+    // 3. Calcular m = SMA(hlc3, 5) - exato como Pine Script
+    const m = SMA.calculate({ period: 5, values: hlc3 });
+
+    // 4. Calcular f = SMA(abs(hlc3 - m), 5)
+    // Precisamos alinhar os índices já que SMA retorna array menor
+    const absDiff = [];
+    const startIndex = hlc3.length - m.length; // SMA remove os primeiros valores
+
+    for (let i = 0; i < m.length; i++) {
+      const hlc3Index = startIndex + i;
+      const diff = Math.abs(hlc3[hlc3Index] - m[i]);
+      absDiff.push(diff);
+    }
+
+    const f = SMA.calculate({ period: 5, values: absDiff });
+
+    // 5. Calcular i = (hlc3 - m) / (0.015 * f)
+    // Novamente, precisamos alinhar os índices
+    const i = [];
+    const fStartIndex = absDiff.length - f.length;
+
+    for (let j = 0; j < f.length; j++) {
+      const absDiffIndex = fStartIndex + j;
+      const hlc3Index = startIndex + absDiffIndex;
+      const mIndex = absDiffIndex;
+
+      const hlc3Value = hlc3[hlc3Index];
+      const mValue = m[mIndex];
+      const fValue = f[j];
+
+      if (fValue && fValue !== 0) {
+        const iValue = (hlc3Value - mValue) / (0.015 * fValue);
+        i.push(isNaN(iValue) ? 0 : iValue);
+      } else {
+        i.push(0);
+      }
+    }
+
+    // 6. Calcular mf = SMA(i, 60) - exato como Pine Script
+    const mf = SMA.calculate({ period: 60, values: i });
+
+    if (!mf || mf.length < 2) {
+      Logger.debug(`⚠️ [HEIKIN_ASHI_MF] Resultado MF insuficiente: ${mf?.length || 0} valores`);
+      return {
+        current: {
+          value: 0,
+          isPositive: false,
+          isNegative: false,
+          isBullish: false,
+          isBearish: false,
+          direction: 'NEUTRAL',
+        },
+        previous: {
+          value: 0,
+          isPositive: false,
+          isNegative: false,
+          isBullish: false,
+          isBearish: false,
+          direction: 'NEUTRAL',
+        },
+        history: mf || [],
+        heikinAshiData: heikinAshi,
+        error: 'Resultado MF insuficiente',
+      };
+    }
+
+    // 7. Obter valores atuais e anteriores
+    const currentValue = mf[mf.length - 1] || 0;
+    const previousValue = mf[mf.length - 2] || 0;
+
+    // 8. Criar objetos de retorno
+    const current = {
+      value: currentValue,
+      isPositive: currentValue > 0,
+      isNegative: currentValue < 0,
+      isBullish: currentValue > 0,
+      isBearish: currentValue < 0,
+      direction: currentValue > 0 ? 'UP' : currentValue < 0 ? 'DOWN' : 'NEUTRAL',
+    };
+
+    const previous = {
+      value: previousValue,
+      isPositive: previousValue > 0,
+      isNegative: previousValue < 0,
+      isBullish: previousValue > 0,
+      isBearish: previousValue < 0,
+      direction: previousValue > 0 ? 'UP' : previousValue < 0 ? 'DOWN' : 'NEUTRAL',
+    };
+
+    Logger.debug(
+      `📊 [HEIKIN_ASHI_MF] Atual: ${currentValue.toFixed(3)}, Anterior: ${previousValue.toFixed(3)}, Direção: ${current.direction}`
+    );
+
+    return {
+      current,
+      previous,
+      history: mf,
+      heikinAshiData: heikinAshi,
+      calculationSteps: {
+        hlc3Count: hlc3.length,
+        mCount: m.length,
+        fCount: f.length,
+        iCount: i.length,
+        mfCount: mf.length,
+      },
+    };
+  } catch (error) {
+    Logger.error(`❌ [HEIKIN_ASHI_MF] Erro no cálculo: ${error.message}`);
+    return {
+      current: {
+        value: 0,
+        isPositive: false,
+        isNegative: false,
+        isBullish: false,
+        isBearish: false,
+        direction: 'NEUTRAL',
+      },
+      previous: {
+        value: 0,
+        isPositive: false,
+        isNegative: false,
+        isBullish: false,
+        isBearish: false,
+        direction: 'NEUTRAL',
+      },
+      history: [],
+      heikinAshiData: null,
+      error: error.message,
+    };
+  }
+}
+
 // Exporta a função calculateHeikinAshi para uso em testes
 export { calculateHeikinAshi };
 
@@ -1501,7 +1582,9 @@ export async function calculateIndicators(candles, timeframe = '5m', symbol = nu
 
   // INDICATORS - Baseados no PineScript
   const waveTrend = calculateWaveTrend(candles, 9, 12, 3); // MOMENTUM(2)
-  const customMoneyFlow = calculateMoneyFlow(candles); // MONEY FLOW(3)
+
+  // MONEY FLOW: Versão melhorada baseada em Heikin Ashi (menos ruído)
+  const heikinAshiMoneyFlow = calculateHeikinAshiMoneyFlow(candles, timeframe);
 
   const vwapHistory = calculateIntradayVWAP(candles);
   const latestVwapData = vwapHistory.current || {
@@ -1624,15 +1707,26 @@ export async function calculateIndicators(candles, timeframe = '5m', symbol = nu
       history: waveTrend.history,
     },
     moneyFlow: {
-      mfi: customMoneyFlow.current.mfi,
-      mfiAvg: customMoneyFlow.current.mfiAvg,
-      value: customMoneyFlow.current.value,
-      isBullish: customMoneyFlow.current.isBullish,
-      isBearish: customMoneyFlow.current.isBearish,
-      isStrong: customMoneyFlow.current.isStrong,
-      direction: customMoneyFlow.current.direction,
-      history: customMoneyFlow.history,
-      mfiPrev: customMoneyFlow.previous.mfi,
+      mf: heikinAshiMoneyFlow.current?.value || 0,
+      mfPrev: heikinAshiMoneyFlow.previous?.value || 0,
+      // Mantém compatibilidade com código existente
+      mfi: Math.abs(heikinAshiMoneyFlow.current?.value || 0) * 50 + 50, // Converte para escala 0-100
+      mfiAvg:
+        Math.abs(
+          (heikinAshiMoneyFlow.current?.value + heikinAshiMoneyFlow.previous?.value) / 2 || 0
+        ) *
+          50 +
+        50,
+      value: (heikinAshiMoneyFlow.current?.value || 0) - (heikinAshiMoneyFlow.previous?.value || 0),
+      isBullish: (heikinAshiMoneyFlow.current?.value || 0) > 0,
+      isBearish: (heikinAshiMoneyFlow.current?.value || 0) < 0,
+      isStrong: Math.abs(heikinAshiMoneyFlow.current?.value || 0) > 1,
+      direction:
+        (heikinAshiMoneyFlow.current?.value || 0) > (heikinAshiMoneyFlow.previous?.value || 0)
+          ? 'UP'
+          : 'DOWN',
+      history: heikinAshiMoneyFlow.history,
+      mfiPrev: Math.abs(heikinAshiMoneyFlow.previous?.value || 0) * 50 + 50,
     },
     // NOVO: CVD Periódico
     cvd: {

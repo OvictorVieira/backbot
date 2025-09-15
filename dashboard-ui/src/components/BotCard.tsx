@@ -88,14 +88,10 @@ export const BotCard: React.FC<BotCardProps> = ({
   onEdit,
   onDelete,
 }) => {
-  // Calcula isRunning baseado no botStatus (sempre atualizado) ou config como fallback  
+  // Calcula isRunning baseado no botStatus (sempre atualizado) ou config como fallback
   const currentStatus = botStatus?.status || config.status;
   const actualIsRunning = currentStatus === 'running';
-  
-  // DEBUG: Log para identificar problema
-  React.useEffect(() => {
-    console.log(`[DEBUG] Bot ${config.id}: config.status="${config.status}", botStatus.status="${botStatus?.status}", currentStatus="${currentStatus}" -> actualIsRunning=${actualIsRunning}, isLoading=${isLoading}`);
-  }, [config.status, botStatus?.status, currentStatus, actualIsRunning, config.id, isLoading]);
+
   const [nextExecution, setNextExecution] = useState<NextExecution | null>(null);
   const [countdown, setCountdown] = useState<string>('');
   const [calculatingTimeout, setCalculatingTimeout] = useState<boolean>(false);
@@ -145,11 +141,11 @@ export const BotCard: React.FC<BotCardProps> = ({
   useEffect(() => {
     if (botStatus?.config?.nextValidationAt && (!countdown || countdown === '')) {
       setCalculatingTimeout(false);
-      
+
       const timeout = setTimeout(() => {
         setCalculatingTimeout(true);
       }, 5000); // Se após 5 segundos ainda estiver "Calculando...", mostra timeout
-      
+
       return () => clearTimeout(timeout);
     }
   }, [botStatus?.config?.nextValidationAt, countdown]);
@@ -432,14 +428,14 @@ export const BotCard: React.FC<BotCardProps> = ({
                     </span>
                   );
                 }
-                
+
                 if (botStatus?.config?.nextValidationAt) {
                   // Verificar se nextValidationAt é válido
                   try {
                     const nextDate = new Date(botStatus.config.nextValidationAt);
                     const now = Date.now();
                     const diff = nextDate.getTime() - now;
-                    
+
                     if (diff <= 0) {
                       return (
                         <span>
@@ -464,7 +460,7 @@ export const BotCard: React.FC<BotCardProps> = ({
                     console.warn('Invalid nextValidationAt format:', botStatus.config.nextValidationAt);
                   }
                 }
-                
+
                 return <span>Aguardando próxima execução...</span>;
               })()}
             </div>
@@ -500,8 +496,8 @@ export const BotCard: React.FC<BotCardProps> = ({
           <div className="flex items-center gap-1">
             <div className={`w-2 h-2 rounded-full ${config.enableConfluenceMode ? 'bg-yellow-500' : 'bg-gray-300'}`} />
             <span className="truncate">
-              {config.enableConfluenceMode 
-                ? `Confluência (${config.minConfluences || 2}+ sinais)` 
+              {config.enableConfluenceMode
+                ? `Confluência (${config.minConfluences || 2}+ sinais)`
                 : 'Confluência Desabilitada'
               }
             </span>
