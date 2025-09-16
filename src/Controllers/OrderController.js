@@ -2209,7 +2209,17 @@ class OrderController {
       });
       const markets = new Markets();
       const markPrices2 = await markets.getAllMarkPrices(market);
-      const priceCurrent = parseFloat(markPrices2[0]?.markPrice || entryPrice);
+
+      // Find the correct price for this symbol
+      let priceCurrent;
+      if (Array.isArray(markPrices2)) {
+        const symbolPriceData = markPrices2.find(item => item.symbol === market);
+        priceCurrent = parseFloat(
+          symbolPriceData ? symbolPriceData.markPrice : markPrices2[0]?.markPrice || entryPrice
+        );
+      } else {
+        priceCurrent = parseFloat(markPrices2?.markPrice || markPrices2 || entryPrice);
+      }
       const slippage = OrderController.calcSlippagePct(entryPrice, priceCurrent);
 
       Logger.info(

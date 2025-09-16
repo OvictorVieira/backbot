@@ -3,384 +3,358 @@ import https from 'https';
 import http from 'http';
 import { auth } from '../Backpack/Authenticated/Authentication.js';
 import Logger from './Logger.js';
+import TokenBucketRateLimiter from './TokenBucketRateLimiter.js';
+import SmartCircuitBreaker from './SmartCircuitBreaker.js';
+import PriorityRequestQueue from './PriorityRequestQueue.js';
+import RequestHealthMonitor from './RequestHealthMonitor.js';
 
 /**
- * RequestManager - Sistema centralizado para gerenciar todas as requests da API Backpack
- * Inclui circuit breaker, rate limiting inteligente, recovery automático e connection pooling
+ * RequestManager - Sistema profissional centralizado para gerenciar todas as requests da API Backpack
+ *
+ * Nova arquitetura baseada em padrões de trading de alta frequência:
+ * - TokenBucketRateLimiter: Controle preciso de taxa com burst capacity
+ * - SmartCircuitBreaker: Recuperação inteligente de falhas
+ * - PriorityRequestQueue: Priorização de requests críticas
+ * - RequestHealthMonitor: Monitoramento abrangente de saúde
+ *
+ * Elimina problemas de "death spiral" e garante operação contínua.
  */
 class RequestManager {
   constructor() {
-    this.queue = [];
+    // Professional components initialization
+    this.rateLimiter = new TokenBucketRateLimiter({
+      capacity: 10,
+      refillRate: 3, // 3 requests per second (more generous for testing)
+      burstCapacity: 8,
+      minReserve: 1, // Reduced reserve for testing
+    });
+
+    this.circuitBreaker = new SmartCircuitBreaker({
+      failureThreshold: 5,
+      recoveryTime: 30000,
+      successThreshold: 3,
+      minHealthScore: 30,
+    });
+
+    this.requestQueue = new PriorityRequestQueue({
+      maxQueueSize: 500,
+      maxTotalSize: 2000,
+      enableDeduplication: true,
+      dedupTimeout: 10000,
+    });
+
+    this.healthMonitor = new RequestHealthMonitor({
+      responseTimeWarning: 2000,
+      responseTimeCritical: 5000,
+      successRateCritical: 70,
+      successRateWarning: 85,
+      trendDetection: true,
+      anomalyDetection: true,
+    });
+
+    // Legacy compatibility - maintain for existing code
     this.isProcessing = false;
     this.requestCount = 0;
-    this.lastRequestTime = 0;
 
-    // HTTP/HTTPS Agents com Keep-Alive para connection pooling
+    // HTTP/HTTPS Agents com Keep-Alive otimizado
     this.httpsAgent = new https.Agent({
       keepAlive: true,
-      keepAliveMsecs: 30000, // 30 segundos entre keep-alive packets
-      maxSockets: 50, // Máximo de sockets por host
-      maxFreeSockets: 10, // Máximo de sockets livres no pool
-      timeout: 45000, // 45 segundos timeout para sockets
-      freeSocketTimeout: 30000, // 30 segundos para liberar socket idle
-      socketActiveTTL: 300000, // 5 minutos TTL para sockets ativos
+      keepAliveMsecs: 30000,
+      maxSockets: 20, // Reduzido para evitar overwhelming
+      maxFreeSockets: 5,
+      timeout: 30000,
+      freeSocketTimeout: 15000,
+      socketActiveTTL: 180000, // 3 minutos
     });
 
     this.httpAgent = new http.Agent({
       keepAlive: true,
       keepAliveMsecs: 30000,
-      maxSockets: 50,
-      maxFreeSockets: 10,
-      timeout: 45000,
-      freeSocketTimeout: 30000,
-      socketActiveTTL: 300000,
+      maxSockets: 20,
+      maxFreeSockets: 5,
+      timeout: 30000,
+      freeSocketTimeout: 15000,
+      socketActiveTTL: 180000,
     });
 
-    // Configuração padrão do Axios com agents
+    // Axios configuration otimizada
     this.axiosDefaults = {
       httpsAgent: this.httpsAgent,
       httpAgent: this.httpAgent,
-      timeout: 40000, // 40 segundos timeout para axios (menor que socket)
+      timeout: 25000, // Reduced timeout
       headers: {
         Connection: 'keep-alive',
         'Keep-Alive': 'timeout=30, max=100',
       },
     };
 
-    // Instância configurada do axios
     this.httpClient = axios.create(this.axiosDefaults);
-
-    // Rate Limiting
-    this.minDelay = 1500; // 1.5 segundos mínimo entre requests
-    this.adaptiveDelay = 1500; // Delay adaptativo
-    this.maxDelay = 300000; // Máximo 5 minutos
-
-    // Circuit Breaker
-    this.rateLimitCount = 0;
-    this.consecutiveRateLimits = 0;
-    this.maxConsecutiveRateLimits = 3;
-    this.circuitBreakerActive = false;
-    this.circuitBreakerUntil = 0;
-    this.circuitBreakerDuration = 300000; // 5 minutos
-
-    // Retry Logic
-    this.maxRetries = 3;
-    this.retryMultiplier = 2;
 
     // Statistics
     this.successCount = 0;
     this.errorCount = 0;
     this.startTime = Date.now();
 
+    // Start unified request processor
+    this.startRequestProcessor();
+
     Logger.info(
-      `🔧 [REQUEST_MANAGER] Sistema iniciado - Keep-Alive ativado, Min delay: ${this.minDelay}ms, Circuit breaker: ${this.circuitBreakerDuration / 1000}s`
+      `🚀 [REQUEST_MANAGER] New architecture initialized: TokenBucket(${this.rateLimiter.capacity} tokens), ` +
+        `CircuitBreaker(${this.circuitBreaker.failureThreshold} threshold), Queue(${this.requestQueue.maxTotalSize} max)`
     );
-    Logger.info(
-      `🌐 [CONNECTION_POOL] HTTPS Agent: maxSockets=${this.httpsAgent?.maxSockets}, maxFreeSockets=${this.httpsAgent?.maxFreeSockets}, keepAlive=${this.httpsAgent?.keepAlive}`
-    );
+
+    // Integration: Set up health monitor integration with queue
+    this.setupHealthMonitorIntegration();
+  }
+
+  /**
+   * Setup health monitor integration
+   */
+  setupHealthMonitorIntegration() {
+    // Override health monitor's getQueueHealth method
+    this.healthMonitor.getQueueHealth = () => {
+      const stats = this.requestQueue.getStats();
+      return {
+        totalSize: stats.totalInQueue,
+        prioritySizes: stats.queueSizes,
+        avgWaitTime: stats.avgWaitTime,
+      };
+    };
+  }
+
+  /**
+   * Start unified request processor
+   */
+  startRequestProcessor() {
+    // Process queue every 500ms (less aggressive)
+    setInterval(async () => {
+      if (!this.isProcessing) {
+        await this.processNextRequest();
+      }
+    }, 500);
+  }
+
+  /**
+   * Process next request from priority queue
+   */
+  async processNextRequest() {
+    if (this.isProcessing) return;
+
+    const requestWrapper = this.requestQueue.dequeue();
+    if (!requestWrapper) return;
+
+    this.isProcessing = true;
+
+    try {
+      const result = await this.executeRequest(requestWrapper);
+      requestWrapper.resolve(result);
+    } catch (error) {
+      requestWrapper.reject(error);
+    } finally {
+      this.isProcessing = false;
+    }
+  }
+
+  /**
+   * Execute individual request with all safety measures
+   */
+  async executeRequest(requestWrapper) {
+    const startTime = Date.now();
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+
+    // Start health monitoring
+    this.healthMonitor.startRequest(requestId, {
+      description: requestWrapper.request.description,
+      priority: requestWrapper.priority,
+      endpoint: requestWrapper.request.options.endpoint,
+    });
+
+    // Determine priority for rate limiter
+    const rateLimiterPriority = this.mapPriorityToRateLimiter(requestWrapper.priority);
+
+    try {
+      // Try to consume tokens (with timeout for critical requests)
+      const tokenTimeout = requestWrapper.priority === 'CRITICAL' ? 2000 : 5000; // Reduced timeouts
+      const hasTokens = await this.rateLimiter.waitForTokens(1, rateLimiterPriority, tokenTimeout);
+
+      if (!hasTokens) {
+        throw new Error('Rate limiter timeout - tokens not available');
+      }
+
+      // Execute through circuit breaker
+      const result = await this.circuitBreaker.execute(async () => {
+        // Execute the request function - requestWrapper.request contains our request data
+        return await requestWrapper.request.request();
+      }, requestWrapper.request.options.type || 'API_REQUEST');
+
+      // Success handling
+      const responseTime = Date.now() - startTime;
+      this.onRequestSuccess(responseTime, requestWrapper);
+
+      // End health monitoring with success
+      this.healthMonitor.endRequest(requestId, {
+        success: true,
+        responseTime,
+        statusCode: result?.status,
+        endpoint: requestWrapper.request.options.endpoint,
+        method: requestWrapper.request.options.method,
+        priority: requestWrapper.priority,
+      });
+
+      // Adaptive rate limiter adjustment
+      this.rateLimiter.adaptiveAdjustment(false, responseTime);
+
+      return result;
+    } catch (error) {
+      const responseTime = Date.now() - startTime;
+      const errorType = this.categorizeError(error);
+
+      // Error handling
+      this.onRequestError(error, requestWrapper, responseTime);
+
+      // End health monitoring with error
+      this.healthMonitor.endRequest(requestId, {
+        success: false,
+        responseTime,
+        statusCode: error?.response?.status,
+        errorType,
+        errorMessage: error.message,
+        endpoint: requestWrapper.request.options.endpoint,
+        method: requestWrapper.request.options.method,
+        priority: requestWrapper.priority,
+      });
+
+      // Adaptive adjustments
+      const wasRateLimited = this.isRateLimitError(error);
+      this.rateLimiter.adaptiveAdjustment(wasRateLimited, responseTime);
+
+      throw error;
+    }
   }
 
   /**
    * Enfileira uma request HTTP para processamento controlado
    * @param {Function} requestFunction - Função que retorna uma Promise da request
    * @param {string} description - Descrição da request para logs
-   * @param {number} priority - Prioridade (0 = alta, 10 = baixa)
-   * @param {number} maxRetries - Número máximo de tentativas
+   * @param {string|number} priority - Prioridade (CRITICAL, HIGH, MEDIUM, LOW ou 0-10 legacy)
+   * @param {Object} options - Opções adicionais
    * @returns {Promise} - Promise que resolve com o resultado da request
    */
-  async enqueue(
-    requestFunction,
-    description = 'API Request',
-    priority = 5,
-    maxRetries = this.maxRetries
-  ) {
-    return new Promise((resolve, reject) => {
-      // Verifica circuit breaker
-      if (this.isCircuitBreakerActive()) {
-        const remainingTime = Math.ceil((this.circuitBreakerUntil - Date.now()) / 1000);
-        Logger.warn(
-          `🚨 [REQUEST_MANAGER] Circuit breaker ativo! Rejeitando request: ${description} (${remainingTime}s restantes)`
-        );
-        reject(new Error(`Circuit breaker ativo. Tente novamente em ${remainingTime}s`));
-        return;
-      }
+  async enqueue(requestFunction, description = 'API Request', priority = 'MEDIUM', options = {}) {
+    // Convert legacy numeric priority to string
+    const normalizedPriority = this.normalizePriority(priority);
 
-      const request = {
-        requestFunction,
+    // Enhanced request wrapper
+    const requestData = {
+      request: requestFunction, // Don't execute yet, store the function
+      description,
+      options: {
         description,
-        priority,
-        maxRetries,
-        retryCount: 0,
-        resolve,
-        reject,
-        timestamp: Date.now(),
-        id: this.generateRequestId(),
-      };
+        type: options.type || 'API_REQUEST',
+        endpoint: options.endpoint,
+        method: options.method,
+        ...options,
+      },
+    };
 
-      // Insere na posição correta baseado na prioridade
-      this.insertByPriority(request);
-
-      Logger.debug(
-        `📋 [REQUEST_MANAGER] Request enfileirada: ${description} (ID: ${request.id}, Prioridade: ${priority}, Fila: ${this.queue.length})`
-      );
-
-      // Inicia processamento se não estiver processando
-      if (!this.isProcessing && !this.isCircuitBreakerActive()) {
-        this.processQueue();
-      } else if (this.isProcessing) {
-        Logger.debug(
-          `⏳ [REQUEST_MANAGER] Fila crescendo: ${this.queue.length} requests (processamento em andamento)`
-        );
-      }
-    });
+    // Enqueue using professional priority queue
+    return await this.requestQueue.enqueue(requestData, normalizedPriority, options);
   }
 
   /**
-   * Insere request na fila ordenada por prioridade
+   * Normalize priority from legacy numeric or string format
    */
-  insertByPriority(request) {
-    let insertIndex = this.queue.length;
-
-    // Encontra posição correta baseada na prioridade (0 = mais alta)
-    for (let i = 0; i < this.queue.length; i++) {
-      if (request.priority < this.queue[i].priority) {
-        insertIndex = i;
-        break;
-      }
+  normalizePriority(priority) {
+    if (typeof priority === 'string') {
+      return priority.toUpperCase();
     }
 
-    this.queue.splice(insertIndex, 0, request);
+    // Convert legacy numeric priority (0-10) to string
+    if (priority <= 1) return 'CRITICAL';
+    if (priority <= 3) return 'HIGH';
+    if (priority <= 7) return 'MEDIUM';
+    return 'LOW';
   }
 
   /**
-   * Processa a fila de requests com controle de rate limit
+   * Map priority to rate limiter priority
    */
-  async processQueue() {
-    if (this.isProcessing || this.queue.length === 0 || this.isCircuitBreakerActive()) {
-      return;
-    }
-
-    this.isProcessing = true;
-    Logger.debug(
-      `🔄 [REQUEST_MANAGER] Iniciando processamento (${this.queue.length} requests na fila)`
-    );
-
-    // Timeout de segurança para evitar travamento indefinido
-    const processTimeout = setTimeout(() => {
-      Logger.error(
-        '🚨 [REQUEST_MANAGER] TIMEOUT DE SEGURANÇA: Processamento da fila travado por mais de 2 minutos!'
-      );
-      Logger.error(
-        `🚨 [REQUEST_MANAGER] Limpando fila com ${this.queue.length} requests pendentes`
-      );
-
-      // Rejeita todos os requests pendentes para evitar memory leak
-      while (this.queue.length > 0) {
-        const request = this.queue.shift();
-        if (request && request.reject) {
-          request.reject(new Error('Request timeout - fila travada'));
-        }
-      }
-
-      this.isProcessing = false;
-      this.lastRequestTime = 0; // Reset rate limiting
-
-      Logger.info('🔄 [REQUEST_MANAGER] Fila limpa e processamento reiniciado');
-
-      // Força reinício do processamento se houver novos itens
-      setTimeout(() => {
-        if (this.queue.length > 0) {
-          this.processQueue();
-        }
-      }, 1000);
-    }, 120000); // 2 minutos (mais agressivo)
-
-    while (this.queue.length > 0 && !this.isCircuitBreakerActive()) {
-      const request = this.queue.shift();
-
-      try {
-        // Aplica delay entre requests
-        await this.waitForNextRequest();
-
-        Logger.debug(
-          `🚀 [REQUEST_MANAGER] Executando: ${request.description} (ID: ${request.id}, Tentativa: ${request.retryCount + 1}/${request.maxRetries + 1})`
-        );
-
-        // Executa a request com timeout de segurança
-        const startTime = Date.now();
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Request timeout de 45s atingido')), 45000);
-        });
-
-        const result = await Promise.race([request.requestFunction(), timeoutPromise]);
-        const duration = Date.now() - startTime;
-
-        // Request bem-sucedida
-        this.onRequestSuccess(request, duration);
-        request.resolve(result);
-      } catch (error) {
-        await this.handleRequestError(request, error);
-      }
-    }
-
-    // Limpa o timeout de segurança
-    clearTimeout(processTimeout);
-    this.isProcessing = false;
-    Logger.debug(`✅ [REQUEST_MANAGER] Processamento concluído (Fila: ${this.queue.length})`);
+  mapPriorityToRateLimiter(priority) {
+    const mapping = {
+      CRITICAL: 'CRITICAL',
+      HIGH: 'HIGH',
+      MEDIUM: 'MEDIUM',
+      LOW: 'LOW',
+    };
+    return mapping[priority] || 'MEDIUM';
   }
 
   /**
-   * Aguarda o tempo necessário entre requests
+   * Categorize error for circuit breaker and monitoring
    */
-  async waitForNextRequest() {
-    const timeSinceLastRequest = Date.now() - this.lastRequestTime;
-    if (timeSinceLastRequest < this.adaptiveDelay) {
-      const waitTime = this.adaptiveDelay - timeSinceLastRequest;
-      Logger.debug(
-        `⏳ [REQUEST_MANAGER] Aguardando ${waitTime}ms (Delay atual: ${this.adaptiveDelay}ms)`
-      );
-      await this.delay(waitTime);
+  categorizeError(error) {
+    const message = error.message?.toUpperCase() || '';
+    const code = error.code?.toUpperCase() || '';
+    const status = error?.response?.status;
+
+    if (status === 429 || message.includes('RATE') || message.includes('LIMIT')) {
+      return 'RATE_LIMIT';
     }
-    this.lastRequestTime = Date.now();
+    if (message.includes('TIMEOUT') || code === 'ETIMEDOUT') {
+      return 'TIMEOUT';
+    }
+    if (message.includes('NETWORK') || message.includes('ECONNRESET')) {
+      return 'NETWORK_ERROR';
+    }
+    if (message.includes('AUTH') || status === 401 || status === 403) {
+      return 'AUTHENTICATION_ERROR';
+    }
+    if (status && status >= 500) {
+      return 'SERVER_ERROR';
+    }
+
+    return 'UNKNOWN_ERROR';
   }
 
   /**
-   * Manipula sucesso de request
+   * Success handler with updated logic
    */
-  onRequestSuccess(request, duration) {
+  onRequestSuccess(responseTime, requestWrapper) {
     this.successCount++;
     this.requestCount++;
-    this.consecutiveRateLimits = 0; // Reset contador
 
-    // Reduz delay gradualmente após sucesso
-    if (this.adaptiveDelay > this.minDelay) {
-      const previousDelay = this.adaptiveDelay;
-      this.adaptiveDelay = Math.max(this.minDelay, this.adaptiveDelay * 0.95);
-
-      if (previousDelay !== this.adaptiveDelay) {
-        Logger.debug(
-          `📉 [REQUEST_MANAGER] Delay reduzido: ${previousDelay}ms → ${this.adaptiveDelay}ms`
-        );
-      }
+    // Set market conditions based on response time
+    if (responseTime > 3000) {
+      this.requestQueue.setMarketConditions('VOLATILE');
+    } else if (responseTime < 1000 && this.requestQueue.marketConditions !== 'NORMAL') {
+      this.requestQueue.setMarketConditions('NORMAL');
     }
 
-    Logger.debug(`✅ [REQUEST_MANAGER] Sucesso: ${request.description} (${duration}ms)`);
+    Logger.debug(`✅ [REQUEST_MANAGER] Success: ${requestWrapper.description} (${responseTime}ms)`);
   }
 
   /**
-   * Manipula erro de request com retry inteligente
+   * Error handler with updated logic
    */
-  async handleRequestError(request, error) {
+  onRequestError(error, requestWrapper, responseTime) {
     this.errorCount++;
-    const isRateLimit = this.isRateLimitError(error);
 
-    if (isRateLimit) {
-      await this.handleRateLimit(request, error);
-    } else if (request.retryCount < request.maxRetries && this.shouldRetry(error)) {
-      // Retry para outros erros
-      request.retryCount++;
-      const retryDelay = this.calculateRetryDelay(request.retryCount);
-
-      Logger.warn(
-        `🔄 [REQUEST_MANAGER] Retry ${request.retryCount}/${request.maxRetries} para: ${request.description} em ${retryDelay}ms - Erro: ${error.message}`
-      );
-
-      await this.delay(retryDelay);
-      this.queue.unshift(request);
-    } else {
-      Logger.error(`❌ [REQUEST_MANAGER] Erro final em: ${request.description} - ${error.message}`);
-      request.reject(error);
+    // Set critical market conditions for severe errors
+    if (this.categorizeError(error) === 'RATE_LIMIT') {
+      this.requestQueue.setMarketConditions('CRITICAL');
     }
-  }
-
-  /**
-   * Manipula rate limit com circuit breaker
-   */
-  async handleRateLimit(request, error) {
-    this.rateLimitCount++;
-    this.consecutiveRateLimits++;
-
-    // Aumenta delay drasticamente
-    const previousDelay = this.adaptiveDelay;
-    this.adaptiveDelay = Math.min(this.adaptiveDelay * 2.5, this.maxDelay);
-
-    Logger.warn(
-      `⏰ [REQUEST_MANAGER] Rate limit #${this.rateLimitCount} detectado! Consecutivos: ${this.consecutiveRateLimits}`
-    );
-    Logger.warn(
-      `📈 [REQUEST_MANAGER] Delay aumentado: ${previousDelay}ms → ${this.adaptiveDelay}ms`
-    );
-
-    // Ativa circuit breaker se muitos rate limits consecutivos
-    if (this.consecutiveRateLimits >= this.maxConsecutiveRateLimits) {
-      this.activateCircuitBreaker();
-      request.reject(
-        new Error(
-          `Circuit breaker ativado após ${this.consecutiveRateLimits} rate limits consecutivos`
-        )
-      );
-      return;
-    }
-
-    // Recoloca request na fila para retry
-    Logger.warn(`🔄 [REQUEST_MANAGER] Recolocando na fila: ${request.description}`);
-    this.queue.unshift(request);
-
-    // Delay extra para rate limit
-    await this.delay(Math.min(30000, this.adaptiveDelay)); // Até 30s extra
-  }
-
-  /**
-   * Ativa circuit breaker
-   */
-  activateCircuitBreaker() {
-    this.circuitBreakerActive = true;
-    this.circuitBreakerUntil = Date.now() + this.circuitBreakerDuration;
 
     Logger.error(
-      `🚨 [REQUEST_MANAGER] CIRCUIT BREAKER ATIVADO! Todas as requests bloqueadas por ${this.circuitBreakerDuration / 1000}s`
+      `❌ [REQUEST_MANAGER] Error: ${requestWrapper.description} (${responseTime}ms) - ${error.message}`
     );
-    Logger.error(
-      `🚨 [REQUEST_MANAGER] Motivo: ${this.consecutiveRateLimits} rate limits consecutivos. Bot entrará em modo de espera.`
-    );
-
-    // Limpa fila atual - todas as requests falharão
-    while (this.queue.length > 0) {
-      const request = this.queue.shift();
-      request.reject(new Error('Circuit breaker ativo - todas as requests canceladas'));
-    }
-
-    // Agenda deativação do circuit breaker
-    setTimeout(() => {
-      this.deactivateCircuitBreaker();
-    }, this.circuitBreakerDuration);
   }
 
   /**
-   * Desativa circuit breaker
-   */
-  deactivateCircuitBreaker() {
-    this.circuitBreakerActive = false;
-    this.consecutiveRateLimits = 0;
-    this.adaptiveDelay = Math.max(this.minDelay, this.adaptiveDelay * 0.5); // Reduz delay
-
-    Logger.info(`✅ [REQUEST_MANAGER] Circuit breaker DESATIVADO! Operações podem ser retomadas.`);
-    Logger.info(`📉 [REQUEST_MANAGER] Delay reiniciado para: ${this.adaptiveDelay}ms`);
-
-    // Reinicia processamento se há itens na fila
-    if (this.queue.length > 0 && !this.isProcessing) {
-      this.processQueue();
-    }
-  }
-
-  /**
-   * Verifica se circuit breaker está ativo
+   * Legacy circuit breaker check - now delegates to SmartCircuitBreaker
    */
   isCircuitBreakerActive() {
-    if (this.circuitBreakerActive && Date.now() > this.circuitBreakerUntil) {
-      this.deactivateCircuitBreaker();
-    }
-    return this.circuitBreakerActive;
+    const healthStatus = this.circuitBreaker.isHealthy();
+    return this.circuitBreaker.state === 'OPEN';
   }
 
   /**
@@ -441,7 +415,7 @@ class RequestManager {
   /**
    * Wrapper para requests HTTP com configuração automática e keep-alive
    */
-  async request(config, description = 'HTTP Request', priority = 5) {
+  async request(config, description = 'HTTP Request', priority = 'MEDIUM', options = {}) {
     const requestFunction = async () => {
       // Merge configurações do usuário com defaults (keep-alive agents)
       const finalConfig = {
@@ -456,35 +430,49 @@ class RequestManager {
       return await axios(finalConfig);
     };
 
-    return this.enqueue(requestFunction, description, priority);
+    const enhancedOptions = {
+      ...options,
+      endpoint: config.url || options.endpoint,
+      method: config.method || 'GET',
+    };
+
+    return this.enqueue(requestFunction, description, priority, enhancedOptions);
   }
 
   /**
    * Wrapper para GET requests
    */
-  async get(url, config = {}, description = `GET ${url}`, priority = 5) {
-    return this.request({ method: 'GET', url, ...config }, description, priority);
+  async get(url, config = {}, description = `GET ${url}`, priority = 'MEDIUM') {
+    return this.request({ method: 'GET', url, ...config }, description, priority, {
+      type: 'GET_REQUEST',
+    });
   }
 
   /**
    * Wrapper para POST requests
    */
-  async post(url, data = {}, config = {}, description = `POST ${url}`, priority = 5) {
-    return this.request({ method: 'POST', url, data, ...config }, description, priority);
+  async post(url, data = {}, config = {}, description = `POST ${url}`, priority = 'HIGH') {
+    return this.request({ method: 'POST', url, data, ...config }, description, priority, {
+      type: 'POST_REQUEST',
+    });
   }
 
   /**
    * Wrapper para PUT requests
    */
-  async put(url, data = {}, config = {}, description = `PUT ${url}`, priority = 5) {
-    return this.request({ method: 'PUT', url, data, ...config }, description, priority);
+  async put(url, data = {}, config = {}, description = `PUT ${url}`, priority = 'HIGH') {
+    return this.request({ method: 'PUT', url, data, ...config }, description, priority, {
+      type: 'PUT_REQUEST',
+    });
   }
 
   /**
    * Wrapper para DELETE requests
    */
-  async delete(url, config = {}, description = `DELETE ${url}`, priority = 5) {
-    return this.request({ method: 'DELETE', url, ...config }, description, priority);
+  async delete(url, config = {}, description = `DELETE ${url}`, priority = 'HIGH') {
+    return this.request({ method: 'DELETE', url, ...config }, description, priority, {
+      type: 'DELETE_REQUEST',
+    });
   }
 
   /**
@@ -536,10 +524,10 @@ class RequestManager {
   }
 
   /**
-   * ✅ FIX: Authenticated request with FRESH timestamp
+   * ✅ ENHANCED: Authenticated request with professional components integration
    * Generates timestamp immediately before HTTP call to prevent expiration
    */
-  async authenticatedRequest(method, url, config = {}, authParams, description, priority = 5) {
+  async authenticatedRequest(method, url, config = {}, authParams, description, priority = 'HIGH') {
     const requestFunction = async () => {
       // 🚀 CRITICAL: Generate timestamp RIGHT before the HTTP call
       const timestamp = Date.now();
@@ -557,8 +545,10 @@ class RequestManager {
 
       // Merge auth headers with any existing headers
       const finalConfig = {
+        ...this.axiosDefaults,
         ...config,
         headers: {
+          ...this.axiosDefaults.headers,
           ...headers,
           ...(config.headers || {}),
         },
@@ -575,20 +565,27 @@ class RequestManager {
       }
     };
 
-    return this.enqueue(requestFunction, description, priority);
+    const options = {
+      type: 'AUTHENTICATED_REQUEST',
+      endpoint: url,
+      method,
+      requiresAuth: true,
+    };
+
+    return this.enqueue(requestFunction, description, priority, options);
   }
 
   /**
    * Authenticated GET wrapper
    */
-  async authenticatedGet(url, config = {}, authParams, description, priority = 5) {
+  async authenticatedGet(url, config = {}, authParams, description, priority = 'HIGH') {
     return this.authenticatedRequest('GET', url, config, authParams, description, priority);
   }
 
   /**
    * Authenticated POST wrapper
    */
-  async authenticatedPost(url, data, config = {}, authParams, description, priority = 5) {
+  async authenticatedPost(url, data, config = {}, authParams, description, priority = 'CRITICAL') {
     return this.authenticatedRequest(
       'POST',
       url,
@@ -602,46 +599,68 @@ class RequestManager {
   /**
    * Authenticated DELETE wrapper
    */
-  async authenticatedDelete(url, config = {}, authParams, description, priority = 5) {
+  async authenticatedDelete(url, config = {}, authParams, description, priority = 'CRITICAL') {
     return this.authenticatedRequest('DELETE', url, config, authParams, description, priority);
   }
 
   /**
-   * Obtém estatísticas detalhadas do sistema
+   * Obtém estatísticas detalhadas do sistema com nova arquitetura
    */
   getStatus() {
     const uptime = Date.now() - this.startTime;
     const successRate =
       this.requestCount > 0 ? ((this.successCount / this.requestCount) * 100).toFixed(1) : 0;
 
+    // Get stats from professional components
+    const rateLimiterStats = this.rateLimiter.getStats();
+    const circuitBreakerStats = this.circuitBreaker.getStats();
+    const queueStats = this.requestQueue.getStats();
+    const healthReport = this.healthMonitor.getHealthReport();
+
     return {
-      // Fila
-      queueLength: this.queue.length,
+      // Legacy compatibility
+      queueLength: queueStats.totalInQueue,
       isProcessing: this.isProcessing,
-
-      // Circuit Breaker
-      circuitBreakerActive: this.circuitBreakerActive,
-      circuitBreakerUntil: this.circuitBreakerUntil,
-      consecutiveRateLimits: this.consecutiveRateLimits,
-
-      // Rate Limiting
-      adaptiveDelay: this.adaptiveDelay,
-      minDelay: this.minDelay,
-      maxDelay: this.maxDelay,
-
-      // Estatísticas
+      circuitBreakerActive: circuitBreakerStats.state !== 'CLOSED',
       requestCount: this.requestCount,
       successCount: this.successCount,
       errorCount: this.errorCount,
-      rateLimitCount: this.rateLimitCount,
       successRate: `${successRate}%`,
       uptime: `${Math.floor(uptime / 60000)}m ${Math.floor((uptime % 60000) / 1000)}s`,
 
-      // Performance
-      lastRequestTime: this.lastRequestTime,
-      avgDelay: this.adaptiveDelay,
+      // Professional components stats
+      rateLimiter: {
+        tokens: rateLimiterStats.tokens,
+        capacity: rateLimiterStats.capacity,
+        refillRate: rateLimiterStats.refillRate,
+        utilizationPercent: rateLimiterStats.utilizationPercent,
+        healthy: this.rateLimiter.isHealthy().healthy,
+      },
 
-      // Connection Pool
+      circuitBreaker: {
+        state: circuitBreakerStats.state,
+        healthScore: circuitBreakerStats.healthScore,
+        consecutiveFailures: circuitBreakerStats.consecutiveFailures,
+        recentFailureRate: circuitBreakerStats.failureRate,
+        healthy: this.circuitBreaker.isHealthy().healthy,
+      },
+
+      queue: {
+        totalSize: queueStats.totalInQueue,
+        prioritySizes: queueStats.queueSizes,
+        avgWaitTime: queueStats.avgWaitTime,
+        rejectionRate: queueStats.rejectionRate || '0.0%',
+        healthy: this.requestQueue.isHealthy().healthy,
+      },
+
+      health: {
+        overall: healthReport.healthStatus?.overall || 'UNKNOWN',
+        score: healthReport.healthStatus?.score || 0,
+        activeRequests: healthReport.activeRequests,
+        memoryUsage: healthReport.memoryUsage,
+      },
+
+      // Connection Pool (legacy)
       keepAliveEnabled: this.httpsAgent.keepAlive,
       maxSockets: this.httpsAgent.maxSockets,
       maxFreeSockets: this.httpsAgent.maxFreeSockets,
@@ -653,38 +672,65 @@ class RequestManager {
   }
 
   /**
-   * Força reset do sistema (emergência)
+   * Força reset do sistema (emergência) com nova arquitetura
    */
   emergencyReset() {
-    Logger.warn(`🔄 [REQUEST_MANAGER] RESET EMERGENCIAL executado!`);
+    Logger.warn(`🚨 [REQUEST_MANAGER] EMERGENCY RESET executado!`);
 
-    // Cancela todas as requests pendentes
-    while (this.queue.length > 0) {
-      const request = this.queue.shift();
-      request.reject(new Error('Sistema resetado'));
-    }
+    // Reset professional components
+    this.requestQueue.clear();
+    this.circuitBreaker.reset();
+    this.rateLimiter.reset();
 
-    // Reset de estado
+    // Reset legacy state
     this.isProcessing = false;
-    this.circuitBreakerActive = false;
-    this.consecutiveRateLimits = 0;
-    this.adaptiveDelay = this.minDelay;
-    this.rateLimitCount = 0;
+    this.requestCount = 0;
+    this.successCount = 0;
+    this.errorCount = 0;
 
-    Logger.info(`✅ [REQUEST_MANAGER] Reset concluído - sistema reiniciado`);
+    Logger.info(`✅ [REQUEST_MANAGER] Emergency reset concluído - sistema profissional reiniciado`);
   }
 
   /**
-   * Log do status atual (para debugging)
+   * Force reset completo (mesmo método que o forceReset original)
+   */
+  forceReset() {
+    this.emergencyReset();
+  }
+
+  /**
+   * Log do status atual com nova arquitetura
    */
   logStatus() {
     const status = this.getStatus();
+
     Logger.info(
-      `📊 [REQUEST_MANAGER] Status: Fila(${status.queueLength}) | Delay(${status.adaptiveDelay}ms) | Success(${status.successRate}) | RateLimit(${status.rateLimitCount}) | CircuitBreaker(${status.circuitBreakerActive}) | Uptime(${status.uptime})`
+      `📊 [REQUEST_MANAGER] Professional Status: Queue(${status.queueLength}) | ` +
+        `Health(${status.health.overall}:${status.health.score}) | Success(${status.successRate}) | Uptime(${status.uptime})`
     );
+
     Logger.info(
-      `🔌 [CONNECTION_POOL] KeepAlive(${status.keepAliveEnabled}) | ActiveSockets(${status.activeSockets}) | FreeSockets(${status.freeSockets}) | Max(${status.maxSockets})`
+      `🪣 [RATE_LIMITER] Tokens: ${status.rateLimiter.tokens}/${status.rateLimiter.capacity} | ` +
+        `Rate: ${status.rateLimiter.refillRate}/s | Health: ${status.rateLimiter.healthy ? '✅' : '❌'}`
     );
+
+    Logger.info(
+      `🔌 [CIRCUIT_BREAKER] State: ${status.circuitBreaker.state} | ` +
+        `Health: ${status.circuitBreaker.healthScore} | Failures: ${status.circuitBreaker.consecutiveFailures} | ` +
+        `Status: ${status.circuitBreaker.healthy ? '✅' : '❌'}`
+    );
+
+    Logger.info(
+      `📋 [PRIORITY_QUEUE] Total: ${status.queue.totalSize} | ` +
+        `Wait: ${status.queue.avgWaitTime}ms | Rejection: ${status.queue.rejectionRate} | ` +
+        `Status: ${status.queue.healthy ? '✅' : '❌'}`
+    );
+
+    // Log additional component details
+    this.rateLimiter.logStatus();
+    this.circuitBreaker.logStatus();
+    this.requestQueue.logStatus();
+    this.healthMonitor.logStatus();
   }
 
   /**
@@ -716,24 +762,26 @@ class RequestManager {
   }
 
   /**
-   * Força reset completo do RequestManager (limpa deadlocks)
+   * Get comprehensive health status for monitoring
    */
-  forceReset() {
-    // Para o processamento atual
-    this.isProcessing = false;
-
-    // Rejeita e limpa toda a fila
-    while (this.queue.length > 0) {
-      const request = this.queue.shift();
-      if (request && request.reject) {
-        request.reject(new Error('RequestManager force reset'));
-      }
-    }
-
-    // Reset de todos os contadores
-    this.lastRequestTime = 0;
-    this.consecutiveRateLimits = 0;
-    this.isCircuitBreakerOpen = false;
+  getHealthStatus() {
+    const healthReport = this.healthMonitor.getHealthReport();
+    return {
+      overall: healthReport.healthStatus?.overall || 'UNKNOWN',
+      components: {
+        rateLimiter: this.rateLimiter.isHealthy(),
+        circuitBreaker: this.circuitBreaker.isHealthy(),
+        queue: this.requestQueue.isHealthy(),
+        system: healthReport.healthStatus,
+      },
+      metrics: {
+        successRate:
+          this.requestCount > 0 ? ((this.successCount / this.requestCount) * 100).toFixed(1) : 0,
+        activeRequests: healthReport.activeRequests,
+        memoryUsage: healthReport.memoryUsage,
+        uptime: Date.now() - this.startTime,
+      },
+    };
   }
 }
 

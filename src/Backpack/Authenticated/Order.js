@@ -1,5 +1,4 @@
 import Logger from '../../Utils/Logger.js';
-import GlobalRequestQueue from '../../Utils/GlobalRequestQueue.js';
 import OrdersCache from '../../Utils/OrdersCache.js';
 import CacheInvalidator from '../../Utils/CacheInvalidator.js';
 import requestManager from '../../Utils/RequestManager.js';
@@ -43,7 +42,7 @@ class Order {
           params,
         },
         'Get Open Order',
-        1
+        'CRITICAL'
       );
       return response.data;
     } catch (error) {
@@ -176,53 +175,52 @@ class Order {
     apiKey = null,
     apiSecret = null
   ) {
-    return await GlobalRequestQueue.enqueue(async () => {
-      const timestamp = Date.now();
+    // Removed GlobalRequestQueue wrapper - using requestManager directly now
+    const timestamp = Date.now();
 
-      const params = {};
-      if (symbol) params.symbol = symbol;
-      if (marketType) params.marketType = marketType;
+    const params = {};
+    if (symbol) params.symbol = symbol;
+    if (marketType) params.marketType = marketType;
 
-      const headers = auth({
-        instruction: 'orderQueryAll',
-        timestamp,
-        params,
-        apiKey,
-        apiSecret,
-      });
+    const headers = auth({
+      instruction: 'orderQueryAll',
+      timestamp,
+      params,
+      apiKey,
+      apiSecret,
+    });
 
-      // Tenta diferentes possíveis endpoints para trigger orders
-      const possibleEndpoints = [
-        '/api/v1/trigger_orders',
-        '/api/v1/triggerOrders',
-        '/api/v1/orders/trigger',
-        '/api/v1/conditional_orders',
-      ];
+    // Tenta diferentes possíveis endpoints para trigger orders
+    const possibleEndpoints = [
+      '/api/v1/trigger_orders',
+      '/api/v1/triggerOrders',
+      '/api/v1/orders/trigger',
+      '/api/v1/conditional_orders',
+    ];
 
-      for (const endpoint of possibleEndpoints) {
-        try {
-          const response = await requestManager.get(
-            `${process.env.API_URL}${endpoint}`,
-            {
-              headers,
-              params,
-              timeout: 15000,
-            },
-            `Get Trigger Orders ${endpoint}`,
-            2
-          );
+    for (const endpoint of possibleEndpoints) {
+      try {
+        const response = await requestManager.get(
+          `${process.env.API_URL}${endpoint}`,
+          {
+            headers,
+            params,
+            timeout: 15000,
+          },
+          `Get Trigger Orders ${endpoint}`,
+          'HIGH'
+        );
 
-          Logger.debug(`[TRIGGER_ORDERS] Sucesso com endpoint: ${endpoint}`);
-          return response.data;
-        } catch (error) {
-          // Continua tentando outros endpoints
-          continue;
-        }
+        Logger.debug(`[TRIGGER_ORDERS] Sucesso com endpoint: ${endpoint}`);
+        return response.data;
+      } catch (error) {
+        // Continua tentando outros endpoints
+        continue;
       }
+    }
 
-      // Se nenhum endpoint funcionar, retorna array vazio
-      throw new Error('Nenhum endpoint específico para trigger orders encontrado');
-    }, `getTriggerOrdersFromSpecificEndpoint(symbol=${symbol})`);
+    // Se nenhum endpoint funcionar, retorna array vazio
+    throw new Error('Nenhum endpoint específico para trigger orders encontrado');
   }
 
   async executeOrder(body, apiKey = null, apiSecret = null) {
@@ -243,7 +241,7 @@ class Order {
           headers,
         },
         'Execute Order',
-        0
+        'CRITICAL'
       );
 
       return data;
@@ -294,7 +292,7 @@ class Order {
           data: params,
         },
         'Cancel Order',
-        1
+        'CRITICAL'
       );
 
       // Invalida cache após cancelar ordem com sucesso
@@ -337,7 +335,7 @@ class Order {
           data: params,
         },
         'Cancel All Orders',
-        1
+        'CRITICAL'
       );
       return response.data;
     } catch (error) {

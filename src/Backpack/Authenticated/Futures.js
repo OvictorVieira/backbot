@@ -40,7 +40,7 @@ class Futures {
           apiSecret: apiSecret,
         },
         'Get Open Positions',
-        1
+        'CRITICAL'
       );
 
       // Salva no cache por 10 segundos
@@ -65,7 +65,7 @@ class Futures {
               apiSecret: apiSecret,
             },
             'Get Open Positions Retry',
-            0
+            'CRITICAL'
           );
 
           // Salva no cache por 10 segundos

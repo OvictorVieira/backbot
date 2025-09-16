@@ -36,7 +36,7 @@ class Capital {
           apiSecret,
         },
         'Get Collateral',
-        2
+        'HIGH'
       );
 
       return response.data;

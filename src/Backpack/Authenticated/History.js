@@ -4,8 +4,7 @@ import BotOrdersManager, { initializeBotOrdersManager } from '../../Config/BotOr
 import ConfigManager from '../../Config/ConfigManager.js';
 import Futures from './Futures.js';
 import Logger from '../../Utils/Logger.js';
-import RateLimiter from '../../Utils/RateLimiter.js';
-import GlobalRequestQueue from '../../Utils/GlobalRequestQueue.js';
+import requestManager from '../../Utils/RequestManager.js';
 
 class History {
   async getBorrowHistory(
@@ -151,36 +150,39 @@ class History {
     apiKey = null,
     apiSecret = null
   ) {
-    // Usa fila global para coordenar todas as requests
-    return await GlobalRequestQueue.enqueue(async () => {
-      const timestamp = Date.now();
+    // Using requestManager directly instead of GlobalRequestQueue
+    const timestamp = Date.now();
 
-      const params = {};
-      if (orderId) params.orderId = orderId;
-      if (from) params.from = from;
-      if (to) params.to = to;
-      if (symbol) params.symbol = symbol;
-      if (limit) params.limit = limit;
-      if (offset) params.offset = offset;
-      if (fillType) params.fillType = fillType;
-      if (marketType) params.marketType = marketType; // array if multi values
-      if (sortDirection) params.sortDirection = sortDirection;
+    const params = {};
+    if (orderId) params.orderId = orderId;
+    if (from) params.from = from;
+    if (to) params.to = to;
+    if (symbol) params.symbol = symbol;
+    if (limit) params.limit = limit;
+    if (offset) params.offset = offset;
+    if (fillType) params.fillType = fillType;
+    if (marketType) params.marketType = marketType; // array if multi values
+    if (sortDirection) params.sortDirection = sortDirection;
 
-      const headers = auth({
-        instruction: 'fillHistoryQueryAll',
-        timestamp,
-        params,
-        apiKey,
-        apiSecret,
-      });
+    const headers = auth({
+      instruction: 'fillHistoryQueryAll',
+      timestamp,
+      params,
+      apiKey,
+      apiSecret,
+    });
 
+    try {
       const response = await axios.get(`${process.env.API_URL}/wapi/v1/history/fills`, {
         headers,
         params,
       });
 
       return response.data;
-    }, `getFillHistory(symbol=${symbol}, orderId=${orderId})`);
+    } catch (error) {
+      Logger.error('getFillHistory - ERROR!', error.response?.data || error.message);
+      return null;
+    }
   }
 
   async getFundingPayments(symbol, limit, offset, sortDirection, apiKey = null, apiSecret = null) {
@@ -223,33 +225,36 @@ class History {
     apiKey = null,
     apiSecret = null
   ) {
-    // Usa fila global para coordenar todas as requests
-    return await GlobalRequestQueue.enqueue(async () => {
-      const timestamp = Date.now();
+    // Using requestManager directly instead of GlobalRequestQueue
+    const timestamp = Date.now();
 
-      const params = {};
-      if (orderId) params.orderId = orderId;
-      if (symbol) params.symbol = symbol;
-      if (limit) params.limit = limit;
-      if (offset) params.offset = offset;
-      if (marketType) params.marketType = marketType;
-      if (sortDirection) params.sortDirection = sortDirection;
+    const params = {};
+    if (orderId) params.orderId = orderId;
+    if (symbol) params.symbol = symbol;
+    if (limit) params.limit = limit;
+    if (offset) params.offset = offset;
+    if (marketType) params.marketType = marketType;
+    if (sortDirection) params.sortDirection = sortDirection;
 
-      const headers = auth({
-        instruction: 'orderHistoryQueryAll',
-        timestamp,
-        params,
-        apiKey,
-        apiSecret,
-      });
+    const headers = auth({
+      instruction: 'orderHistoryQueryAll',
+      timestamp,
+      params,
+      apiKey,
+      apiSecret,
+    });
 
+    try {
       const response = await axios.get(`${process.env.API_URL}/wapi/v1/history/orders`, {
         headers,
         params,
       });
 
       return response.data;
-    }, `getOrderHistory(orderId=${orderId}, symbol=${symbol})`);
+    } catch (error) {
+      Logger.error('getOrderHistory - ERROR!', error.response?.data || error.message);
+      return null;
+    }
   }
 
   async getProfitAndLossHistory(

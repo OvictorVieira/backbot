@@ -1,5 +1,5 @@
-import Utils from '../../Utils/Utils.js';
 import requestManager from '../../Utils/RequestManager.js';
+import Logger from '../../Utils/Logger.js';
 
 class Markets {
   async getMarkets() {
@@ -25,7 +25,7 @@ class Markets {
           params: { symbol },
         },
         'Get Market',
-        7
+        'LOW'
       );
       return response.data;
     } catch (error) {
@@ -42,7 +42,7 @@ class Markets {
           params: { interval },
         },
         'Get Tickers',
-        6
+        'LOW'
       );
 
       return response.data;
@@ -65,7 +65,7 @@ class Markets {
           params: { symbol, interval },
         },
         'Get Ticker',
-        6
+        'LOW'
       );
 
       return response.data;
@@ -88,7 +88,7 @@ class Markets {
           params: { symbol },
         },
         'Get Depth',
-        6
+        'LOW'
       );
       return response.data;
     } catch (error) {
@@ -114,34 +114,51 @@ class Markets {
     }
 
     try {
-      const timestamp = Date.now();
-      const now = Math.floor(timestamp / 1000);
-      const duration = Utils.getIntervalInSeconds(interval) * limit;
+      // Use time-based approach directly since limit parameter doesn't work reliably
+      Logger.debug(`[KLINES] ${symbol}: Using time-based approach for ${limit} candles`);
+
+      // Calculate time range for the requested number of candles
+      const intervalSeconds = this.getIntervalInSeconds(interval);
+      const duration = intervalSeconds * limit;
+      const now = Math.floor(Date.now() / 1000);
       const startTime = now - duration;
-      const endTime = now;
 
-      const url = `${process.env.API_URL}/api/v1/klines`;
-
-      const response = await requestManager.get(
-        url,
-        {
-          params: {
-            symbol,
-            interval,
-            startTime,
-            endTime,
-          },
-        },
-        `Get KLines ${symbol}`,
-        7
-      );
+      // Convert to strings as the API expects string format
+      const url = `${process.env.API_URL}/api/v1/klines?symbol=${symbol}&interval=${interval}&startTime=${startTime}&endTime=${now}`;
+      const response = await requestManager.directGet(url);
 
       const data = response.data;
+      Logger.debug(
+        `[KLINES] ${symbol}: Requested ${limit} candles, received ${data?.length || 0} candles`
+      );
+
       return data;
     } catch (error) {
-      console.error('getKLines - ERROR!', error.response?.data || error.message);
+      Logger.error('getKLines - ERROR!', error.response?.data || error.message);
       return null;
     }
+  }
+
+  /**
+   * Helper to convert interval string to seconds
+   */
+  getIntervalInSeconds(interval) {
+    if (typeof interval !== 'string') return 300; // default 5m
+
+    const match = interval.match(/^(\d+)([smhd])$/i);
+    if (!match) return 300; // default 5m
+
+    const value = parseInt(match[1], 10);
+    const unit = match[2].toLowerCase();
+
+    const unitToSeconds = {
+      s: 1,
+      m: 60,
+      h: 3600,
+      d: 86400,
+    };
+
+    return (unitToSeconds[unit] || 60) * value;
   }
 
   async getAllMarkPrices(symbol) {
@@ -152,7 +169,7 @@ class Markets {
           params: { symbol },
         },
         'Get All Mark Prices',
-        6
+        'LOW'
       );
       return response.data;
     } catch (error) {
@@ -169,7 +186,7 @@ class Markets {
           params: { symbol },
         },
         'Get Open Interest',
-        6
+        'LOW'
       );
       return response.data;
     } catch (error) {
@@ -191,7 +208,7 @@ class Markets {
           params: { symbol, limit, offset },
         },
         'Get Funding Rates',
-        6
+        'LOW'
       );
       return response.data;
     } catch (error) {

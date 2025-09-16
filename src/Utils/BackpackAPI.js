@@ -18,7 +18,7 @@ class BackpackAPI {
    * @param {Object} options.headers - Headers HTTP
    * @param {Object} options.params - Query parameters
    * @param {number} options.timeout - Timeout em ms
-   * @param {number} options.priority - Prioridade (0=alta, 10=baixa)
+   * @param {string} options.priority - Prioridade (CRITICAL, HIGH, MEDIUM, LOW)
    * @param {string} options.description - Descrição para logs
    * @returns {Promise} Response data
    */
@@ -27,7 +27,7 @@ class BackpackAPI {
       headers = {},
       params = {},
       timeout = this.defaultTimeout,
-      priority = 5,
+      priority = 'MEDIUM',
       description,
     } = options;
 
@@ -56,7 +56,7 @@ class BackpackAPI {
    * POST request para API da Backpack
    */
   async post(endpoint, data = {}, options = {}) {
-    const { headers = {}, timeout = this.defaultTimeout, priority = 5, description } = options;
+    const { headers = {}, timeout = this.defaultTimeout, priority = 'HIGH', description } = options;
 
     const config = {
       method: 'POST',
@@ -83,7 +83,7 @@ class BackpackAPI {
    * PUT request para API da Backpack
    */
   async put(endpoint, data = {}, options = {}) {
-    const { headers = {}, timeout = this.defaultTimeout, priority = 5, description } = options;
+    const { headers = {}, timeout = this.defaultTimeout, priority = 'HIGH', description } = options;
 
     const config = {
       method: 'PUT',
@@ -110,7 +110,7 @@ class BackpackAPI {
    * DELETE request para API da Backpack
    */
   async delete(endpoint, options = {}) {
-    const { headers = {}, timeout = this.defaultTimeout, priority = 5, description } = options;
+    const { headers = {}, timeout = this.defaultTimeout, priority = 'HIGH', description } = options;
 
     const config = {
       method: 'DELETE',

@@ -91,7 +91,21 @@ class Decision {
           }
 
           const analyze = await calculateIndicators(candles, currentTimeframe, market.symbol);
-          const marketPrice = getAllMarkPrices[0].markPrice;
+
+          // Find the correct price for this symbol
+          let marketPrice;
+          if (Array.isArray(getAllMarkPrices)) {
+            const symbolPriceData = getAllMarkPrices.find(item => item.symbol === market.symbol);
+            marketPrice = symbolPriceData
+              ? symbolPriceData.markPrice
+              : getAllMarkPrices[0]?.markPrice;
+          } else {
+            marketPrice = getAllMarkPrices?.markPrice || getAllMarkPrices;
+          }
+
+          if (!marketPrice) {
+            throw new Error(`No market price found for ${market.symbol}`);
+          }
 
           Logger.info(`🔍 Analisando ${String(market.symbol).replace('_USDC_PERP', '')}`);
 

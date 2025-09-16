@@ -16,7 +16,7 @@ class Account {
           apiSecret,
         },
         'Get Account',
-        2
+        'HIGH'
       );
 
       return response.data;
