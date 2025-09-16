@@ -39,4 +39,6 @@ persistence/
 tasks.md
 context.md
 
+tasks-hft.md
+
 src/Persistence/bot.db

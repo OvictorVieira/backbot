@@ -1331,57 +1331,68 @@ export class DefaultStrategy extends BaseStrategy {
     const moneyFlow = data.moneyFlow;
 
     // Verifica se o Money Flow está disponível
-    if (!moneyFlow || moneyFlow.mfi === null || moneyFlow.mfi === undefined) {
+    if (
+      !moneyFlow ||
+      moneyFlow.mf === null ||
+      moneyFlow.mf === undefined ||
+      moneyFlow.mfPrev === null ||
+      moneyFlow.mfPrev === undefined
+    ) {
       if (isBTCAnalysis) {
         console.log(`   ⚠️ BTC: Money Flow não disponível`);
       }
       return {
         isValid: false,
         reason: 'Money Flow não disponível',
-        details: 'Indicador Money Flow não encontrado nos dados',
+        details: 'Indicador Money Flow ou valores anteriores não encontrados nos dados',
       };
     }
 
-    const mfi = moneyFlow.mfi;
-    const mfiAvg = moneyFlow.mfiAvg;
-    const mfiValue = moneyFlow.value; // MFI - Média do MFI
-    const isBullish = moneyFlow.isBullish;
-    const isBearish = moneyFlow.isBearish;
+    const mf = moneyFlow.mf; // Valor atual
+    const mfPrev = moneyFlow.mfPrev; // Valor anterior
+    const direction = moneyFlow.direction; // Direção já calculada (UP/DOWN)
     const isStrong = moneyFlow.isStrong;
-    const direction = moneyFlow.direction;
 
     let isValid = false;
     let reason = '';
     let details = '';
 
     if (isLong) {
-      // Para sinal LONG: MFI > 50 E mfiValue > 0 (LÓGICA AND - MAIS ROBUSTA)
-      if (mfi > 50 && mfiValue !== null && mfiValue > 0) {
+      // Para sinal LONG: mfValue > 0 E direção UP (dinheiro entrando e aumentando)
+      if (mf > 0 && mf > mfPrev) {
         isValid = true;
         reason = 'Money Flow confirma LONG';
-        details = `MFI: ${(mfi || 0).toFixed(1)} > 50 E mfiValue: ${(mfiValue || 0).toFixed(1)} > 0`;
+        details = `Money Flow positivo (${mf.toFixed(1)}) e crescendo (anterior: ${mfPrev.toFixed(1)}) - Direção: ${direction}`;
       } else {
         isValid = false;
         reason = 'Money Flow não confirma LONG';
-        details = `MFI: ${(mfi || 0).toFixed(1)} <= 50 OU mfiValue: ${(mfiValue || 0).toFixed(1)} <= 0`;
+        if (mf <= 0) {
+          details = `Money Flow negativo (${mf.toFixed(1)}) - Saída de dinheiro`;
+        } else {
+          details = `Money Flow positivo (${mf.toFixed(1)}) mas decrescendo (anterior: ${mfPrev.toFixed(1)}) - Direção: ${direction}`;
+        }
       }
     } else {
-      // Para sinal SHORT: MFI < 50 E mfiValue < 0 (LÓGICA AND - MAIS ROBUSTA)
-      if (mfi < 50 && mfiValue !== null && mfiValue < 0) {
+      // Para sinal SHORT: mfValue < 0 E direção DOWN (dinheiro saindo e diminuindo)
+      if (mf < 0 && mf < mfPrev) {
         isValid = true;
         reason = 'Money Flow confirma SHORT';
-        details = `MFI: ${(mfi || 0).toFixed(1)} < 50 E mfiValue: ${(mfiValue || 0).toFixed(1)} < 0`;
+        details = `Money Flow negativo (${mf.toFixed(1)}) e decrescendo (anterior: ${mfPrev.toFixed(1)}) - Direção: ${direction}`;
       } else {
         isValid = false;
         reason = 'Money Flow não confirma SHORT';
-        details = `MFI: ${(mfi || 0).toFixed(1)} >= 50 OU mfiValue: ${(mfiValue || 0).toFixed(1)} >= 0`;
+        if (mf >= 0) {
+          details = `Money Flow positivo (${mf.toFixed(1)}) - Entrada de dinheiro`;
+        } else {
+          details = `Money Flow negativo (${mf.toFixed(1)}) mas crescendo (anterior: ${mfPrev.toFixed(1)}) - Direção: ${direction}`;
+        }
       }
     }
 
     // Log detalhado do Money Flow
     if (isBTCAnalysis) {
       console.log(
-        `   💰 BTC Money Flow: MFI=${(mfi || 0).toFixed(1)}, Avg=${(mfiAvg || 0).toFixed(1)}, Value=${(mfiValue || 0).toFixed(1)}, Direction=${direction}, Strong=${isStrong}`
+        `   💰 BTC Money Flow: Atual=${(mf || 0).toFixed(1)}, Anterior=${(mfPrev || 0).toFixed(1)}, Direction=${direction}, Strong=${isStrong}`
       );
       console.log(`   ${isValid ? '✅' : '❌'} BTC: ${reason} - ${details}`);
     }
@@ -1390,13 +1401,10 @@ export class DefaultStrategy extends BaseStrategy {
       isValid,
       reason,
       details,
-      mfi,
-      mfiAvg,
-      mfiValue,
-      isBullish,
-      isBearish,
-      isStrong,
+      mf,
+      mfPrev,
       direction,
+      isStrong,
     };
   }
 

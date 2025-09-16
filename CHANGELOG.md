@@ -5,6 +5,35 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.8.2] - 2025-09-16
+
+### 🔧 **IMPROVEMENTS: Market Data & Money Flow**
+
+#### 📊 **Enhanced Market Data Retrieval**
+- ✅ **Candle Data Fix:** Resolved issue where API was returning only 1 candle instead of 1000
+- ✅ **Time-based Approach:** Switched from limit-based to time-based API calls using `directGet`
+- ✅ **Reliable Data Source:** Ensures consistent 1000 candles for Heikin Ashi Money Flow indicator
+- ✅ **Professional Logging:** Replaced console.log with proper Logger.debug/error for better debugging
+- ✅ **Code Cleanup:** Removed fallback methods and Utils dependency for cleaner architecture
+
+#### 💰 **Improved Money Flow Validation**
+- ✅ **Trend-Based Analysis:** Money Flow now validates based on trend direction instead of MFI thresholds
+- ✅ **LONG Signals:** Requires positive Money Flow that is increasing (current > previous)
+- ✅ **SHORT Signals:** Requires negative Money Flow that is decreasing (current < previous)
+- ✅ **Better Logic:** More accurate detection of money inflow/outflow trends
+- ✅ **Enhanced Logging:** Detailed Money Flow trend information in logs
+
+#### 🏗️ **Architecture Improvements**
+- ✅ **Professional Request Manager:** Integrated TokenBucketRateLimiter, SmartCircuitBreaker, and PriorityRequestQueue
+- ✅ **Request Health Monitoring:** Advanced monitoring with anomaly detection and auto-healing suggestions
+- ✅ **Rate Limiting:** Intelligent rate limiting with adaptive behavior based on API responses
+- ✅ **Circuit Breaker:** Smart failure detection and recovery mechanisms
+
+#### 📈 **Trading Logic Enhancements**
+- ✅ **Money Flow Direction:** Validates if money is moving in the right direction for the signal type
+- ✅ **Trend Confirmation:** Ensures Money Flow trend aligns with trading signal direction
+- ✅ **Improved Accuracy:** More precise entry signals based on actual money flow patterns
+
 ## [1.8.1] - 2025-09-10
 
 ### 🛠️ **HOTFIX: Authentication Import**

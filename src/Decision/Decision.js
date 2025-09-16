@@ -461,7 +461,7 @@ class Decision {
 • 🎯 Stochastic: Segunda prioridade - Cruzamentos K/D em zonas extremas
 • 📈 MACD: Terceira prioridade - Momentum e tendência (histograma + cruzamentos)
 • 📊 ADX: Quarta prioridade - Força e direção da tendência
-• 💰 Money Flow: Filtro de confirmação - MFI > 50 (LONG) / < 50 (SHORT) + mfiValue
+• 💰 Money Flow: Filtro de confirmação - Direção da tendência do fluxo de dinheiro (LONG: positivo crescendo / SHORT: negativo decrescendo)
 • 📊 VWAP: Filtro de tendência intradiária - Preço > VWAP (LONG) / < VWAP (SHORT)
 • 🏛️ BTC Trend: Filtro macro - Correlação com tendência do Bitcoin
 • 🎯 Stop/Target: Cálculo baseado em VWAP + StdDev`;
