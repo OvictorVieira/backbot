@@ -46,8 +46,8 @@ class Decision {
       }
     }
 
-    // Usa 100 candles para garantir que todos os indicadores tenham dados suficientes
-    const candleCount = 100;
+    // Usa 1000 candles para garantir dados suficientes para Heikin Ashi Money Flow (SMA cascateadas)
+    const candleCount = 1000;
 
     // Filtra mercados baseado em tokens autorizados do config
     let markets = Account.markets.filter(el => {
@@ -282,88 +282,46 @@ class Decision {
       const apiKey = config?.apiKey;
       const apiSecret = config?.apiSecret;
 
-      // NOVA ABORDAGEM: Busca apenas posições do próprio bot com proteção contra cache stale
-      let positions = [];
-      let shouldForceRefresh = false;
+      // VALIDAÇÃO: Posições abertas - SEMPRE carrega diretamente da corretora para garantir dados atuais
+      Logger.debug(
+        `🔄 [${config?.botName || 'DEFAULT'}] Carregando posições abertas da corretora...`
+      );
+      const exchangePositions = await Futures.getOpenPositionsForceRefresh(apiKey, apiSecret);
 
-      if (config?.botId) {
-        try {
-          // Importa dinamicamente o PositionTrackingService
-          const { default: PositionTrackingService } = await import(
-            '../Services/PositionTrackingService.js'
+      // Filtra apenas posições que realmente têm quantidade (evita posições "fantasma")
+      const activePositions = exchangePositions.filter(
+        pos => pos.netQuantity && Math.abs(Number(pos.netQuantity)) > 0
+      );
+
+      Logger.info(
+        `🔒 [${config?.botName || 'DEFAULT'}] Posições ativas encontradas: ${activePositions.length}/${exchangePositions.length}`
+      );
+
+      // Log das posições ativas para debugging
+      if (activePositions.length > 0) {
+        activePositions.forEach(pos => {
+          const quantity = Number(pos.netQuantity);
+          const side = quantity > 0 ? 'LONG' : 'SHORT';
+          const entryPrice = Number(pos.avgEntryPrice || pos.entryPrice || 0);
+          Logger.info(
+            `   📍 ${pos.symbol}: ${side} ${Math.abs(quantity)} @ $${entryPrice.toFixed(4)}`
           );
-          const { default: ConfigManagerSQLite } = await import('../Config/ConfigManagerSQLite.js');
-
-          const positionTracker = new PositionTrackingService(ConfigManagerSQLite.dbService);
-          const botPositions = await positionTracker.getBotOpenPositions(config.botId);
-
-          // Verifica se temos posições no tracking interno do bot
-          if (botPositions && botPositions.length > 0) {
-            positions = botPositions;
-            Logger.debug(
-              `📊 [${config?.botName || 'DEFAULT'}] Usando ${positions.length} posições do bot (tracking interno)`
-            );
-          } else {
-            // Se não temos posições no tracking, força refresh da exchange para verificar se há posições órfãs
-            Logger.warn(
-              `⚠️ [${config?.botName || 'DEFAULT'}] Sem posições no tracking interno - forçando verificação na exchange`
-            );
-            shouldForceRefresh = true;
-            positions = await Futures.getOpenPositionsForceRefresh(apiKey, apiSecret);
-
-            // Filtra apenas posições reais (com netQuantity != 0)
-            const realPositions = positions.filter(
-              pos => pos.netQuantity && parseFloat(pos.netQuantity) !== 0
-            );
-
-            if (realPositions.length > 0) {
-              Logger.warn(
-                `🚨 [${config?.botName || 'DEFAULT'}] POSIÇÕES ÓRFÃS DETECTADAS: ${realPositions.length} posições abertas na exchange mas não no bot!`
-              );
-              Logger.warn(
-                `🔍 [${config?.botName || 'DEFAULT'}] Símbolos órfãos: ${realPositions.map(p => `${p.symbol}(${p.netQuantity})`).join(', ')}`
-              );
-              positions = realPositions;
-            } else {
-              positions = [];
-              Logger.debug(
-                `✅ [${config?.botName || 'DEFAULT'}] Confirmado: nenhuma posição aberta na exchange`
-              );
-            }
-          }
-        } catch (error) {
-          Logger.debug(
-            `⚠️ [${config?.botName || 'DEFAULT'}] Erro ao buscar posições do bot: ${error.message}`
-          );
-          shouldForceRefresh = true;
-          positions = await Futures.getOpenPositionsForceRefresh(apiKey, apiSecret);
-        }
+        });
       } else {
-        // Fallback para método antigo se não tiver botId - sempre força refresh para segurança
-        Logger.debug(
-          `⚠️ [${config?.botName || 'DEFAULT'}] Sem botId, forçando verificação na exchange`
-        );
-        shouldForceRefresh = true;
-        positions = await Futures.getOpenPositionsForceRefresh(apiKey, apiSecret);
-      }
-
-      // Log de debugging sobre o método usado
-      if (shouldForceRefresh) {
-        Logger.debug(
-          `🔄 [${config?.botName || 'DEFAULT'}] Forçou refresh da exchange - posições encontradas: ${positions.length}`
+        Logger.info(
+          `   ✅ Nenhuma posição ativa encontrada - todos os tokens disponíveis para análise`
         );
       }
 
-      const closed_markets = positions.map(el => el.symbol);
+      const closed_markets = activePositions.map(el => el.symbol);
 
       // VALIDAÇÃO: Máximo de ordens - Controla quantidade máxima de posições abertas
-      // Usa forceRefresh se já forçamos refresh das posições (evita inconsistências)
       const maxTradesValidation = await OrderController.validateMaxOpenTrades(
         config?.botName || 'DEFAULT',
         apiKey,
         apiSecret,
         config,
-        shouldForceRefresh // Usa o mesmo flag de force refresh
+        false // Não força refresh pois já carregamos acima
       );
       if (!maxTradesValidation.isValid) {
         Logger.warn(maxTradesValidation.message);
@@ -378,10 +336,14 @@ class Decision {
       const marketsWithOpenOrders = openOrders ? openOrders.map(order => order.symbol) : [];
       const allClosedMarkets = [...new Set([...closed_markets, ...marketsWithOpenOrders])];
 
-      // Log de debug para verificar mercados fechados
-      Logger.debug(
-        `🔒 Mercados bloqueados: posicoes=${closed_markets.length}, ordens=${marketsWithOpenOrders.length}`
+      // Log informativo sobre mercados bloqueados
+      Logger.info(
+        `🔒 [${config?.botName || 'DEFAULT'}] Mercados bloqueados: ${closed_markets.length} posições + ${marketsWithOpenOrders.length} ordens = ${allClosedMarkets.length} total`
       );
+
+      if (allClosedMarkets.length > 0) {
+        Logger.debug(`   🚫 Símbolos bloqueados: ${allClosedMarkets.join(', ')}`);
+      }
 
       // ANÁLISE DO BTC PRIMEIRO (antes das altcoins)
       let btcTrend = 'NEUTRAL';
@@ -394,9 +356,9 @@ class Decision {
       if (shouldAnalyzeBTC) {
         Logger.debug(`\n📊 ANÁLISE DO BTC (${currentTimeframe}):`);
         try {
-          // Usa 100 candles para garantir que todos os indicadores tenham dados suficientes
+          // Usa 1000 candles para garantir que todos os indicadores tenham dados suficientes
           const markets = new Markets();
-          const btcCandles = await markets.getKLines('BTC_USDC_PERP', currentTimeframe, 100);
+          const btcCandles = await markets.getKLines('BTC_USDC_PERP', currentTimeframe, 1000);
           if (btcCandles && btcCandles.length > 0) {
             const btcIndicators = await calculateIndicators(
               btcCandles,

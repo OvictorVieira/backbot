@@ -53,15 +53,6 @@ interface BotConfig {
 }
 
 
-interface NextExecution {
-  botId: number;
-  botName: string;
-  executionMode: string;
-  timeframe: string;
-  nextExecutionMs: number;
-  nextExecutionDate: string;
-  nextExecutionFormatted: string;
-}
 
 interface BotCardProps {
   config: BotConfig;
@@ -79,7 +70,6 @@ interface BotCardProps {
 
 export const BotCard: React.FC<BotCardProps> = ({
   config,
-  isRunning, // DEPRECATED: será removido
   isLoading = false,
   isRestarting = false,
   botStatus,
@@ -88,101 +78,75 @@ export const BotCard: React.FC<BotCardProps> = ({
   onEdit,
   onDelete,
 }) => {
-  // Calcula isRunning baseado no botStatus (sempre atualizado) ou config como fallback
-  const currentStatus = botStatus?.status || config.status;
-  const actualIsRunning = currentStatus === 'running';
+  // Calcula isRunning baseado no botStatus
+  const actualIsRunning = botStatus?.status === 'running';
 
-  const [nextExecution, setNextExecution] = useState<NextExecution | null>(null);
   const [countdown, setCountdown] = useState<string>('');
-  const [calculatingTimeout, setCalculatingTimeout] = useState<boolean>(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Calcular próximo tempo de execução baseado no nextValidationAt do status
+  // Cálculo direto e simplificado do countdown
   useEffect(() => {
-    if (!actualIsRunning || !botStatus?.config?.nextValidationAt) {
-      setNextExecution(null);
-      return;
-    }
-
-    // Usa o nextValidationAt do status do bot
-    // O backend agora salva em UTC corretamente
-    const nextValidationDate = new Date(botStatus.config.nextValidationAt);
-
-    const now = Date.now();
-    const diff = nextValidationDate.getTime() - now;
-
-    // Se já passou do tempo, não mostra countdown
-    if (diff <= 0) {
-      setNextExecution(null);
-      return;
-    }
-
-    // Cria objeto nextExecution baseado no nextValidationAt
-    const nextExec = {
-      botId: config.id || 0,
-      botName: config.botName,
-      executionMode: config.executionMode || 'REALTIME',
-      timeframe: config.time || '5m',
-      nextExecutionMs: diff,
-      nextExecutionDate: nextValidationDate.toISOString(),
-      nextExecutionFormatted: nextValidationDate.toLocaleTimeString('pt-BR', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false
-      })
-    };
-
-    setNextExecution(nextExec);
-  }, [config.id, actualIsRunning, botStatus?.config?.nextValidationAt]);
-
-  // Timeout para "Calculando..." não ficar travado
-  useEffect(() => {
-    if (botStatus?.config?.nextValidationAt && (!countdown || countdown === '')) {
-      setCalculatingTimeout(false);
-
-      const timeout = setTimeout(() => {
-        setCalculatingTimeout(true);
-      }, 5000); // Se após 5 segundos ainda estiver "Calculando...", mostra timeout
-
-      return () => clearTimeout(timeout);
-    }
-  }, [botStatus?.config?.nextValidationAt, countdown]);
-
-  // Atualizar countdown a cada segundo
-  useEffect(() => {
-    if (!nextExecution || !actualIsRunning) {
+    if (!actualIsRunning) {
       setCountdown('');
       return;
     }
 
     const updateCountdown = () => {
-      const now = Date.now();
-      const nextExec = new Date(nextExecution.nextExecutionDate).getTime();
-      const diff = nextExec - now;
-
-      // Se a diferença for muito pequena (menos de 5 segundos), aguardar nova atualização
-      if (diff <= 5000 && diff > 0) {
-        setCountdown('Aguarde...');
+      // Se não tem nextValidationAt, mostra estado de aguardo
+      if (!botStatus?.config?.nextValidationAt) {
+        setCountdown('Aguardando dados...');
         return;
       }
 
-      if (diff <= 0) {
-        setCountdown('Executando...');
-        return;
-      }
+      try {
+        const nextValidationDate = new Date(botStatus.config.nextValidationAt);
+        const now = Date.now();
+        const diff = nextValidationDate.getTime() - now;
 
-      const minutes = Math.floor(diff / 60000);
-      const seconds = Math.floor((diff % 60000) / 1000);
-      const newCountdown = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-      setCountdown(newCountdown);
+
+        // Se já passou do tempo recentemente, está executando
+        if (diff <= 0) {
+          setCountdown('Executando...');
+          return;
+        }
+
+        // Se faltam menos de 5 segundos, mostra aguarde
+        if (diff <= 5000) {
+          setCountdown('Aguarde...');
+          return;
+        }
+
+        // Calcula countdown normal
+        const minutes = Math.floor(diff / 60000);
+        const seconds = Math.floor((diff % 60000) / 1000);
+        const newCountdown = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        setCountdown(newCountdown);
+
+      } catch (error) {
+        console.warn('Erro ao calcular countdown:', error);
+        setCountdown('Calculando...');
+      }
     };
 
+    // Atualiza imediatamente
     updateCountdown();
+
+    // Timeout para evitar "Calculando..." travado por mais de 3 segundos
+    const timeoutId = setTimeout(() => {
+      if (countdown === 'Calculando...') {
+        setCountdown('Aguardando dados...');
+      }
+    }, 3000);
+
+    // Atualiza a cada segundo
     const interval = setInterval(updateCountdown, 1000);
-    return () => clearInterval(interval);
-  }, [nextExecution, actualIsRunning]);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timeoutId);
+    };
+  }, [actualIsRunning, botStatus?.config?.nextValidationAt, countdown]);
 
   const getStatusBadge = () => {
     if (!config.enabled) {
@@ -420,49 +384,18 @@ export const BotCard: React.FC<BotCardProps> = ({
           {/* Status de próxima atualização */}
           {actualIsRunning && (
             <div className="text-xs text-muted-foreground border-t pt-2">
-              {(() => {
-                if (countdown && countdown !== '') {
-                  return (
-                    <span>
-                      Próxima Atualização em: <span className="font-bold text-blue-600 dark:text-blue-400">{countdown}</span>
-                    </span>
-                  );
-                }
-
-                if (botStatus?.config?.nextValidationAt) {
-                  // Verificar se nextValidationAt é válido
-                  try {
-                    const nextDate = new Date(botStatus.config.nextValidationAt);
-                    const now = Date.now();
-                    const diff = nextDate.getTime() - now;
-
-                    if (diff <= 0) {
-                      return (
-                        <span>
-                          Próxima Atualização em: <span className="font-bold text-orange-600 dark:text-orange-400">Executando...</span>
-                        </span>
-                      );
-                    } else if (diff > 0) {
-                      if (calculatingTimeout) {
-                        return (
-                          <span>
-                            Próxima Atualização em: <span className="font-bold text-yellow-600 dark:text-yellow-400">Aguardando dados...</span>
-                          </span>
-                        );
-                      }
-                      return (
-                        <span>
-                          Próxima Atualização em: <span className="font-bold text-blue-600 dark:text-blue-400">Calculando...</span>
-                        </span>
-                      );
-                    }
-                  } catch (error) {
-                    console.warn('Invalid nextValidationAt format:', botStatus.config.nextValidationAt);
-                  }
-                }
-
-                return <span>Aguardando próxima execução...</span>;
-              })()}
+              <span>
+                Próxima Atualização em: {' '}
+                <span className={`font-bold ${
+                  countdown.includes(':')
+                    ? 'text-blue-600 dark:text-blue-400'
+                    : countdown === 'Executando...'
+                    ? 'text-orange-600 dark:text-orange-400'
+                    : 'text-yellow-600 dark:text-yellow-400'
+                }`}>
+                  {countdown || 'Aguardando próxima execução...'}
+                </span>
+              </span>
             </div>
           )}
         </div>

@@ -127,6 +127,10 @@ class RequestManager {
       // Inicia processamento se não estiver processando
       if (!this.isProcessing && !this.isCircuitBreakerActive()) {
         this.processQueue();
+      } else if (this.isProcessing) {
+        Logger.debug(
+          `⏳ [REQUEST_MANAGER] Fila crescendo: ${this.queue.length} requests (processamento em andamento)`
+        );
       }
     });
   }
@@ -161,6 +165,36 @@ class RequestManager {
       `🔄 [REQUEST_MANAGER] Iniciando processamento (${this.queue.length} requests na fila)`
     );
 
+    // Timeout de segurança para evitar travamento indefinido
+    const processTimeout = setTimeout(() => {
+      Logger.error(
+        '🚨 [REQUEST_MANAGER] TIMEOUT DE SEGURANÇA: Processamento da fila travado por mais de 2 minutos!'
+      );
+      Logger.error(
+        `🚨 [REQUEST_MANAGER] Limpando fila com ${this.queue.length} requests pendentes`
+      );
+
+      // Rejeita todos os requests pendentes para evitar memory leak
+      while (this.queue.length > 0) {
+        const request = this.queue.shift();
+        if (request && request.reject) {
+          request.reject(new Error('Request timeout - fila travada'));
+        }
+      }
+
+      this.isProcessing = false;
+      this.lastRequestTime = 0; // Reset rate limiting
+
+      Logger.info('🔄 [REQUEST_MANAGER] Fila limpa e processamento reiniciado');
+
+      // Força reinício do processamento se houver novos itens
+      setTimeout(() => {
+        if (this.queue.length > 0) {
+          this.processQueue();
+        }
+      }, 1000);
+    }, 120000); // 2 minutos (mais agressivo)
+
     while (this.queue.length > 0 && !this.isCircuitBreakerActive()) {
       const request = this.queue.shift();
 
@@ -172,9 +206,13 @@ class RequestManager {
           `🚀 [REQUEST_MANAGER] Executando: ${request.description} (ID: ${request.id}, Tentativa: ${request.retryCount + 1}/${request.maxRetries + 1})`
         );
 
-        // Executa a request
+        // Executa a request com timeout de segurança
         const startTime = Date.now();
-        const result = await request.requestFunction();
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Request timeout de 45s atingido')), 45000);
+        });
+
+        const result = await Promise.race([request.requestFunction(), timeoutPromise]);
         const duration = Date.now() - startTime;
 
         // Request bem-sucedida
@@ -185,6 +223,8 @@ class RequestManager {
       }
     }
 
+    // Limpa o timeout de segurança
+    clearTimeout(processTimeout);
     this.isProcessing = false;
     Logger.debug(`✅ [REQUEST_MANAGER] Processamento concluído (Fila: ${this.queue.length})`);
   }
@@ -673,6 +713,27 @@ class RequestManager {
         requests: this.httpAgent.requests ? Object.keys(this.httpAgent.requests).length : 0,
       },
     };
+  }
+
+  /**
+   * Força reset completo do RequestManager (limpa deadlocks)
+   */
+  forceReset() {
+    // Para o processamento atual
+    this.isProcessing = false;
+
+    // Rejeita e limpa toda a fila
+    while (this.queue.length > 0) {
+      const request = this.queue.shift();
+      if (request && request.reject) {
+        request.reject(new Error('RequestManager force reset'));
+      }
+    }
+
+    // Reset de todos os contadores
+    this.lastRequestTime = 0;
+    this.consecutiveRateLimits = 0;
+    this.isCircuitBreakerOpen = false;
   }
 }
 

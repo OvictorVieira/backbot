@@ -248,8 +248,7 @@ async function recoverBot(botId, config, startTime) {
     // Limpa status de erro se existir
     await ConfigManagerSQLite.clearErrorStatus(botId);
 
-    // Atualiza status no ConfigManager
-    await ConfigManagerSQLite.updateBotStatusById(botId, 'starting', startTime);
+    // Mantém o status atual do bot (não altera durante recovery)
 
     // Configura o intervalo de execução baseado no executionMode
     let executionInterval;
@@ -306,7 +305,7 @@ async function recoverBot(botId, config, startTime) {
           currentExecutionInterval = timeframeConfig.getTimeUntilNextCandleClose(
             currentBotConfig.time || '5m'
           );
-          Logger.debug(
+          Logger.info(
             `⏰ [RECOVERY_EXECUTION] Bot ${botId}: Próxima análise ON_CANDLE_CLOSE em ${Math.floor(currentExecutionInterval / 1000)}s`
           );
         } else {
@@ -321,6 +320,10 @@ async function recoverBot(botId, config, startTime) {
         await ConfigManagerSQLite.updateBotConfigById(botId, {
           nextValidationAt: nextValidationAt.toISOString(),
         });
+
+        Logger.info(
+          `✅ [RECOVERY_EXECUTION] Bot ${botId}: nextValidationAt atualizado para ${nextValidationAt.toISOString()}`
+        );
 
         // Emite evento de execução bem-sucedida
         broadcastViaWs({
@@ -346,23 +349,113 @@ async function recoverBot(botId, config, startTime) {
       }
     };
 
-    // Executa imediatamente em background
-    executeBot().catch(error => {
-      Logger.error(
-        `❌ [${config.botName}][BOT] Erro crítico na execução do bot ${botId}:`,
-        error.message
+    // Para ON_CANDLE_CLOSE: NÃO executa imediatamente, apenas agenda para próxima vela
+    // Para REALTIME: Executa imediatamente
+    if (config.executionMode !== 'ON_CANDLE_CLOSE') {
+      Logger.info(
+        `🚀 [RECOVER] Bot ${botId}: Executando imediatamente (modo ${config.executionMode})`
       );
-    });
-
-    // Configura execução periódica em background (apenas análise)
-    const intervalId = setInterval(() => {
       executeBot().catch(error => {
         Logger.error(
-          `❌ [${config.botName}][BOT] Erro na execução periódica do bot ${botId}:`,
+          `❌ [${config.botName}][BOT] Erro crítico na execução do bot ${botId}:`,
           error.message
         );
       });
-    }, executionInterval);
+    } else {
+      Logger.info(
+        `⏰ [RECOVER] Bot ${botId}: Modo ON_CANDLE_CLOSE - aguardando próximo fechamento de vela (${config.time})`
+      );
+    }
+
+    // Configura agendamento baseado no modo de execução
+    let intervalId;
+
+    if (config.executionMode === 'ON_CANDLE_CLOSE') {
+      // Para ON_CANDLE_CLOSE: usa setTimeout recursivo
+      const scheduleNextExecution = async () => {
+        try {
+          const currentConfig = await ConfigManagerSQLite.getBotConfigById(botId);
+          if (currentConfig.executionMode !== 'ON_CANDLE_CLOSE') {
+            Logger.info(
+              `🔄 [RECOVER-ON_CANDLE_CLOSE] Bot ${botId}: Modo alterado, parando agendamento`
+            );
+            return;
+          }
+
+          const timeframeConfig = new TimeframeConfig(currentConfig);
+          const nextInterval = timeframeConfig.getTimeUntilNextCandleClose(
+            currentConfig.time || '5m'
+          );
+
+          const timeoutId = setTimeout(async () => {
+            try {
+              Logger.info(
+                `🕒 [RECOVER-ON_CANDLE_CLOSE] Bot ${botId}: Executando no fechamento da vela ${currentConfig.time}`
+              );
+
+              // Timeout para a execução do bot (máximo 3 minutos)
+              const executionTimeout = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Bot execution timeout - 3 minutos')), 180000);
+              });
+
+              await Promise.race([executeBot(), executionTimeout]);
+            } catch (error) {
+              Logger.error(
+                `❌ [RECOVER-ON_CANDLE_CLOSE] Erro durante execução do bot ${botId}:`,
+                error.message
+              );
+
+              // Se deu timeout, força próxima execução
+              if (error.message.includes('timeout')) {
+                Logger.error(
+                  `🚨 [RECOVER-ON_CANDLE_CLOSE] Bot ${botId}: TIMEOUT detectado - forçando próxima execução`
+                );
+                const timeframeConfig = new TimeframeConfig(currentConfig);
+                const nextCandleCloseMs = timeframeConfig.getTimeUntilNextCandleClose(
+                  currentConfig.time || '5m'
+                );
+                const nextValidationAt = new Date(Date.now() + nextCandleCloseMs);
+
+                await ConfigManagerSQLite.updateBotConfigById(botId, {
+                  nextValidationAt: nextValidationAt.toISOString(),
+                });
+
+                Logger.info(
+                  `✅ [RECOVER-ON_CANDLE_CLOSE] Bot ${botId}: nextValidationAt forçado para ${nextValidationAt.toISOString()}`
+                );
+              }
+            } finally {
+              scheduleNextExecution();
+            }
+          }, nextInterval);
+
+          intervalId = timeoutId;
+        } catch (error) {
+          Logger.error(
+            `❌ [RECOVER-ON_CANDLE_CLOSE] Erro ao agendar execução do bot ${botId}:`,
+            error.message
+          );
+        }
+      };
+
+      Logger.info(
+        `🚀 [RECOVER-ON_CANDLE_CLOSE] Bot ${botId}: Iniciando agendamento para timeframe ${config.time}`
+      );
+      scheduleNextExecution();
+    } else {
+      // Para REALTIME: usa setInterval normal
+      Logger.info(
+        `🚀 [RECOVER-REALTIME] Bot ${botId}: Iniciando execução contínua a cada 60 segundos`
+      );
+      intervalId = setInterval(() => {
+        executeBot().catch(error => {
+          Logger.error(
+            `❌ [${config.botName}][BOT] Erro na execução periódica do bot ${botId}:`,
+            error.message
+          );
+        });
+      }, 60000);
+    }
 
     // Inicia TODOS os monitores usando função centralizada
     const monitorIds = setupBotMonitors(botId, config);
@@ -439,6 +532,10 @@ async function startDecision(botId) {
     // Inicializa o TrailingStop
     const trailingStopInstance = new TrailingStop(botConfig.strategyName, config);
     await trailingStopInstance.reinitializeStopLoss(botConfig.strategyName);
+
+    // Reset do RequestManager antes da análise (força limpeza de deadlocks)
+    const RequestManager = (await import('./src/Utils/RequestManager.js')).default;
+    RequestManager.forceReset();
 
     // Executa a análise passando as configurações
     const result = await decisionInstance.analyze(config.time || '5m', null, config);
@@ -1253,26 +1350,30 @@ async function startBot(botId, forceRestart = false) {
           Logger.warn(`⚠️ [BOT] Erro no PnL Controller para bot ${botId}:`, pnlError.message);
         }
 
-        // Recalcula o intervalo baseado na configuração atual
-        const timeframeConfig = new TimeframeConfig(currentBotConfig);
-        let currentExecutionInterval;
+        // Recalcula o próximo horário de validação baseado no modo de execução
+        let nextValidationAt;
 
         if (currentBotConfig.executionMode === 'ON_CANDLE_CLOSE') {
-          currentExecutionInterval = timeframeConfig.getTimeUntilNextCandleClose(
+          // Para ON_CANDLE_CLOSE: calcula próximo fechamento de vela exato
+          const timeframeConfig = new TimeframeConfig(currentBotConfig);
+          const nextCandleCloseMs = timeframeConfig.getTimeUntilNextCandleClose(
             currentBotConfig.time || '5m'
           );
+          nextValidationAt = new Date(Date.now() + nextCandleCloseMs);
+
           Logger.debug(
-            `⏰ [EXECUTION] Bot ${botId}: Próxima análise ON_CANDLE_CLOSE em ${Math.floor(currentExecutionInterval / 1000)}s`
+            `⏰ [EXECUTION] Bot ${botId}: Próxima análise ON_CANDLE_CLOSE às ${nextValidationAt.toISOString()} (em ${Math.floor(nextCandleCloseMs / 1000)}s)`
           );
         } else {
-          currentExecutionInterval = 60000; // REALTIME: 60 segundos
+          // Para REALTIME: próxima execução em 60 segundos
+          nextValidationAt = new Date(Date.now() + 60000);
+
           Logger.debug(
-            `⏰ [EXECUTION] Bot ${botId}: Próxima análise REALTIME em ${Math.floor(currentExecutionInterval / 1000)}s`
+            `⏰ [EXECUTION] Bot ${botId}: Próxima análise REALTIME às ${nextValidationAt.toISOString()} (em 60s)`
           );
         }
 
-        // Calcula e salva o próximo horário de validação
-        const nextValidationAt = new Date(Date.now() + currentExecutionInterval);
+        // Salva o próximo horário de validação
         await ConfigManagerSQLite.updateBotConfigById(botId, {
           nextValidationAt: nextValidationAt.toISOString(),
         });
@@ -1301,24 +1402,44 @@ async function startBot(botId, forceRestart = false) {
       }
     };
 
-    // Calcula e salva o próximo horário de validação
-    const nextValidationAt = new Date(Date.now() + executionInterval);
-    await ConfigManagerSQLite.updateBotConfigById(botId, {
-      nextValidationAt: nextValidationAt.toISOString(),
-    });
+    // Para ON_CANDLE_CLOSE: NÃO executa imediatamente, apenas agenda para próxima vela
+    // Para REALTIME: Executa imediatamente
+    if (botConfig.executionMode !== 'ON_CANDLE_CLOSE') {
+      Logger.info(
+        `🚀 [STARTUP] Bot ${botId}: Executando imediatamente (modo ${botConfig.executionMode})`
+      );
+      await executeBot();
+    } else {
+      Logger.info(
+        `⏰ [STARTUP] Bot ${botId}: Modo ON_CANDLE_CLOSE - aguardando próximo fechamento de vela (${botConfig.time})`
+      );
 
-    // Executa imediatamente
-    await executeBot();
+      // Calcula e salva o próximo fechamento de vela correto
+      const timeframeConfig = new TimeframeConfig(botConfig);
+      const nextCandleCloseMs = timeframeConfig.getTimeUntilNextCandleClose(botConfig.time || '5m');
+      const nextValidationAt = new Date(Date.now() + nextCandleCloseMs);
+
+      await ConfigManagerSQLite.updateBotConfigById(botId, {
+        nextValidationAt: nextValidationAt.toISOString(),
+      });
+
+      Logger.info(
+        `⏰ [STARTUP] Bot ${botId}: Próxima execução agendada para ${nextValidationAt.toISOString()}`
+      );
+    }
 
     let intervalId;
 
     if (botConfig.executionMode === 'ON_CANDLE_CLOSE') {
-      // Para ON_CANDLE_CLOSE: usa setTimeout recursivo para recalcular sempre
+      // Para ON_CANDLE_CLOSE: usa setTimeout recursivo com execução precisa
       const scheduleNextExecution = async () => {
         try {
           // Recarrega config para pegar executionMode atualizado
           const currentConfig = await ConfigManagerSQLite.getBotConfigById(botId);
           if (currentConfig.executionMode !== 'ON_CANDLE_CLOSE') {
+            Logger.info(
+              `🔄 [ON_CANDLE_CLOSE] Bot ${botId}: Modo alterado para ${currentConfig.executionMode}, parando agendamento`
+            );
             return; // Se mudou o modo, para
           }
 
@@ -1327,9 +1448,29 @@ async function startBot(botId, forceRestart = false) {
             currentConfig.time || '5m'
           );
 
+          // Calcula o timestamp exato do próximo fechamento
+          const nextCandleCloseTime = new Date(Date.now() + nextInterval);
+
+          Logger.debug(
+            `⏰ [ON_CANDLE_CLOSE] Bot ${botId}: Agendando execução para ${nextCandleCloseTime.toISOString()} (em ${Math.floor(nextInterval / 1000)}s)`
+          );
+
           const timeoutId = setTimeout(async () => {
-            await executeBot();
-            scheduleNextExecution(); // Reagenda para próxima vela
+            try {
+              Logger.info(
+                `🕒 [ON_CANDLE_CLOSE] Bot ${botId}: Executando no fechamento da vela ${currentConfig.time} - ${new Date().toISOString()}`
+              );
+              await executeBot();
+            } catch (error) {
+              Logger.error(
+                `❌ [ON_CANDLE_CLOSE] Erro durante execução do bot ${botId}:`,
+                error.message
+              );
+            } finally {
+              // SEMPRE reagenda para a próxima vela, mesmo se executeBot() falhar
+              Logger.debug(`🔄 [ON_CANDLE_CLOSE] Bot ${botId}: Reagendando para próxima vela...`);
+              scheduleNextExecution();
+            }
           }, nextInterval);
 
           // Salva para poder cancelar depois
@@ -1339,14 +1480,33 @@ async function startBot(botId, forceRestart = false) {
             `❌ [ON_CANDLE_CLOSE] Erro ao agendar próxima execução do bot ${botId}:`,
             error.message
           );
+
+          // Tenta reagendar em 10 segundos se der erro
+          setTimeout(() => {
+            Logger.info(`🔄 [ON_CANDLE_CLOSE] Bot ${botId}: Tentando reagendar após erro...`);
+            scheduleNextExecution();
+          }, 10000);
         }
       };
 
       // Inicia o agendamento
+      Logger.info(
+        `🚀 [ON_CANDLE_CLOSE] Bot ${botId}: Iniciando sistema de agendamento para timeframe ${botConfig.time}`
+      );
       scheduleNextExecution();
     } else {
-      // Para REALTIME: usa setInterval normal
-      intervalId = setInterval(executeBot, executionInterval);
+      // Para REALTIME: usa setInterval normal de 60 segundos
+      Logger.info(`🚀 [REALTIME] Bot ${botId}: Iniciando execução contínua a cada 60 segundos`);
+      intervalId = setInterval(async () => {
+        try {
+          Logger.debug(
+            `🕒 [REALTIME] Bot ${botId}: Executando análise - ${new Date().toISOString()}`
+          );
+          await executeBot();
+        } catch (error) {
+          Logger.error(`❌ [REALTIME] Erro durante execução do bot ${botId}:`, error.message);
+        }
+      }, 60000); // Sempre 60 segundos para REALTIME
     }
 
     // Carrega configuração inicial para a instância
