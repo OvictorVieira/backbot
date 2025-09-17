@@ -44,6 +44,7 @@ import OrdersService from './src/Services/OrdersService.js';
 import Order from './src/Backpack/Authenticated/Order.js';
 import AccountController from './src/Controllers/AccountController.js';
 import CachedOrdersService from './src/Utils/CachedOrdersService.js';
+import HFTController from './src/Controllers/HFTController.js';
 
 // Instancia PositionSyncService (será inicializado depois que o DatabaseService estiver pronto)
 let PositionSyncService = null;
@@ -3953,6 +3954,231 @@ app.get('/api/bot/test-api/:botId', async (req, res) => {
   }
 });
 
+// ======= HFT APIs =======
+
+// Inicia bot HFT
+app.post('/api/hft/start', async (req, res) => {
+  try {
+    const { botId } = req.body;
+
+    if (!botId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bot ID é obrigatório',
+      });
+    }
+
+    // Busca configuração do bot
+    const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
+    if (!botConfig) {
+      return res.status(404).json({
+        success: false,
+        error: `Bot ${botId} não encontrado`,
+      });
+    }
+
+    // Verifica se é modo HFT
+    if (botConfig.strategyName !== 'HFT') {
+      return res.status(400).json({
+        success: false,
+        error: 'Bot não está configurado para modo HFT',
+      });
+    }
+
+    // Inicia estratégia HFT
+    const result = await HFTController.startHFTBot(botConfig);
+
+    Logger.info(`🚀 [API] Bot HFT iniciado: ${botId}`);
+
+    res.json({
+      success: true,
+      message: 'Bot HFT iniciado com sucesso',
+      data: result,
+    });
+  } catch (error) {
+    Logger.error('❌ [API] Erro ao iniciar bot HFT:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Para bot HFT
+app.post('/api/hft/stop', async (req, res) => {
+  try {
+    const { botId } = req.body;
+
+    if (!botId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bot ID é obrigatório',
+      });
+    }
+
+    const result = await HFTController.stopHFTBot(botId);
+
+    Logger.info(`🛑 [API] Bot HFT parado: ${botId}`);
+
+    res.json({
+      success: true,
+      message: 'Bot HFT parado com sucesso',
+      data: result,
+    });
+  } catch (error) {
+    Logger.error('❌ [API] Erro ao parar bot HFT:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Para todos os bots HFT
+app.post('/api/hft/stop-all', async (req, res) => {
+  try {
+    const result = await HFTController.stopAllHFTBots();
+
+    Logger.info(`🛑 [API] Todos os bots HFT parados`);
+
+    res.json({
+      success: true,
+      message: 'Todos os bots HFT parados com sucesso',
+      data: result,
+    });
+  } catch (error) {
+    Logger.error('❌ [API] Erro ao parar todos os bots HFT:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Status de um bot HFT específico
+app.get('/api/hft/status/:botId', async (req, res) => {
+  try {
+    const { botId } = req.params;
+
+    if (!botId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bot ID é obrigatório',
+      });
+    }
+
+    const status = HFTController.getHFTBotStatus(parseInt(botId));
+
+    res.json({
+      success: true,
+      data: status,
+    });
+  } catch (error) {
+    Logger.error('❌ [API] Erro ao obter status do bot HFT:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Status de todos os bots HFT
+app.get('/api/hft/status', async (req, res) => {
+  try {
+    const status = HFTController.getAllHFTStatus();
+
+    res.json({
+      success: true,
+      data: status,
+    });
+  } catch (error) {
+    Logger.error('❌ [API] Erro ao obter status de todos os bots HFT:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Métricas e relatório de performance HFT
+app.get('/api/hft/performance', async (req, res) => {
+  try {
+    const report = HFTController.getPerformanceReport();
+
+    res.json({
+      success: true,
+      data: report,
+    });
+  } catch (error) {
+    Logger.error('❌ [API] Erro ao obter relatório de performance HFT:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Habilita/desabilita sistema HFT globalmente
+app.post('/api/hft/toggle', async (req, res) => {
+  try {
+    const { enabled } = req.body;
+
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        error: 'Campo "enabled" deve ser boolean',
+      });
+    }
+
+    HFTController.setHFTEnabled(enabled);
+
+    Logger.info(`🔧 [API] Sistema HFT ${enabled ? 'habilitado' : 'desabilitado'}`);
+
+    res.json({
+      success: true,
+      message: `Sistema HFT ${enabled ? 'habilitado' : 'desabilitado'} com sucesso`,
+      data: { enabled },
+    });
+  } catch (error) {
+    Logger.error('❌ [API] Erro ao alterar status do sistema HFT:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Atualiza configuração de um bot HFT em execução
+app.put('/api/hft/config/:botId', async (req, res) => {
+  try {
+    const { botId } = req.params;
+    const newConfig = req.body;
+
+    if (!botId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bot ID é obrigatório',
+      });
+    }
+
+    const result = await HFTController.updateHFTBotConfig(parseInt(botId), newConfig);
+
+    Logger.info(`🔧 [API] Configuração do bot HFT atualizada: ${botId}`);
+
+    res.json({
+      success: true,
+      message: 'Configuração do bot HFT atualizada com sucesso',
+      data: result,
+    });
+  } catch (error) {
+    Logger.error('❌ [API] Erro ao atualizar configuração do bot HFT:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
 // ======= SHUTDOWN HANDLERS =======
 // Função para fazer shutdown graceful de todos os bots
 async function gracefulShutdown(signal) {
@@ -3988,6 +4214,14 @@ async function gracefulShutdown(signal) {
     if (PositionSyncService && typeof PositionSyncService.stopAllSync === 'function') {
       PositionSyncService.stopAllSync();
       Logger.info(`✅ [SHUTDOWN] PositionSyncService parado`);
+    }
+
+    // Para todos os bots HFT
+    try {
+      await HFTController.stopAllHFTBots();
+      Logger.info(`✅ [SHUTDOWN] Todos os bots HFT parados`);
+    } catch (error) {
+      Logger.error(`❌ [SHUTDOWN] Erro ao parar bots HFT:`, error.message);
     }
 
     if (typeof TrailingStop.cleanup === 'function') {

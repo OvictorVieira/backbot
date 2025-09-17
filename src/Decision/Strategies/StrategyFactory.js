@@ -1,6 +1,7 @@
 import { DefaultStrategy } from './DefaultStrategy.js';
 import { ProMaxStrategy } from './ProMaxStrategy.js';
 import { AlphaFlowStrategy } from './AlphaFlowStrategy.js';
+import HFTStrategy from './HFTStrategy.js';
 import Logger from '../../Utils/Logger.js';
 
 export class StrategyFactory {
@@ -25,6 +26,9 @@ export class StrategyFactory {
       case 'ALPHA_FLOW':
         Logger.debug(`✅ StrategyFactory: Criando estratégia ALPHA_FLOW`);
         return new AlphaFlowStrategy();
+      case 'HFT':
+        Logger.debug(`✅ StrategyFactory: Criando estratégia HFT`);
+        return new HFTStrategy();
       default:
         Logger.warn(`⚠️ Estratégia "${strategy}" não encontrada, usando DEFAULT`);
         return new DefaultStrategy();
@@ -36,7 +40,7 @@ export class StrategyFactory {
    * @returns {string[]} - Array com nomes das estratégias
    */
   static getAvailableStrategies() {
-    return ['DEFAULT', 'PRO_MAX', 'ALPHA_FLOW'];
+    return ['DEFAULT', 'PRO_MAX', 'ALPHA_FLOW', 'HFT'];
   }
 
   /**

@@ -52,6 +52,11 @@ interface BotConfig {
   // Configuração de Confluência
   enableConfluenceMode?: boolean;
   minConfluences?: number;
+  // Configurações HFT
+  hftSpread?: number;
+  hftDailyVolumeGoal?: number;
+  hftSymbols?: string[];
+  hftQuantityMultiplier?: number;
 }
 
 interface ConfigFormProps {
@@ -104,7 +109,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
   const [apiKeysValidated, setApiKeysValidated] = useState(false);
   const [testingApiKeys, setTestingApiKeys] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [selectedMode, setSelectedMode] = useState<'none' | 'volume' | 'profit'>('none');
+  const [selectedMode, setSelectedMode] = useState<'none' | 'volume' | 'profit' | 'hft'>('none');
   const [apiKeysTestResult, setApiKeysTestResult] = useState<{
     success: boolean;
     message: string;
@@ -250,6 +255,41 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
       enableHeikinAshi: true, // 🔥 HABILITADO para filtrar melhor as tendências
       enableConfluenceMode: true, // 🔥 HABILITADO com 2 indicadores mínimos
       minConfluences: 2 // 🔥 PADRÃO: 2 indicadores para confluência
+    }));
+  };
+
+  const applyHFTMode = () => {
+    setSelectedMode('hft');
+    setFormData(prev => ({
+      ...prev,
+      strategyName: 'HFT',
+      capitalPercentage: 5, // 🔥 MENOR: 5% para reduzir risco com HFT
+      time: '1m', // 🔥 MENOR: 1 minuto para alta frequência
+      maxNegativePnlStopPct: -2, // 🔥 MENOR: -2% stop mais agressivo
+      minProfitPercentage: 0.5, // 🔥 MENOR: 0.5% lucro mínimo para HFT
+      maxSlippagePct: 0.1, // 🔥 MENOR: 0.1% slippage baixo para maker orders
+      executionMode: 'REALTIME',
+      enableHybridStopStrategy: false, // 🔥 DESABILITADO: HFT usa própria lógica
+      enableTrailingStop: false, // 🔥 DESABILITADO: HFT gerencia próprio grid
+      maxOpenOrders: 10, // 🔥 MAIOR: Permite mais ordens simultâneas para grid
+      // ❌ INDICADORES DESABILITADOS (HFT não usa análise técnica tradicional)
+      enableMomentumSignals: false,
+      enableRsiSignals: false,
+      enableStochasticSignals: false,
+      enableMacdSignals: false,
+      enableAdxSignals: false,
+      // ❌ FILTROS DESABILITADOS (HFT foca apenas em execução)
+      enableMoneyFlowFilter: false,
+      enableVwapFilter: false,
+      enableBtcTrendFilter: false,
+      enableHeikinAshi: false,
+      enableConfluenceMode: false,
+      minConfluences: 0,
+      // 🎯 CONFIGURAÇÕES ESPECÍFICAS HFT
+      hftSpread: 0.001, // 0.1% spread padrão
+      hftDailyVolumeGoal: 10000, // $10,000 meta diária
+      hftSymbols: ['SOL_USDC_PERP', 'BTC_USDC_PERP', 'ETH_USDC_PERP'],
+      hftQuantityMultiplier: 0.1 // 10% da quantidade normal
     }));
   };
 
@@ -1546,6 +1586,37 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                       type="button"
                       variant="outline"
                       size="sm"
+                      onClick={applyHFTMode}
+                      className={`bg-white hover:bg-gray-50 border-gray-200 text-gray-700 hover:text-gray-900 text-xs px-3 py-1 h-8 flex items-center gap-1 ${
+                        selectedMode === 'hft' ? 'ring-2 ring-orange-500 ring-offset-2' : ''
+                      }`}
+                    >
+                      <BarChart3 className="h-3 w-3" />
+                      HFT
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="max-w-xs">
+                      <strong>⚡ Modo HFT - High Frequency Trading:</strong><br/>
+                      • Spread: 0.1% (ultra baixo)<br/>
+                      • Capital: 5% (risco controlado)<br/>
+                      • Timeframe: 1m (alta frequência)<br/>
+                      • Grid Trading automático<br/>
+                      • ❌ Indicadores desabilitados<br/>
+                      • ❌ Stop Loss tradicional desabilitado<br/>
+                      <em>Ideal para airdrop e volume máximo!</em>
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
                       onClick={resetToInitial}
                       className="bg-white hover:bg-gray-50 border-gray-200 text-gray-700 hover:text-gray-900 text-xs px-3 py-1 h-8 flex items-center gap-1"
                     >
@@ -2123,6 +2194,140 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Configurações HFT */}
+        {(formData.strategyName === 'HFT' || selectedMode === 'hft') && (
+          <div className="space-y-4 border-t pt-4">
+            <h3 className="text-lg font-medium text-orange-700">Configurações HFT (High-Frequency Trading)</h3>
+            <div className="text-sm text-muted-foreground mb-4">
+              Configure os parâmetros específicos para negociação de alta frequência focada em airdrop e volume.
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* HFT Spread */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="hftSpread">Spread HFT (%)</Label>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="max-w-xs">Distância percentual entre ordens de compra e venda no grid. Spreads menores = mais execuções mas menor lucro por trade.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <Input
+                  id="hftSpread"
+                  type="number"
+                  step="0.0001"
+                  min="0.0001"
+                  max="0.05"
+                  placeholder="0.001"
+                  value={formData.hftSpread || 0.001}
+                  onChange={(e) => handleInputChange('hftSpread', parseFloat(e.target.value))}
+                  className={errors.hftSpread ? "border-red-500" : ""}
+                />
+                {errors.hftSpread && <p className="text-sm text-red-500">{errors.hftSpread}</p>}
+              </div>
+
+              {/* Meta de Volume Diário */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="hftDailyVolumeGoal">Meta Volume Diário ($)</Label>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="max-w-xs">Volume diário alvo em USD para maximizar pontos de airdrop. O bot ajustará a frequência de trades para atingir esta meta.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <Input
+                  id="hftDailyVolumeGoal"
+                  type="number"
+                  min="100"
+                  step="100"
+                  placeholder="10000"
+                  value={formData.hftDailyVolumeGoal || 10000}
+                  onChange={(e) => handleInputChange('hftDailyVolumeGoal', parseFloat(e.target.value))}
+                  className={errors.hftDailyVolumeGoal ? "border-red-500" : ""}
+                />
+                {errors.hftDailyVolumeGoal && <p className="text-sm text-red-500">{errors.hftDailyVolumeGoal}</p>}
+              </div>
+
+              {/* Multiplicador de Quantidade */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="hftQuantityMultiplier">Multiplicador de Quantidade</Label>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="max-w-xs">Percentual da quantidade normal a ser usado nas ordens HFT. Valores menores = mais ordens, menos exposição por ordem.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <Input
+                  id="hftQuantityMultiplier"
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  max="1"
+                  placeholder="0.1"
+                  value={formData.hftQuantityMultiplier || 0.1}
+                  onChange={(e) => handleInputChange('hftQuantityMultiplier', parseFloat(e.target.value))}
+                  className={errors.hftQuantityMultiplier ? "border-red-500" : ""}
+                />
+                {errors.hftQuantityMultiplier && <p className="text-sm text-red-500">{errors.hftQuantityMultiplier}</p>}
+              </div>
+
+              {/* Símbolos HFT */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="hftSymbols">Símbolos para HFT</Label>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="max-w-xs">Lista de símbolos separados por vírgula para negociação HFT. Foque em pares com taxas maker baixas.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <Input
+                  id="hftSymbols"
+                  type="text"
+                  placeholder="SOL_USDC_PERP,BTC_USDC_PERP,ETH_USDC_PERP"
+                  value={formData.hftSymbols?.join(',') || 'SOL_USDC_PERP,BTC_USDC_PERP,ETH_USDC_PERP'}
+                  onChange={(e) => handleInputChange('hftSymbols', e.target.value.split(',').map(s => s.trim()).filter(s => s))}
+                  className={errors.hftSymbols ? "border-red-500" : ""}
+                />
+                {errors.hftSymbols && <p className="text-sm text-red-500">{errors.hftSymbols}</p>}
+              </div>
+            </div>
+
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+              <div className="flex items-start gap-2">
+                <div className="text-orange-600 mt-0.5">⚠️</div>
+                <div className="text-sm text-orange-700">
+                  <strong>Aviso:</strong> O modo HFT é experimental e focado em airdrop. Use apenas com capital que pode perder.
+                  Os indicadores técnicos tradicionais são desabilitados neste modo.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </CardContent>
 
       <CardFooter className="flex gap-2">
