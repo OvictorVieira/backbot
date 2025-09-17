@@ -37,6 +37,7 @@ import ImportOrdersFromBackpack from './src/Config/ImportOrdersFromBackpack.js';
 import ImportPositionsFromBackpack from './src/Config/ImportPositionsFromBackpack.js';
 import DatabaseService from './src/Services/DatabaseService.js';
 import Markets from './src/Backpack/Public/Markets.js';
+import RequestManager from './src/Utils/RequestManager.js';
 import PositionSyncServiceClass from './src/Services/PositionSyncService.js';
 import PositionTrackingService from './src/Services/PositionTrackingService.js';
 import OrdersService from './src/Services/OrdersService.js';
@@ -533,7 +534,6 @@ async function startDecision(botId) {
     await trailingStopInstance.reinitializeStopLoss(botConfig.strategyName);
 
     // Reset do RequestManager antes da análise (força limpeza de deadlocks)
-    const RequestManager = (await import('./src/Utils/RequestManager.js')).default;
     RequestManager.forceReset();
 
     // Executa a análise passando as configurações
