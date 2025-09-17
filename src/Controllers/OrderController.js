@@ -4043,7 +4043,8 @@ class OrderController {
 
       Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] Iniciando verificação de ordens órfãs`);
 
-      const positions = (await Futures.getOpenPositions(apiKey, apiSecret)) || [];
+      const positionsResult = await Futures.getOpenPositions(apiKey, apiSecret);
+      const positions = Array.isArray(positionsResult) ? positionsResult : [];
       Logger.debug(
         `🧹 [${config.botName}][ORPHAN_MONITOR] Encontradas ${positions.length} posições abertas`
       );

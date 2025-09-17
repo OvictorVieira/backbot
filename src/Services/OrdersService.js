@@ -3,6 +3,7 @@ import Futures from '../Backpack/Authenticated/Futures.js';
 import History from '../Backpack/Authenticated/History.js';
 import DatabaseService from './DatabaseService.js';
 import Logger from '../Utils/Logger.js';
+import OrderBookAnalyzer from '../Utils/OrderBookAnalyzer.js';
 
 /**
  * OrdersService - Centralizador de toda lógica de criação de ordens
@@ -280,6 +281,44 @@ class OrdersService {
         );
       }
 
+      // 🎯 OTIMIZAÇÃO: Ajusta preços baseado no order book para evitar execução imediata
+      let optimizedTriggerPrice = takeProfitTriggerPrice;
+      let optimizedLimitPrice = takeProfitLimitPrice;
+
+      try {
+        const positionSide = side === 'Ask' ? 'LONG' : 'SHORT';
+        const optimalTrigger = await OrderBookAnalyzer.getOptimalTakeProfitPrice(
+          symbol,
+          positionSide,
+          takeProfitTriggerPrice,
+          0.02
+        );
+        const optimalLimit = await OrderBookAnalyzer.getOptimalTakeProfitPrice(
+          symbol,
+          positionSide,
+          takeProfitLimitPrice,
+          0.02
+        );
+
+        if (optimalTrigger && optimalTrigger !== takeProfitTriggerPrice) {
+          Logger.info(
+            `🎯 [ORDERS_SERVICE] ${symbol}: Trigger price ajustado pelo order book: ${takeProfitTriggerPrice} → ${optimalTrigger}`
+          );
+          optimizedTriggerPrice = optimalTrigger;
+        }
+
+        if (optimalLimit && optimalLimit !== takeProfitLimitPrice) {
+          Logger.info(
+            `🎯 [ORDERS_SERVICE] ${symbol}: Limit price ajustado pelo order book: ${takeProfitLimitPrice} → ${optimalLimit}`
+          );
+          optimizedLimitPrice = optimalLimit;
+        }
+      } catch (orderBookError) {
+        Logger.warn(
+          `⚠️ [ORDERS_SERVICE] Erro ao otimizar preços via order book: ${orderBookError.message}. Usando preços originais.`
+        );
+      }
+
       const orderBody = {
         symbol,
         side,
@@ -289,14 +328,14 @@ class OrdersService {
         timeInForce: 'GTC',
         reduceOnly: true,
         selfTradePrevention: 'RejectTaker',
-        takeProfitTriggerPrice: takeProfitTriggerPrice.toString(),
-        takeProfitLimitPrice: takeProfitLimitPrice.toString(),
+        takeProfitTriggerPrice: optimizedTriggerPrice.toString(),
+        takeProfitLimitPrice: optimizedLimitPrice.toString(),
         takeProfitTriggerBy: 'MarkPrice',
         ...additionalParams,
       };
 
       Logger.info(
-        `📦 [ORDERS_SERVICE] Criando ordem TAKE PROFIT: ${symbol} ${side} ${quantity} @ trigger: ${takeProfitTriggerPrice}, limit: ${takeProfitLimitPrice}`
+        `📦 [ORDERS_SERVICE] Criando ordem TAKE PROFIT: ${symbol} ${side} ${quantity} @ trigger: ${optimizedTriggerPrice}, limit: ${optimizedLimitPrice}`
       );
 
       const result = await this.orderClient.executeOrder(orderBody, apiKey, apiSecret);
@@ -312,7 +351,7 @@ class OrdersService {
           symbol,
           side,
           quantity,
-          price: takeProfitLimitPrice,
+          price: optimizedLimitPrice,
           orderType: 'TAKE_PROFIT',
           status: 'PENDING',
           clientId,

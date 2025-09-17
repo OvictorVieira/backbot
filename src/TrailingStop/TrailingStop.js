@@ -1290,7 +1290,8 @@ class TrailingStop {
       }
 
       // Busca todas as posições abertas na exchange
-      const openPositions = await Futures.getOpenPositions(apiKey, apiSecret);
+      const openPositionsResult = await Futures.getOpenPositions(apiKey, apiSecret);
+      const openPositions = Array.isArray(openPositionsResult) ? openPositionsResult : [];
       const openSymbols = new Set(openPositions.map(pos => pos.symbol));
 
       let cleanedCount = 0;
@@ -1571,8 +1572,13 @@ class TrailingStop {
       }
 
       // Valida se a posição ainda existe na exchange
-      const exchangePositions =
-        (await Futures.getOpenPositions(this.config.apiKey, this.config.apiSecret)) || [];
+      const exchangePositionsResult = await Futures.getOpenPositions(
+        this.config.apiKey,
+        this.config.apiSecret
+      );
+      const exchangePositions = Array.isArray(exchangePositionsResult)
+        ? exchangePositionsResult
+        : [];
       const activePosition = exchangePositions.find(
         pos => pos.symbol === position.symbol && pos.netQuantity !== '0'
       );
@@ -2695,15 +2701,18 @@ class TrailingStop {
 
       const positions = await Futures.getOpenPositions(apiKey, apiSecret);
 
-      if (!positions || positions.length === 0) {
+      if (!positions || !Array.isArray(positions) || positions.length === 0) {
+        Logger.debug(`[TRAILING_STOP] Nenhuma posição encontrada ou positions não é array`);
         return;
       }
 
       // 🔧 CORREÇÃO: Filtra apenas posições realmente abertas (netQuantity > 0)
-      const activePositions = positions.filter(position => {
-        const netQuantity = parseFloat(position.netQuantity || 0);
-        return Math.abs(netQuantity) > 0;
-      });
+      const activePositions = Array.isArray(positions)
+        ? positions.filter(position => {
+            const netQuantity = parseFloat(position.netQuantity || 0);
+            return Math.abs(netQuantity) > 0;
+          })
+        : [];
 
       // 📡 SISTEMA REATIVO: Inicializa WebSocket se trailing stop estiver ativo
       Logger.debug(
