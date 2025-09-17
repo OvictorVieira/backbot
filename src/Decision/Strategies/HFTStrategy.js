@@ -1,4 +1,4 @@
-import BaseStrategy from './BaseStrategy.js';
+import { BaseStrategy } from './BaseStrategy.js';
 import Logger from '../../Utils/Logger.js';
 import Markets from '../../Backpack/Public/Markets.js';
 import Order from '../../Backpack/Authenticated/Order.js';

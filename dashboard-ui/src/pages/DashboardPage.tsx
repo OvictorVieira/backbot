@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { BotCard } from '../components/BotCard'
 import { ConfigForm } from '../components/ConfigForm'
+import { HFTConfigForm } from '../components/HFTConfigForm'
+import { BotTypeSelection } from '../components/BotTypeSelection'
 import { ErrorModal } from '../components/ErrorModal'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { Button } from '../components/ui/button'
@@ -43,6 +45,12 @@ interface BotConfig {
   maxOpenOrders: number
   // Tokens autorizados
   authorizedTokens: string[]
+  // HFT specific fields
+  hftSpread?: number
+  hftDailyVolumeGoal?: number
+  hftSymbols?: string[]
+  hftQuantityMultiplier?: number
+  leverage?: number
   // TODO: Alavancagem da conta - Removido temporariamente
   // leverageLimit: number
   // Próxima validação
@@ -66,6 +74,8 @@ export function DashboardPage() {
   const [showConfigForm, setShowConfigForm] = useState(false)
   const [selectedStrategy, setSelectedStrategy] = useState<string>('')
   const [showCreateBot, setShowCreateBot] = useState(false)
+  const [showBotTypeSelection, setShowBotTypeSelection] = useState(false)
+  const [showHFTForm, setShowHFTForm] = useState(false)
   const [loadingBots, setLoadingBots] = useState<Record<string, boolean>>({})
   const [restartingBots, setRestartingBots] = useState<Record<string, boolean>>({})
 
@@ -302,7 +312,15 @@ export function DashboardPage() {
   }
 
   const handleCreateBot = () => {
-    setShowCreateBot(true)
+    setShowBotTypeSelection(true)
+  }
+
+  const handleBotTypeSelection = (type: 'DEFAULT' | 'HFT') => {
+    if (type === 'DEFAULT') {
+      setShowCreateBot(true)
+    } else {
+      setShowHFTForm(true)
+    }
   }
 
   const handleCreateBotSaved = async (config: BotConfig) => {
@@ -337,6 +355,43 @@ export function DashboardPage() {
       setErrorModal({
         isOpen: true,
         title: 'Erro ao criar bot',
+        message: errorMessage
+      })
+    }
+  }
+
+  const handleCreateHFTBotSaved = async (config: any) => {
+    try {
+      // Validar se já existe um bot com a mesma API Key
+      const existingBot = configs.find(c => c.apiKey === config.apiKey && c.apiSecret === config.apiSecret)
+      if (existingBot) {
+        setErrorModal({
+          isOpen: true,
+          title: 'Bot já existe',
+          message: 'Já existe um bot configurado com essas credenciais de API. Use credenciais diferentes para cada bot.'
+        })
+        return
+      }
+
+      // Salvar configuração na API
+      await axios.post(`${API_BASE_URL}/api/configs`, {
+        strategyName: config.strategyName,
+        config: config
+      })
+
+      // Recarregar configurações após salvar
+      const response = await axios.get(`${API_BASE_URL}/api/configs`)
+      setConfigs(response.data.data)
+      setShowHFTForm(false)
+    } catch (error: any) {
+      let errorMessage = 'Erro ao criar bot HFT. Verifique suas credenciais e tente novamente.'
+      if (error.response?.data?.error) {
+        errorMessage = error.response.data.error
+      }
+
+      setErrorModal({
+        isOpen: true,
+        title: 'Erro ao criar bot HFT',
         message: errorMessage
       })
     }
@@ -598,6 +653,29 @@ export function DashboardPage() {
                 />
               )
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Bot Type Selection Modal */}
+      <BotTypeSelection
+        isOpen={showBotTypeSelection}
+        onClose={() => setShowBotTypeSelection(false)}
+        onSelectType={handleBotTypeSelection}
+      />
+
+      {/* HFT Bot Form */}
+      {showHFTForm && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4"
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
+        >
+          <div className="bg-background p-6 rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto border shadow-lg">
+            <HFTConfigForm
+              onSave={handleCreateHFTBotSaved}
+              onCancel={() => setShowHFTForm(false)}
+              isEditMode={false}
+            />
           </div>
         </div>
       )}
