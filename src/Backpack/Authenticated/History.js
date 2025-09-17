@@ -1,7 +1,6 @@
 import axios from 'axios';
 import { auth } from './Authentication.js';
 import BotOrdersManager, { initializeBotOrdersManager } from '../../Config/BotOrdersManager.js';
-import ConfigManager from '../../Config/ConfigManager.js';
 import Futures from './Futures.js';
 import Logger from '../../Utils/Logger.js';
 import requestManager from '../../Utils/RequestManager.js';

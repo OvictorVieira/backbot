@@ -18,7 +18,7 @@ import { StrategySelector } from './src/Utils/StrategySelector.js';
 import MultiBotManager from './src/MultiBot/MultiBotManager.js';
 import AccountConfig from './src/Config/AccountConfig.js';
 import TimeframeConfig from './src/Config/TimeframeConfig.js';
-import ConfigManager from './src/Config/ConfigManager.js';
+import ConfigManagerSQLite from './src/Config/ConfigManagerSQLite.js';
 import DatabaseService from './src/Services/DatabaseService.js';
 import readline from 'readline';
 
@@ -410,8 +410,15 @@ async function startBot() {
   try {
     console.log('🚀 Iniciando BackBot...');
 
+    // Inicializa o DatabaseService
+    const dbService = new DatabaseService();
+    await dbService.initialize();
+
+    // Inicializa o ConfigManagerSQLite
+    ConfigManagerSQLite.initialize(dbService);
+
     // Carrega todas as configurações de bots
-    const allConfigs = ConfigManager.loadConfigs();
+    const allConfigs = await ConfigManagerSQLite.loadConfigs();
     console.log(`📋 Encontradas ${allConfigs.length} configurações de bots`);
 
     // Filtra apenas bots habilitados (inclui bots que não estão rodando mas estão habilitados)
@@ -471,10 +478,8 @@ async function startBot() {
 
     console.log(`🤖 Iniciando bot: ${activeBotConfig.botName} (${activeBotConfig.strategyName})`);
 
-    // 1. Inicializar a base de dados
-    console.log('🔧 [DATABASE] Inicializando base de dados...');
-    const dbService = new DatabaseService();
-    await dbService.init();
+    // 1. Reutilizar a base de dados já inicializada
+    console.log('🔧 [DATABASE] Reutilizando base de dados já inicializada...');
 
     // 2. Inicializar OrdersService
     console.log('📋 [ORDERS] Inicializando OrdersService...');

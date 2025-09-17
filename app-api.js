@@ -30,7 +30,6 @@ import { StrategySelector } from './src/Utils/StrategySelector.js';
 import MultiBotManager from './src/MultiBot/MultiBotManager.js';
 import AccountConfig from './src/Config/AccountConfig.js';
 import TimeframeConfig from './src/Config/TimeframeConfig.js';
-import ConfigManager from './src/Config/ConfigManager.js';
 import ConfigManagerSQLite from './src/Config/ConfigManagerSQLite.js';
 import History from './src/Backpack/Authenticated/History.js';
 import BotOrdersManager, { initializeBotOrdersManager } from './src/Config/BotOrdersManager.js';

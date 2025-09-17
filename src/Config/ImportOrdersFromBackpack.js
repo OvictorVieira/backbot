@@ -1,6 +1,5 @@
 import Order from '../Backpack/Authenticated/Order.js';
 import BotOrdersManager, { initializeBotOrdersManager } from './BotOrdersManager.js';
-import ConfigManager from './ConfigManager.js';
 import OrderController from '../Controllers/OrderController.js';
 
 class ImportOrdersFromBackpack {
