@@ -5,6 +5,49 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.8.4] - 2025-09-17
+
+### 🔧 **CRITICAL FIX: Import System**
+
+#### 🚨 **RequestManager Import Fix**
+- ✅ **Professional Import Structure:** Moved RequestManager import to top of app-api.js file
+- ✅ **Error Resolution:** Fixed "RequestManager.forceReset is not a function" error
+- ✅ **Dynamic Import Removal:** Eliminated problematic dynamic import pattern
+- ✅ **Static Import Enforcement:** All imports now follow professional static import pattern
+
+#### 📋 **Code Standards Documentation**
+- ✅ **CLAUDE.md Guidelines:** Created permanent import guidelines documentation
+- ✅ **Import Rules:** Established inviolable rules for import placement and structure
+- ✅ **Error Prevention:** Documentation prevents future import-related errors
+- ✅ **Best Practices:** Enforces professional JavaScript import patterns
+
+## [1.8.3] - 2025-09-17
+
+### 🚀 **NEW FEATURE: HFT (High-Frequency Trading) Mode**
+
+#### 🏎️ **HFT Trading System**
+- ✅ **Grid Trading Strategy:** Implemented pure execution-based HFT strategy for airdrop volume
+- ✅ **WebSocket OrderBook Cache:** Real-time orderbook caching for minimal latency
+- ✅ **HFT Controller:** Complete bot lifecycle management for HFT strategies
+- ✅ **Maker Order Focus:** Optimized for maker orders with small spreads (0.1% default)
+
+#### 📊 **HFT Infrastructure**
+- ✅ **OrderBookCache.js:** WebSocket-based real-time orderbook synchronization
+- ✅ **HFTStrategy.js:** Grid trading abandoning traditional indicators
+- ✅ **HFTController.js:** Singleton controller for HFT bot management
+- ✅ **StrategyFactory Integration:** Seamless HFT strategy integration
+
+#### 🎛️ **Frontend HFT Configuration**
+- ✅ **HFT Mode Button:** Orange-themed HFT mode selection in ConfigForm
+- ✅ **HFT Fields:** Dedicated configuration fields (spread, daily volume goal, etc.)
+- ✅ **TypeScript Support:** Extended BotConfig interface for HFT parameters
+- ✅ **Conditional UI:** Dynamic HFT configuration display
+
+#### 🔌 **API & Integration**
+- ✅ **7 REST Endpoints:** Complete HFT control API (/api/hft/*)
+- ✅ **Graceful Shutdown:** HFT integration with system shutdown procedures
+- ✅ **Performance Metrics:** Real-time HFT performance tracking and reporting
+
 ## [1.8.2] - 2025-09-16
 
 ### 🔧 **IMPROVEMENTS: Market Data & Money Flow**
