@@ -283,8 +283,8 @@ class OrderController {
         return {};
       }
 
-      // Obtém todos os bots configurados
-      const allBots = await ConfigManagerSQLite.loadConfigs();
+      // Obtém apenas bots tradicionais (não HFT)
+      const allBots = await ConfigManagerSQLite.loadTraditionalBots();
       const botsOrders = {};
 
       // Para cada bot, filtra suas ordens
@@ -3438,7 +3438,20 @@ class OrderController {
               Logger.info(`📋 [STRATEGY_TAG] ${market}: Bot marcado como "${orderResult.botName}"`);
             }
 
-            await TrailingStop.createTrailingStopOrder(position, trailingState, config?.id, config);
+            // Validate position has required symbol before creating trailing stop
+            if (position && position.symbol) {
+              await TrailingStop.createTrailingStopOrder(
+                position,
+                trailingState,
+                config?.id,
+                config
+              );
+            } else {
+              Logger.warn(
+                `⚠️ [VALIDATION] Position missing symbol field, skipping trailing stop creation:`,
+                position
+              );
+            }
           }
         } catch (trailingError) {
           Logger.warn(

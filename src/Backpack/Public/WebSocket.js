@@ -1,11 +1,14 @@
 import WebSocket from 'ws';
 import Logger from '../../Utils/Logger.js';
+import { auth } from '../Authenticated/Authentication.js';
 
 class BackpackWebSocket {
   constructor() {
     this.ws = null;
     this.subscribedSymbols = new Set();
     this.priceCallbacks = new Map(); // symbol -> callback function
+    this.userTradeCallbacks = new Map(); // userId -> callback function
+    this.authenticatedChannels = new Set(); // Track authenticated subscriptions
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
     this.reconnectDelay = 1000; // 1 segundo inicial
@@ -68,7 +71,18 @@ class BackpackWebSocket {
    */
   handleMessage(data) {
     try {
-      const message = JSON.parse(data.toString());
+      // Convert Buffer to string and validate it's valid JSON
+      let dataString;
+      if (Buffer.isBuffer(data)) {
+        dataString = data.toString('utf8');
+      } else {
+        dataString = data.toString();
+      }
+
+      // Log raw data for debugging
+      Logger.debug(`📥 [BACKPACK_WS] Raw message received:`, dataString);
+
+      const message = JSON.parse(dataString);
 
       if (message.error) {
         Logger.error(`❌ [BACKPACK_WS] Erro do servidor:`, message.error);
@@ -80,15 +94,64 @@ class BackpackWebSocket {
         return;
       }
 
-      const messageData = message.data;
+      const messageData = message.data || message;
 
       if (messageData.e === 'bookTicker') {
         // Reduz spam de logs - só loga se for processar a atualização
         this.handlePriceUpdate(messageData);
+      } else if (
+        messageData.e === 'orderAccepted' ||
+        messageData.e === 'orderCancelled' ||
+        messageData.e === 'orderExpired' ||
+        messageData.e === 'orderFill' ||
+        messageData.e === 'orderModified'
+      ) {
+        // Handle authenticated order updates from account.orderUpdate stream
+        this.handleUserTradeUpdate(messageData);
+      } else if (
+        messageData.e === 'positionAdjusted' ||
+        messageData.e === 'positionOpened' ||
+        messageData.e === 'positionClosed'
+      ) {
+        // Handle position updates from account.positionUpdate stream
+        this.handlePositionUpdate(messageData);
+      } else if (messageData.e === 'accountUpdate') {
+        // Handle account balance updates
+        this.handleAccountUpdate(messageData);
+      } else if (messageData.stream && messageData.stream.startsWith('account.orderUpdate.')) {
+        // Handle authenticated order updates from private channels for specific symbols
+        const symbol = messageData.stream.split('.')[2]; // Extract symbol from stream name
+        Logger.info(
+          `🔔 [BACKPACK_WS] Received authenticated order update for ${symbol}:`,
+          messageData
+        );
+
+        // Add symbol to the data if not present
+        const tradeData = messageData.data || messageData;
+        if (!tradeData.symbol && !tradeData.s) {
+          tradeData.symbol = symbol;
+        }
+
+        this.handleUserTradeUpdate(tradeData);
+      } else if (messageData.stream && messageData.stream.includes('account')) {
+        // Handle other authenticated account updates
+        Logger.debug(`📊 [BACKPACK_WS] Received authenticated account update:`, messageData);
+        this.handleAccountUpdate(messageData.data || messageData);
       }
     } catch (error) {
       Logger.error('❌ [BACKPACK_WS] Erro ao processar mensagem:', error.message);
-      Logger.error('❌ [BACKPACK_WS] Dados raw:', data.toString());
+
+      // Log raw data for debugging
+      let rawData;
+      if (Buffer.isBuffer(data)) {
+        rawData = data.toString('utf8');
+      } else {
+        rawData = data.toString();
+      }
+
+      Logger.error('❌ [BACKPACK_WS] Dados raw:', rawData);
+      Logger.error('❌ [BACKPACK_WS] Data type:', typeof data);
+      Logger.error('❌ [BACKPACK_WS] Is Buffer:', Buffer.isBuffer(data));
     }
   }
 
@@ -296,6 +359,186 @@ class BackpackWebSocket {
    */
   get connected() {
     return this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN;
+  }
+
+  /**
+   * Processa atualizações de user trades/orders
+   */
+  handleUserTradeUpdate(data) {
+    try {
+      // Log the user trade event
+      Logger.info(
+        `💰 [BACKPACK_WS] User trade update: ${data.e} for ${data.s || 'unknown symbol'}`
+      );
+
+      // Call all registered user trade callbacks
+      for (const [userId, callback] of this.userTradeCallbacks.entries()) {
+        try {
+          callback(data);
+        } catch (error) {
+          Logger.error(
+            `❌ [BACKPACK_WS] Erro no callback de user trade para ${userId}:`,
+            error.message
+          );
+        }
+      }
+    } catch (error) {
+      Logger.error('❌ [BACKPACK_WS] Erro ao processar user trade update:', error.message);
+    }
+  }
+
+  /**
+   * Processa atualizações de account
+   */
+  handleAccountUpdate(data) {
+    try {
+      Logger.debug(`📊 [BACKPACK_WS] Account update received`);
+
+      // Call all registered user trade callbacks for account updates too
+      for (const [userId, callback] of this.userTradeCallbacks.entries()) {
+        try {
+          callback(data);
+        } catch (error) {
+          Logger.error(
+            `❌ [BACKPACK_WS] Erro no callback de account update para ${userId}:`,
+            error.message
+          );
+        }
+      }
+    } catch (error) {
+      Logger.error('❌ [BACKPACK_WS] Erro ao processar account update:', error.message);
+    }
+  }
+
+  /**
+   * Processa atualizações de posições via account.positionUpdate
+   */
+  handlePositionUpdate(data) {
+    try {
+      Logger.info(`📊 [BACKPACK_WS] Position update: ${data.e} for ${data.s || 'unknown symbol'}`);
+
+      // For now, we can forward position updates to the same callbacks
+      // In the future, we might want separate position callbacks
+      for (const [userId, callback] of this.userTradeCallbacks.entries()) {
+        try {
+          callback(data);
+        } catch (error) {
+          Logger.error(
+            `❌ [BACKPACK_WS] Erro no callback de position update para ${userId}:`,
+            error.message
+          );
+        }
+      }
+    } catch (error) {
+      Logger.error('❌ [BACKPACK_WS] Erro ao processar position update:', error.message);
+    }
+  }
+
+  /**
+   * Subscribe to authenticated user trade updates
+   */
+  async subscribeUserTrades(apiKey, apiSecret, callback) {
+    if (!this.isConnected) {
+      throw new Error('WebSocket não conectado');
+    }
+
+    // Store callback with unique key
+    const userId = apiKey.substring(0, 8); // Use first 8 chars of API key as identifier
+    this.userTradeCallbacks.set(userId, callback);
+
+    try {
+      // Create authenticated subscription for account updates
+      const timestamp = Date.now(); // Use milliseconds as per docs
+      const instruction = 'subscribe';
+      const window = 30000; // 30 seconds window
+
+      // Generate signature for authenticated subscription
+      const authData = auth({
+        instruction,
+        timestamp,
+        window,
+        params: {}, // Empty params object for WebSocket auth
+        apiKey,
+        apiSecret,
+      });
+
+      Logger.debug(`📡 [BACKPACK_WS] Auth data generated:`, {
+        hasSignature: !!authData['X-Signature'],
+        apiKey: apiKey?.substring(0, 8) + '...',
+        timestamp,
+        window,
+      });
+
+      // Use the official Backpack authenticated stream names from documentation
+      const authenticatedStreams = [
+        'account.orderUpdate', // Order mutations (orderAccepted, orderCancelled, orderFill, etc.)
+        'account.positionUpdate', // Position updates (positionOpened, positionClosed, etc.)
+      ];
+
+      for (const stream of authenticatedStreams) {
+        const subscribeMessage = {
+          method: 'SUBSCRIBE',
+          params: [stream],
+          signature: [
+            authData['X-API-Key'], // verifying key (base64)
+            authData['X-Signature'], // signature (base64)
+            authData['X-Timestamp'], // timestamp
+            authData['X-Window'], // window
+          ],
+        };
+
+        Logger.info(`📡 [BACKPACK_WS] Subscribing to official authenticated stream: ${stream}`);
+        Logger.debug(`📡 [BACKPACK_WS] Subscription message:`, subscribeMessage);
+
+        this.ws.send(JSON.stringify(subscribeMessage));
+
+        // Store authenticated channel
+        this.authenticatedChannels.add(stream);
+      }
+
+      Logger.info(
+        `✅ [BACKPACK_WS] Authenticated monitoring enabled for user ${userId} with ${authenticatedStreams.length} official streams`
+      );
+    } catch (error) {
+      Logger.error(
+        `❌ [BACKPACK_WS] Failed to subscribe to authenticated channels:`,
+        error.message
+      );
+      Logger.warn(`⚠️ [BACKPACK_WS] Falling back to polling method`);
+    }
+  }
+
+  /**
+   * Unsubscribe from user trade updates
+   */
+  async unsubscribeUserTrades(apiKey) {
+    const userId = apiKey.substring(0, 8);
+
+    if (!this.userTradeCallbacks.has(userId)) {
+      return;
+    }
+
+    // Remove callback
+    this.userTradeCallbacks.delete(userId);
+
+    // If no more user callbacks, unsubscribe from authenticated channels
+    if (this.userTradeCallbacks.size === 0) {
+      const channels = Array.from(this.authenticatedChannels);
+
+      for (const channel of channels) {
+        const unsubscribeMessage = {
+          method: 'UNSUBSCRIBE',
+          params: [channel],
+          id: Date.now(),
+        };
+
+        Logger.info(`📡 [BACKPACK_WS] Unsubscribing from authenticated channel: ${channel}`);
+        this.ws.send(JSON.stringify(unsubscribeMessage));
+        this.authenticatedChannels.delete(channel);
+      }
+    }
+
+    Logger.info(`✅ [BACKPACK_WS] User trade monitoring disabled for user ${userId}`);
   }
 
   /**

@@ -46,6 +46,9 @@ import AccountController from './src/Controllers/AccountController.js';
 import CachedOrdersService from './src/Utils/CachedOrdersService.js';
 import HFTController from './src/Controllers/HFTController.js';
 
+// Instância global do HFTController
+const hftController = new HFTController();
+
 // Instancia PositionSyncService (será inicializado depois que o DatabaseService estiver pronto)
 let PositionSyncService = null;
 
@@ -194,8 +197,8 @@ async function loadAndRecoverBots() {
   try {
     CachedOrdersService.clearAllCache();
 
-    // Carrega todos os bots habilitados que estavam rodando ou em erro
-    const configs = await ConfigManagerSQLite.loadConfigs();
+    // Carrega apenas bots tradicionais (não HFT) que estavam rodando ou em erro
+    const configs = await ConfigManagerSQLite.loadTraditionalBots();
 
     const botsToRecover = configs.filter(
       config =>
@@ -2462,50 +2465,19 @@ app.delete('/api/configs/:botId', async (req, res) => {
 
     // === LIMPEZA COMPLETA DO BOT ===
 
-    // 1. Remove a configuração do bot
+    // 1. Remove a configuração do bot (inclui ordens, trailing states e bot orders)
     await ConfigManagerSQLite.removeBotConfigById(botIdNum);
     Logger.info(`✅ [DELETE] Configuração do bot ${botIdNum} removida`);
 
-    // 2. Limpa o estado do trailing stop do bot
-    const botKey = `bot_${botIdNum}`;
-    const TrailingStateAdapter = await import('./src/Persistence/adapters/TrailingStateAdapter.js');
-    const trailingRemoved = TrailingStateAdapter.default.removeBotState(botKey);
+    // Nota: trailing_state, bot_orders, ordens e posições já foram removidos pelo ConfigManagerSQLite
 
-    if (trailingRemoved) {
-      Logger.info(`🧹 [DELETE] Estado do trailing stop do bot ${botIdNum} removido`);
-    }
-
-    // 3. Limpa ordens do bot usando OrdersService
-    try {
-      const OrdersService = await import('./src/Services/OrdersService.js');
-      const ordersRemoved = await OrdersService.default.clearOrdersByBotId(botIdNum);
-      if (ordersRemoved > 0) {
-        Logger.info(`🧹 [DELETE] ${ordersRemoved} ordens do bot ${botIdNum} removidas`);
-      }
-    } catch (error) {
-      Logger.info(`ℹ️ [DELETE] OrdersService não disponível ou erro: ${error.message}`);
-    }
-
-    // 4. Limpa posições do bot da nova tabela positions
-    try {
-      const positionsResult = await ConfigManagerSQLite.dbService.run(
-        'DELETE FROM positions WHERE botId = ?',
-        [botIdNum]
-      );
-      if (positionsResult.changes > 0) {
-        Logger.info(`🧹 [DELETE] ${positionsResult.changes} posições do bot ${botIdNum} removidas`);
-      }
-    } catch (error) {
-      Logger.info(`ℹ️ [DELETE] Erro ao remover posições: ${error.message}`);
-    }
-
-    // 5. Remove de instâncias ativas (se ainda estiver lá)
+    // 2. Remove de instâncias ativas (se ainda estiver lá)
     if (activeBotInstances.has(botIdNum)) {
       activeBotInstances.delete(botIdNum);
       Logger.info(`🧹 [DELETE] Instância ativa do bot ${botIdNum} removida`);
     }
 
-    // 6. Remove configurações de rate limit
+    // 3. Remove configurações de rate limit
     if (monitorRateLimits.has(botIdNum)) {
       monitorRateLimits.delete(botIdNum);
       Logger.info(`🧹 [DELETE] Rate limits do bot ${botIdNum} removidos`);
@@ -3524,8 +3496,8 @@ async function startMonitorsForAllEnabledBots() {
   try {
     Logger.info('🔄 [MONITORS] Iniciando monitores para todos os bots habilitados...');
 
-    // Carrega todos os bots habilitados
-    const configs = await ConfigManagerSQLite.loadConfigs();
+    // Carrega apenas bots tradicionais habilitados (não HFT)
+    const configs = await ConfigManagerSQLite.loadTraditionalBots();
     const enabledBots = configs.filter(config => config.enabled);
 
     if (enabledBots.length === 0) {
@@ -3589,7 +3561,7 @@ async function initializeServer() {
 
     // Carrega o estado persistido do Trailing Stop do banco de dados
     if (dbService && dbService.isInitialized()) {
-      await TrailingStop.loadStateFromDB(dbService);
+      await TrailingStop.initializeFromDB(dbService);
     } else {
       Logger.warn(
         '⚠️ [SERVER] Database service não inicializado, Trailing Stop será carregado individualmente para cada bot'
@@ -3635,6 +3607,11 @@ async function initializeServer() {
     // Carrega e recupera bots em background (não bloqueia o servidor)
     loadAndRecoverBots().catch(error => {
       Logger.error('❌ [SERVER] Erro ao carregar e recuperar bots:', error.message);
+    });
+
+    // Inicia HFTController em background
+    hftController.start().catch(error => {
+      Logger.error('❌ [SERVER] Erro ao iniciar HFTController:', error.message);
     });
 
     // Inicia monitores para todos os bots habilitados (independente de estarem rodando)
@@ -3986,7 +3963,7 @@ app.post('/api/hft/start', async (req, res) => {
     }
 
     // Inicia estratégia HFT
-    const result = await HFTController.startHFTBot(botConfig);
+    const result = await hftController.startHFTBot(botConfig);
 
     Logger.info(`🚀 [API] Bot HFT iniciado: ${botId}`);
 
@@ -4016,7 +3993,7 @@ app.post('/api/hft/stop', async (req, res) => {
       });
     }
 
-    const result = await HFTController.stopHFTBot(botId);
+    const result = await hftController.stopHFTBot(botId);
 
     Logger.info(`🛑 [API] Bot HFT parado: ${botId}`);
 
@@ -4037,7 +4014,7 @@ app.post('/api/hft/stop', async (req, res) => {
 // Para todos os bots HFT
 app.post('/api/hft/stop-all', async (req, res) => {
   try {
-    const result = await HFTController.stopAllHFTBots();
+    const result = await hftController.stopAllHFTBots();
 
     Logger.info(`🛑 [API] Todos os bots HFT parados`);
 
@@ -4218,14 +4195,10 @@ async function gracefulShutdown(signal) {
 
     // Para todos os bots HFT
     try {
-      await HFTController.stopAllHFTBots();
+      await hftController.stopAllHFTBots();
       Logger.info(`✅ [SHUTDOWN] Todos os bots HFT parados`);
     } catch (error) {
       Logger.error(`❌ [SHUTDOWN] Erro ao parar bots HFT:`, error.message);
-    }
-
-    if (typeof TrailingStop.cleanup === 'function') {
-      await TrailingStop.cleanup();
     }
 
     Logger.info(`✅ [SHUTDOWN] Shutdown graceful concluído`);

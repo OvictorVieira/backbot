@@ -529,10 +529,8 @@ class RequestManager {
    */
   async authenticatedRequest(method, url, config = {}, authParams, description, priority = 'HIGH') {
     const requestFunction = async () => {
-      // 🚀 CRITICAL: Generate timestamp RIGHT before the HTTP call
       const timestamp = Date.now();
 
-      // Debug: verificar se auth está disponível
       if (!auth || typeof auth !== 'function') {
         Logger.error(`❌ [AUTH_ERROR] auth is not available: ${typeof auth}`);
         throw new Error('auth function is not available');
@@ -543,7 +541,6 @@ class RequestManager {
         timestamp,
       });
 
-      // Merge auth headers with any existing headers
       const finalConfig = {
         ...this.axiosDefaults,
         ...config,

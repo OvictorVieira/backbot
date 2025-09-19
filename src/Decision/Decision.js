@@ -1014,7 +1014,10 @@ class Decision {
       // para resposta mais rápida na criação de take profits
 
       // Após toda a análise, logar monitoramento de todas as posições abertas
-      await OrderController.checkForUnmonitoredPositions(config?.botName, config);
+      // Skip monitoring for HFT bots as they use their own management system
+      if (config?.strategyName !== 'HFT' && config?.enableOrphanOrderMonitor !== false) {
+        await OrderController.checkForUnmonitoredPositions(config?.botName, config);
+      }
     } catch (error) {
       const errorMsg = `❌ Erro na análise: ${error.message}`;
       if (logger) {

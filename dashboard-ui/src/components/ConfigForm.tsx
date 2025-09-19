@@ -109,7 +109,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
   const [apiKeysValidated, setApiKeysValidated] = useState(false);
   const [testingApiKeys, setTestingApiKeys] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [selectedMode, setSelectedMode] = useState<'none' | 'volume' | 'profit' | 'hft'>('none');
+  const [selectedMode, setSelectedMode] = useState<'none' | 'volume' | 'profit'>('none');
   const [apiKeysTestResult, setApiKeysTestResult] = useState<{
     success: boolean;
     message: string;
@@ -258,40 +258,6 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
     }));
   };
 
-  const applyHFTMode = () => {
-    setSelectedMode('hft');
-    setFormData(prev => ({
-      ...prev,
-      strategyName: 'HFT',
-      capitalPercentage: 5, // 🔥 MENOR: 5% para reduzir risco com HFT
-      time: '1m', // 🔥 MENOR: 1 minuto para alta frequência
-      maxNegativePnlStopPct: -2, // 🔥 MENOR: -2% stop mais agressivo
-      minProfitPercentage: 0.5, // 🔥 MENOR: 0.5% lucro mínimo para HFT
-      maxSlippagePct: 0.1, // 🔥 MENOR: 0.1% slippage baixo para maker orders
-      executionMode: 'REALTIME',
-      enableHybridStopStrategy: false, // 🔥 DESABILITADO: HFT usa própria lógica
-      enableTrailingStop: false, // 🔥 DESABILITADO: HFT gerencia próprio grid
-      maxOpenOrders: 10, // 🔥 MAIOR: Permite mais ordens simultâneas para grid
-      // ❌ INDICADORES DESABILITADOS (HFT não usa análise técnica tradicional)
-      enableMomentumSignals: false,
-      enableRsiSignals: false,
-      enableStochasticSignals: false,
-      enableMacdSignals: false,
-      enableAdxSignals: false,
-      // ❌ FILTROS DESABILITADOS (HFT foca apenas em execução)
-      enableMoneyFlowFilter: false,
-      enableVwapFilter: false,
-      enableBtcTrendFilter: false,
-      enableHeikinAshi: false,
-      enableConfluenceMode: false,
-      minConfluences: 0,
-      // 🎯 CONFIGURAÇÕES ESPECÍFICAS HFT
-      hftSpread: 0.001, // 0.1% spread padrão
-      hftDailyVolumeGoal: 10000, // $10,000 meta diária
-      hftSymbols: ['SOL_USDC_PERP', 'BTC_USDC_PERP', 'ETH_USDC_PERP'],
-      hftQuantityMultiplier: 0.1 // 10% da quantidade normal
-    }));
-  };
 
   const resetToInitial = () => {
     setSelectedMode('none');
@@ -1582,36 +1548,6 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                 </Tooltip>
               </TooltipProvider>
 
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={applyHFTMode}
-                      className={`bg-white hover:bg-gray-50 border-gray-200 text-gray-700 hover:text-gray-900 text-xs px-3 py-1 h-8 flex items-center gap-1 ${
-                        selectedMode === 'hft' ? 'ring-2 ring-orange-500 ring-offset-2' : ''
-                      }`}
-                    >
-                      <BarChart3 className="h-3 w-3" />
-                      HFT
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p className="max-w-xs">
-                      <strong>⚡ Modo HFT - High Frequency Trading:</strong><br/>
-                      • Spread: 0.1% (ultra baixo)<br/>
-                      • Capital: 5% (risco controlado)<br/>
-                      • Timeframe: 1m (alta frequência)<br/>
-                      • Grid Trading automático<br/>
-                      • ❌ Indicadores desabilitados<br/>
-                      • ❌ Stop Loss tradicional desabilitado<br/>
-                      <em>Ideal para airdrop e volume máximo!</em>
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
 
               <TooltipProvider>
                 <Tooltip>
@@ -2199,7 +2135,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
         </div>
 
         {/* Configurações HFT */}
-        {(formData.strategyName === 'HFT' || selectedMode === 'hft') && (
+        {formData.strategyName === 'HFT' && (
           <div className="space-y-4 border-t pt-4">
             <h3 className="text-lg font-medium text-orange-700">Configurações HFT (High-Frequency Trading)</h3>
             <div className="text-sm text-muted-foreground mb-4">

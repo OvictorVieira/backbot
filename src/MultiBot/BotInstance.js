@@ -449,6 +449,12 @@ class BotInstance {
    * Inicia monitoramento (para estratégia PRO_MAX)
    */
   startMonitoring() {
+    // Skip monitoring for HFT bots as they use their own management system
+    if (this.config?.strategyName === 'HFT' || this.config?.enablePendingOrdersMonitor === false) {
+      this.logger.verbose('Monitoramento desabilitado para este tipo de bot');
+      return;
+    }
+
     this.logger.verbose('Iniciando monitoramento de take profits...');
 
     this.monitoringInterval = setInterval(async () => {

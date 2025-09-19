@@ -1,392 +1,521 @@
-import HFTStrategy from '../Decision/Strategies/HFTStrategy.js';
 import Logger from '../Utils/Logger.js';
+import ConfigManagerSQLite from '../Config/ConfigManagerSQLite.js';
+import HFTStrategy from '../Decision/Strategies/HFTStrategy.js';
+import QuantityCalculator from '../Utils/QuantityCalculator.js';
+import { ExchangeFactory } from '../Exchange/ExchangeFactory.js';
+import MarketFormatter from '../Utils/MarketFormatter.js';
+import OrdersService from '../Services/OrdersService.js';
 
 /**
- * Controller para gerenciar o ciclo de vida da estratégia HFT
+ * HFTController - Controlador específico para bots HFT
  *
- * Responsabilidades:
- * - Iniciar/parar estratégias HFT
- * - Monitorar execução e métricas
- * - Gerenciar múltiplos símbolos
- * - Interface com o sistema principal
+ * Gerencia o ciclo de vida dos bots HFT de forma isolada dos bots tradicionais.
+ * Carrega apenas bots com bot_type = 'HFT' e executa usando a HFTStrategy.
  */
 class HFTController {
   constructor() {
-    this.strategies = new Map(); // botId -> HFTStrategy
-    this.isEnabled = false;
-    this.metrics = {
-      totalVolume: 0,
-      totalTrades: 0,
-      activeStrategies: 0,
-      startTime: null,
-    };
+    this.activeHFTBots = new Map(); // botId -> HFTStrategy instance
+    this.isRunning = false;
+    this.monitorInterval = null;
   }
 
   /**
-   * Inicia estratégia HFT para um bot
+   * Inicia o controlador HFT
+   */
+  async start() {
+    try {
+      Logger.info('🚀 [HFT_CONTROLLER] Iniciando controlador HFT...');
+
+      this.isRunning = true;
+      await this.loadAndStartHFTBots();
+
+      // Inicia monitoramento periódico
+      this.startMonitoring();
+
+      Logger.info('✅ [HFT_CONTROLLER] Controlador HFT iniciado com sucesso');
+    } catch (error) {
+      Logger.error('❌ [HFT_CONTROLLER] Erro ao iniciar controlador HFT:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Para o controlador HFT
+   */
+  async stop() {
+    try {
+      Logger.info('🛑 [HFT_CONTROLLER] Parando controlador HFT...');
+
+      this.isRunning = false;
+
+      if (this.monitorInterval) {
+        clearInterval(this.monitorInterval);
+        this.monitorInterval = null;
+      }
+
+      // Para todos os bots HFT ativos
+      for (const [botId, hftStrategy] of this.activeHFTBots.entries()) {
+        await this.stopHFTBot(botId);
+      }
+
+      this.activeHFTBots.clear();
+
+      // Limpa todos os trading locks ativos como medida de segurança
+      try {
+        const dbService = ConfigManagerSQLite.dbService;
+        if (dbService) {
+          const result = await dbService.run(
+            'UPDATE trading_locks SET status = ?, unlockAt = datetime(?) WHERE status = ?',
+            ['RELEASED', 'now', 'ACTIVE']
+          );
+          if (result.changes > 0) {
+            Logger.info(
+              `🔓 [HFT_CONTROLLER] ${result.changes} trading locks ativos foram liberados no shutdown`
+            );
+          }
+        }
+      } catch (error) {
+        Logger.error(
+          `❌ [HFT_CONTROLLER] Erro ao liberar trading locks no shutdown:`,
+          error.message
+        );
+      }
+
+      Logger.info('✅ [HFT_CONTROLLER] Controlador HFT parado com sucesso');
+    } catch (error) {
+      Logger.error('❌ [HFT_CONTROLLER] Erro ao parar controlador HFT:', error.message);
+    }
+  }
+
+  /**
+   * Carrega e inicia todos os bots HFT habilitados
+   */
+  async loadAndStartHFTBots() {
+    try {
+      // Carrega apenas bots HFT
+      const hftBots = await ConfigManagerSQLite.loadHFTBots();
+      const enabledHFTBots = hftBots.filter(
+        bot => bot.enabled && (!bot.status || bot.status === 'idle' || bot.status === 'running')
+      );
+
+      Logger.info(`📋 [HFT_CONTROLLER] Encontrados ${enabledHFTBots.length} bots HFT habilitados`);
+
+      if (enabledHFTBots.length === 0) {
+        Logger.info('ℹ️ [HFT_CONTROLLER] Nenhum bot HFT habilitado encontrado');
+        return;
+      }
+
+      // Inicia cada bot HFT
+      for (const botConfig of enabledHFTBots) {
+        await this.startHFTBot(botConfig);
+      }
+    } catch (error) {
+      Logger.error('❌ [HFT_CONTROLLER] Erro ao carregar bots HFT:', error.message);
+    }
+  }
+
+  /**
+   * Inicia um bot HFT específico
    */
   async startHFTBot(botConfig) {
     try {
-      Logger.info(`🚀 [HFT_CONTROLLER] Iniciando bot HFT: ${botConfig.botName}`);
+      Logger.info(
+        `🔌 [HFT_CONTROLLER] Iniciando bot HFT: ${botConfig.botName} (ID: ${botConfig.id})`
+      );
 
-      // Valida configuração
+      // Verifica se já está rodando
+      if (this.activeHFTBots.has(botConfig.id)) {
+        Logger.warn(`⚠️ [HFT_CONTROLLER] Bot HFT ${botConfig.id} já está ativo`);
+        return;
+      }
+
+      // Valida configuração HFT obrigatória
       this.validateHFTConfig(botConfig);
 
-      // Cria nova instância da estratégia
-      const strategy = new HFTStrategy();
-      strategy.config = botConfig;
+      // Cria instância da HFTStrategy
+      const hftStrategy = new HFTStrategy();
 
-      // Calcula quantidade baseada no capital
-      const quantity = this.calculateTradeQuantity(botConfig);
+      // Calcula parâmetros para execução
+      const symbol = this.getSymbolFromConfig(botConfig);
+      Logger.info(`🧮 [HFT_CONTROLLER] Calculando amount para ${symbol}...`);
+      const amount = await this.calculateOptimalAmountFromConfig(botConfig, symbol);
+      Logger.info(`💰 [HFT_CONTROLLER] Amount calculado: ${amount}`);
 
-      // Inicia estratégia para cada símbolo configurado
-      const symbols = this.getActiveSymbols(botConfig);
-      const results = [];
+      // Executa estratégia HFT
+      await hftStrategy.executeHFTStrategy(symbol, amount, botConfig);
 
-      for (const symbol of symbols) {
-        try {
-          Logger.info(`📈 [HFT_CONTROLLER] Iniciando HFT para ${symbol}`);
+      // Armazena instância ativa
+      this.activeHFTBots.set(botConfig.id, hftStrategy);
 
-          const result = await strategy.executeHFTStrategy(symbol, quantity, botConfig);
-          results.push({ symbol, success: true, result });
+      // Atualiza status no banco
+      await ConfigManagerSQLite.updateBotStatusById(botConfig.id, 'running');
 
-          Logger.info(`✅ [HFT_CONTROLLER] HFT iniciado para ${symbol}`);
-        } catch (error) {
-          Logger.error(`❌ [HFT_CONTROLLER] Erro ao iniciar HFT para ${symbol}:`, error.message);
-          results.push({ symbol, success: false, error: error.message });
-        }
-      }
-
-      // Armazena estratégia
-      this.strategies.set(botConfig.id, strategy);
-
-      // Atualiza métricas
-      this.updateMetrics();
-
-      Logger.info(`✅ [HFT_CONTROLLER] Bot HFT iniciado: ${botConfig.botName}`);
-
-      return {
-        success: true,
-        botId: botConfig.id,
-        results,
-        symbolsStarted: results.filter(r => r.success).length,
-        symbolsTotal: symbols.length,
-      };
+      Logger.info(`✅ [HFT_CONTROLLER] Bot HFT ${botConfig.botName} iniciado com sucesso`);
     } catch (error) {
-      Logger.error(`❌ [HFT_CONTROLLER] Erro ao iniciar bot HFT:`, error.message);
+      Logger.error(
+        `❌ [HFT_CONTROLLER] Erro ao iniciar bot HFT ${botConfig.botName}:`,
+        error.message
+      );
+
+      // Atualiza status de erro
+      await ConfigManagerSQLite.updateBotStatusById(botConfig.id, 'error');
       throw error;
     }
   }
 
   /**
-   * Para estratégia HFT para um bot
+   * Atualiza status das ordens no banco quando bot é pausado
    */
-  async stopHFTBot(botId) {
+  async updateOrdersStatusOnPause(botId, symbol) {
     try {
-      Logger.info(`🛑 [HFT_CONTROLLER] Parando bot HFT: ${botId}`);
+      // Busca ordens pendentes do bot para o símbolo
+      const orders = await OrdersService.getOrdersByBotId(botId);
+      const pendingOrders = orders.filter(
+        order => order.symbol === symbol && order.status === 'PENDING'
+      );
 
-      const strategy = this.strategies.get(botId);
-      if (!strategy) {
-        throw new Error(`Estratégia HFT não encontrada para bot ${botId}`);
+      // Atualiza status para CANCELED_BY_PAUSE
+      for (const order of pendingOrders) {
+        await OrdersService.updateOrderStatus(order.externalOrderId, 'CANCELED_BY_PAUSE');
       }
 
-      // Para a estratégia
-      await strategy.stopHFTMode();
-
-      // Remove da lista
-      this.strategies.delete(botId);
-
-      // Atualiza métricas
-      this.updateMetrics();
-
-      Logger.info(`✅ [HFT_CONTROLLER] Bot HFT parado: ${botId}`);
-
-      return { success: true, botId };
+      if (pendingOrders.length > 0) {
+        Logger.info(
+          `💾 [HFT_CONTROLLER] ${pendingOrders.length} ordens marcadas como canceladas no banco para ${symbol}`
+        );
+      }
     } catch (error) {
-      Logger.error(`❌ [HFT_CONTROLLER] Erro ao parar bot HFT:`, error.message);
-      throw error;
-    }
-  }
-
-  /**
-   * Para todos os bots HFT
-   */
-  async stopAllHFTBots() {
-    try {
-      Logger.info(`🛑 [HFT_CONTROLLER] Parando todos os bots HFT`);
-
-      const botIds = Array.from(this.strategies.keys());
-      const results = [];
-
-      for (const botId of botIds) {
-        try {
-          await this.stopHFTBot(botId);
-          results.push({ botId, success: true });
-        } catch (error) {
-          results.push({ botId, success: false, error: error.message });
-        }
-      }
-
-      Logger.info(`✅ [HFT_CONTROLLER] Todos os bots HFT parados`);
-
-      return {
-        success: true,
-        results,
-        stoppedCount: results.filter(r => r.success).length,
-        totalCount: botIds.length,
-      };
-    } catch (error) {
-      Logger.error(`❌ [HFT_CONTROLLER] Erro ao parar todos os bots HFT:`, error.message);
-      throw error;
-    }
-  }
-
-  /**
-   * Obtém status de um bot HFT
-   */
-  getHFTBotStatus(botId) {
-    const strategy = this.strategies.get(botId);
-    if (!strategy) {
-      return { found: false };
-    }
-
-    const metrics = strategy.getHFTMetrics();
-
-    return {
-      found: true,
-      isRunning: strategy.isRunning,
-      activeGrids: metrics.activeGrids,
-      totalVolume: metrics.totalVolume,
-      totalTrades: metrics.totalTrades,
-      netPosition: metrics.netPosition,
-      uptime: metrics.uptime,
-      symbols: Array.from(strategy.activeGrids.keys()),
-    };
-  }
-
-  /**
-   * Obtém status de todos os bots HFT
-   */
-  getAllHFTStatus() {
-    const status = {
-      isEnabled: this.isEnabled,
-      activeBots: this.strategies.size,
-      totalVolume: 0,
-      totalTrades: 0,
-      totalGrids: 0,
-      bots: [],
-    };
-
-    for (const [botId, strategy] of this.strategies) {
-      const botStatus = this.getHFTBotStatus(botId);
-      if (botStatus.found) {
-        status.bots.push({
-          botId,
-          ...botStatus,
-        });
-
-        status.totalVolume += botStatus.totalVolume;
-        status.totalTrades += botStatus.totalTrades;
-        status.totalGrids += botStatus.activeGrids;
-      }
-    }
-
-    return status;
-  }
-
-  /**
-   * Atualiza configuração de um bot HFT em execução
-   */
-  async updateHFTBotConfig(botId, newConfig) {
-    try {
-      Logger.info(`🔧 [HFT_CONTROLLER] Atualizando configuração do bot HFT: ${botId}`);
-
-      const strategy = this.strategies.get(botId);
-      if (!strategy) {
-        throw new Error(`Bot HFT não encontrado: ${botId}`);
-      }
-
-      // Para estratégia atual
-      await strategy.stopHFTMode();
-
-      // Atualiza configuração
-      strategy.config = { ...strategy.config, ...newConfig };
-
-      // Reinicia com nova configuração
-      const quantity = this.calculateTradeQuantity(strategy.config);
-      const symbols = this.getActiveSymbols(strategy.config);
-
-      for (const symbol of symbols) {
-        await strategy.executeHFTStrategy(symbol, quantity, strategy.config);
-      }
-
-      Logger.info(`✅ [HFT_CONTROLLER] Configuração atualizada para bot HFT: ${botId}`);
-
-      return { success: true, botId };
-    } catch (error) {
-      Logger.error(`❌ [HFT_CONTROLLER] Erro ao atualizar configuração:`, error.message);
-      throw error;
-    }
-  }
-
-  /**
-   * Calcula quantidade de trade baseada no capital
-   */
-  calculateTradeQuantity(config) {
-    try {
-      const capitalPercentage = config.capitalPercentage || 1; // 1% default
-      const capitalAmount = config.capitalAmount || 100; // $100 default
-      const leverage = config.leverage || 1;
-
-      // Quantidade em USD
-      const tradeAmount = ((capitalAmount * capitalPercentage) / 100) * leverage;
-
-      // Para HFT, usar quantidades menores para mais trades
-      const hftMultiplier = config.hftQuantityMultiplier || 0.1; // 10% da quantidade normal
-
-      return tradeAmount * hftMultiplier;
-    } catch (error) {
-      Logger.error(`❌ [HFT_CONTROLLER] Erro ao calcular quantidade:`, error.message);
-      return 10; // Fallback para $10
-    }
-  }
-
-  /**
-   * Obtém símbolos ativos para HFT
-   */
-  getActiveSymbols(config) {
-    // Se símbolos específicos foram configurados para HFT
-    if (config.hftSymbols && Array.isArray(config.hftSymbols)) {
-      return config.hftSymbols;
-    }
-
-    // Fallback para símbolos padrão com foco em baixas taxas maker
-    return ['SOL_USDC_PERP', 'BTC_USDC_PERP', 'ETH_USDC_PERP'];
-  }
-
-  /**
-   * Valida configuração HFT
-   */
-  validateHFTConfig(config) {
-    if (!config.apiKey || !config.apiSecret) {
-      throw new Error('Credenciais de API são obrigatórias para modo HFT');
-    }
-
-    if (!config.botName) {
-      throw new Error('Nome do bot é obrigatório');
-    }
-
-    if (!config.id) {
-      throw new Error('ID do bot é obrigatório');
-    }
-
-    // Validações específicas do HFT
-    if (config.hftSpread && (config.hftSpread <= 0 || config.hftSpread > 0.05)) {
-      throw new Error('HFT Spread deve estar entre 0% e 5%');
-    }
-
-    if (config.hftDailyVolumeGoal && config.hftDailyVolumeGoal <= 0) {
-      throw new Error('Meta de volume diário deve ser maior que 0');
-    }
-
-    // Avisos
-    if (!config.hftSpread) {
-      Logger.warn(`⚠️ [HFT_CONTROLLER] Spread não configurado, usando padrão 0.01%`);
-    }
-
-    if (config.capitalPercentage && config.capitalPercentage > 10) {
-      Logger.warn(
-        `⚠️ [HFT_CONTROLLER] Capital percentage alto para HFT: ${config.capitalPercentage}%`
+      Logger.error(
+        `❌ [HFT_CONTROLLER] Erro ao atualizar status das ordens no banco:`,
+        error.message
       );
     }
   }
 
   /**
-   * Atualiza métricas globais
+   * Para um bot HFT específico
    */
-  updateMetrics() {
-    this.metrics.activeStrategies = this.strategies.size;
+  async stopHFTBot(botId) {
+    try {
+      Logger.info(`🛑 [HFT_CONTROLLER] Parando bot HFT ID: ${botId}`);
 
-    if (this.metrics.activeStrategies > 0 && !this.metrics.startTime) {
-      this.metrics.startTime = new Date();
-    }
+      const hftStrategy = this.activeHFTBots.get(botId);
 
-    if (this.metrics.activeStrategies === 0) {
-      this.metrics.startTime = null;
-    }
-  }
+      // Busca configuração do bot para cancelar ordens (sempre, mesmo se não ativo)
+      const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
+      if (botConfig && botConfig.apiKey && botConfig.apiSecret) {
+        // Cancela todas as ordens ativas do bot
+        const exchange = ExchangeFactory.createExchange('backpack');
+        for (const symbol of botConfig.authorizedTokens || []) {
+          try {
+            await exchange.cancelAllOpenOrders(symbol, botConfig.apiKey, botConfig.apiSecret);
+            Logger.info(`🗑️ [HFT_CONTROLLER] Ordens canceladas para ${symbol} do bot ${botId}`);
 
-  /**
-   * Obtém relatório de performance
-   */
-  getPerformanceReport() {
-    const report = {
-      summary: {
-        activeBots: this.strategies.size,
-        totalUptime: this.metrics.startTime ? Date.now() - this.metrics.startTime.getTime() : 0,
-        globalMetrics: this.getAllHFTStatus(),
-      },
-      bots: [],
-    };
+            // Atualiza status das ordens no banco como canceladas
+            await this.updateOrdersStatusOnPause(botId, symbol);
+          } catch (error) {
+            Logger.error(
+              `❌ [HFT_CONTROLLER] Erro ao cancelar ordens para ${symbol}:`,
+              error.message
+            );
+          }
+        }
 
-    for (const [botId, strategy] of this.strategies) {
-      const botMetrics = strategy.getHFTMetrics();
-      const botReport = {
-        botId,
-        config: {
-          spread: strategy.config.hftSpread,
-          symbols: this.getActiveSymbols(strategy.config),
-          dailyGoal: strategy.config.hftDailyVolumeGoal,
-        },
-        performance: {
-          totalVolume: botMetrics.totalVolume,
-          totalTrades: botMetrics.totalTrades,
-          averageTradeSize:
-            botMetrics.totalTrades > 0 ? botMetrics.totalVolume / botMetrics.totalTrades : 0,
-          netPosition: botMetrics.netPosition,
-          uptime: botMetrics.uptime,
-        },
-        grids: [],
-      };
-
-      // Adiciona detalhes de cada grid
-      for (const [symbol, gridState] of strategy.activeGrids) {
-        botReport.grids.push({
-          symbol,
-          marketPrice: gridState.marketPrice,
-          buyPrice: gridState.buyPrice,
-          sellPrice: gridState.sellPrice,
-          activeBuyOrder: !!gridState.activeBuyOrder,
-          activeSellOrder: !!gridState.activeSellOrder,
-          executedTrades: gridState.executedTrades.length,
-          totalVolume: gridState.totalVolume,
-          netPosition: gridState.netPosition,
-        });
+        // Limpa trading locks órfãos para este bot
+        try {
+          const dbService = ConfigManagerSQLite.dbService;
+          if (dbService) {
+            // Remove todos os trading locks ativos para este bot
+            await dbService.run(
+              'UPDATE trading_locks SET status = ?, unlockAt = datetime(?) WHERE botId = ? AND status = ?',
+              ['RELEASED', 'now', botId, 'ACTIVE']
+            );
+            Logger.info(`🔓 [HFT_CONTROLLER] Trading locks liberados para bot ${botId}`);
+          }
+        } catch (error) {
+          Logger.error(
+            `❌ [HFT_CONTROLLER] Erro ao liberar trading locks para bot ${botId}:`,
+            error.message
+          );
+        }
       }
 
-      report.bots.push(botReport);
+      // Se o bot estava ativo, para a estratégia HFT
+      if (hftStrategy) {
+        await hftStrategy.stopHFTMode();
+        this.activeHFTBots.delete(botId);
+        Logger.info(`🔄 [HFT_CONTROLLER] Estratégia HFT parada para bot ${botId}`);
+      } else {
+        Logger.warn(
+          `⚠️ [HFT_CONTROLLER] Bot HFT ${botId} não estava na lista ativa, mas continuando com cleanup`
+        );
+      }
+
+      // SEMPRE atualiza status no banco (independente se estava ativo ou não)
+      await ConfigManagerSQLite.updateBotStatusById(botId, 'stopped');
+
+      Logger.info(`✅ [HFT_CONTROLLER] Bot HFT ${botId} parado com sucesso`);
+    } catch (error) {
+      Logger.error(`❌ [HFT_CONTROLLER] Erro ao parar bot HFT ${botId}:`, error.message);
+
+      // Garante que o status seja atualizado mesmo em caso de erro
+      try {
+        await ConfigManagerSQLite.updateBotStatusById(botId, 'stopped');
+      } catch (updateError) {
+        Logger.error(
+          `❌ [HFT_CONTROLLER] Erro ao atualizar status no banco para bot ${botId}:`,
+          updateError.message
+        );
+      }
+    }
+  }
+
+  /**
+   * Inicia monitoramento periódico dos bots HFT
+   */
+  startMonitoring() {
+    // Monitora a cada 30 segundos
+    this.monitorInterval = setInterval(async () => {
+      try {
+        await this.monitorHFTBots();
+      } catch (error) {
+        Logger.error('❌ [HFT_CONTROLLER] Erro no monitoramento:', error.message);
+      }
+    }, 30000);
+
+    Logger.info('🔍 [HFT_CONTROLLER] Monitoramento iniciado (30s interval)');
+  }
+
+  /**
+   * Monitora estado dos bots HFT
+   */
+  async monitorHFTBots() {
+    try {
+      // Verifica se há novos bots HFT para iniciar
+      const hftBots = await ConfigManagerSQLite.loadHFTBots();
+      const enabledHFTBots = hftBots.filter(
+        bot => bot.enabled && (!bot.status || bot.status === 'idle' || bot.status === 'running')
+      );
+
+      for (const botConfig of enabledHFTBots) {
+        if (!this.activeHFTBots.has(botConfig.id)) {
+          Logger.info(
+            `🔄 [HFT_CONTROLLER] Detectado novo bot HFT para iniciar: ${botConfig.botName}`
+          );
+          await this.startHFTBot(botConfig);
+        }
+      }
+
+      // Verifica se há bots que devem ser parados
+      for (const [botId, hftStrategy] of this.activeHFTBots.entries()) {
+        const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
+        if (!botConfig || !botConfig.enabled) {
+          Logger.info(`🔄 [HFT_CONTROLLER] Bot HFT ${botId} desabilitado, parando...`);
+          await this.stopHFTBot(botId);
+        }
+      }
+    } catch (error) {
+      Logger.error('❌ [HFT_CONTROLLER] Erro no monitoramento de bots HFT:', error.message);
+    }
+  }
+
+  /**
+   * Valida configuração HFT obrigatória
+   */
+  validateHFTConfig(config) {
+    const requiredFields = ['hftSpread', 'hftRebalanceFrequency', 'hftDailyHours'];
+
+    for (const field of requiredFields) {
+      if (!config[field] || config[field] <= 0) {
+        throw new Error(`Campo obrigatório HFT ausente ou inválido: ${field}`);
+      }
     }
 
-    return report;
+    if (!config.apiKey || !config.apiSecret) {
+      throw new Error('API Key e Secret são obrigatórios para bots HFT');
+    }
+
+    if (!config.authorizedTokens || config.authorizedTokens.length === 0) {
+      throw new Error('Lista de tokens autorizados é obrigatória para bots HFT');
+    }
   }
 
   /**
-   * Habilita/desabilita sistema HFT globalmente
+   * Extrai símbolo da configuração do bot
    */
-  setHFTEnabled(enabled) {
-    this.isEnabled = enabled;
-    Logger.info(`🔧 [HFT_CONTROLLER] Sistema HFT ${enabled ? 'habilitado' : 'desabilitado'}`);
+  getSymbolFromConfig(config) {
+    // Por simplicidade, usa o primeiro token autorizado
+    // Em implementação futura, pode ter lógica mais sofisticada
+    if (config.authorizedTokens && config.authorizedTokens.length > 0) {
+      return config.authorizedTokens[0];
+    }
+
+    throw new Error('Nenhum token/símbolo encontrado na configuração do bot HFT');
   }
 
   /**
-   * Verifica se sistema HFT está habilitado
+   * Calcula quantidade optimal baseada no capital disponível e preço atual
    */
-  isHFTEnabled() {
-    return this.isEnabled;
+  async calculateOptimalAmountFromConfig(config, symbol) {
+    try {
+      // 1. Obter dados da conta via exchange factory
+      const exchange = ExchangeFactory.createExchange('backpack');
+      const accountData = await exchange.getAccountData(config.apiKey, config.apiSecret);
+      if (!accountData || !accountData.capitalAvailable) {
+        const error = `ERRO CRÍTICO: Capital não disponível para bot ${config.botName}. Não é possível calcular quantidade de forma segura.`;
+        Logger.error(`❌ [HFT_AMOUNT] ${error}`);
+        throw new Error(error);
+      }
+
+      // 2. Obter preço atual do mercado
+      const currentPrice = await exchange.getMarketPrice(symbol);
+      if (!currentPrice) {
+        const error = `ERRO CRÍTICO: Preço não disponível para ${symbol}. Não é possível calcular quantidade de forma segura.`;
+        Logger.error(`❌ [HFT_AMOUNT] ${error}`);
+        throw new Error(error);
+      }
+
+      // 3. Obter informações de formatação do mercado
+      const marketInfo = await exchange.getMarketInfo(symbol, config.apiKey, config.apiSecret);
+      Logger.debug(`📊 [HFT_AMOUNT] Market info para ${symbol}:`, {
+        stepSize: marketInfo.stepSize_quantity,
+        minQuantity: marketInfo.minQuantity,
+        decimals: marketInfo.decimal_quantity,
+      });
+
+      // 4. Usar capital percentual configurado (se não tiver, usar valor pequeno para HFT)
+      const capitalPercentage = config.capitalPercentage || 1; // 1% padrão para HFT
+      const volumeUSD = (accountData.capitalAvailable * capitalPercentage) / 100;
+
+      // 5. Calcular quantidade baseada no volume USD e preço atual (RAW)
+      const rawQuantity = volumeUSD / parseFloat(currentPrice);
+
+      // 6. Formatar quantidade respeitando step size da exchange
+      const formattedQuantity = MarketFormatter.formatQuantity(rawQuantity, marketInfo);
+      const finalQuantity = parseFloat(formattedQuantity);
+
+      Logger.info(
+        `💰 [HFT_AMOUNT] ${symbol}: Capital($${accountData.capitalAvailable.toFixed(2)}) × ${capitalPercentage}% = $${volumeUSD.toFixed(2)}`
+      );
+      Logger.info(
+        `📐 [HFT_AMOUNT] ${symbol}: Raw(${rawQuantity.toFixed(8)}) → Formatted(${formattedQuantity}) @ $${currentPrice}`
+      );
+
+      return finalQuantity;
+    } catch (error) {
+      Logger.error(
+        `❌ [HFT_AMOUNT] Erro crítico ao calcular quantidade para ${symbol}:`,
+        error.message
+      );
+      Logger.error(`🛑 [HFT_AMOUNT] Parando execução do bot ${config.botName} por segurança`);
+      throw error; // Propaga o erro para parar o bot
+    }
+  }
+
+  /**
+   * @deprecated - Usar calculateOptimalAmountFromConfig()
+   * Calcula quantidade baseada na configuração de capital
+   */
+  calculateAmountFromConfig(config) {
+    // Usa capitalPercentage igual aos bots tradicionais
+    // O bot HFT calcula o tamanho de ordem internamente baseado no capital disponível
+    return config.capitalPercentage || 5;
+  }
+
+  /**
+   * Obtém status de todos os bots HFT
+   */
+  async getHFTBotsStatus() {
+    try {
+      const hftBots = await ConfigManagerSQLite.loadHFTBots();
+
+      return hftBots.map(bot => {
+        const isActive = this.activeHFTBots.has(bot.id);
+        const hftStrategy = this.activeHFTBots.get(bot.id);
+
+        return {
+          id: bot.id,
+          botName: bot.botName,
+          status: bot.status,
+          enabled: bot.enabled,
+          isActive,
+          metrics: hftStrategy ? hftStrategy.getHFTMetrics() : null,
+          config: {
+            hftSpread: bot.hftSpread,
+            hftRebalanceFrequency: bot.hftRebalanceFrequency,
+            capitalPercentage: bot.capitalPercentage,
+            hftDailyHours: bot.hftDailyHours,
+            authorizedTokens: bot.authorizedTokens,
+          },
+        };
+      });
+    } catch (error) {
+      Logger.error('❌ [HFT_CONTROLLER] Erro ao obter status dos bots HFT:', error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Para todos os bots HFT ativos
+   */
+  async stopAllHFTBots() {
+    Logger.info('🛑 [HFT_CONTROLLER] Parando todos os bots HFT...');
+
+    try {
+      if (this.activeHFTBots.size === 0) {
+        Logger.info('ℹ️ [HFT_CONTROLLER] Nenhum bot HFT ativo para parar');
+        return { success: true, message: 'Nenhum bot HFT ativo' };
+      }
+
+      const results = [];
+      for (const [botId, hftStrategy] of this.activeHFTBots.entries()) {
+        try {
+          await this.stopHFTBot(botId);
+          results.push({ botId, success: true });
+        } catch (error) {
+          Logger.error(`❌ [HFT_STOP_ALL] Erro ao parar bot ${botId}:`, error.message);
+          results.push({ botId, success: false, error: error.message });
+        }
+      }
+
+      const successCount = results.filter(r => r.success).length;
+      Logger.info(
+        `✅ [HFT_CONTROLLER] ${successCount}/${results.length} bots HFT parados com sucesso`
+      );
+
+      return {
+        success: true,
+        message: `${successCount}/${results.length} bots parados`,
+        results,
+      };
+    } catch (error) {
+      Logger.error('❌ [HFT_STOP_ALL] Erro ao parar todos os bots HFT:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Força parada de emergência de todos os bots HFT
+   */
+  async emergencyStop() {
+    Logger.warn('🚨 [HFT_CONTROLLER] PARADA DE EMERGÊNCIA INICIADA');
+
+    try {
+      for (const [botId, hftStrategy] of this.activeHFTBots.entries()) {
+        try {
+          await hftStrategy.stopHFTMode();
+          await ConfigManagerSQLite.updateBotStatusById(botId, 'stopped');
+        } catch (error) {
+          Logger.error(`❌ [HFT_EMERGENCY] Erro ao parar bot ${botId}:`, error.message);
+        }
+      }
+
+      this.activeHFTBots.clear();
+      Logger.warn('🚨 [HFT_CONTROLLER] PARADA DE EMERGÊNCIA CONCLUÍDA');
+    } catch (error) {
+      Logger.error('❌ [HFT_EMERGENCY] Erro na parada de emergência:', error.message);
+    }
   }
 }
 
-// Instância singleton
-const hftController = new HFTController();
-
-export default hftController;
+export default HFTController;

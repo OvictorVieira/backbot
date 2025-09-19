@@ -25,13 +25,12 @@ class Capital {
 
   async getCollateral(strategy = null, apiKey = null, apiSecret = null) {
     try {
-      // ✅ FIX: Using authenticated request with fresh timestamp generated in RequestManager
       const response = await requestManager.authenticatedGet(
         `${process.env.API_URL}/api/v1/capital/collateral`,
         {},
         {
           instruction: 'collateralQuery',
-          params: {}, // Sem parâmetros nesse caso
+          params: {},
           apiKey,
           apiSecret,
         },
