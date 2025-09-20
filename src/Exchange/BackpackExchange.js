@@ -211,7 +211,10 @@ export class BackpackExchange extends BaseExchange {
 
       // Determina tipo de ordem baseado nas opções ou presença de preço
       const orderType = options.orderType || (price ? 'Limit' : 'Market');
-      const formattedQuantity = parseFloat(quantity).toFixed(8); // Quantidade com mais precisão
+
+      // Use quantity as-is if it's already a string (from MarketFormatter)
+      // Otherwise convert to string with proper precision
+      const formattedQuantity = typeof quantity === 'string' ? quantity : quantity.toString();
 
       // Constrói orderBody baseado no tipo de ordem
       const orderBody = {

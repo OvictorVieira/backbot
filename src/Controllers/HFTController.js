@@ -390,18 +390,27 @@ class HFTController {
       // 5. Calcular quantidade baseada no volume USD e preço atual (RAW)
       const rawQuantity = volumeUSD / parseFloat(currentPrice);
 
-      // 6. Formatar quantidade respeitando step size da exchange
-      const formattedQuantity = MarketFormatter.formatQuantity(rawQuantity, marketInfo);
-      const finalQuantity = parseFloat(formattedQuantity);
+      // 6. Apply minimum quantity validation first (before formatting)
+      let adjustedQuantity = rawQuantity;
+      if (marketInfo.minQuantity) {
+        const minQty = parseFloat(marketInfo.minQuantity);
+        if (rawQuantity < minQty) {
+          Logger.warn(
+            `⚠️ [HFT_AMOUNT] Calculated quantity ${rawQuantity} below minimum ${minQty} for ${symbol}, using minimum quantity`
+          );
+          adjustedQuantity = minQty;
+        }
+      }
 
+      // 7. Return the adjusted quantity as NUMBER (HFTStrategy will handle formatting)
       Logger.info(
         `💰 [HFT_AMOUNT] ${symbol}: Capital($${accountData.capitalAvailable.toFixed(2)}) × ${capitalPercentage}% = $${volumeUSD.toFixed(2)}`
       );
       Logger.info(
-        `📐 [HFT_AMOUNT] ${symbol}: Raw(${rawQuantity.toFixed(8)}) → Formatted(${formattedQuantity}) @ $${currentPrice}`
+        `📐 [HFT_AMOUNT] ${symbol}: Raw(${rawQuantity.toFixed(8)}) → Adjusted(${adjustedQuantity}) @ $${currentPrice}`
       );
 
-      return finalQuantity;
+      return adjustedQuantity;
     } catch (error) {
       Logger.error(
         `❌ [HFT_AMOUNT] Erro crítico ao calcular quantidade para ${symbol}:`,
