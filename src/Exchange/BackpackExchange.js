@@ -209,28 +209,39 @@ export class BackpackExchange extends BaseExchange {
       // Converte side padrão para formato Backpack
       const backpackSide = side === 'BUY' ? 'Bid' : side === 'SELL' ? 'Ask' : side;
 
-      // Formatar preço com 1 casa decimal para compatibilidade com Backpack API
-      const formattedPrice = parseFloat(price).toFixed(1);
+      // Determina tipo de ordem baseado nas opções ou presença de preço
+      const orderType = options.orderType || (price ? 'Limit' : 'Market');
       const formattedQuantity = parseFloat(quantity).toFixed(8); // Quantidade com mais precisão
 
-      // Constrói orderBody no formato correto da Backpack
+      // Constrói orderBody baseado no tipo de ordem
       const orderBody = {
         symbol,
         side: backpackSide,
-        orderType: 'Limit',
+        orderType: orderType,
         quantity: formattedQuantity,
-        price: formattedPrice,
-        timeInForce: 'GTC', // Good Till Cancel
-        postOnly: options.postOnly || true, // Evita taker fees
+        timeInForce: options.timeInForce || (orderType === 'Market' ? 'IOC' : 'GTC'),
         selfTradePrevention: 'RejectTaker',
         clientId: options.clientId || null,
         ...options,
       };
 
+      // Só inclui preço e postOnly para ordens Limit
+      if (orderType === 'Limit' && price) {
+        orderBody.price = parseFloat(price).toFixed(1);
+        orderBody.postOnly = options.postOnly !== undefined ? options.postOnly : true;
+      }
+
+      // Para market orders, não incluir postOnly (incompatível)
+      if (orderType === 'Market') {
+        delete orderBody.postOnly;
+      }
+
+      const priceInfo = orderType === 'Market' ? 'MARKET' : `@ ${orderBody.price}`;
       Logger.debug(
-        `[BackpackExchange] Criando ordem: ${symbol} ${backpackSide} ${formattedQuantity} @ ${formattedPrice}`,
+        `[BackpackExchange] Criando ordem: ${symbol} ${backpackSide} ${formattedQuantity} ${priceInfo} (${orderType})`,
         {
           clientId: orderBody.clientId,
+          orderType: orderType,
           timestamp: new Date().toISOString(),
         }
       );

@@ -55,7 +55,7 @@ export class BaseExchange {
    * @param {string} symbol - Símbolo do mercado.
    * @param {string} side - 'BUY' ou 'SELL'.
    * @param {number} price - Preço da ordem.
-   * @param {number} quantity - Quantidade da ordem.
+   * @param {string} quantity - Quantidade da ordem.
    * @param {string} apiKey - API Key para autenticação.
    * @param {string} apiSecret - API Secret para autenticação.
    * @param {object} options - Opções adicionais (ex: clientId).

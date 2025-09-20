@@ -46,13 +46,20 @@ class HFTStrategy extends BaseStrategy {
     try {
       Logger.info(`🚀 [HFT] Iniciando estratégia HFT para ${symbol}`);
 
-      // Check if there's an active trading lock (semaphore)
-      if (await this.hasActiveTradingLock(symbol, config)) {
+      // STEP 1: CRITICAL LOCK CHECK - Must be the FIRST operation
+      // This prevents race conditions between WebSocket events and grid recreation
+      const activeLock = await this.hasActiveTradingLock(symbol, config);
+      if (activeLock) {
         Logger.info(
-          `🔒 [HFT] Strategy execution blocked for ${symbol} - trading lock active (position open).`
+          `🔒 [HFT] Strategy execution BLOCKED for ${symbol} - active trading lock detected (position open)`
         );
-        return;
+        Logger.debug(`🔒 [HFT] Execution skipped to prevent race condition with position closure`);
+        return { success: false, blocked: true, reason: 'Active trading lock' };
       }
+
+      Logger.info(
+        `✅ [HFT] No active trading lock found for ${symbol} - proceeding with grid creation`
+      );
 
       // Valida configuração
       this.validateHFTConfig(config);
@@ -104,6 +111,39 @@ class HFTStrategy extends BaseStrategy {
         ourAsk: askPrice,
         spread: `${config.hftSpread}%`,
       });
+
+      // VALIDAÇÃO DE SALDO: Verificar se há margem suficiente antes de criar ordens
+      try {
+        const accountData = await this.exchange.getAccountData(config.apiKey, config.apiSecret);
+        if (!accountData || !accountData.capitalAvailable) {
+          Logger.error(
+            `❌ [HFT] Não foi possível obter dados da conta para ${symbol}. Abortando criação de ordens.`
+          );
+          return { success: false, error: 'Unable to fetch account data' };
+        }
+
+        Logger.debug(`💰 [HFT] Saldo disponível: ${accountData.capitalAvailable} USDC`);
+
+        // Verificar se há capital suficiente (usando uma margem de segurança de 20%)
+        const requiredCapital = bidPrice * amount * 1.2; // 20% buffer para segurança
+        if (accountData.capitalAvailable < requiredCapital) {
+          Logger.warn(`⚠️ [HFT] Margem insuficiente para ${symbol}:`, {
+            available: accountData.capitalAvailable,
+            required: requiredCapital.toFixed(2),
+            orderValue: (bidPrice * amount).toFixed(2),
+            amount: amount,
+            bidPrice: bidPrice,
+          });
+          return { success: false, error: 'Insufficient margin' };
+        }
+
+        Logger.info(
+          `✅ [HFT] Margem validada para ${symbol}: ${accountData.capitalAvailable} USDC disponível`
+        );
+      } catch (error) {
+        Logger.error(`❌ [HFT] Erro ao validar margem para ${symbol}:`, error.message);
+        return { success: false, error: 'Failed to validate margin' };
+      }
 
       // Calcular proteções SL/TP para ambas as ordens
       const buyProtection = this.calculateSLTPPrices(orderbook, 'BUY', config, bidPrice);
@@ -266,7 +306,7 @@ class HFTStrategy extends BaseStrategy {
         );
       } else {
         Logger.error(`❌ [HFT] Falha ao criar ambas as ordens para ${symbol}. Grid não criado.`);
-        throw new Error(`Falha ao criar ordens HFT para ${symbol}`);
+        return { success: false, error: `Falha ao criar ordens HFT para ${symbol}` };
       }
 
       Logger.info(
@@ -276,7 +316,21 @@ class HFTStrategy extends BaseStrategy {
       return { success: true };
     } catch (error) {
       Logger.error(`❌ [HFT] Erro na execução da estratégia:`, error.message);
-      throw error;
+
+      // Check if it's a margin error to provide better handling
+      if (
+        error.message &&
+        (error.message.includes('INSUFFICIENT_MARGIN') ||
+          error.message.includes('Insufficient margin') ||
+          error.message.includes('Unable to fetch account data'))
+      ) {
+        Logger.warn(`⚠️ [HFT] Erro de margem detectado para ${symbol}. Bot não será encerrado.`);
+        return { success: false, error: 'Margin error - operation skipped' };
+      }
+
+      // For other errors, also return instead of throwing to prevent bot crash
+      Logger.warn(`⚠️ [HFT] Erro genérico na estratégia para ${symbol}. Bot continuará operando.`);
+      return { success: false, error: error.message };
     }
   }
 
@@ -447,18 +501,24 @@ class HFTStrategy extends BaseStrategy {
     const symbol = data.symbol;
     const grid = this.activeGrids.get(symbol);
 
+    Logger.debug(
+      `📊 [HFT] Orderbook update received for ${symbol} - checking if grid needs repositioning`
+    );
+
     // Check if there's an active trading lock (semaphore)
-    if (await this.hasActiveTradingLock(symbol, config)) {
-      Logger.debug(
-        `🔒 [HFT] Orderbook update ignored for ${symbol} - trading lock active (position open)`
+    const activeLock = await this.hasActiveTradingLock(symbol, config);
+    if (activeLock) {
+      Logger.warn(
+        `🔒 [HFT] GRID RECREATION BLOCKED for ${symbol} - trading lock active (position open). This is CORRECT behavior to prevent race conditions.`
       );
+      Logger.debug(`🔒 [HFT] Lock details:`, activeLock);
       return;
     }
 
     // Atualiza cache do orderbook com os novos dados
     this.updateOrderbookCache(symbol, data);
 
-    // Get current market price for position monitoring
+    // Get the current market price for position monitoring
     const currentPrice =
       data.marketPrice ||
       (parseFloat(data.bids[0]?.[0] || 0) + parseFloat(data.asks[0]?.[0] || 0)) / 2;
@@ -466,8 +526,24 @@ class HFTStrategy extends BaseStrategy {
     // POSITION MONITORING: Check all active positions for this symbol
     await this.onPriceUpdate(symbol, currentPrice, config);
 
-    // Original grid monitoring logic
-    if (!grid) return;
+    // REACTIVE GRID MONITORING: Check if grid needs immediate repositioning
+    if (!grid) {
+      Logger.debug(`⚠️ [HFT] No active grid found for ${symbol} - skipping orderbook analysis`);
+      return;
+    }
+
+    Logger.debug(`🏗️ [HFT] Active grid found for ${symbol} - analyzing price range`);
+
+    // Fast check: If we have orders but price is clearly outside range, react immediately
+    if (grid.bidPrice && grid.askPrice) {
+      const quickRangeCheck = currentPrice < grid.bidPrice || currentPrice > grid.askPrice;
+      if (quickRangeCheck) {
+        Logger.warn(
+          `⚡ [HFT] FAST REACTION: Price ${currentPrice} outside order range [${grid.bidPrice}-${grid.askPrice}] for ${symbol}`
+        );
+        // Proceed to detailed analysis below
+      }
+    }
 
     try {
       // Step 1: Get Current Prices
@@ -476,50 +552,163 @@ class HFTStrategy extends BaseStrategy {
 
       if (!buyOrderPrice || !sellOrderPrice) return;
 
-      // Step 2: Calculate Deviations
-      const buyDeviation = Math.abs((currentPrice - buyOrderPrice) / buyOrderPrice);
-      const sellDeviation = Math.abs((currentPrice - sellOrderPrice) / sellOrderPrice);
+      // Step 2: Range Analysis - Check if price is outside order range
+      const orderRange = {
+        min: buyOrderPrice, // BUY order is the lower bound
+        max: sellOrderPrice, // SELL order is the upper bound
+      };
 
-      // Convert decimal percentage to percentage
-      const maxDeviationPercent = config.hftMaxPriceDeviation / 100;
+      const isPriceOutOfRange = currentPrice < orderRange.min || currentPrice > orderRange.max;
 
-      Logger.debug(`🔍 [HFT] Deviation analysis for ${symbol}:`, {
+      Logger.debug(`🔍 [HFT] Range analysis for ${symbol}:`, {
         currentPrice,
+        orderRange: `${orderRange.min} - ${orderRange.max}`,
         buyPrice: buyOrderPrice,
         sellPrice: sellOrderPrice,
-        buyDeviation: `${(buyDeviation * 100).toFixed(2)}%`,
-        sellDeviation: `${(sellDeviation * 100).toFixed(2)}%`,
-        limit: `${config.hftMaxPriceDeviation}%`,
+        isOutOfRange: isPriceOutOfRange,
+        pricePosition:
+          currentPrice < orderRange.min
+            ? 'BELOW_RANGE'
+            : currentPrice > orderRange.max
+              ? 'ABOVE_RANGE'
+              : 'IN_RANGE',
       });
 
-      // Step 3: Validation Logic
-      if (buyDeviation > maxDeviationPercent || sellDeviation > maxDeviationPercent) {
-        // Failure Scenario: "Stale" Orders
-        Logger.warn(`🚨 [HFT] Stale orders detected for ${symbol}!`, {
-          buyDeviation: `${(buyDeviation * 100).toFixed(2)}%`,
-          sellDeviation: `${(sellDeviation * 100).toFixed(2)}%`,
-          limit: `${config.hftMaxPriceDeviation}%`,
+      // Step 3: Reactive Logic - Cancel and recreate if price is outside range
+      if (isPriceOutOfRange) {
+        // Immediate Reaction: Price moved out of our order range
+        const position = currentPrice < orderRange.min ? 'BELOW' : 'ABOVE';
+        Logger.warn(`🚨 [HFT] Price moved ${position} order range for ${symbol}!`, {
+          currentPrice,
+          orderRange: `${orderRange.min} - ${orderRange.max}`,
+          gap:
+            position === 'BELOW'
+              ? `${(orderRange.min - currentPrice).toFixed(2)} below BUY order`
+              : `${(currentPrice - orderRange.max).toFixed(2)} above SELL order`,
         });
 
         // Cancel all open orders for the pair
         await this.exchange.cancelAllOpenOrders(symbol, config.apiKey, config.apiSecret);
         Logger.info(`🗑️ [HFT] All orders for ${symbol} have been cancelled`);
 
-        // Restart execution cycle
-        Logger.info(`🔄 [HFT] Restarting execution cycle for ${symbol}`);
+        // Restart execution cycle IMMEDIATELY (no delay for max reactivity)
+        Logger.info(
+          `🔄 [HFT] Restarting execution cycle IMMEDIATELY for ${symbol} - price out of range`
+        );
+
         // Remove current grid to allow reinitialization
         this.activeGrids.delete(symbol);
 
-        // Restart strategy for this symbol with small delay
-        setTimeout(() => {
-          this.executeHFTStrategy(symbol, grid.amount, config);
-        }, 1000);
+        // Restart strategy immediately for maximum reactivity
+        const result = await this.executeHFTStrategy(symbol, grid.amount, config);
+        if (result && result.blocked) {
+          Logger.debug(`🔒 [HFT] Grid recreation blocked due to active trading lock for ${symbol}`);
+        }
       } else {
-        // Success Scenario: Valid Orders
-        Logger.debug(`✅ [HFT] Orders still valid for ${symbol} - no action needed`);
+        // Success Scenario: Price within order range
+        Logger.debug(
+          `✅ [HFT] Price ${currentPrice} within order range [${orderRange.min}-${orderRange.max}] for ${symbol} - orders still valid`
+        );
       }
     } catch (error) {
       Logger.error(`❌ [HFT] Erro no handleOrderbookUpdate para ${symbol}:`, error.message);
+    }
+  }
+
+  /**
+   * Analisa a liquidez e volatilidade do orderbook para determinar estratégia de fechamento
+   * @param {object} orderbook - Dados do orderbook
+   * @param {number} quantity - Quantidade a ser negociada
+   * @returns {object} Análise de mercado { isHighLiquidity, isHighVolatility, maxSlippage, strategy }
+   */
+  analyzeMarketConditions(orderbook, quantity) {
+    try {
+      if (!orderbook || !orderbook.bids?.[0] || !orderbook.asks?.[0]) {
+        return {
+          isHighLiquidity: false,
+          isHighVolatility: true,
+          maxSlippage: 5.0, // Conservative default
+          strategy: 'CONSERVATIVE',
+        };
+      }
+
+      const bestBid = parseFloat(orderbook.bids[0][0]);
+      const bestAsk = parseFloat(orderbook.asks[0][0]);
+      const spread = ((bestAsk - bestBid) / bestBid) * 100;
+
+      // Calculate orderbook depth for liquidity analysis
+      let bidDepth = 0,
+        askDepth = 0;
+      let bidLevels = 0,
+        askLevels = 0;
+
+      // Analyze bid side depth
+      for (const [price, qty] of orderbook.bids.slice(0, 10)) {
+        bidDepth += parseFloat(qty);
+        bidLevels++;
+        if (bidDepth >= quantity * 3) break; // 3x safety margin
+      }
+
+      // Analyze ask side depth
+      for (const [price, qty] of orderbook.asks.slice(0, 10)) {
+        askDepth += parseFloat(qty);
+        askLevels++;
+        if (askDepth >= quantity * 3) break; // 3x safety margin
+      }
+
+      // Liquidity analysis
+      const isHighLiquidity =
+        bidDepth >= quantity * 5 && askDepth >= quantity * 5 && bidLevels >= 5 && askLevels >= 5;
+
+      // Volatility analysis based on spread
+      const isHighVolatility = spread > 0.5; // > 0.5% spread indicates high volatility
+
+      // Determine strategy and max slippage
+      let strategy, maxSlippage;
+
+      if (isHighLiquidity && !isHighVolatility) {
+        strategy = 'AGGRESSIVE';
+        maxSlippage = 0.5; // Allow 0.5% slippage for liquid, stable tokens
+      } else if (isHighLiquidity && isHighVolatility) {
+        strategy = 'MODERATE';
+        maxSlippage = 1.0; // Allow 1% slippage for liquid but volatile tokens
+      } else if (!isHighLiquidity && !isHighVolatility) {
+        strategy = 'CONSERVATIVE';
+        maxSlippage = 2.0; // Allow 2% slippage for illiquid but stable tokens
+      } else {
+        strategy = 'VERY_CONSERVATIVE';
+        maxSlippage = 3.0; // Allow 3% slippage for illiquid and volatile tokens
+      }
+
+      Logger.debug(`📊 [HFT] Market analysis for orderbook:`, {
+        spread: `${spread.toFixed(3)}%`,
+        bidDepth: bidDepth.toFixed(6),
+        askDepth: askDepth.toFixed(6),
+        bidLevels,
+        askLevels,
+        isHighLiquidity,
+        isHighVolatility,
+        strategy,
+        maxSlippage: `${maxSlippage}%`,
+      });
+
+      return {
+        isHighLiquidity,
+        isHighVolatility,
+        maxSlippage,
+        strategy,
+        spread,
+        bidDepth,
+        askDepth,
+      };
+    } catch (error) {
+      Logger.error(`❌ [HFT] Error analyzing market conditions:`, error.message);
+      return {
+        isHighLiquidity: false,
+        isHighVolatility: true,
+        maxSlippage: 5.0,
+        strategy: 'CONSERVATIVE',
+      };
     }
   }
 
@@ -531,13 +720,87 @@ class HFTStrategy extends BaseStrategy {
     const symbol = data.symbol;
     const grid = this.activeGrids.get(symbol);
 
-    Logger.info(`🔔 [HFT] WebSocket trade update received:`, {
+    Logger.debug(`🔔 [HFT] WebSocket trade update received:`, {
       symbol: data.symbol,
       orderId: data.orderId,
       status: data.status,
       side: data.side,
       hasActiveGrid: !!grid,
     });
+
+    // CRITICAL: Check if this is a CLOSURE ORDER being FILLED - highest priority
+    if (data.status && data.status.toString().toUpperCase() === 'FILLED') {
+      Logger.debug(
+        `🔍 [HFT] FILLED order detected: ${data.orderId} - checking if it's a closure order`
+      );
+      const activeLock = await this.getTradingLock(symbol, config);
+
+      if (activeLock) {
+        Logger.debug(`🔍 [HFT] Active lock found for ${symbol}:`, {
+          lockId: activeLock.id,
+          metadata: activeLock.metadata,
+        });
+
+        if (activeLock.metadata) {
+          try {
+            const metadata = JSON.parse(activeLock.metadata);
+            Logger.debug(`🔍 [HFT] Lock metadata parsed:`, {
+              closureOrderId: metadata.closureOrderId,
+              incomingOrderId: data.orderId,
+            });
+
+            if (metadata.closureOrderId && metadata.closureOrderId === data.orderId) {
+              Logger.warn(`🎯 [HFT] CLOSURE ORDER FILLED DETECTED: ${data.orderId} for ${symbol}`);
+              Logger.info(
+                `🔓 [HFT] Position closure confirmed - RELEASING TRADING LOCK immediately`
+              );
+
+              // Release the trading lock - position is now closed
+              await this.releaseTradingLock(symbol, config);
+
+              Logger.info(
+                `✅ [HFT] Trading lock RELEASED for ${symbol} - grid recreation now allowed`
+              );
+              Logger.info(`🎉 [HFT] Position fully closed and race condition protection completed`);
+
+              // Update order status in database
+              await this.updateHFTOrderStatus(data.orderId, 'FILLED', data.price, data.quantity);
+
+              // Restart grid after position closure confirmation
+              const grid = this.activeGrids.get(symbol);
+              if (grid) {
+                Logger.info(
+                  `🔄 [HFT] Restarting grid for ${symbol} after position closure confirmation`
+                );
+                setTimeout(async () => {
+                  const result = await this.executeHFTStrategy(symbol, grid.amount, config);
+                  if (result && result.success) {
+                    Logger.info(
+                      `✅ [HFT] Grid recreated successfully for ${symbol} after position closure`
+                    );
+                  } else if (result && result.blocked) {
+                    Logger.warn(
+                      `🔒 [HFT] Grid recreation still blocked for ${symbol} - unexpected lock state`
+                    );
+                  }
+                }, 1000); // Small delay to ensure lock is fully released
+              }
+
+              return; // Exit early - this was a closure order
+            }
+          } catch (error) {
+            Logger.error(
+              `❌ [HFT] Error parsing lock metadata for closure detection:`,
+              error.message
+            );
+          }
+        } else {
+          Logger.debug(`🔍 [HFT] No metadata found in lock for ${symbol}`);
+        }
+      } else {
+        Logger.debug(`🔍 [HFT] No active lock found for ${symbol} - not a closure order`);
+      }
+    }
 
     // Atualiza status da ordem no banco de dados sempre (mesmo sem grid ativo)
     if (data.orderId && data.status) {
@@ -551,24 +814,51 @@ class HFTStrategy extends BaseStrategy {
     }
 
     // Reage às mudanças de status das ordens do grid ativo
-    Logger.info(
+    Logger.debug(
       `🔍 [HFT] Checking if order ${data.orderId} belongs to grid. BidOrderId: ${grid.bidOrderId}, AskOrderId: ${grid.askOrderId}`
     );
 
     if (data.orderId === grid.bidOrderId || data.orderId === grid.askOrderId) {
       Logger.info(`✅ [HFT] Order ${data.orderId} belongs to active grid, processing...`);
       if (data.status && data.status.toString().toUpperCase() === 'FILLED') {
+        Logger.warn(
+          `🚨 [HFT] FILLED EVENT DETECTED - Initiating immediate position management for ${symbol}`
+        );
         Logger.info(
-          `💰 [HFT] Ordem ${data.orderId} para ${symbol} foi preenchida (${data.side}). Processando cancelamento da ordem oposta...`
+          `💰 [HFT] Ordem ${data.orderId} para ${symbol} foi preenchida (${data.side}). Iniciando sequência de fechamento...`
         );
 
         const isBuy = data.side === 'BUY';
 
-        // STEP 1: Cancel the other order in the market making pair immediately
+        // STEP 1: CREATE TRADING LOCK IMMEDIATELY - This is the CRITICAL operation
+        // Must happen BEFORE any other operation to prevent race conditions
+        Logger.warn(`🔒 [HFT] STEP 1: Creating IMMEDIATE trading lock to prevent race conditions`);
+        try {
+          await this.createTradingLock(symbol, config, data.orderId, {
+            entryPrice: parseFloat(data.price),
+            side: isBuy ? 'LONG' : 'SHORT',
+            quantity: parseFloat(data.quantity),
+            timestamp: Date.now(),
+            reason: 'ORDER_FILLED_IMMEDIATE_LOCK',
+          });
+          Logger.info(
+            `✅ [HFT] Trading lock created successfully for ${symbol} - grid recreation now blocked`
+          );
+        } catch (error) {
+          Logger.error(
+            `❌ [HFT] CRITICAL: Failed to create trading lock for ${symbol}:`,
+            error.message
+          );
+          // Continue anyway to attempt position closure
+        }
+
+        // STEP 2: Cancel the other order in the market making pair
         const otherOrderId = isBuy ? grid.askOrderId : grid.bidOrderId;
-        Logger.info(`🔍 [HFT] Current grid state: BID=${grid.bidOrderId}, ASK=${grid.askOrderId}`);
+        Logger.debug(
+          `🔍 [HFT] STEP 2: Current grid state: BID=${grid.bidOrderId}, ASK=${grid.askOrderId}`
+        );
         Logger.info(
-          `🔍 [HFT] Order ${data.orderId} was filled (${data.side}), need to cancel opposite order: ${otherOrderId}`
+          `🔍 [HFT] Order ${data.orderId} was filled (${data.side}), cancelling opposite order: ${otherOrderId}`
         );
 
         if (otherOrderId && otherOrderId !== data.orderId) {
@@ -593,10 +883,10 @@ class HFTStrategy extends BaseStrategy {
           );
         }
 
-        // Update the filled order status in database
+        // STEP 3: Update the filled order status in database
         await this.updateHFTOrderStatus(data.orderId, 'FILLED', data.price, data.quantity);
 
-        // STEP 2: Create position state object for monitoring
+        // STEP 3: Create position state object
         const position = {
           symbol: symbol,
           side: isBuy ? 'LONG' : 'SHORT', // LONG for BUY fills, SHORT for SELL fills
@@ -607,7 +897,182 @@ class HFTStrategy extends BaseStrategy {
           botId: config.id,
         };
 
-        // STEP 3: Calculate Stop Loss and Take Profit prices
+        // HFT STRATEGY: CLOSE POSITION IMMEDIATELY TO MINIMIZE RISK EXPOSURE
+        Logger.warn(
+          `🚀 [HFT] IMMEDIATE CLOSURE - Order filled, closing position instantly to minimize risk exposure`
+        );
+
+        try {
+          // Get the current market price for immediate closure - use adaptive strategy based on market conditions
+          const orderbook = await this.getOrderbookWithCache(symbol);
+
+          if (!orderbook) {
+            // No orderbook available - use fallback strategy
+            Logger.warn(
+              `⚠️ [HFT] No orderbook available for ${symbol}, falling back to position monitoring`
+            );
+            throw new Error('No orderbook data available for immediate closure');
+          }
+
+          // Analyze market conditions to determine optimal closure strategy
+          const marketAnalysis = this.analyzeMarketConditions(orderbook, position.netQuantity);
+
+          Logger.info(`🎯 [HFT] Market analysis for ${symbol}:`, {
+            strategy: marketAnalysis.strategy,
+            liquidity: marketAnalysis.isHighLiquidity ? 'HIGH' : 'LOW',
+            volatility: marketAnalysis.isHighVolatility ? 'HIGH' : 'LOW',
+            maxSlippage: `${marketAnalysis.maxSlippage}%`,
+            spread: `${marketAnalysis.spread.toFixed(3)}%`,
+          });
+
+          // Determine closure price based on market conditions and strategy
+          let currentMarketPrice;
+          let shouldAttemptImmediate = true;
+
+          if (marketAnalysis.strategy === 'VERY_CONSERVATIVE') {
+            // For very risky conditions, skip immediate closure and use monitoring
+            Logger.warn(
+              `🚨 [HFT] Market conditions too risky for immediate closure (${marketAnalysis.strategy})`
+            );
+            Logger.warn(
+              `🚨 [HFT] Spread: ${marketAnalysis.spread.toFixed(3)}%, Low liquidity detected`
+            );
+            shouldAttemptImmediate = false;
+          } else {
+            // Calculate optimal price based on strategy
+            const bestBid = parseFloat(orderbook.bids[0][0]);
+            const bestAsk = parseFloat(orderbook.asks[0][0]);
+            const entryPrice = parseFloat(data.price);
+
+            if (position.side === 'LONG') {
+              // Selling a LONG position
+              if (marketAnalysis.strategy === 'AGGRESSIVE') {
+                currentMarketPrice = bestBid; // Take best bid immediately
+              } else {
+                // Conservative approach: check if slippage is acceptable
+                const potentialSlippage = ((entryPrice - bestBid) / entryPrice) * 100;
+                if (Math.abs(potentialSlippage) <= marketAnalysis.maxSlippage) {
+                  currentMarketPrice = bestBid;
+                } else {
+                  Logger.warn(
+                    `🚨 [HFT] Potential slippage too high: ${potentialSlippage.toFixed(2)}% > ${marketAnalysis.maxSlippage}%`
+                  );
+                  shouldAttemptImmediate = false;
+                }
+              }
+            } else {
+              // Buying to close SHORT position
+              if (marketAnalysis.strategy === 'AGGRESSIVE') {
+                currentMarketPrice = bestAsk; // Take best ask immediately
+              } else {
+                // Conservative approach: check if slippage is acceptable
+                const potentialSlippage = ((bestAsk - entryPrice) / entryPrice) * 100;
+                if (Math.abs(potentialSlippage) <= marketAnalysis.maxSlippage) {
+                  currentMarketPrice = bestAsk;
+                } else {
+                  Logger.warn(
+                    `🚨 [HFT] Potential slippage too high: ${potentialSlippage.toFixed(2)}% > ${marketAnalysis.maxSlippage}%`
+                  );
+                  shouldAttemptImmediate = false;
+                }
+              }
+            }
+          }
+
+          if (!shouldAttemptImmediate) {
+            throw new Error(
+              `Market conditions unsuitable for immediate closure: ${marketAnalysis.strategy}`
+            );
+          }
+
+          // Close position immediately with adaptive pricing
+          Logger.warn(
+            `🔒 [HFT] About to call closePosition - will update lock IMMEDIATELY with closure order ID`
+          );
+
+          const closeResult = await this.closePosition(
+            position,
+            currentMarketPrice,
+            `IMMEDIATE_HFT_CLOSURE_${marketAnalysis.strategy}`,
+            config
+          );
+
+          if (closeResult && closeResult.success) {
+            Logger.info(`✅ [HFT] Position closure order placed successfully`);
+
+            // Get closure order ID - check multiple possible properties
+            const closureOrderId =
+              closeResult.closeOrder?.id || closeResult.closeOrder?.orderId || closeResult.orderId;
+
+            if (closureOrderId) {
+              // IMMEDIATE SYNCHRONOUS UPDATE - no delays allowed
+              const lockData = {
+                entryPrice: parseFloat(data.price),
+                side: isBuy ? 'LONG' : 'SHORT',
+                quantity: parseFloat(data.quantity),
+                timestamp: Date.now(),
+                reason: 'ORDER_FILLED_AWAITING_CLOSURE',
+                closureOrderId: closureOrderId,
+                entryOrderId: data.orderId,
+              };
+
+              // Update the lock metadata using direct database call - ZERO DELAY
+              const dbService = ConfigManagerSQLite.dbService;
+              if (dbService) {
+                const updateResult = await dbService.run(
+                  'UPDATE trading_locks SET metadata = ? WHERE botId = ? AND symbol = ? AND lockType = ? AND status = ?',
+                  [JSON.stringify(lockData), config.id, symbol, 'POSITION_OPEN', 'ACTIVE']
+                );
+                Logger.warn(
+                  `🔒 [HFT] CRITICAL: Trading lock IMMEDIATELY UPDATED with closure order ${closureOrderId} (affected: ${updateResult.changes} rows)`
+                );
+              }
+
+              Logger.warn(
+                `🔒 [HFT] CRITICAL: Trading lock remains ACTIVE until closure order ${closureOrderId} is FILLED`
+              );
+              Logger.info(
+                `⏳ [HFT] Lock will be released when closure order ${closureOrderId} receives FILLED status`
+              );
+            } else {
+              Logger.error(
+                `❌ [HFT] Could not determine closure order ID from result:`,
+                closeResult
+              );
+              // Release lock immediately if we can't track closure order
+              await this.releaseTradingLock(symbol, config);
+            }
+          } else {
+            Logger.error(`❌ [HFT] Position closure failed:`, closeResult?.error);
+            throw new Error(`Position closure failed: ${closeResult?.error}`);
+          }
+
+          // STEP 4: DO NOT RELEASE LOCK YET - Wait for position closure confirmation
+          Logger.warn(
+            `🔒 [HFT] STEP 4: Position closure order placed - lock remains active until closure confirmed`
+          );
+          Logger.info(`⏳ [HFT] Lock will be released when closure order is confirmed as FILLED`);
+
+          // Clear grid state immediately
+          if (isBuy) {
+            grid.askOrderId = null;
+            grid.bidOrderId = null;
+          } else {
+            grid.bidOrderId = null;
+            grid.askOrderId = null;
+          }
+
+          // Skip the rest of the logic since position is already closed
+          Logger.debug(`🔚 [HFT] Position closed and lock released - grid ready for recreation`);
+          return;
+        } catch (error) {
+          Logger.error(`❌ [HFT] Failed to close position immediately:`, error.message);
+          Logger.warn(`⚠️ [HFT] Falling back to position monitoring as safety measure`);
+          // Continue with original logic as fallback
+        }
+
+        // FALLBACK LOGIC (only executed if immediate closure fails)
+        // STEP 3: Calculate Stop Loss and Take Profit prices for monitoring
         if (config.maxNegativePnLStopPct && config.maxNegativePnLStopPct > 0) {
           const stopLossPercent = config.maxNegativePnLStopPct / 100;
           position.stopLossPrice = isBuy
@@ -622,10 +1087,10 @@ class HFTStrategy extends BaseStrategy {
             : position.entryPrice * (1 - takeProfitPercent); // For SHORT: profit below entry
         }
 
-        // STEP 4: Add position to active monitoring
+        // STEP 4: Add position to active monitoring (FALLBACK)
         this.activePositions.set(`${symbol}_${config.id}`, position);
 
-        Logger.info(`📍 [HFT] Position created for monitoring on ${symbol}:`, {
+        Logger.warn(`⚠️ [HFT] FALLBACK: Position monitoring activated (immediate closure failed)`, {
           side: position.side,
           entryPrice: position.entryPrice,
           quantity: position.netQuantity,
@@ -633,20 +1098,10 @@ class HFTStrategy extends BaseStrategy {
           takeProfit: position.takeProfitPrice,
         });
 
-        // STEP 5: Create trading lock in database to prevent grid recreation
-        // In HFT mode, we DON'T place new orders immediately after fill
-        // Instead, we wait for the position to be closed by SL/TP or manual action
-        Logger.info(
-          `🔒 [HFT] Position opened for ${symbol}. Creating trading lock to suspend grid.`
+        // STEP 5: Trading lock already created above - monitoring will handle closure
+        Logger.warn(
+          `🔒 [HFT] FALLBACK: Trading lock remains active - position monitoring will handle closure and lock release`
         );
-
-        // Create persistent trading lock in database
-        await this.createTradingLock(symbol, config, data.orderId, {
-          entryPrice: position.entryPrice,
-          side: position.side,
-          quantity: position.netQuantity,
-          timestamp: position.timestamp,
-        });
 
         // Clear grid state to prevent automatic recreation
         if (isBuy) {
@@ -665,10 +1120,10 @@ class HFTStrategy extends BaseStrategy {
         const isBidOrder = data.orderId === grid.bidOrderId;
         const isAskOrder = data.orderId === grid.askOrderId;
 
-        Logger.info(
+        Logger.debug(
           `🔍 [HFT] Verificando cancelamento: isBidOrder=${isBidOrder}, isAskOrder=${isAskOrder}`
         );
-        Logger.info(
+        Logger.debug(
           `🔍 [HFT] Grid atual: bidOrderId=${grid.bidOrderId}, askOrderId=${grid.askOrderId}`
         );
 
@@ -682,9 +1137,17 @@ class HFTStrategy extends BaseStrategy {
           grid.askOrderId = null;
         }
 
-        // Reativa o grid para manter os dois alvos ativos
-        Logger.info(`🔄 [HFT] Iniciando reativação do grid para ${symbol}...`);
-        await this.reactivateGrid(symbol, grid, config);
+        // Reativa o grid APENAS se não há trading lock ativo (posição aberta)
+        const lockStatus = await this.hasActiveTradingLock(symbol, config);
+        if (!lockStatus) {
+          Logger.info(`🔄 [HFT] Iniciando reativação do grid para ${symbol}...`);
+          await this.reactivateGrid(symbol, grid, config);
+        } else {
+          Logger.warn(
+            `🔒 [HFT] CRITICAL: Grid reactivation BLOCKED for ${symbol} - trading lock active. This prevents creating conflicting orders during position closure.`
+          );
+          Logger.debug(`🔒 [HFT] Lock details:`, lockStatus);
+        }
       } else if (data.status && data.status.toString().toUpperCase() === 'REJECTED') {
         Logger.error(
           `❌ [HFT] Ordem ${data.orderId} para ${symbol} foi rejeitada. Verificando grid.`
@@ -692,8 +1155,13 @@ class HFTStrategy extends BaseStrategy {
 
         // Para ordens rejeitadas, tenta recriar o grid apenas se não há lock ativo
         if (!(await this.hasActiveTradingLock(symbol, config))) {
-          setTimeout(() => {
-            this.executeHFTStrategy(symbol, grid.amount, config);
+          setTimeout(async () => {
+            const result = await this.executeHFTStrategy(symbol, grid.amount, config);
+            if (result && result.blocked) {
+              Logger.debug(
+                `🔒 [HFT] Delayed grid recreation blocked due to active trading lock for ${symbol}`
+              );
+            }
           }, 5000);
         } else {
           Logger.info(
@@ -702,7 +1170,7 @@ class HFTStrategy extends BaseStrategy {
         }
       }
     } else {
-      Logger.warn(`⚠️ [HFT] Order ${data.orderId} does not belong to current grid. Ignoring.`);
+      Logger.debug(`⚠️ [HFT] Order ${data.orderId} does not belong to current grid. Ignoring.`);
     }
 
     Logger.debug(`🔚 [HFT] Finished processing trade update for ${data.orderId}`);
@@ -835,8 +1303,13 @@ class HFTStrategy extends BaseStrategy {
       // Fallback: restart entire strategy
       Logger.warn(`🔄 [HFT] Fallback: restarting entire strategy for ${symbol}`);
       this.activeGrids.delete(symbol);
-      setTimeout(() => {
-        this.executeHFTStrategy(symbol, grid.amount, config);
+      setTimeout(async () => {
+        const result = await this.executeHFTStrategy(symbol, grid.amount, config);
+        if (result && result.blocked) {
+          Logger.debug(
+            `🔒 [HFT] Orphan order grid recreation blocked due to active trading lock for ${symbol}`
+          );
+        }
       }, 3000);
     }
   }
@@ -864,8 +1337,13 @@ class HFTStrategy extends BaseStrategy {
         existingOrders.length > 0 ? existingOrders[0].quantity : config.capitalPercentage || 5;
 
       // Restart strategy after a delay
-      setTimeout(() => {
-        this.executeHFTStrategy(symbol, defaultAmount, config);
+      setTimeout(async () => {
+        const result = await this.executeHFTStrategy(symbol, defaultAmount, config);
+        if (result && result.blocked) {
+          Logger.debug(
+            `🔒 [HFT] Bot reactivation blocked due to active trading lock for ${symbol}`
+          );
+        }
       }, 2000);
     } catch (error) {
       Logger.error(`❌ [HFT] Error reactivating bot for ${symbol}:`, error.message);
@@ -877,7 +1355,10 @@ class HFTStrategy extends BaseStrategy {
    */
   async repositionOrders(symbol, grid) {
     await this.exchange.cancelAllOpenOrders(symbol, grid.config.apiKey, grid.config.apiSecret);
-    await this.executeHFTStrategy(symbol, grid.amount, grid.config);
+    const result = await this.executeHFTStrategy(symbol, grid.amount, grid.config);
+    if (result && result.blocked) {
+      Logger.debug(`🔒 [HFT] Order repositioning blocked due to active trading lock for ${symbol}`);
+    }
   }
 
   /**
@@ -1329,6 +1810,8 @@ class HFTStrategy extends BaseStrategy {
         side: position.side,
         entry: position.entryPrice,
         current: currentPrice,
+        pnlPercent: `${pnlPercent.toFixed(4)}%`,
+        configuredSpread: `${config.hftSpread || 0.05}%`,
         stopLoss: position.stopLossPrice,
         takeProfit: position.takeProfitPrice,
       });
@@ -1340,7 +1823,12 @@ class HFTStrategy extends BaseStrategy {
           : ((position.entryPrice - currentPrice) / position.entryPrice) * 100;
 
       // Check if position should be closed
-      const shouldClose = await this.shouldClosePosition(position, currentPrice, pnlPercent);
+      const shouldClose = await this.shouldClosePosition(
+        position,
+        currentPrice,
+        pnlPercent,
+        config
+      );
 
       if (shouldClose.close) {
         Logger.warn(`🚨 [HFT] Position closure triggered for ${symbol}:`, {
@@ -1348,7 +1836,9 @@ class HFTStrategy extends BaseStrategy {
           side: position.side,
           entryPrice: position.entryPrice,
           currentPrice: currentPrice,
-          pnlPercent: `${pnlPercent.toFixed(2)}%`,
+          pnlPercent: `${pnlPercent.toFixed(4)}%`,
+          configuredSpread: `${config.hftSpread || 0.05}%`,
+          details: shouldClose.details,
         });
 
         // Close the position
@@ -1356,6 +1846,11 @@ class HFTStrategy extends BaseStrategy {
 
         // Remove position from monitoring
         this.activePositions.delete(positionKey);
+        Logger.info(`🗑️ [HFT] Position monitoring stopped for ${symbol} - position closed`);
+      } else {
+        Logger.debug(
+          `✅ [HFT] Position monitoring continues for ${symbol} - PnL: ${pnlPercent.toFixed(4)}%`
+        );
       }
     } catch (error) {
       Logger.error(`❌ [HFT] Error in onPriceUpdate for ${symbol}:`, error.message);
@@ -1365,9 +1860,36 @@ class HFTStrategy extends BaseStrategy {
   /**
    * Determines if a position should be closed based on SL/TP rules
    */
-  async shouldClosePosition(position, currentPrice, pnlPercent) {
+  async shouldClosePosition(position, currentPrice, pnlPercent, config) {
     try {
-      // Check Stop Loss
+      // NOVA VALIDAÇÃO: Check slippage baseado na configuração do usuário
+      // Usa o mesmo spread configurado como limite de loss/gain
+      const configuredSpread = config.hftSpread || 0.05; // Spread padrão de 0.05%
+
+      // Valida tanto para lado negativo (loss) quanto positivo (gain)
+      const absSlippage = Math.abs(pnlPercent);
+
+      if (absSlippage >= configuredSpread) {
+        const reason = pnlPercent > 0 ? 'TAKE_PROFIT_SLIPPAGE' : 'STOP_LOSS_SLIPPAGE';
+        const direction = pnlPercent > 0 ? 'GAIN' : 'LOSS';
+
+        Logger.warn(`🚨 [HFT] Slippage trigger detected for ${position.symbol}:`, {
+          pnlPercent: `${pnlPercent.toFixed(4)}%`,
+          configuredSpread: `${configuredSpread}%`,
+          direction,
+          entryPrice: position.entryPrice,
+          currentPrice,
+          slippage: `${absSlippage.toFixed(4)}%`,
+        });
+
+        return {
+          close: true,
+          reason,
+          details: `Slippage ${absSlippage.toFixed(4)}% exceeded configured spread ${configuredSpread}% (${direction})`,
+        };
+      }
+
+      // Check Stop Loss (mantém lógica original para compatibilidade)
       if (position.stopLossPrice) {
         const shouldTriggerStopLoss =
           position.side === 'LONG'
@@ -1383,7 +1905,7 @@ class HFTStrategy extends BaseStrategy {
         }
       }
 
-      // Check Take Profit
+      // Check Take Profit (mantém lógica original para compatibilidade)
       if (position.takeProfitPrice) {
         const shouldTriggerTakeProfit =
           position.side === 'LONG'
@@ -1438,21 +1960,77 @@ class HFTStrategy extends BaseStrategy {
       // Format quantity using market requirements
       const formattedQuantity = MarketFormatter.formatQuantity(position.netQuantity, marketInfo);
 
-      // Place market order to close position immediately
-      const closeOrder = await this.exchange.placeOrder(
-        position.symbol,
-        closingSide,
-        currentPrice, // Use current market price for immediate execution
-        formattedQuantity,
-        config.apiKey,
-        config.apiSecret,
-        {
-          orderType: 'Market', // Use market order for immediate execution
-          clientId: await OrderController.generateUniqueOrderId(config),
-          postOnly: false, // Allow taker order for immediate execution
-          timeInForce: 'IOC', // Immediate or Cancel for fast execution
-        }
-      );
+      // Determine order strategy based on reason (contains market analysis)
+      let orderOptions = {
+        clientId: await OrderController.generateUniqueOrderId(config),
+        postOnly: false,
+        reduceOnly: true, // This is a position closing order
+      };
+
+      // Adaptive order strategy based on market conditions
+      if (reason.includes('AGGRESSIVE')) {
+        // High liquidity, low volatility - use aggressive market order
+        orderOptions = {
+          ...orderOptions,
+          orderType: 'Market',
+          timeInForce: 'IOC', // Immediate or Cancel for fastest execution
+        };
+        Logger.info(`⚡ [HFT] Using AGGRESSIVE strategy for ${position.symbol} - Market/IOC order`);
+      } else if (reason.includes('MODERATE')) {
+        // High liquidity, high volatility - use market with GTC fallback
+        orderOptions = {
+          ...orderOptions,
+          orderType: 'Market',
+          timeInForce: 'GTC', // Allow partial fills over time
+        };
+        Logger.info(`⚡ [HFT] Using MODERATE strategy for ${position.symbol} - Market/GTC order`);
+      } else if (reason.includes('CONSERVATIVE') || reason.includes('VERY_CONSERVATIVE')) {
+        // Conservative strategy - always use Market orders to avoid "Order would immediately match and take" error
+        // Limit orders are rejected by exchanges when they would execute immediately
+        orderOptions = {
+          ...orderOptions,
+          orderType: 'Market',
+          timeInForce: 'IOC', // Use IOC for immediate execution
+        };
+        Logger.info(
+          `🛡️ [HFT] Using CONSERVATIVE strategy for ${position.symbol} - Market/IOC order (avoiding limit order rejection)`
+        );
+      } else {
+        // Default fallback - standard market order
+        orderOptions = {
+          ...orderOptions,
+          orderType: 'Market',
+          timeInForce: 'IOC',
+        };
+        Logger.info(`🔄 [HFT] Using DEFAULT strategy for ${position.symbol} - Market/IOC order`);
+      }
+
+      // Place adaptive order to close position
+      let closeOrder;
+
+      if (orderOptions.orderType === 'Market') {
+        // For market orders, don't pass price parameter
+        closeOrder = await this.exchange.placeOrder(
+          position.symbol,
+          closingSide,
+          undefined, // No price for market orders
+          formattedQuantity,
+          config.apiKey,
+          config.apiSecret,
+          orderOptions
+        );
+      } else {
+        // For limit orders, include price
+        closeOrder = await this.exchange.placeOrder(
+          position.symbol,
+          closingSide,
+          currentPrice,
+          formattedQuantity,
+          config.apiKey,
+          config.apiSecret,
+          orderOptions
+        );
+      }
 
       // Calculate realized PnL
       const realizedPnL =
@@ -1463,11 +2041,14 @@ class HFTStrategy extends BaseStrategy {
       const realizedPnLPercent = (realizedPnL / (position.entryPrice * position.netQuantity)) * 100;
 
       // Save the closing order to database
+      // For market orders, use the execution price if available, otherwise use original currentPrice for logging
+      const logPrice = orderOptions.orderType === 'Market' ? currentPrice : currentPrice;
+
       await this.saveHFTOrderToDatabase(
         closeOrder,
         position.symbol,
         closingSide,
-        currentPrice,
+        logPrice,
         formattedQuantity,
         config
       );
@@ -1478,7 +2059,8 @@ class HFTStrategy extends BaseStrategy {
         originalSide: position.side,
         closingSide,
         entryPrice: position.entryPrice,
-        closePrice: currentPrice,
+        closePrice: logPrice,
+        orderType: orderOptions.orderType,
         quantity: position.netQuantity,
         realizedPnL: realizedPnL.toFixed(6),
         realizedPnLPercent: `${realizedPnLPercent.toFixed(2)}%`,
@@ -1490,34 +2072,39 @@ class HFTStrategy extends BaseStrategy {
         await this.updateHFTOrderStatus(position.orderId, 'CLOSED_BY_SL_TP');
       }
 
-      // After closing position, release the trading lock
-      Logger.info(`🔓 [HFT] Position closed for ${position.symbol}. Releasing trading lock.`);
-
-      // Release the trading lock to allow grid operations
-      await this.releaseTradingLock(position.symbol, config);
-
-      // Get the grid configuration to resume
-      const grid = this.activeGrids.get(position.symbol);
-      if (grid) {
-        // Cancel any remaining orders for this symbol
-        try {
-          await this.exchange.cancelAllOpenOrders(position.symbol, config.apiKey, config.apiSecret);
-        } catch (error) {
-          Logger.warn(`⚠️ [HFT] Error cancelling orders during position closure: ${error.message}`);
-        }
-
-        // Restart strategy after a short delay
-        setTimeout(() => {
-          this.executeHFTStrategy(position.symbol, grid.amount, config);
-        }, 2000);
+      // Update the closing order status to FILLED (since it's a market order, it should execute immediately)
+      const closeOrderId = closeOrder.id || closeOrder.orderId;
+      if (closeOrderId) {
+        await this.updateHFTOrderStatus(closeOrderId, 'FILLED', logPrice, formattedQuantity);
+        Logger.info(`✅ [HFT] Closing order ${closeOrderId} marked as FILLED in database`);
       }
 
-      return {
+      // NOTE: Trading lock will be released when the closure order is confirmed as FILLED via WebSocket
+      Logger.info(
+        `🔓 [HFT] Position closure order placed for ${position.symbol}. Lock remains active until FILLED confirmation.`
+      );
+
+      // Grid recreation will happen automatically when the lock is released via WebSocket FILLED event
+
+      // Return immediately to avoid timing issues - cleanup will happen elsewhere
+      const result = {
         success: true,
         closeOrder,
         realizedPnL,
         realizedPnLPercent,
       };
+
+      // Cancel any remaining orders for this symbol (cleanup) - do this asynchronously to avoid timing issues
+      setImmediate(async () => {
+        try {
+          await this.exchange.cancelAllOpenOrders(position.symbol, config.apiKey, config.apiSecret);
+          Logger.info(`🧹 [HFT] Cleanup: cancelled remaining orders for ${position.symbol}`);
+        } catch (error) {
+          Logger.warn(`⚠️ [HFT] Error cancelling orders during cleanup: ${error.message}`);
+        }
+      });
+
+      return result;
     } catch (error) {
       Logger.error(`❌ [HFT] Error closing position for ${position.symbol}:`, error.message);
 
@@ -2088,23 +2675,6 @@ class HFTStrategy extends BaseStrategy {
   }
 
   /**
-   * Valida configuração HFT
-   */
-  validateHFTConfig(config) {
-    if (!config.apiKey || !config.apiSecret) {
-      throw new Error('API Key e Secret são obrigatórios para modo HFT');
-    }
-
-    if (!config.hftSpread || config.hftSpread <= 0) {
-      throw new Error('HFT Spread deve ser maior que 0');
-    }
-
-    if (config.hftSpread > 0.01) {
-      Logger.warn(`⚠️ [HFT] Spread muito alto: ${config.hftSpread * 100}%. Recomendado: < 1%`);
-    }
-  }
-
-  /**
    * Obtém métricas do HFT
    */
   getHFTMetrics(symbol = null) {
@@ -2252,6 +2822,23 @@ class HFTStrategy extends BaseStrategy {
     } catch (error) {
       Logger.error(`❌ [TRADING_LOCK] Error releasing lock:`, error.message);
       return false;
+    }
+  }
+
+  /**
+   * Get active trading lock details
+   */
+  async getTradingLock(symbol, config) {
+    try {
+      const dbService = ConfigManagerSQLite.dbService;
+      if (!dbService) {
+        Logger.warn(`⚠️ [TRADING_LOCK] Database service not available`);
+        return null;
+      }
+      return await dbService.getTradingLock(config.id, symbol, 'POSITION_OPEN');
+    } catch (error) {
+      Logger.error(`❌ [TRADING_LOCK] Error getting lock:`, error.message);
+      return null;
     }
   }
 }
