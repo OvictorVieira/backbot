@@ -5,6 +5,7 @@ import QuantityCalculator from '../Utils/QuantityCalculator.js';
 import { ExchangeFactory } from '../Exchange/ExchangeFactory.js';
 import MarketFormatter from '../Utils/MarketFormatter.js';
 import OrdersService from '../Services/OrdersService.js';
+import FeatureToggleService from '../Services/FeatureToggleService.js';
 
 /**
  * HFTController - Controlador específico para bots HFT
@@ -92,6 +93,17 @@ class HFTController {
    */
   async loadAndStartHFTBots() {
     try {
+      // Check if HFT mode is enabled via feature toggle
+      const isHFTEnabled = await FeatureToggleService.isEnabled('HFT_MODE');
+      if (!isHFTEnabled) {
+        Logger.warn(
+          '🚫 [HFT_CONTROLLER] HFT mode is disabled via feature toggle. Skipping HFT bot initialization.'
+        );
+        return;
+      }
+
+      Logger.info('🎛️ [HFT_CONTROLLER] HFT mode is enabled via feature toggle');
+
       // Carrega apenas bots HFT
       const hftBots = await ConfigManagerSQLite.loadHFTBots();
       const enabledHFTBots = hftBots.filter(
@@ -119,6 +131,15 @@ class HFTController {
    */
   async startHFTBot(botConfig) {
     try {
+      // Check if HFT mode is enabled via feature toggle
+      const isHFTEnabled = await FeatureToggleService.isEnabled('HFT_MODE');
+      if (!isHFTEnabled) {
+        Logger.warn(
+          `🚫 [HFT_CONTROLLER] HFT mode is disabled. Cannot start bot ${botConfig.botName}`
+        );
+        return;
+      }
+
       Logger.info(
         `🔌 [HFT_CONTROLLER] Iniciando bot HFT: ${botConfig.botName} (ID: ${botConfig.id})`
       );
@@ -135,17 +156,43 @@ class HFTController {
       // Cria instância da HFTStrategy
       const hftStrategy = new HFTStrategy();
 
-      // Calcula parâmetros para execução
-      const symbol = this.getSymbolFromConfig(botConfig);
-      Logger.info(`🧮 [HFT_CONTROLLER] Calculando amount para ${symbol}...`);
-      const amount = await this.calculateOptimalAmountFromConfig(botConfig, symbol);
-      Logger.info(`💰 [HFT_CONTROLLER] Amount calculado: ${amount}`);
+      // Processa todos os tokens autorizados
+      const authorizedTokens = botConfig.authorizedTokens || [];
+      if (authorizedTokens.length === 0) {
+        throw new Error('Nenhum token autorizado encontrado na configuração do bot HFT');
+      }
 
-      // Executa estratégia HFT
-      await hftStrategy.executeHFTStrategy(symbol, amount, botConfig);
+      Logger.info(
+        `📋 [HFT_CONTROLLER] Bot ${botConfig.botName} processará ${authorizedTokens.length} tokens: ${authorizedTokens.join(', ')}`
+      );
 
-      // Armazena instância ativa
-      this.activeHFTBots.set(botConfig.id, hftStrategy);
+      // Cria uma estratégia para cada token
+      const strategies = new Map();
+
+      for (const symbol of authorizedTokens) {
+        try {
+          Logger.info(`🧮 [HFT_CONTROLLER] Calculando amount para ${symbol}...`);
+          const amount = await this.calculateOptimalAmountFromConfig(botConfig, symbol);
+          Logger.info(`💰 [HFT_CONTROLLER] Amount calculado para ${symbol}: ${amount}`);
+
+          // Cria instância separada da HFTStrategy para este token
+          const tokenStrategy = new HFTStrategy();
+
+          // Executa estratégia HFT para este token
+          await tokenStrategy.executeHFTStrategy(symbol, amount, botConfig);
+
+          // Armazena estratégia para este token
+          strategies.set(symbol, tokenStrategy);
+
+          Logger.info(`✅ [HFT_CONTROLLER] Estratégia iniciada para ${symbol}`);
+        } catch (error) {
+          Logger.error(`❌ [HFT_CONTROLLER] Erro ao iniciar ${symbol}:`, error.message);
+          // Continue com outros tokens mesmo se um falhar
+        }
+      }
+
+      // Armazena todas as estratégias ativas para este bot
+      this.activeHFTBots.set(botConfig.id, strategies);
 
       // Atualiza status no banco
       await ConfigManagerSQLite.updateBotStatusById(botConfig.id, 'running');
@@ -199,7 +246,7 @@ class HFTController {
     try {
       Logger.info(`🛑 [HFT_CONTROLLER] Parando bot HFT ID: ${botId}`);
 
-      const hftStrategy = this.activeHFTBots.get(botId);
+      const strategies = this.activeHFTBots.get(botId);
 
       // Busca configuração do bot para cancelar ordens (sempre, mesmo se não ativo)
       const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
@@ -240,11 +287,21 @@ class HFTController {
         }
       }
 
-      // Se o bot estava ativo, para a estratégia HFT
-      if (hftStrategy) {
-        await hftStrategy.stopHFTMode();
+      // Se o bot estava ativo, para todas as estratégias HFT
+      if (strategies && strategies instanceof Map) {
+        for (const [symbol, strategy] of strategies) {
+          try {
+            await strategy.stopHFTMode();
+            Logger.info(`🔄 [HFT_CONTROLLER] Estratégia HFT parada para ${symbol} do bot ${botId}`);
+          } catch (error) {
+            Logger.error(
+              `❌ [HFT_CONTROLLER] Erro ao parar estratégia para ${symbol}:`,
+              error.message
+            );
+          }
+        }
         this.activeHFTBots.delete(botId);
-        Logger.info(`🔄 [HFT_CONTROLLER] Estratégia HFT parada para bot ${botId}`);
+        Logger.info(`🔄 [HFT_CONTROLLER] Todas as estratégias HFT paradas para bot ${botId}`);
       } else {
         Logger.warn(
           `⚠️ [HFT_CONTROLLER] Bot HFT ${botId} não estava na lista ativa, mas continuando com cleanup`
@@ -394,6 +451,7 @@ class HFTController {
       let adjustedQuantity = rawQuantity;
       if (marketInfo.minQuantity) {
         const minQty = parseFloat(marketInfo.minQuantity);
+
         if (rawQuantity < minQty) {
           Logger.warn(
             `⚠️ [HFT_AMOUNT] Calculated quantity ${rawQuantity} below minimum ${minQty} for ${symbol}, using minimum quantity`
@@ -440,7 +498,20 @@ class HFTController {
 
       return hftBots.map(bot => {
         const isActive = this.activeHFTBots.has(bot.id);
-        const hftStrategy = this.activeHFTBots.get(bot.id);
+        const strategies = this.activeHFTBots.get(bot.id);
+
+        // Collect metrics from all active strategies
+        let allMetrics = null;
+        if (strategies && strategies instanceof Map) {
+          allMetrics = {};
+          for (const [symbol, strategy] of strategies) {
+            try {
+              allMetrics[symbol] = strategy.getHFTMetrics();
+            } catch (error) {
+              allMetrics[symbol] = { error: error.message };
+            }
+          }
+        }
 
         return {
           id: bot.id,
@@ -448,7 +519,8 @@ class HFTController {
           status: bot.status,
           enabled: bot.enabled,
           isActive,
-          metrics: hftStrategy ? hftStrategy.getHFTMetrics() : null,
+          activeTokens: strategies ? Array.from(strategies.keys()) : [],
+          metrics: allMetrics,
           config: {
             hftSpread: bot.hftSpread,
             hftRebalanceFrequency: bot.hftRebalanceFrequency,

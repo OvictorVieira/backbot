@@ -45,8 +45,9 @@ class HFTStrategy extends BaseStrategy {
   async executeHFTStrategy(symbol, amount, config) {
     try {
       Logger.info(`🚀 [HFT] Iniciando estratégia HFT para ${symbol}`);
-      Logger.info(`📊 [HFT] Input parameters: symbol=${symbol}, amount=${amount}, capitalPercentage=${config.capitalPercentage}%`);
-      Logger.info(`🔍 [HFT] Amount type: ${typeof amount}, value: ${amount}`);
+      Logger.info(
+        `📊 [HFT] Input parameters: symbol=${symbol}, amount=${amount}, capitalPercentage=${config.capitalPercentage}%`
+      );
 
       // STEP 1: CRITICAL LOCK CHECK - Must be the FIRST operation
       // This prevents race conditions between WebSocket events and grid recreation
@@ -180,24 +181,21 @@ class HFTStrategy extends BaseStrategy {
 
       // Format quantity using market requirements - CRITICAL for API compatibility
       let finalAmount = amount;
-      Logger.info(`🔍 [HFT] Initial amount before validation: ${amount}`);
-
       if (marketInfo && marketInfo.minQuantity) {
         const minQty = parseFloat(marketInfo.minQuantity);
-
-        Logger.debug(`🔍 [HFT] Market requirements for ${symbol}: minQuantity=${marketInfo.minQuantity}, decimal_quantity=${marketInfo.decimal_quantity}`);
 
         // Safety check - this should already be handled by HFTController, but double-check
         if (amount < minQty) {
           finalAmount = minQty;
-          Logger.warn(`⚠️ [HFT] SAFETY CHECK: Amount ${amount} below minimum ${minQty} for ${symbol}, using minimum quantity`);
+          Logger.warn(
+            `⚠️ [HFT] SAFETY CHECK: Amount ${amount} below minimum ${minQty} for ${symbol}, using minimum quantity`
+          );
         } else {
           finalAmount = amount; // Use the amount as-is (should already be validated)
         }
 
         // CRITICAL: Format the quantity with correct decimal places for the exchange
         finalAmount = MarketFormatter.formatQuantity(finalAmount, marketInfo);
-        Logger.info(`📊 [HFT] Final formatted quantity for ${symbol}: ${amount} → ${finalAmount} (with ${marketInfo.decimal_quantity} decimals)`);
       } else {
         Logger.warn(`⚠️ [HFT] No market info with minQuantity found for ${symbol}`);
         finalAmount = amount.toString(); // Use as-is if no market info but ensure it's a string
@@ -206,6 +204,7 @@ class HFTStrategy extends BaseStrategy {
       try {
         // Place BID order first
         Logger.debug(`🔄 [HFT] Placing BID order sequentially...`);
+
         const bidResult = await this.exchange.placeOrder(
           symbol,
           'BUY',
@@ -232,6 +231,7 @@ class HFTStrategy extends BaseStrategy {
 
         // Place ASK order second
         Logger.debug(`🔄 [HFT] Placing ASK order sequentially...`);
+
         const askResult = await this.exchange.placeOrder(
           symbol,
           'SELL',
@@ -1279,12 +1279,16 @@ class HFTStrategy extends BaseStrategy {
         // If quantity is below minimum, use minimum quantity
         if (grid.amount < minQty) {
           finalAmount = minQty;
-          Logger.warn(`⚠️ [HFT] Amount ${grid.amount} below minimum ${minQty} for ${symbol}, using minimum quantity`);
+          Logger.warn(
+            `⚠️ [HFT] Amount ${grid.amount} below minimum ${minQty} for ${symbol}, using minimum quantity`
+          );
         }
 
         // Format quantity using market requirements with stepSize
         finalAmount = MarketFormatter.formatQuantity(finalAmount, marketInfo);
-        Logger.info(`📊 [HFT] Reactivate adjusted quantity for ${symbol}: ${grid.amount} → ${finalAmount}`);
+        Logger.info(
+          `📊 [HFT] Reactivate adjusted quantity for ${symbol}: ${grid.amount} → ${finalAmount}`
+        );
       }
 
       // Place missing orders with SL/TP protection
@@ -1679,12 +1683,16 @@ class HFTStrategy extends BaseStrategy {
           // If quantity is below minimum, use minimum quantity
           if (defaultAmount < minQty) {
             finalAmount = minQty;
-            Logger.warn(`⚠️ [HFT] Amount ${defaultAmount} below minimum ${minQty} for ${symbol}, using minimum quantity`);
+            Logger.warn(
+              `⚠️ [HFT] Amount ${defaultAmount} below minimum ${minQty} for ${symbol}, using minimum quantity`
+            );
           }
 
           // Format quantity using market requirements with stepSize
           finalAmount = MarketFormatter.formatQuantity(finalAmount, marketInfo);
-          Logger.info(`📊 [HFT] Fresh order adjusted quantity for ${symbol}: ${defaultAmount} → ${finalAmount}`);
+          Logger.info(
+            `📊 [HFT] Fresh order adjusted quantity for ${symbol}: ${defaultAmount} → ${finalAmount}`
+          );
         }
 
         Logger.info(
@@ -2368,7 +2376,9 @@ class HFTStrategy extends BaseStrategy {
         // If quantity is below minimum, use minimum quantity
         if (quantity < minQty) {
           finalQuantity = minQty;
-          Logger.warn(`⚠️ [HFT] Quantity ${quantity} below minimum ${minQty} for ${symbol}, using minimum quantity`);
+          Logger.warn(
+            `⚠️ [HFT] Quantity ${quantity} below minimum ${minQty} for ${symbol}, using minimum quantity`
+          );
         }
 
         // Format quantity using market requirements with stepSize
@@ -2385,7 +2395,9 @@ class HFTStrategy extends BaseStrategy {
 
       const finalPrice = optimalPrice || price;
 
-      Logger.debug(`📝 [HFT] Criando ordem ${type}: ${side} ${finalQuantity} ${symbol} @ ${finalPrice}`);
+      Logger.debug(
+        `📝 [HFT] Criando ordem ${type}: ${side} ${finalQuantity} ${symbol} @ ${finalPrice}`
+      );
 
       const result = await this.exchange.placeOrder(
         symbol,

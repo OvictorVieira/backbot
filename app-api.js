@@ -1661,6 +1661,85 @@ async function stopBot(botId, updateStatus = true) {
 
 // API Routes
 
+// Feature Toggles Routes
+// GET /api/feature-toggles - Lista todas as feature toggles
+app.get('/api/feature-toggles', async (req, res) => {
+  try {
+    const toggles = await FeatureToggleService.getAllToggles();
+    res.json({
+      success: true,
+      data: toggles,
+    });
+  } catch (error) {
+    Logger.error('❌ [API] Error getting feature toggles:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// POST /api/feature-toggles/:featureName/enable - Habilita uma feature
+app.post('/api/feature-toggles/:featureName/enable', async (req, res) => {
+  try {
+    const { featureName } = req.params;
+    const { description } = req.body;
+
+    await FeatureToggleService.enable(featureName, description || '');
+
+    res.json({
+      success: true,
+      message: `Feature '${featureName}' enabled successfully`,
+    });
+  } catch (error) {
+    Logger.error(`❌ [API] Error enabling feature toggle:`, error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// POST /api/feature-toggles/:featureName/disable - Desabilita uma feature
+app.post('/api/feature-toggles/:featureName/disable', async (req, res) => {
+  try {
+    const { featureName } = req.params;
+
+    await FeatureToggleService.disable(featureName);
+
+    res.json({
+      success: true,
+      message: `Feature '${featureName}' disabled successfully`,
+    });
+  } catch (error) {
+    Logger.error(`❌ [API] Error disabling feature toggle:`, error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// GET /api/feature-toggles/:featureName - Verifica status de uma feature
+app.get('/api/feature-toggles/:featureName', async (req, res) => {
+  try {
+    const { featureName } = req.params;
+    const enabled = await FeatureToggleService.isEnabled(featureName);
+
+    res.json({
+      success: true,
+      feature: featureName,
+      enabled,
+    });
+  } catch (error) {
+    Logger.error(`❌ [API] Error checking feature toggle:`, error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
 // POST /api/bot/debug/fix-status - Corrige status inconsistente
 app.post('/api/bot/debug/fix-status', async (req, res) => {
   try {

@@ -79,6 +79,7 @@ export function DashboardPage() {
   const [showHFTEditForm, setShowHFTEditForm] = useState(false)
   const [loadingBots, setLoadingBots] = useState<Record<string, boolean>>({})
   const [restartingBots, setRestartingBots] = useState<Record<string, boolean>>({})
+  const [hftModeEnabled, setHftModeEnabled] = useState(false)
 
   const [errorModal, setErrorModal] = useState<{
     isOpen: boolean;
@@ -104,6 +105,21 @@ export function DashboardPage() {
       }
     }
     fetchStrategies()
+  }, [])
+
+  // Buscar status do feature toggle HFT_MODE
+  useEffect(() => {
+    const fetchHFTModeStatus = async () => {
+      try {
+        const response = await axios.get(`${API_BASE_URL}/api/feature-toggles`)
+        const hftToggle = response.data.find((toggle: any) => toggle.name === 'HFT_MODE')
+        setHftModeEnabled(hftToggle?.enabled || false)
+      } catch (error) {
+        console.error('Erro ao buscar status do HFT_MODE:', error)
+        setHftModeEnabled(false) // Default to false on error
+      }
+    }
+    fetchHFTModeStatus()
   }, [])
 
   // Buscar configurações dos bots
@@ -344,7 +360,14 @@ export function DashboardPage() {
   }
 
   const handleCreateBot = () => {
-    setShowBotTypeSelection(true)
+    // Check if HFT mode is enabled to decide which modal to show
+    if (hftModeEnabled) {
+      // Show bot type selection modal when HFT is enabled
+      setShowBotTypeSelection(true)
+    } else {
+      // Directly show traditional bot creation when HFT is disabled
+      setShowCreateBot(true)
+    }
   }
 
   const handleBotTypeSelection = (type: 'DEFAULT' | 'HFT') => {
@@ -761,25 +784,33 @@ export function DashboardPage() {
       ) : (
         <div className="w-full max-w-[2400px]">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 3xl:grid-cols-6 gap-4 gap-y-6">
-            {configs.map((config) => {
-              const status = getBotStatus(config.id || 0)
+            {configs
+              .filter((config) => {
+                // If HFT mode is disabled, only show traditional bots
+                if (!hftModeEnabled && config.strategyName === 'HFT') {
+                  return false;
+                }
+                return true;
+              })
+              .map((config) => {
+                const status = getBotStatus(config.id || 0)
 
-              return (
-                <BotCard
-                  key={config.id || config.strategyName}
-                  config={config}
-                  // REMOVIDO: isRunning - BotCard usa config.status
-                  isLoading={loadingBots[config.id?.toString() || config.strategyName] || false}
-                  isRestarting={restartingBots[config.id?.toString() || config.strategyName] || false}
-                  botStatus={status}
-                  onStart={() => handleStartBot(config.id?.toString() || config.strategyName)}
-                  onStop={() => handleStopBot(config.id?.toString() || config.strategyName)}
-                  onEdit={() => handleEditBot(config.id?.toString() || config.strategyName)}
-                  onDelete={handleDeleteBot}
-                  onForceSync={handleForceSync}
-                />
-              )
-            })}
+                return (
+                  <BotCard
+                    key={config.id || config.strategyName}
+                    config={config}
+                    // REMOVIDO: isRunning - BotCard usa config.status
+                    isLoading={loadingBots[config.id?.toString() || config.strategyName] || false}
+                    isRestarting={restartingBots[config.id?.toString() || config.strategyName] || false}
+                    botStatus={status}
+                    onStart={() => handleStartBot(config.id?.toString() || config.strategyName)}
+                    onStop={() => handleStopBot(config.id?.toString() || config.strategyName)}
+                    onEdit={() => handleEditBot(config.id?.toString() || config.strategyName)}
+                    onDelete={handleDeleteBot}
+                    onForceSync={handleForceSync}
+                  />
+                )
+              })}
           </div>
         </div>
       )}

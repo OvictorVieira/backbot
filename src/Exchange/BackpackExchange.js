@@ -206,6 +206,9 @@ export class BackpackExchange extends BaseExchange {
 
   async placeOrder(symbol, side, price, quantity, apiKey, apiSecret, options = {}) {
     try {
+      // Get market info for proper price formatting
+      const marketInfo = await this.getMarketInfo(symbol, apiKey, apiSecret);
+
       // Converte side padrão para formato Backpack
       const backpackSide = side === 'BUY' ? 'Bid' : side === 'SELL' ? 'Ask' : side;
 
@@ -230,7 +233,9 @@ export class BackpackExchange extends BaseExchange {
 
       // Só inclui preço e postOnly para ordens Limit
       if (orderType === 'Limit' && price) {
-        orderBody.price = parseFloat(price).toFixed(1);
+        // Format price using market info for correct decimal places
+        const formattedPrice = parseFloat(price).toFixed(marketInfo.decimal_price);
+        orderBody.price = formattedPrice;
         orderBody.postOnly = options.postOnly !== undefined ? options.postOnly : true;
       }
 
@@ -354,14 +359,33 @@ export class BackpackExchange extends BaseExchange {
         throw new Error(`Symbol ${symbol} not found in exchange markets`);
       }
 
+      // Extract data from the correct API structure (filters object)
+      const quantityFilters = market.filters?.quantity || {};
+      const priceFilters = market.filters?.price || {};
+
+      // Calculate decimal places from stepSize (count digits after decimal point)
+      const calculateDecimals = stepSize => {
+        if (!stepSize) return 8;
+        const stepStr = stepSize.toString();
+        if (!stepStr.includes('.')) return 0; // Integer values like "100" have 0 decimals
+        return stepStr.split('.')[1].length;
+      };
+
+      const stepSize = parseFloat(quantityFilters.stepSize || '0.00001');
+      const tickSize = parseFloat(priceFilters.tickSize || '0.1');
+      const minQuantity = parseFloat(quantityFilters.minQuantity || stepSize);
+
       // Normaliza dados do mercado para formato padrão cross-exchange
+      const quantityDecimals = calculateDecimals(quantityFilters.stepSize);
+      const priceDecimals = calculateDecimals(priceFilters.tickSize);
+
       const marketInfo = {
         symbol: market.symbol,
-        decimal_quantity: market.quantityScale || 8,
-        decimal_price: market.priceScale || 2,
-        stepSize_quantity: parseFloat(market.quantityIncrement || '0.00001'),
-        tickSize: parseFloat(market.priceIncrement || '0.1'),
-        minQuantity: parseFloat(market.minOrderSize || market.quantityIncrement || '0.00001'),
+        decimal_quantity: quantityDecimals !== undefined ? quantityDecimals : 8,
+        decimal_price: priceDecimals !== undefined ? priceDecimals : 2,
+        stepSize_quantity: stepSize,
+        tickSize: tickSize,
+        minQuantity: minQuantity,
       };
 
       Logger.debug(`[BackpackExchange] Market info para ${symbol}:`, {

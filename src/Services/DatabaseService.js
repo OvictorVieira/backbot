@@ -3,6 +3,7 @@ import { open } from 'sqlite';
 import path from 'path';
 import { promises as fs } from 'fs';
 import Logger from '../Utils/Logger.js';
+import FeatureToggleService from './FeatureToggleService.js';
 
 class DatabaseService {
   constructor() {
@@ -152,11 +153,26 @@ class DatabaseService {
         CREATE INDEX IF NOT EXISTS idx_trading_locks_active ON trading_locks(botId, symbol, status) WHERE status = 'ACTIVE';
       `);
 
+      // Create feature_toggles table
+      await this.db.exec(`
+        CREATE TABLE IF NOT EXISTS feature_toggles (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          feature_name TEXT UNIQUE NOT NULL,
+          enabled INTEGER NOT NULL DEFAULT 0,
+          description TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+      `);
+
       // Migra tabela existente se necessário
       await this.migrateBotOrdersTable();
       await this.migrateTrailingStateTable();
       await this.migrateTrailingStateActiveStopColumn();
       await this.migrateBotConfigsBotTypeColumn();
+
+      // Initialize feature toggles
+      await this.initializeFeatureToggles();
 
       Logger.info(`📋 [DATABASE] Tables created successfully`);
     } catch (error) {
@@ -441,6 +457,24 @@ class DatabaseService {
     if (this.db) {
       await this.db.close();
       console.log(`🔒 [DATABASE] Database connection closed`);
+    }
+  }
+
+  /**
+   * Initialize feature toggles with default values
+   */
+  async initializeFeatureToggles() {
+    try {
+      // Initialize FeatureToggleService with this database instance
+      FeatureToggleService.initialize(this);
+
+      // Set up default toggles
+      await FeatureToggleService.initializeDefaultToggles();
+
+      Logger.info('🎛️ [DATABASE] Feature toggles initialized');
+    } catch (error) {
+      Logger.error('❌ [DATABASE] Error initializing feature toggles:', error.message);
+      throw error;
     }
   }
 
