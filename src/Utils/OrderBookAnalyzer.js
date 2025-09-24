@@ -190,7 +190,24 @@ class OrderBookAnalyzer {
 
           const [price, quantity] = bid;
           const bidPrice = parseFloat(price);
-          const isValid = bidPrice <= maxAllowedPrice && bidPrice > 0;
+
+          // 📊 LÓGICA MELHORADA: Determina se é Stop Loss ou Take Profit
+          const isStopLoss = targetPercentage < 0; // Negativo = Stop Loss
+          const isTakeProfit = targetPercentage > 0; // Positivo = Take Profit
+
+          let isValid = false;
+          if (isStopLoss) {
+            // Para Stop Loss SHORT: aceita qualquer preço do book acima do preço atual
+            // O importante é encontrar o mais próximo do target
+            isValid = bidPrice > 0; // Qualquer preço válido do orderbook
+          } else if (isTakeProfit) {
+            // Para Take Profit: mantém a lógica existente com buffer
+            isValid = bidPrice <= maxAllowedPrice && bidPrice > 0;
+          } else {
+            // Fallback: aceita qualquer preço válido
+            isValid = bidPrice > 0;
+          }
+
           const difference = Math.abs(bidPrice - targetPrice);
 
           // Só considera preços válidos (não executarão imediatamente)
@@ -246,13 +263,28 @@ class OrderBookAnalyzer {
 
           const [price, quantity] = ask;
           const askPrice = parseFloat(price);
-          // CORREÇÃO: Para Take Profit, aceita qualquer preço válido no book (não força minAllowedPrice)
-          // O importante é encontrar o preço mais próximo do TARGET, não do bestBid
-          const isValid = askPrice >= minAllowedPrice || askPrice >= targetPrice;
+
+          // 📊 LÓGICA MELHORADA: Determina se é Stop Loss ou Take Profit
+          const isStopLoss = targetPercentage < 0; // Negativo = Stop Loss
+          const isTakeProfit = targetPercentage > 0; // Positivo = Take Profit
+
+          let isValid = false;
+          if (isStopLoss) {
+            // Para Stop Loss LONG: aceita qualquer preço do book abaixo do preço atual
+            // O importante é encontrar o mais próximo do target, não precisa de minAllowedPrice
+            isValid = askPrice > 0; // Qualquer preço válido do orderbook
+          } else if (isTakeProfit) {
+            // Para Take Profit: mantém a lógica existente com buffer
+            isValid = askPrice >= minAllowedPrice || askPrice >= targetPrice;
+          } else {
+            // Fallback: aceita qualquer preço válido
+            isValid = askPrice > 0;
+          }
+
           const difference = Math.abs(askPrice - targetPrice);
 
           Logger.debug(
-            `🔍 [ASK_DEBUG] ${symbol}: askPrice=${askPrice.toFixed(6)}, isValid=${isValid}, diff=${difference.toFixed(6)}`
+            `🔍 [ASK_DEBUG] ${symbol}: askPrice=${askPrice.toFixed(6)}, isValid=${isValid}, diff=${difference.toFixed(6)}, isStopLoss=${isStopLoss}, isTakeProfit=${isTakeProfit}`
           );
 
           if (isValid) {

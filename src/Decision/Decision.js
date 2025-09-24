@@ -94,7 +94,9 @@ class Decision {
           prices: allMarkPrices,
           timestamp: now,
         });
-        Logger.debug(`🔄 Preços atualizados para todos os símbolos (${allMarkPrices.length} itens)`);
+        Logger.debug(
+          `🔄 Preços atualizados para todos os símbolos (${allMarkPrices.length} itens)`
+        );
       }
 
       // Paraleliza a coleta de dados de todos os mercados

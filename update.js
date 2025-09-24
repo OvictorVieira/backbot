@@ -267,7 +267,6 @@ class AutoUpdater {
     }
   }
 
-
   async restoreUserData() {
     console.log('🔄 Restaurando dados do usuário...');
 

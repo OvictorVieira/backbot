@@ -5,6 +5,29 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.8.13] - 2025-09-24
+
+### 🎯 **ENHANCED STOP LOSS FIX: Intelligent Price Finding**
+
+#### 🔧 **Stop Loss Logic Improvements**
+- ✅ **Smart Logic:** Differentiated Stop Loss (negative %) vs Take Profit (positive %) validation
+- ✅ **Flexible Matching:** Stop Loss now accepts any valid orderbook price for better matching
+- ✅ **Target Proximity:** Prioritizes prices closest to target percentage rather than spread constraints
+- ✅ **Enhanced Debugging:** Added Stop Loss/Take Profit type detection in debug logs
+
+#### 📊 **OrderBook Price Finding Enhancement**
+- ✅ **Stop Loss LONG:** Removes restrictive price constraints for ASK-side matching
+- ✅ **Stop Loss SHORT:** Removes restrictive price constraints for BID-side matching
+- ✅ **Take Profit:** Maintains conservative buffer logic to prevent immediate execution
+- ✅ **Graceful Degradation:** Better error reporting when no suitable prices found
+
+#### 🎯 **Fixed Errors**
+- ❌ **ZORA_USDC_PERP:** "OrderBook falhou ao encontrar preço de Stop Loss"
+- ❌ **Stop Loss Orders:** Overly restrictive price validation preventing valid matches
+- ❌ **Price Matching:** Poor proximity logic prioritizing spread over target accuracy
+
+---
+
 ## [1.8.12] - 2025-09-24
 
 ### 🛡️ **CRITICAL ORDERBOOK FIX: Iterator Validation**
