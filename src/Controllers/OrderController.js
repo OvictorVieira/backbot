@@ -17,6 +17,7 @@ import PositionUtils from '../Utils/PositionUtils.js';
 import CacheInvalidator from '../Utils/CacheInvalidator.js';
 import StopLossUtilsModule from '../Utils/PositionUtils.js';
 import QuantityCalculator from '../Utils/QuantityCalculator.js';
+import OrderBookAnalyzer from '../Utils/OrderBookAnalyzer.js';
 
 class OrderController {
   // Instância centralizada do OrdersService
@@ -547,6 +548,13 @@ class OrderController {
             apiSecret,
             strategy: config?.strategyName,
           });
+
+          // Verifica se os dados da conta foram carregados com sucesso
+          if (!Account) {
+            Logger.warn(`⚠️ [WEBSOCKET] Dados da conta indisponíveis para ${position.symbol} - ignorando operação`);
+            continue;
+          }
+
           const marketInfo = Account.markets.find(m => m.symbol === position.symbol);
 
           if (!marketInfo) {
@@ -590,6 +598,13 @@ class OrderController {
         apiSecret,
         strategy: config?.strategyName || 'DEFAULT',
       });
+
+      // Verifica se os dados da conta foram carregados com sucesso
+      if (!Account) {
+        Logger.warn(`⚠️ [${config?.botName || 'BOT'}] Dados da conta indisponíveis para ${market} - ignorando operação`);
+        return;
+      }
+
       const marketInfo = Account.markets.find(m => m.symbol === market);
       if (!marketInfo) {
         Logger.error(`❌ [PRO_MAX] Market info não encontrada para ${market}`);
@@ -715,7 +730,22 @@ class OrderController {
       // Cria ordens de take profit
       for (let i = 0; i < actualTargets; i++) {
         const targetPrice = parseFloat(usedTargets[i]);
-        const takeProfitTriggerPrice = targetPrice;
+
+        // 🎯 INTEGRAÇÃO ORDER BOOK: Ajusta preço TP para evitar execução imediata
+        const adjustedTPPrice = await OrderBookAnalyzer.findClosestOrderBookPrice(
+          market,
+          isLong ? 'SELL' : 'BUY', // Lado da ordem de fechamento
+          targetPrice,
+          1.0 // Max 1% de desvio para TP
+        );
+
+        const finalTPPrice = adjustedTPPrice || targetPrice;
+
+        if (adjustedTPPrice && adjustedTPPrice !== targetPrice) {
+          Logger.debug(`📊 [PRO_MAX] [ORDER_BOOK] TP ${i + 1} ajustado: $${targetPrice.toFixed(6)} → $${adjustedTPPrice.toFixed(6)}`);
+        }
+
+        const takeProfitTriggerPrice = finalTPPrice;
         const qty = quantities[i];
         const orderBody = {
           symbol: market,
@@ -724,10 +754,10 @@ class OrderController {
           postOnly: true,
           reduceOnly: true,
           quantity: formatQuantity(qty),
-          price: formatPrice(targetPrice),
+          price: formatPrice(finalTPPrice), // 🎯 Usa preço ajustado
           takeProfitTriggerBy: 'LastPrice',
-          takeProfitTriggerPrice: formatPrice(takeProfitTriggerPrice),
-          takeProfitLimitPrice: formatPrice(targetPrice),
+          takeProfitTriggerPrice: formatPrice(takeProfitTriggerPrice), // 🎯 Usa preço ajustado
+          takeProfitLimitPrice: formatPrice(finalTPPrice), // 🎯 Usa preço ajustado
           timeInForce: 'GTC',
           selfTradePrevention: 'RejectTaker',
           clientId: await OrderController.generateUniqueOrderId(config),
@@ -830,6 +860,13 @@ class OrderController {
         apiSecret,
         strategy: config?.strategyName || 'DEFAULT',
       });
+
+      // Verifica se os dados da conta foram carregados com sucesso
+      if (!Account) {
+        Logger.warn(`⚠️ [PRO_MAX] Dados da conta indisponíveis para ${position.symbol} - ignorando operação`);
+        return;
+      }
+
       const marketInfo = Account.markets.find(m => m.symbol === position.symbol);
       if (!marketInfo) {
         Logger.error(`❌ [PRO_MAX] Market info não encontrada para ${position.symbol}`);
@@ -959,7 +996,22 @@ class OrderController {
       // Cria ordens de take profit
       for (let i = 0; i < actualTargets; i++) {
         const targetPrice = parseFloat(usedTargets[i]);
-        const takeProfitTriggerPrice = targetPrice;
+
+        // 🎯 INTEGRAÇÃO ORDER BOOK: Ajusta preço TP para evitar execução imediata
+        const adjustedTPPrice = await OrderBookAnalyzer.findClosestOrderBookPrice(
+          position.symbol,
+          isLong ? 'SELL' : 'BUY', // Lado da ordem de fechamento
+          targetPrice,
+          1.0 // Max 1% de desvio para TP
+        );
+
+        const finalTPPrice = adjustedTPPrice || targetPrice;
+
+        if (adjustedTPPrice && adjustedTPPrice !== targetPrice) {
+          Logger.debug(`📊 [PRO_MAX] [ORDER_BOOK] ${position.symbol} TP ${i + 1} ajustado: $${targetPrice.toFixed(6)} → $${adjustedTPPrice.toFixed(6)}`);
+        }
+
+        const takeProfitTriggerPrice = finalTPPrice;
         const qty = quantities[i];
         const orderBody = {
           symbol: position.symbol,
@@ -968,10 +1020,10 @@ class OrderController {
           postOnly: true,
           reduceOnly: true,
           quantity: formatQuantity(qty),
-          price: formatPrice(targetPrice),
+          price: formatPrice(finalTPPrice), // 🎯 Usa preço ajustado
           takeProfitTriggerBy: 'LastPrice',
-          takeProfitTriggerPrice: formatPrice(takeProfitTriggerPrice),
-          takeProfitLimitPrice: formatPrice(targetPrice),
+          takeProfitTriggerPrice: formatPrice(takeProfitTriggerPrice), // 🎯 Usa preço ajustado
+          takeProfitLimitPrice: formatPrice(finalTPPrice), // 🎯 Usa preço ajustado
           timeInForce: 'GTC',
           selfTradePrevention: 'RejectTaker',
           clientId: await OrderController.generateUniqueOrderId(config),
@@ -990,7 +1042,21 @@ class OrderController {
 
       // Cria ordem de stop loss se necessário
       if (stop !== undefined && !isNaN(parseFloat(stop))) {
-        const stopLossTriggerPrice = Number(stop);
+        // 🎯 INTEGRAÇÃO ORDER BOOK: Ajusta preço SL para evitar execução imediata
+        const adjustedSLPrice = await OrderBookAnalyzer.findClosestOrderBookPrice(
+          position.symbol,
+          isLong ? 'SELL' : 'BUY', // Lado da ordem de fechamento
+          stop,
+          1.0 // Max 1% de desvio para SL
+        );
+
+        const finalSLPrice = adjustedSLPrice || stop;
+
+        if (adjustedSLPrice && adjustedSLPrice !== stop) {
+          Logger.debug(`📊 [PRO_MAX] [ORDER_BOOK] ${position.symbol} SL ajustado: $${stop.toFixed(6)} → $${adjustedSLPrice.toFixed(6)}`);
+        }
+
+        const stopLossTriggerPrice = finalSLPrice;
         const stopBody = {
           symbol: position.symbol,
           side: isLong ? 'Ask' : 'Bid',
@@ -998,10 +1064,10 @@ class OrderController {
           postOnly: true,
           reduceOnly: true,
           quantity: formatQuantity(totalQuantity),
-          price: formatPrice(stop),
+          price: formatPrice(finalSLPrice), // 🎯 Usa preço ajustado
           stopLossTriggerBy: 'LastPrice',
-          stopLossTriggerPrice: formatPrice(stopLossTriggerPrice),
-          stopLossLimitPrice: formatPrice(stop),
+          stopLossTriggerPrice: formatPrice(stopLossTriggerPrice), // 🎯 Usa preço ajustado
+          stopLossLimitPrice: formatPrice(finalSLPrice), // 🎯 Usa preço ajustado
           timeInForce: 'GTC',
           selfTradePrevention: 'RejectTaker',
           clientId: await OrderController.generateUniqueOrderId(config),
@@ -1697,6 +1763,13 @@ class OrderController {
 
       // Obtém informações do mercado
       const Account = await AccountController.get(config);
+
+      // Verifica se os dados da conta foram carregados com sucesso
+      if (!Account) {
+        Logger.warn(`⚠️ [${botName}] Dados da conta indisponíveis para ${market} - ignorando operação`);
+        return null;
+      }
+
       const marketInfo = Account.markets.find(m => m.symbol === market);
       const currentPrice = parseFloat(candles[candles.length - 1].close);
 
@@ -1786,6 +1859,7 @@ class OrderController {
     decimal_quantity,
     decimal_price,
     stepSize_quantity,
+    minQuantity,
     botName = 'DEFAULT',
     originalSignalData,
     config = null,
@@ -1804,12 +1878,15 @@ class OrderController {
 
       const entryPrice = parseFloat(entry);
 
+
       // ✅ NOVA ABORDAGEM CENTRALIZADA: QuantityCalculator calcula volume internamente
       const marketInfo = {
         decimal_quantity,
         decimal_price,
         stepSize_quantity: stepSize_quantity || 0,
+        minQuantity: minQuantity,
       };
+
 
       // Se account não foi fornecida, busca dinamicamente
       const configWithSymbol = { ...config, symbol: market };
@@ -1837,7 +1914,7 @@ class OrderController {
       const quantity = quantityResult.quantity;
       const orderValue = quantityResult.orderValue;
       const side = action === 'long' ? 'Bid' : 'Ask';
-      const finalPrice = formatPrice(entryPrice);
+      const finalPrice = parseFloat(entryPrice); // ✅ CORREÇÃO: Mantém como número para poder usar .toFixed()
 
       // Debug dos valores calculados
       Logger.info(`🔍 [DEBUG] ${market}: Valores calculados:`);
@@ -1867,6 +1944,9 @@ class OrderController {
 
       // Ajusta Stop Loss pelo leverage do bot/símbolo
       let leverageAdjustedStopPrice = stopPrice;
+      let actualStopLossPct = Math.abs(Number(config?.maxNegativePnlStopPct ?? 10)); // Default value
+      let actualTakeProfitPct = Math.abs(Number(config?.minProfitPercentage ?? 10)); // Default value
+
       try {
         const Account = await AccountController.get({
           apiKey: config?.apiKey,
@@ -1877,7 +1957,7 @@ class OrderController {
           const rawLeverage = Number(Account.leverage);
           const leverage = validateLeverageForSymbol(market, rawLeverage);
           const baseStopLossPct = Math.abs(Number(config?.maxNegativePnlStopPct ?? 10));
-          const actualStopLossPct = baseStopLossPct / leverage;
+          actualStopLossPct = baseStopLossPct / leverage;
           const isLong = action === 'long';
           const computedLeverageStop = isLong
             ? entryPrice * (1 - actualStopLossPct / 100)
@@ -1900,7 +1980,7 @@ class OrderController {
 
           // 🔧 CORREÇÃO CRÍTICA: Ajusta o Take Profit considerando a alavancagem
           const baseTakeProfitPct = Math.abs(Number(config?.minProfitPercentage ?? 10));
-          const actualTakeProfitPct = baseTakeProfitPct / leverage;
+          actualTakeProfitPct = baseTakeProfitPct / leverage;
 
           const leverageAdjustedTakeProfit = isLong
             ? entryPrice * (1 + actualTakeProfitPct / 100)
@@ -1951,17 +2031,88 @@ class OrderController {
         Logger.info(`   • Take Profit: $${targetPrice.toFixed(6)} (ajustado por alavancagem)`);
       }
 
+      // 🎯 INTEGRAÇÃO ORDER BOOK: Ajusta preços para evitar execução imediata
+      Logger.info(`🔍 [ORDER_BOOK] ${market}: Ajustando preços com base no order book...`);
+
+      // Ajusta preço principal da ordem (busca por preços próximos ao preço final calculado)
+      // Para a entrada, queremos preços muito próximos (0.1% de diferença máxima)
+      const entryPriceRef = finalPrice; // Usar o preço final como referência
+      const entryDeviation = 0.1; // Máximo 0.1% de diferença para entrada
+      // Para bot tradicional: usa preço calculado sem ajuste de OrderBook para entrada
+      // Apenas Stop Loss e Take Profit usam OrderBook para encontrar preços EXATOS
+      const adjustedEntryPrice = finalPrice;
+
+      // Para bot tradicional: usa preço calculado (não precisa verificar null)
+
+      // Ajusta preço de Stop Loss baseado na porcentagem configurada
+      const stopLossPercentage = action === 'long' ? -actualStopLossPct : actualStopLossPct;
+      const adjustedStopLossPrice = await OrderBookAnalyzer.findClosestOrderBookPrice(
+        market,
+        side === 'BUY' ? 'SELL' : 'BUY', // Lado oposto para SL
+        entryPrice, // Usar preço de entrada como referência
+        stopLossPercentage // Usar porcentagem configurada
+      );
+
+      // 🚨 CRÍTICO: Se OrderBook não encontrou preço de Stop Loss, CANCELAR
+      if (adjustedStopLossPrice === null) {
+        Logger.error(`❌ [ORDER_EXECUTION] ${market}: Impossível ajustar Stop Loss via OrderBook - CANCELANDO operação`);
+        return { error: 'OrderBook falhou ao encontrar preço de Stop Loss - operação cancelada por segurança' };
+      }
+
+      // Ajusta preço de Take Profit baseado na porcentagem configurada (apenas se não for trailing stop)
+      let adjustedTakeProfitPrice = targetPrice;
+      if (!enableTrailingStop) {
+        const takeProfitPercentage = action === 'long' ? actualTakeProfitPct : -actualTakeProfitPct;
+
+        // 🔍 DEBUG: Log dos valores sendo passados para Take Profit
+        Logger.info(`🔍 [TP_DEBUG] ${market}: entryPrice=${entryPrice.toFixed(6)}, takeProfitPercentage=${takeProfitPercentage}%, expectedTarget=${(entryPrice * (1 + takeProfitPercentage/100)).toFixed(6)}`);
+
+        adjustedTakeProfitPrice = await OrderBookAnalyzer.findClosestOrderBookPrice(
+          market,
+          action === 'long' ? 'SELL' : 'BUY', // LONG = SELL para TP, SHORT = BUY para TP
+          entryPrice, // Usar preço de entrada como referência
+          takeProfitPercentage // Usar porcentagem configurada
+        );
+
+        Logger.info(`🔍 [TP_DEBUG] ${market}: OrderBook retornou adjustedTakeProfitPrice=${adjustedTakeProfitPrice}`);
+
+        // 🚨 CRÍTICO: Se OrderBook não encontrou preço, CANCELAR operação
+        if (adjustedTakeProfitPrice === null) {
+          Logger.error(`❌ [ORDER_EXECUTION] ${market}: Impossível ajustar Take Profit via OrderBook - CANCELANDO operação`);
+          return { error: 'OrderBook falhou ao encontrar preço de Take Profit - operação cancelada por segurança' };
+        }
+      }
+
+      // Log dos ajustes realizados
+      if (adjustedEntryPrice && adjustedEntryPrice !== finalPrice) {
+        Logger.info(`   📊 [ORDER_BOOK] Preço entrada ajustado: $${finalPrice.toFixed(6)} → $${adjustedEntryPrice.toFixed(6)}`);
+      }
+      if (adjustedStopLossPrice && adjustedStopLossPrice !== leverageAdjustedStopPrice) {
+        Logger.info(`   📊 [ORDER_BOOK] Stop Loss ajustado: $${leverageAdjustedStopPrice.toFixed(6)} → $${adjustedStopLossPrice.toFixed(6)}`);
+      }
+      if (!enableTrailingStop && adjustedTakeProfitPrice && adjustedTakeProfitPrice !== targetPrice) {
+        Logger.info(`   📊 [ORDER_BOOK] Take Profit ajustado: $${targetPrice.toFixed(6)} → $${adjustedTakeProfitPrice.toFixed(6)}`);
+      }
+
+      // Log de debug para identificar problemas
+      Logger.info(`🔍 [ORDER_BOOK_DEBUG] ${market}: adjustedEntryPrice=${adjustedEntryPrice} (type: ${typeof adjustedEntryPrice}), finalPrice=${finalPrice} (type: ${typeof finalPrice})`);
+
+      // Usa preços ajustados ou fallback para os originais
+      const finalEntryPrice = adjustedEntryPrice || finalPrice;
+      const finalStopLossPrice = adjustedStopLossPrice || leverageAdjustedStopPrice;
+      const finalTakeProfitPrice = adjustedTakeProfitPrice || targetPrice;
+
       const body = {
         symbol: market,
         side,
         orderType: 'Limit',
         postOnly: true,
-        quantity,
-        price: finalPrice,
+        quantity: parseFloat(quantity).toFixed(decimal_quantity).toString(), // ✅ CORREÇÃO: Formata quantidade usando decimal_quantity (0 casas decimais para LINEA)
+        price: formatPrice(finalEntryPrice), // ✅ CORREÇÃO: Formata preço com decimal_price (6 casas decimais)
         // Parâmetros de stop loss integrados (sempre criados)
         stopLossTriggerBy: 'LastPrice',
-        stopLossTriggerPrice: formatPrice(leverageAdjustedStopPrice),
-        stopLossLimitPrice: formatPrice(leverageAdjustedStopPrice),
+        stopLossTriggerPrice: formatPrice(finalStopLossPrice), // 🎯 Usa SL ajustado
+        stopLossLimitPrice: formatPrice(finalStopLossPrice), // 🎯 Usa SL ajustado
         timeInForce: 'GTC',
         selfTradePrevention: 'RejectTaker',
         clientId: await OrderController.generateUniqueOrderId(config),
@@ -1970,8 +2121,8 @@ class OrderController {
       // Adiciona parâmetros de take profit APENAS se o Trailing Stop estiver desabilitado
       if (!enableTrailingStop) {
         body.takeProfitTriggerBy = 'LastPrice';
-        body.takeProfitTriggerPrice = formatPrice(targetPrice);
-        body.takeProfitLimitPrice = formatPrice(targetPrice);
+        body.takeProfitTriggerPrice = formatPrice(finalTakeProfitPrice); // 🎯 Usa TP ajustado
+        body.takeProfitLimitPrice = formatPrice(finalTakeProfitPrice); // 🎯 Usa TP ajustado
       }
 
       // 1. Envia ordem LIMIT (post-only)
@@ -2058,7 +2209,7 @@ class OrderController {
       }
 
       // 2. Monitora execução por ORDER_EXECUTION_TIMEOUT_SECONDS
-      const timeoutSec = Number(config?.orderExecutionTimeoutSeconds || 12);
+      const timeoutSec = Number(config?.orderExecutionTimeoutSeconds || 50);
       Logger.info(
         `⏰ [${strategyNameToUse}] ${market}: Monitorando execução por ${timeoutSec} segundos...`
       );
@@ -2104,9 +2255,40 @@ class OrderController {
         Logger.info(
           `✅ [SUCESSO] ${market}: Ordem LIMIT executada normalmente em ${timeoutSec} segundos.`
         );
-        Logger.info(
-          `🛡️ [SUCESSO] ${market}: Ordens de segurança (SL/TP) já configuradas na ordem principal!`
-        );
+
+        // 🛡️ CRÍTICO: Criar ordens de Stop Loss e Take Profit após execução da ordem principal
+        try {
+          Logger.info(`🛡️ [SECURITY] ${market}: Criando ordens de segurança SL/TP...`);
+
+          // ⏱️ Aguarda 10s para API processar a posição
+          Logger.debug(`⏱️ [SECURITY] ${market}: Aguardando 10s para API processar posição...`);
+          await new Promise(resolve => setTimeout(resolve, 10000));
+
+          // Buscar posição atualizada para obter preço real de entrada
+          const Account = await AccountController.get({
+            apiKey: config?.apiKey,
+            apiSecret: config?.apiSecret,
+            strategy: config?.strategyName || 'DEFAULT',
+          });
+
+          if (!Account?.positions) {
+            throw new Error('Não foi possível obter posições atualizadas');
+          }
+
+          const position = Account.positions.find(p => p.symbol === market && Math.abs(Number(p.netQuantity)) > 0);
+          if (!position) {
+            throw new Error('Posição não encontrada após execução');
+          }
+
+          const securityResult = await OrderController.createPositionSafetyOrders(position, config);
+          if (securityResult?.success || securityResult?.partial) {
+            Logger.info(`✅ [SECURITY] ${market}: Ordens de segurança criadas com sucesso!`);
+          } else {
+            Logger.warn(`⚠️ [SECURITY] ${market}: Falha ao criar ordens de segurança: ${securityResult?.error || 'Erro desconhecido'}`);
+          }
+        } catch (securityError) {
+          Logger.warn(`⚠️ [SECURITY] ${market}: Erro ao criar ordens de segurança: ${securityError.message}`);
+        }
 
         return { success: true, type: 'LIMIT', limitResult };
       }
@@ -2409,6 +2591,7 @@ class OrderController {
           decimal_quantity: orderData.decimal_quantity,
           decimal_price: orderData.decimal_price,
           stepSize_quantity: orderData.stepSize_quantity,
+          minQuantity: orderData.minQuantity,
           botName: orderData.botName || 'DEFAULT',
           config: config,
         });
@@ -2426,6 +2609,7 @@ class OrderController {
           decimal_quantity: orderData.decimal_quantity,
           decimal_price: orderData.decimal_price,
           stepSize_quantity: orderData.stepSize_quantity,
+          minQuantity: orderData.minQuantity,
           botName: orderData.botName || 'DEFAULT',
           originalSignalData: orderData.originalSignalData,
           config: config,
@@ -2574,6 +2758,12 @@ class OrderController {
       apiSecret: config.apiSecret,
       strategy: config?.strategyName || 'DEFAULT',
     });
+
+    // Verifica se os dados da conta foram carregados com sucesso
+    if (!Account) {
+      throw new Error('Dados da conta indisponíveis - não é possível criar stop loss');
+    }
+
     const find = Account.markets.find(el => el.symbol === symbol);
 
     if (!find) throw new Error(`Symbol ${symbol} not found in account data`);
@@ -2586,7 +2776,21 @@ class OrderController {
 
     price = Math.abs(price);
 
-    const triggerPrice = isLong ? price - tickSize : price + tickSize;
+    // 🎯 INTEGRAÇÃO ORDER BOOK: Ajusta preço para evitar execução imediata
+    const adjustedPrice = await OrderBookAnalyzer.findClosestOrderBookPrice(
+      symbol,
+      isLong ? 'SELL' : 'BUY', // Lado da ordem de fechamento
+      price,
+      1.0 // Max 1% de desvio
+    );
+
+    const finalPrice = adjustedPrice || price;
+
+    if (adjustedPrice && adjustedPrice !== price) {
+      Logger.debug(`📊 [STOP_TS] [ORDER_BOOK] ${symbol} ajustado: $${price.toFixed(6)} → $${adjustedPrice.toFixed(6)}`);
+    }
+
+    const triggerPrice = isLong ? finalPrice - tickSize : finalPrice + tickSize;
     const formatPrice = value => parseFloat(value).toFixed(decimal_price).toString();
     const formatQuantity = value => {
       if (value <= 0) {
@@ -2606,9 +2810,9 @@ class OrderController {
       postOnly: true,
       timeInForce: 'GTC',
       selfTradePrevention: 'RejectTaker',
-      price: formatPrice(price),
+      price: formatPrice(finalPrice), // 🎯 Usa preço ajustado
       triggerBy: 'LastPrice',
-      triggerPrice: formatPrice(triggerPrice),
+      triggerPrice: formatPrice(triggerPrice), // 🎯 Usa trigger ajustado
       triggerQuantity: formatQuantity(quantity),
       clientId: await OrderController.generateUniqueOrderId(config),
     };

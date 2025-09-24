@@ -71,3 +71,34 @@ import OrderController from './src/Controllers/OrderController.js';
 ```
 
 **ESTA REGRA É INVIOLÁVEL - SEMPRE IMPORTE NO TOPO DO ARQUIVO!**
+
+# 🚨 REGRA CRÍTICA SOBRE FALLBACKS - MERCADO FINANCEIRO
+
+## ❌ NUNCA USE FALLBACKS SEM AUTORIZAÇÃO EXPLÍCITA
+
+### REGRAS OBRIGATÓRIAS:
+1. **Fallbacks só para fluxos NÃO-CRÍTICOS** - Apenas quando explicitamente solicitado
+2. **Para operações financeiras**: Sempre encontrar valor EXATO no order book
+3. **Se há target abaixo E acima**: Sempre escolher o ABAIXO (mais próximo/conservador)
+4. **Order book é ENORME**: Sempre tem valores disponíveis - se não encontrar, há bug no código
+5. **Em caso de dúvida**: CANCELAR operação - NUNCA enviar posições duvidosas
+
+### ✅ COMPORTAMENTO CORRETO:
+```javascript
+// Para Take Profit - buscar preço mais próximo da porcentagem definida
+if (targetPrice encontrado no book) {
+  return preçoMaisProximoDaPercentagem;
+} else {
+  throw new Error("Impossível encontrar preço no order book - cancelando operação");
+}
+```
+
+### ❌ COMPORTAMENTO PROIBIDO:
+```javascript
+// NUNCA FAÇA ISSO - fallback arriscado
+if (!found) {
+  return targetPrice; // ❌ Fallback perigoso!
+}
+```
+
+**LEMBRE-SE**: Mercado financeiro = perdas reais. Prefira cancelar a arriscar!

@@ -576,6 +576,60 @@ class HFTController {
   }
 
   /**
+   * Atualiza configuração de um bot HFT sem alterar seu status
+   * @param {number} botId - ID do bot
+   * @param {object} newConfig - Nova configuração
+   * @returns {object} - Resultado da atualização
+   */
+  async updateHFTBotConfig(botId, newConfig) {
+    try {
+      Logger.info(`🔧 [HFT_CONTROLLER] Atualizando configuração do bot HFT ${botId}`);
+
+      // 1. Busca o status atual do bot ANTES da atualização
+      const currentBot = await ConfigManagerSQLite.getBotConfigById(botId);
+      if (!currentBot) {
+        throw new Error(`Bot com ID ${botId} não encontrado`);
+      }
+
+      const currentStatus = currentBot.status;
+      Logger.info(`🔍 [HFT_CONTROLLER] Status atual do bot ${botId}: ${currentStatus}`);
+
+      // 2. Remove o campo 'status' da nova configuração para não sobrescrever
+      const configToUpdate = { ...newConfig };
+      delete configToUpdate.status;
+
+      // 3. Atualiza a configuração no banco SEM alterar o status
+      const result = await ConfigManagerSQLite.updateBotConfig(botId, configToUpdate);
+
+      // 4. EXPLICITAMENTE preserva o status atual
+      await ConfigManagerSQLite.updateBotStatusById(botId, currentStatus);
+      Logger.info(`✅ [HFT_CONTROLLER] Status preservado: ${currentStatus}`);
+
+      // 5. Se o bot está rodando, recria a instância com nova config
+      if (this.activeHFTBots.has(botId) && (currentStatus === 'running' || currentStatus === 'active')) {
+        Logger.info(`🔄 [HFT_CONTROLLER] Reiniciando bot ativo ${botId} com nova configuração`);
+
+        // Para o bot atual
+        await this.stopHFTBot(botId);
+
+        // Busca a nova configuração e reinicia
+        const updatedBot = await ConfigManagerSQLite.getBotConfigById(botId);
+        await this.startHFTBot(updatedBot);
+      }
+
+      return {
+        success: true,
+        message: `Configuração do bot ${botId} atualizada com sucesso`,
+        preservedStatus: currentStatus,
+        data: result,
+      };
+    } catch (error) {
+      Logger.error(`❌ [HFT_CONTROLLER] Erro ao atualizar configuração do bot ${botId}:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
    * Força parada de emergência de todos os bots HFT
    */
   async emergencyStop() {

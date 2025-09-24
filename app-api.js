@@ -45,6 +45,7 @@ import Order from './src/Backpack/Authenticated/Order.js';
 import AccountController from './src/Controllers/AccountController.js';
 import CachedOrdersService from './src/Utils/CachedOrdersService.js';
 import HFTController from './src/Controllers/HFTController.js';
+import FeatureToggleService from './src/Services/FeatureToggleService.js';
 
 // Instância global do HFTController
 const hftController = new HFTController();
@@ -2295,11 +2296,22 @@ app.post('/api/configs', async (req, res) => {
           });
         } else {
           // Se não está rodando, atualiza normalmente
-          await ConfigManagerSQLite.updateBotConfigById(botConfig.id, botConfig);
+          // Preserva o status atual
+          const currentConfig = await ConfigManagerSQLite.getBotConfigById(botConfig.id);
+          const currentStatus = currentConfig ? currentConfig.status : 'stopped';
+
+          // Remove o status do config enviado para não sobrescrever
+          const configToUpdate = { ...botConfig };
+          delete configToUpdate.status;
+
+          await ConfigManagerSQLite.updateBotConfigById(botConfig.id, configToUpdate);
+
+          // Explicitamente preserva o status atual
+          await ConfigManagerSQLite.updateBotStatusById(botConfig.id, currentStatus);
 
           res.json({
             success: true,
-            message: `Bot ${botConfig.id} atualizado com sucesso`,
+            message: `Bot ${botConfig.id} atualizado com sucesso (status preservado: ${currentStatus})`,
             botId: botConfig.id,
             wasRunning: false,
           });
@@ -2370,11 +2382,22 @@ app.post('/api/configs', async (req, res) => {
           });
         } else {
           // Se não está rodando, atualiza normalmente
-          await ConfigManagerSQLite.updateBotConfigById(botConfig.id, botConfig);
+          // Preserva o status atual
+          const currentConfig = await ConfigManagerSQLite.getBotConfigById(botConfig.id);
+          const currentStatus = currentConfig ? currentConfig.status : 'stopped';
+
+          // Remove o status do config enviado para não sobrescrever
+          const configToUpdate = { ...botConfig };
+          delete configToUpdate.status;
+
+          await ConfigManagerSQLite.updateBotConfigById(botConfig.id, configToUpdate);
+
+          // Explicitamente preserva o status atual
+          await ConfigManagerSQLite.updateBotStatusById(botConfig.id, currentStatus);
 
           res.json({
             success: true,
-            message: `Bot ${botConfig.id} atualizado com sucesso`,
+            message: `Bot ${botConfig.id} atualizado com sucesso (status preservado: ${currentStatus})`,
             botId: botConfig.id,
             wasRunning: false,
           });
@@ -2442,11 +2465,22 @@ app.post('/api/configs', async (req, res) => {
           });
         } else {
           // Se não está rodando, atualiza normalmente
-          await ConfigManagerSQLite.updateBotConfigById(config.id, config);
+          // Preserva o status atual
+          const currentConfigLegacy = await ConfigManagerSQLite.getBotConfigById(config.id);
+          const currentStatusLegacy = currentConfigLegacy ? currentConfigLegacy.status : 'stopped';
+
+          // Remove o status do config enviado para não sobrescrever
+          const configToUpdateLegacy = { ...config };
+          delete configToUpdateLegacy.status;
+
+          await ConfigManagerSQLite.updateBotConfigById(config.id, configToUpdateLegacy);
+
+          // Explicitamente preserva o status atual
+          await ConfigManagerSQLite.updateBotStatusById(config.id, currentStatusLegacy);
 
           res.json({
             success: true,
-            message: `Bot ${config.id} atualizado com sucesso`,
+            message: `Bot ${config.id} atualizado com sucesso (status preservado: ${currentStatusLegacy})`,
             botId: config.id,
             wasRunning: false,
           });

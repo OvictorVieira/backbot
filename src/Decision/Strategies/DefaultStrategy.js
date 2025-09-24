@@ -401,6 +401,7 @@ export class DefaultStrategy extends BaseStrategy {
         decimal_quantity: data.market.decimal_quantity,
         decimal_price: data.market.decimal_price,
         stepSize_quantity: data.market.stepSize_quantity,
+        minQuantity: data.market.minQuantity, // ✅ CORREÇÃO: Inclui minQuantity na resposta
         botName: data.botName || 'DEFAULT',
         originalSignalData: { signals, moneyFlowValidation, vwapValidation, btcTrend, data },
       };
@@ -1319,14 +1320,29 @@ export class DefaultStrategy extends BaseStrategy {
   validateMoneyFlowConfirmation(data, isLong, options = {}) {
     const { isBTCAnalysis = false, config = {} } = options;
 
+    // 🔍 DEBUG: Log do valor da configuração
+    Logger.debug(`🔍 [MF_DEBUG] ${data.market.symbol}: enableMoneyFlowFilter = ${config.enableMoneyFlowFilter} (type: ${typeof config.enableMoneyFlowFilter})`);
+
     // Se Money Flow está desabilitado, pula validação
-    if (config.enableMoneyFlowFilter === false) {
+    // CORREÇÃO: Verifica explicitamente se está desabilitado (false, 0, "false", null, undefined)
+    const isMoneyFlowDisabled = config.enableMoneyFlowFilter === false ||
+                               config.enableMoneyFlowFilter === 0 ||
+                               config.enableMoneyFlowFilter === "false" ||
+                               config.enableMoneyFlowFilter === null ||
+                               config.enableMoneyFlowFilter === undefined;
+
+    Logger.debug(`🔍 [MF_DEBUG] ${data.market.symbol}: isMoneyFlowDisabled = ${isMoneyFlowDisabled}`);
+
+    if (isMoneyFlowDisabled) {
+      Logger.debug(`🔍 [MF_DEBUG] ${data.market.symbol}: Money Flow DESABILITADO - pulando validação`);
       return {
         isValid: true,
         reason: 'Money Flow Filter desabilitado',
         details: 'Validação pulada pela configuração do bot',
       };
     }
+
+    Logger.debug(`🔍 [MF_DEBUG] ${data.market.symbol}: Money Flow HABILITADO - continuando com validação`);
 
     const moneyFlow = data.moneyFlow;
 

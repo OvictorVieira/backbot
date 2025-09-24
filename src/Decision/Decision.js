@@ -496,6 +496,12 @@ class Decision {
 
       const investmentUSD = RiskManager.calculateInvestmentAmount(Account.capitalAvailable, config);
 
+      // Verificação adicional: se investmentUSD é 0, significa que há problema com os dados
+      if (investmentUSD <= 0) {
+        Logger.warn(`⚠️ Investment calculado como zero ou inválido: $${investmentUSD} - operação será ignorada`);
+        return;
+      }
+
       Logger.debug(
         `💰 Capital: ${config?.capitalPercentage || 'padrão'}%, Valor calculado: $${investmentUSD.toFixed(2)}`
       );
@@ -712,6 +718,7 @@ class Decision {
                 decimal_quantity: marketInfo.decimal_quantity,
                 decimal_price: marketInfo.decimal_price,
                 stepSize_quantity: marketInfo.stepSize_quantity,
+                minQuantity: marketInfo.minQuantity,
                 orderNumber: order.orderNumber,
                 weight: order.weight,
                 // Mantém dados da estratégia para compatibilidade
