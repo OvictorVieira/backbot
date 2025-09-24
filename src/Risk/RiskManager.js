@@ -19,8 +19,15 @@ export class RiskManager {
   static calculateInvestmentAmount(capitalAvailable, config = {}) {
     try {
       // Validação crítica: capitalAvailable deve ser um número válido
-      if (!capitalAvailable || typeof capitalAvailable !== 'number' || isNaN(capitalAvailable) || capitalAvailable <= 0) {
-        Logger.error(`❌ [RISK] capitalAvailable inválido: ${capitalAvailable} - operação será ignorada`);
+      if (
+        !capitalAvailable ||
+        typeof capitalAvailable !== 'number' ||
+        isNaN(capitalAvailable) ||
+        capitalAvailable <= 0
+      ) {
+        Logger.error(
+          `❌ [RISK] capitalAvailable inválido: ${capitalAvailable} - operação será ignorada`
+        );
         return 0;
       }
 

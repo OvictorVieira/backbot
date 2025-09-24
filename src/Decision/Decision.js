@@ -498,7 +498,9 @@ class Decision {
 
       // Verificação adicional: se investmentUSD é 0, significa que há problema com os dados
       if (investmentUSD <= 0) {
-        Logger.warn(`⚠️ Investment calculado como zero ou inválido: $${investmentUSD} - operação será ignorada`);
+        Logger.warn(
+          `⚠️ Investment calculado como zero ou inválido: $${investmentUSD} - operação será ignorada`
+        );
         return;
       }
 

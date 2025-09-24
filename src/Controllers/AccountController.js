@@ -221,7 +221,7 @@ class AccountController {
             'el.filters.quantity.minQuantity': el.filters?.quantity?.minQuantity,
             'stepSize fallback': Number(el.filters.quantity.stepSize),
             'final minQuantity': marketObj.minQuantity,
-            'marketObj complete': marketObj
+            'marketObj complete': marketObj,
           });
         }
 
@@ -233,8 +233,14 @@ class AccountController {
 
     // 🔍 DEBUG: Verificar valores do Collateral
     Logger.debug(`🔍 [ACCOUNT_DEBUG] Collateral object:`, Collateral);
-    Logger.debug(`🔍 [ACCOUNT_DEBUG] Collateral.netEquityAvailable raw:`, Collateral.netEquityAvailable);
-    Logger.debug(`🔍 [ACCOUNT_DEBUG] typeof Collateral.netEquityAvailable:`, typeof Collateral.netEquityAvailable);
+    Logger.debug(
+      `🔍 [ACCOUNT_DEBUG] Collateral.netEquityAvailable raw:`,
+      Collateral.netEquityAvailable
+    );
+    Logger.debug(
+      `🔍 [ACCOUNT_DEBUG] typeof Collateral.netEquityAvailable:`,
+      typeof Collateral.netEquityAvailable
+    );
 
     const netEquityAvailable = parseFloat(Collateral.netEquityAvailable);
     Logger.debug(`🔍 [ACCOUNT_DEBUG] netEquityAvailable after parseFloat:`, netEquityAvailable);
@@ -342,7 +348,7 @@ class AccountController {
             'el.filters.quantity.minQuantity': el.filters?.quantity?.minQuantity,
             'stepSize fallback': Number(el.filters.quantity.stepSize),
             'final minQuantity': marketObj.minQuantity,
-            'marketObj complete': marketObj
+            'marketObj complete': marketObj,
           });
         }
 

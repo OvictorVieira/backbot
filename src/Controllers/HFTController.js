@@ -606,7 +606,10 @@ class HFTController {
       Logger.info(`✅ [HFT_CONTROLLER] Status preservado: ${currentStatus}`);
 
       // 5. Se o bot está rodando, recria a instância com nova config
-      if (this.activeHFTBots.has(botId) && (currentStatus === 'running' || currentStatus === 'active')) {
+      if (
+        this.activeHFTBots.has(botId) &&
+        (currentStatus === 'running' || currentStatus === 'active')
+      ) {
         Logger.info(`🔄 [HFT_CONTROLLER] Reiniciando bot ativo ${botId} com nova configuração`);
 
         // Para o bot atual
@@ -624,7 +627,10 @@ class HFTController {
         data: result,
       };
     } catch (error) {
-      Logger.error(`❌ [HFT_CONTROLLER] Erro ao atualizar configuração do bot ${botId}:`, error.message);
+      Logger.error(
+        `❌ [HFT_CONTROLLER] Erro ao atualizar configuração do bot ${botId}:`,
+        error.message
+      );
       throw error;
     }
   }

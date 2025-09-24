@@ -551,7 +551,9 @@ class OrderController {
 
           // Verifica se os dados da conta foram carregados com sucesso
           if (!Account) {
-            Logger.warn(`⚠️ [WEBSOCKET] Dados da conta indisponíveis para ${position.symbol} - ignorando operação`);
+            Logger.warn(
+              `⚠️ [WEBSOCKET] Dados da conta indisponíveis para ${position.symbol} - ignorando operação`
+            );
             continue;
           }
 
@@ -601,7 +603,9 @@ class OrderController {
 
       // Verifica se os dados da conta foram carregados com sucesso
       if (!Account) {
-        Logger.warn(`⚠️ [${config?.botName || 'BOT'}] Dados da conta indisponíveis para ${market} - ignorando operação`);
+        Logger.warn(
+          `⚠️ [${config?.botName || 'BOT'}] Dados da conta indisponíveis para ${market} - ignorando operação`
+        );
         return;
       }
 
@@ -742,7 +746,9 @@ class OrderController {
         const finalTPPrice = adjustedTPPrice || targetPrice;
 
         if (adjustedTPPrice && adjustedTPPrice !== targetPrice) {
-          Logger.debug(`📊 [PRO_MAX] [ORDER_BOOK] TP ${i + 1} ajustado: $${targetPrice.toFixed(6)} → $${adjustedTPPrice.toFixed(6)}`);
+          Logger.debug(
+            `📊 [PRO_MAX] [ORDER_BOOK] TP ${i + 1} ajustado: $${targetPrice.toFixed(6)} → $${adjustedTPPrice.toFixed(6)}`
+          );
         }
 
         const takeProfitTriggerPrice = finalTPPrice;
@@ -863,7 +869,9 @@ class OrderController {
 
       // Verifica se os dados da conta foram carregados com sucesso
       if (!Account) {
-        Logger.warn(`⚠️ [PRO_MAX] Dados da conta indisponíveis para ${position.symbol} - ignorando operação`);
+        Logger.warn(
+          `⚠️ [PRO_MAX] Dados da conta indisponíveis para ${position.symbol} - ignorando operação`
+        );
         return;
       }
 
@@ -1008,7 +1016,9 @@ class OrderController {
         const finalTPPrice = adjustedTPPrice || targetPrice;
 
         if (adjustedTPPrice && adjustedTPPrice !== targetPrice) {
-          Logger.debug(`📊 [PRO_MAX] [ORDER_BOOK] ${position.symbol} TP ${i + 1} ajustado: $${targetPrice.toFixed(6)} → $${adjustedTPPrice.toFixed(6)}`);
+          Logger.debug(
+            `📊 [PRO_MAX] [ORDER_BOOK] ${position.symbol} TP ${i + 1} ajustado: $${targetPrice.toFixed(6)} → $${adjustedTPPrice.toFixed(6)}`
+          );
         }
 
         const takeProfitTriggerPrice = finalTPPrice;
@@ -1053,7 +1063,9 @@ class OrderController {
         const finalSLPrice = adjustedSLPrice || stop;
 
         if (adjustedSLPrice && adjustedSLPrice !== stop) {
-          Logger.debug(`📊 [PRO_MAX] [ORDER_BOOK] ${position.symbol} SL ajustado: $${stop.toFixed(6)} → $${adjustedSLPrice.toFixed(6)}`);
+          Logger.debug(
+            `📊 [PRO_MAX] [ORDER_BOOK] ${position.symbol} SL ajustado: $${stop.toFixed(6)} → $${adjustedSLPrice.toFixed(6)}`
+          );
         }
 
         const stopLossTriggerPrice = finalSLPrice;
@@ -1766,7 +1778,9 @@ class OrderController {
 
       // Verifica se os dados da conta foram carregados com sucesso
       if (!Account) {
-        Logger.warn(`⚠️ [${botName}] Dados da conta indisponíveis para ${market} - ignorando operação`);
+        Logger.warn(
+          `⚠️ [${botName}] Dados da conta indisponíveis para ${market} - ignorando operação`
+        );
         return null;
       }
 
@@ -1878,7 +1892,6 @@ class OrderController {
 
       const entryPrice = parseFloat(entry);
 
-
       // ✅ NOVA ABORDAGEM CENTRALIZADA: QuantityCalculator calcula volume internamente
       const marketInfo = {
         decimal_quantity,
@@ -1886,7 +1899,6 @@ class OrderController {
         stepSize_quantity: stepSize_quantity || 0,
         minQuantity: minQuantity,
       };
-
 
       // Se account não foi fornecida, busca dinamicamente
       const configWithSymbol = { ...config, symbol: market };
@@ -2055,8 +2067,13 @@ class OrderController {
 
       // 🚨 CRÍTICO: Se OrderBook não encontrou preço de Stop Loss, CANCELAR
       if (adjustedStopLossPrice === null) {
-        Logger.error(`❌ [ORDER_EXECUTION] ${market}: Impossível ajustar Stop Loss via OrderBook - CANCELANDO operação`);
-        return { error: 'OrderBook falhou ao encontrar preço de Stop Loss - operação cancelada por segurança' };
+        Logger.error(
+          `❌ [ORDER_EXECUTION] ${market}: Impossível ajustar Stop Loss via OrderBook - CANCELANDO operação`
+        );
+        return {
+          error:
+            'OrderBook falhou ao encontrar preço de Stop Loss - operação cancelada por segurança',
+        };
       }
 
       // Ajusta preço de Take Profit baseado na porcentagem configurada (apenas se não for trailing stop)
@@ -2065,7 +2082,9 @@ class OrderController {
         const takeProfitPercentage = action === 'long' ? actualTakeProfitPct : -actualTakeProfitPct;
 
         // 🔍 DEBUG: Log dos valores sendo passados para Take Profit
-        Logger.info(`🔍 [TP_DEBUG] ${market}: entryPrice=${entryPrice.toFixed(6)}, takeProfitPercentage=${takeProfitPercentage}%, expectedTarget=${(entryPrice * (1 + takeProfitPercentage/100)).toFixed(6)}`);
+        Logger.info(
+          `🔍 [TP_DEBUG] ${market}: entryPrice=${entryPrice.toFixed(6)}, takeProfitPercentage=${takeProfitPercentage}%, expectedTarget=${(entryPrice * (1 + takeProfitPercentage / 100)).toFixed(6)}`
+        );
 
         adjustedTakeProfitPrice = await OrderBookAnalyzer.findClosestOrderBookPrice(
           market,
@@ -2074,28 +2093,47 @@ class OrderController {
           takeProfitPercentage // Usar porcentagem configurada
         );
 
-        Logger.info(`🔍 [TP_DEBUG] ${market}: OrderBook retornou adjustedTakeProfitPrice=${adjustedTakeProfitPrice}`);
+        Logger.info(
+          `🔍 [TP_DEBUG] ${market}: OrderBook retornou adjustedTakeProfitPrice=${adjustedTakeProfitPrice}`
+        );
 
         // 🚨 CRÍTICO: Se OrderBook não encontrou preço, CANCELAR operação
         if (adjustedTakeProfitPrice === null) {
-          Logger.error(`❌ [ORDER_EXECUTION] ${market}: Impossível ajustar Take Profit via OrderBook - CANCELANDO operação`);
-          return { error: 'OrderBook falhou ao encontrar preço de Take Profit - operação cancelada por segurança' };
+          Logger.error(
+            `❌ [ORDER_EXECUTION] ${market}: Impossível ajustar Take Profit via OrderBook - CANCELANDO operação`
+          );
+          return {
+            error:
+              'OrderBook falhou ao encontrar preço de Take Profit - operação cancelada por segurança',
+          };
         }
       }
 
       // Log dos ajustes realizados
       if (adjustedEntryPrice && adjustedEntryPrice !== finalPrice) {
-        Logger.info(`   📊 [ORDER_BOOK] Preço entrada ajustado: $${finalPrice.toFixed(6)} → $${adjustedEntryPrice.toFixed(6)}`);
+        Logger.info(
+          `   📊 [ORDER_BOOK] Preço entrada ajustado: $${finalPrice.toFixed(6)} → $${adjustedEntryPrice.toFixed(6)}`
+        );
       }
       if (adjustedStopLossPrice && adjustedStopLossPrice !== leverageAdjustedStopPrice) {
-        Logger.info(`   📊 [ORDER_BOOK] Stop Loss ajustado: $${leverageAdjustedStopPrice.toFixed(6)} → $${adjustedStopLossPrice.toFixed(6)}`);
+        Logger.info(
+          `   📊 [ORDER_BOOK] Stop Loss ajustado: $${leverageAdjustedStopPrice.toFixed(6)} → $${adjustedStopLossPrice.toFixed(6)}`
+        );
       }
-      if (!enableTrailingStop && adjustedTakeProfitPrice && adjustedTakeProfitPrice !== targetPrice) {
-        Logger.info(`   📊 [ORDER_BOOK] Take Profit ajustado: $${targetPrice.toFixed(6)} → $${adjustedTakeProfitPrice.toFixed(6)}`);
+      if (
+        !enableTrailingStop &&
+        adjustedTakeProfitPrice &&
+        adjustedTakeProfitPrice !== targetPrice
+      ) {
+        Logger.info(
+          `   📊 [ORDER_BOOK] Take Profit ajustado: $${targetPrice.toFixed(6)} → $${adjustedTakeProfitPrice.toFixed(6)}`
+        );
       }
 
       // Log de debug para identificar problemas
-      Logger.info(`🔍 [ORDER_BOOK_DEBUG] ${market}: adjustedEntryPrice=${adjustedEntryPrice} (type: ${typeof adjustedEntryPrice}), finalPrice=${finalPrice} (type: ${typeof finalPrice})`);
+      Logger.info(
+        `🔍 [ORDER_BOOK_DEBUG] ${market}: adjustedEntryPrice=${adjustedEntryPrice} (type: ${typeof adjustedEntryPrice}), finalPrice=${finalPrice} (type: ${typeof finalPrice})`
+      );
 
       // Usa preços ajustados ou fallback para os originais
       const finalEntryPrice = adjustedEntryPrice || finalPrice;
@@ -2275,7 +2313,9 @@ class OrderController {
             throw new Error('Não foi possível obter posições atualizadas');
           }
 
-          const position = Account.positions.find(p => p.symbol === market && Math.abs(Number(p.netQuantity)) > 0);
+          const position = Account.positions.find(
+            p => p.symbol === market && Math.abs(Number(p.netQuantity)) > 0
+          );
           if (!position) {
             throw new Error('Posição não encontrada após execução');
           }
@@ -2284,10 +2324,14 @@ class OrderController {
           if (securityResult?.success || securityResult?.partial) {
             Logger.info(`✅ [SECURITY] ${market}: Ordens de segurança criadas com sucesso!`);
           } else {
-            Logger.warn(`⚠️ [SECURITY] ${market}: Falha ao criar ordens de segurança: ${securityResult?.error || 'Erro desconhecido'}`);
+            Logger.warn(
+              `⚠️ [SECURITY] ${market}: Falha ao criar ordens de segurança: ${securityResult?.error || 'Erro desconhecido'}`
+            );
           }
         } catch (securityError) {
-          Logger.warn(`⚠️ [SECURITY] ${market}: Erro ao criar ordens de segurança: ${securityError.message}`);
+          Logger.warn(
+            `⚠️ [SECURITY] ${market}: Erro ao criar ordens de segurança: ${securityError.message}`
+          );
         }
 
         return { success: true, type: 'LIMIT', limitResult };
@@ -2787,7 +2831,9 @@ class OrderController {
     const finalPrice = adjustedPrice || price;
 
     if (adjustedPrice && adjustedPrice !== price) {
-      Logger.debug(`📊 [STOP_TS] [ORDER_BOOK] ${symbol} ajustado: $${price.toFixed(6)} → $${adjustedPrice.toFixed(6)}`);
+      Logger.debug(
+        `📊 [STOP_TS] [ORDER_BOOK] ${symbol} ajustado: $${price.toFixed(6)} → $${adjustedPrice.toFixed(6)}`
+      );
     }
 
     const triggerPrice = isLong ? finalPrice - tickSize : finalPrice + tickSize;

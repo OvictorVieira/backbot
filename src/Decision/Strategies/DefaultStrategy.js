@@ -1321,20 +1321,27 @@ export class DefaultStrategy extends BaseStrategy {
     const { isBTCAnalysis = false, config = {} } = options;
 
     // 🔍 DEBUG: Log do valor da configuração
-    Logger.debug(`🔍 [MF_DEBUG] ${data.market.symbol}: enableMoneyFlowFilter = ${config.enableMoneyFlowFilter} (type: ${typeof config.enableMoneyFlowFilter})`);
+    Logger.debug(
+      `🔍 [MF_DEBUG] ${data.market.symbol}: enableMoneyFlowFilter = ${config.enableMoneyFlowFilter} (type: ${typeof config.enableMoneyFlowFilter})`
+    );
 
     // Se Money Flow está desabilitado, pula validação
     // CORREÇÃO: Verifica explicitamente se está desabilitado (false, 0, "false", null, undefined)
-    const isMoneyFlowDisabled = config.enableMoneyFlowFilter === false ||
-                               config.enableMoneyFlowFilter === 0 ||
-                               config.enableMoneyFlowFilter === "false" ||
-                               config.enableMoneyFlowFilter === null ||
-                               config.enableMoneyFlowFilter === undefined;
+    const isMoneyFlowDisabled =
+      config.enableMoneyFlowFilter === false ||
+      config.enableMoneyFlowFilter === 0 ||
+      config.enableMoneyFlowFilter === 'false' ||
+      config.enableMoneyFlowFilter === null ||
+      config.enableMoneyFlowFilter === undefined;
 
-    Logger.debug(`🔍 [MF_DEBUG] ${data.market.symbol}: isMoneyFlowDisabled = ${isMoneyFlowDisabled}`);
+    Logger.debug(
+      `🔍 [MF_DEBUG] ${data.market.symbol}: isMoneyFlowDisabled = ${isMoneyFlowDisabled}`
+    );
 
     if (isMoneyFlowDisabled) {
-      Logger.debug(`🔍 [MF_DEBUG] ${data.market.symbol}: Money Flow DESABILITADO - pulando validação`);
+      Logger.debug(
+        `🔍 [MF_DEBUG] ${data.market.symbol}: Money Flow DESABILITADO - pulando validação`
+      );
       return {
         isValid: true,
         reason: 'Money Flow Filter desabilitado',
@@ -1342,7 +1349,9 @@ export class DefaultStrategy extends BaseStrategy {
       };
     }
 
-    Logger.debug(`🔍 [MF_DEBUG] ${data.market.symbol}: Money Flow HABILITADO - continuando com validação`);
+    Logger.debug(
+      `🔍 [MF_DEBUG] ${data.market.symbol}: Money Flow HABILITADO - continuando com validação`
+    );
 
     const moneyFlow = data.moneyFlow;
 

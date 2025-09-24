@@ -157,7 +157,9 @@ class QuantityCalculator {
       }
 
       // Log do cálculo de quantidade
-      Logger.debug(`[QUANTITY_CALC] ${market} - Volume: $${volumeUSD.toFixed(2)}, Price: $${entryPrice.toFixed(6)}, StepSize: ${stepSize}`);
+      Logger.debug(
+        `[QUANTITY_CALC] ${market} - Volume: $${volumeUSD.toFixed(2)}, Price: $${entryPrice.toFixed(6)}, StepSize: ${stepSize}`
+      );
 
       // Cálculo principal: Volume USD / Preço = Quantidade
       const rawQuantity = volumeUSD / entryPrice;
@@ -184,7 +186,9 @@ class QuantityCalculator {
         // Se o stepSize zeraria a quantidade e temos minQuantity, usa a minQuantity
         if (stepAdjusted <= 0 && marketInfo?.minQuantity) {
           adjustedQuantity = parseFloat(marketInfo.minQuantity);
-          Logger.warn(`⚠️ [QUANTITY_CALC] ${market}: stepSize zeraria quantidade, mantendo minQuantity ${adjustedQuantity}`);
+          Logger.warn(
+            `⚠️ [QUANTITY_CALC] ${market}: stepSize zeraria quantidade, mantendo minQuantity ${adjustedQuantity}`
+          );
         } else {
           adjustedQuantity = stepAdjusted;
         }
@@ -216,7 +220,9 @@ class QuantityCalculator {
       // Calcula valor real da ordem (pode diferir ligeiramente devido ao arredondamento)
       const actualOrderValue = finalQuantity * entryPrice;
 
-      Logger.debug(`[QUANTITY_CALC] ${market}: Final quantity: ${finalQuantity}, Value: $${actualOrderValue.toFixed(2)}`);
+      Logger.debug(
+        `[QUANTITY_CALC] ${market}: Final quantity: ${finalQuantity}, Value: $${actualOrderValue.toFixed(2)}`
+      );
 
       // Log detalhado do cálculo
       Logger.debug(

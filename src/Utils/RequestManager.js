@@ -241,7 +241,9 @@ class RequestManager {
    * @returns {Promise} - Promise que resolve com o resultado da request
    */
   async enqueue(requestFunction, description = 'API Request', priority = 'MEDIUM', options = {}) {
-    Logger.debug(`🔍 [REQUEST_MANAGER_DEBUG] enqueue called for: ${description}, priority: ${priority}`);
+    Logger.debug(
+      `🔍 [REQUEST_MANAGER_DEBUG] enqueue called for: ${description}, priority: ${priority}`
+    );
 
     // Convert legacy numeric priority to string
     const normalizedPriority = this.normalizePriority(priority);
@@ -531,7 +533,9 @@ class RequestManager {
    * Generates timestamp immediately before HTTP call to prevent expiration
    */
   async authenticatedRequest(method, url, config = {}, authParams, description, priority = 'HIGH') {
-    Logger.debug(`🔍 [REQUEST_MANAGER_DEBUG] authenticatedRequest called: ${method} ${url}, description: ${description}`);
+    Logger.debug(
+      `🔍 [REQUEST_MANAGER_DEBUG] authenticatedRequest called: ${method} ${url}, description: ${description}`
+    );
 
     const requestFunction = async () => {
       Logger.debug(`🔍 [REQUEST_MANAGER_DEBUG] requestFunction executing for: ${description}`);
