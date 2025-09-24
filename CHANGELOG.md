@@ -5,6 +5,30 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.8.6] - 2025-09-24
+
+### 🚨 **CRITICAL BUG FIXES: Iterator & Duplicate Orders**
+
+#### 🔒 **Iterator Error Resolution**
+- ✅ **Fixed "Found non-callable @@iterator" Error:** Added critical validation in CachedOrdersService and PositionUtils to ensure arrays are iterable before loops
+- ✅ **Array Validation:** All order filtering operations now validate data types before iteration
+- ✅ **Defensive Programming:** Graceful handling of null/undefined API responses with proper fallbacks
+
+#### 🛡️ **Duplicate Stop-Loss Prevention System**
+- ✅ **Global Lock Mechanism:** Implemented 30-second lock system to prevent multiple stop-loss creation for same symbol
+- ✅ **Race Condition Fix:** Resolved issue where multiple functions created 4+ stop-loss orders simultaneously
+- ✅ **Order Creation Control:** Lock system ensures only one stop-loss order per symbol at a time
+
+#### ⚡ **API Performance Optimization**
+- ✅ **Single API Call Optimization:** Changed from individual price calls per symbol to single bulk price fetch
+- ✅ **Global Price Cache:** Shared price data across all symbols reduces API load significantly
+- ✅ **Fallback Logic Removal:** Eliminated dangerous fallback that used first symbol's price for all symbols
+
+#### 🔧 **Error Handling Improvements**
+- ✅ **Robust Data Validation:** Enhanced validation throughout order processing pipeline
+- ✅ **Better Error Messages:** Improved logging for debugging iterator and array processing issues
+- ✅ **Safe Operations:** All array operations now protected against non-iterable data
+
 ## [1.8.5] - 2025-09-24
 
 ### 🎯 **MAJOR ENHANCEMENT: OrderBook Integration & Safety Improvements**
