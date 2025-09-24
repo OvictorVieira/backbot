@@ -5,6 +5,28 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.8.8] - 2025-09-24
+
+### 🚨 **ENHANCED HOTFIX: Intelligent File Preservation System**
+
+#### 🤖 **Smart Auto-Detection System**
+- ✅ **Intelligent Detection:** Auto-identifies local-only files that should be preserved
+- ✅ **FeatureToggleService.js Protected:** Added to preservation list after user report
+- ✅ **Dynamic Preservation:** System automatically detects files not in GitHub
+- ✅ **Zero Configuration:** Automatically preserves any local customizations
+
+#### 🔧 **Enhanced Update Script**
+- ✅ **identifyLocalOnlyFiles():** New method to scan for local files
+- ✅ **Recursive File Detection:** Scans entire src/ structure intelligently
+- ✅ **Smart Filtering:** Preserves .js files that exist locally but not on GitHub
+- ✅ **Comprehensive Logging:** Detailed reports of what gets preserved
+
+#### 🛡️ **Bulletproof Protection**
+- ✅ **No More Missing Files:** Prevents any local file from being lost
+- ✅ **Extensible System:** Easily handles future local customizations
+- ✅ **Error Resilient:** Graceful handling of detection failures
+- ✅ **User-Friendly:** Clear logging of all preservation actions
+
 ## [1.8.7] - 2025-09-24
 
 ### 🚨 **CRITICAL HOTFIX: Auto-Update Script Issue**

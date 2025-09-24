@@ -250,7 +250,12 @@ class AutoUpdater {
     const srcPreserveItems = [
       'persistence', // dados do usuário
       'Controllers/HFTController.js', // controlador HFT local
+      'Services/FeatureToggleService.js', // serviço de feature flags
+      // Adicione aqui outros arquivos locais que devem ser preservados
     ];
+
+    // Sistema inteligente: preserva arquivos que existem localmente mas não no GitHub
+    await this.identifyLocalOnlyFiles(newSrcPath, destSrcPath, srcPreserveItems);
 
     for (const item of newSrcItems) {
       const sourcePath = path.join(newSrcPath, item);
@@ -289,6 +294,55 @@ class AutoUpdater {
           console.log(`  🛡️ Restaurado: src/${preserveItem} (arquivo local)`);
         }
       }
+    }
+  }
+
+  async identifyLocalOnlyFiles(newSrcPath, destSrcPath, srcPreserveItems) {
+    console.log('🔍 Identificando arquivos locais que devem ser preservados...');
+
+    try {
+      // Encontra todos os arquivos .js no src/ local
+      const findLocalFiles = async (dir, relativePath = '') => {
+        const files = [];
+        const items = await fs.readdir(dir);
+
+        for (const item of items) {
+          const itemPath = path.join(dir, item);
+          const relativeItemPath = path.join(relativePath, item);
+          const stat = await fs.stat(itemPath);
+
+          if (stat.isDirectory()) {
+            if (item !== 'persistence') { // Skip persistence folder
+              const subFiles = await findLocalFiles(itemPath, relativeItemPath);
+              files.push(...subFiles);
+            }
+          } else if (item.endsWith('.js')) {
+            files.push(relativeItemPath);
+          }
+        }
+        return files;
+      };
+
+      const localFiles = await findLocalFiles(destSrcPath);
+      const githubFiles = await findLocalFiles(newSrcPath);
+
+      // Identifica arquivos que existem localmente mas não no GitHub
+      const localOnlyFiles = localFiles.filter(file => !githubFiles.includes(file));
+
+      if (localOnlyFiles.length > 0) {
+        console.log('📋 Arquivos locais detectados que serão preservados:');
+        for (const file of localOnlyFiles) {
+          console.log(`  🛡️ ${file}`);
+          // Adiciona automaticamente à lista de preservação se não estiver lá
+          if (!srcPreserveItems.includes(file)) {
+            srcPreserveItems.push(file);
+          }
+        }
+      } else {
+        console.log('✅ Nenhum arquivo local único detectado');
+      }
+    } catch (error) {
+      console.log(`⚠️ Erro ao identificar arquivos locais: ${error.message}`);
     }
   }
 
