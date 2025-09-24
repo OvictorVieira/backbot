@@ -5,6 +5,29 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.8.12] - 2025-09-24
+
+### 🛡️ **CRITICAL ORDERBOOK FIX: Iterator Validation**
+
+#### 🔧 **OrderBook Array Validation**
+- ✅ **Critical Fix:** Resolved "Found non-callable @@iterator" error in OrderBookAnalyzer
+- ✅ **Array Validation:** Added comprehensive checks for book.bids and book.asks before iteration
+- ✅ **Type Safety:** Validates arrays are iterable and contain valid bid/ask structures
+- ✅ **Error Prevention:** Prevents crashes when API returns malformed orderbook data
+
+#### 📊 **Enhanced OrderBook Processing**
+- ✅ **Individual Entry Validation:** Each bid/ask entry validated before destructuring
+- ✅ **Graceful Handling:** Skip invalid entries instead of crashing entire operation
+- ✅ **Debug Logging:** Enhanced error messages for troubleshooting orderbook issues
+- ✅ **Financial Safety:** Maintains strict "no-fallback" policy for financial operations
+
+#### 🎯 **Fixed Errors**
+- ❌ **AERO_USDC_PERP:** "Found non-callable @@iterator" - Array iteration errors
+- ❌ **Order Processing:** Crashes when orderbook data format is unexpected
+- ❌ **Stop Loss/Take Profit:** Failures due to invalid orderbook iteration
+
+---
+
 ## [1.8.11] - 2025-09-24
 
 ### 🚨 **CRITICAL CONCURRENCY FIX: Account Variable Conflict**

@@ -143,6 +143,23 @@ class OrderBookAnalyzer {
         return null;
       }
 
+      // 🚨 VALIDAÇÃO CRÍTICA: Verifica se bids e asks são arrays válidos
+      if (!Array.isArray(book.bids) || !Array.isArray(book.asks)) {
+        Logger.error(
+          `❌ [ORDER_BOOK] ${symbol}: book.bids ou book.asks não são arrays válidos - bids: ${typeof book.bids}, asks: ${typeof book.asks}`
+        );
+        Logger.error(`❌ [ORDER_BOOK] ${symbol}: book.bids:`, book.bids);
+        Logger.error(`❌ [ORDER_BOOK] ${symbol}: book.asks:`, book.asks);
+        return null;
+      }
+
+      if (book.bids.length === 0 || book.asks.length === 0) {
+        Logger.error(
+          `❌ [ORDER_BOOK] ${symbol}: Arrays vazios - bids: ${book.bids.length}, asks: ${book.asks.length}`
+        );
+        return null;
+      }
+
       // 📊 Calcula o preço alvo baseado na porcentagem configurada
       const targetPrice = entryPrice * (1 + targetPercentage / 100);
 
@@ -157,7 +174,21 @@ class OrderBookAnalyzer {
         let closestPrice = null;
         let smallestDifference = Infinity;
 
-        for (const [price, quantity] of book.bids) {
+        // 🔍 VALIDAÇÃO ANTES DA ITERAÇÃO
+        if (!Array.isArray(book.bids) || book.bids.length === 0) {
+          Logger.error(
+            `❌ [ORDER_BOOK] ${symbol}: book.bids inválido antes da iteração BID - type: ${typeof book.bids}, length: ${book.bids?.length}`
+          );
+          return null;
+        }
+
+        for (const bid of book.bids) {
+          if (!Array.isArray(bid) || bid.length < 2) {
+            Logger.warn(`⚠️ [ORDER_BOOK] ${symbol}: Bid inválido ignorado:`, bid);
+            continue;
+          }
+
+          const [price, quantity] = bid;
           const bidPrice = parseFloat(price);
           const isValid = bidPrice <= maxAllowedPrice && bidPrice > 0;
           const difference = Math.abs(bidPrice - targetPrice);
@@ -197,9 +228,23 @@ class OrderBookAnalyzer {
         Logger.debug(
           `🔍 [ASK_DEBUG] ${symbol}: targetPrice=${targetPrice.toFixed(6)}, minAllowedPrice=${minAllowedPrice.toFixed(6)}, bestBid=${bestBid}, bestAsk=${bestAsk}`
         );
+        // 🔍 VALIDAÇÃO ANTES DA ITERAÇÃO ASK
+        if (!Array.isArray(book.asks) || book.asks.length === 0) {
+          Logger.error(
+            `❌ [ORDER_BOOK] ${symbol}: book.asks inválido antes da iteração ASK - type: ${typeof book.asks}, length: ${book.asks?.length}`
+          );
+          return null;
+        }
+
         Logger.debug(`🔍 [ASK_DEBUG] ${symbol}: book.asks (primeiros 10):`, book.asks.slice(0, 10));
 
-        for (const [price, quantity] of book.asks) {
+        for (const ask of book.asks) {
+          if (!Array.isArray(ask) || ask.length < 2) {
+            Logger.warn(`⚠️ [ORDER_BOOK] ${symbol}: Ask inválido ignorado:`, ask);
+            continue;
+          }
+
+          const [price, quantity] = ask;
           const askPrice = parseFloat(price);
           // CORREÇÃO: Para Take Profit, aceita qualquer preço válido no book (não força minAllowedPrice)
           // O importante é encontrar o preço mais próximo do TARGET, não do bestBid
