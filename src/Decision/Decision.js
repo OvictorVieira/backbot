@@ -74,14 +74,26 @@ class Decision {
         Logger.debug(`📦 Cache hit para todos os preços`);
       } else {
         // Busca todos os preços de uma vez (SEM parâmetro symbol)
-        allMarkPrices = await marketsPrices.getAllMarkPrices();
+        const rawPrices = await marketsPrices.getAllMarkPrices();
+
+        // 🔒 VALIDAÇÃO CRÍTICA: API pode retornar objeto ou array dependendo do endpoint
+        if (Array.isArray(rawPrices)) {
+          allMarkPrices = rawPrices;
+        } else if (rawPrices && typeof rawPrices === 'object') {
+          // Se a API retornar um objeto, converte para array
+          allMarkPrices = Object.values(rawPrices);
+          Logger.warn(`⚠️ API retornou objeto ao invés de array, convertido automaticamente`);
+        } else {
+          Logger.error(`❌ Formato inesperado da API getAllMarkPrices: ${typeof rawPrices}`);
+          throw new Error(`Invalid response format from getAllMarkPrices: ${typeof rawPrices}`);
+        }
 
         // Cache global dos preços
         this.marketCache.set(pricesCacheKey, {
           prices: allMarkPrices,
           timestamp: now,
         });
-        Logger.debug(`🔄 Preços atualizados para todos os símbolos`);
+        Logger.debug(`🔄 Preços atualizados para todos os símbolos (${allMarkPrices.length} itens)`);
       }
 
       // Paraleliza a coleta de dados de todos os mercados

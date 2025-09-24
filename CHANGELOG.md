@@ -5,6 +5,28 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.8.10] - 2025-09-24
+
+### 🚨 **CRITICAL RUNTIME FIXES: API Response & Price Detection**
+
+#### 🔧 **API Response Format Issues**
+- ✅ **allMarkPrices Array Fix:** Fixed "Expected allMarkPrices to be an array, got: object" error
+- ✅ **Dynamic Response Handling:** Auto-converts object responses to arrays when needed
+- ✅ **Backward Compatibility:** Handles both array and object response formats from Backpack API
+- ✅ **Error Prevention:** Proper validation and conversion prevents runtime crashes
+
+#### 💰 **Price Detection Critical Fix**
+- ✅ **Zero Price Prevention:** Fixed $0.00 prices causing "Invalid decimal" errors
+- ✅ **Position Price Fallback:** PositionUtils now fetches current price when position.markPrice missing
+- ✅ **API Integration:** Automatic price lookup via getAllMarkPrices when needed
+- ✅ **Order Safety:** Prevents invalid stop-loss orders with zero trigger prices
+
+#### 🛡️ **Error Handling Improvements**
+- ✅ **Robust Price Validation:** Multiple layers of price validation before order creation
+- ✅ **Better Error Messages:** Clear logging for price-related issues
+- ✅ **Graceful Fallbacks:** System continues operating even when partial data missing
+- ✅ **Debug Information:** Enhanced logging for price discovery process
+
 ## [1.8.9] - 2025-09-24
 
 ### 🚨 **FUNDAMENTAL FIX: Proper Update Logic Implementation**

@@ -37,10 +37,31 @@ class PositionUtils {
       }
 
       const filteredOrders = [];
-      const currentPrice = parseFloat(position.markPrice);
-      if (!currentPrice) {
-        Logger.error(`❌ [ORDER_FILTER] Preço atual não encontrado para ${symbol}`);
-        return [];
+
+      // 🔒 CORREÇÃO: Busca preço atual se não estiver disponível na posição
+      let currentPrice = parseFloat(position.markPrice);
+      if (!currentPrice || isNaN(currentPrice)) {
+        try {
+          const Markets = (await import('../Backpack/Public/Markets.js')).default;
+          const markets = new Markets();
+          const priceData = await markets.getAllMarkPrices(symbol);
+
+          if (Array.isArray(priceData) && priceData.length > 0) {
+            currentPrice = parseFloat(priceData[0].markPrice);
+          } else if (priceData && priceData.markPrice) {
+            currentPrice = parseFloat(priceData.markPrice);
+          }
+
+          if (!currentPrice || isNaN(currentPrice)) {
+            Logger.error(`❌ [ORDER_FILTER] Não foi possível obter preço atual para ${symbol}`);
+            return [];
+          }
+
+          Logger.debug(`🔍 [ORDER_FILTER] ${symbol}: Preço atual obtido via API: $${currentPrice}`);
+        } catch (error) {
+          Logger.error(`❌ [ORDER_FILTER] Erro ao buscar preço para ${symbol}: ${error.message}`);
+          return [];
+        }
       }
 
       const isLong = parseFloat(position.netQuantity) > 0;
