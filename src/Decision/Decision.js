@@ -2,6 +2,7 @@ import Futures from '../Backpack/Authenticated/Futures.js';
 import Order from '../Backpack/Authenticated/Order.js';
 import OrderController from '../Controllers/OrderController.js';
 import AccountController from '../Controllers/AccountController.js';
+import Account from '../Backpack/Authenticated/Account.js';
 import Markets from '../Backpack/Public/Markets.js';
 import { calculateIndicators } from './Indicators.js';
 import { StrategyFactory } from './Strategies/StrategyFactory.js';
@@ -311,13 +312,16 @@ class Decision {
         strategy: config?.strategyName || this.strategy.constructor.name || 'DEFAULT',
       };
 
-      const Account = await AccountController.get(configWithStrategy);
+      const accountData = await AccountController.get(configWithStrategy);
 
       // Verifica se os dados da conta foram carregados com sucesso
-      if (!Account) {
+      if (!accountData) {
         Logger.error('❌ Falha ao carregar dados da conta. Verifique suas credenciais de API.');
         return;
       }
+
+      // 🔒 CORREÇÃO CRÍTICA: Atualiza Account global com dados atuais
+      Object.assign(Account, accountData);
 
       if (Account.leverage > 10 && currentTimeframe !== '1m') {
         Logger.warn(
@@ -466,7 +470,7 @@ class Decision {
       }
 
       const dataset = await this.getDataset(
-        Account,
+        accountData,
         allClosedMarkets,
         currentTimeframe,
         logger,
@@ -598,6 +602,8 @@ class Decision {
 
       // Processa cada ordem individualmente de forma sequencial
       for (let index = 0; index < rows.length; index++) {
+        let marketSymbol;
+
         // VERIFICAÇÃO: A cada iteração, verifica se o bot foi pausado
         if (config?.botId) {
           try {
@@ -619,7 +625,6 @@ class Decision {
         const row = rows[index];
         try {
           // Determina o market baseado na estrutura do objeto
-          let marketSymbol;
           if (row.orders && Array.isArray(row.orders) && row.orders.length > 0) {
             // Alpha Flow Strategy: market está dentro de orders[0]
             marketSymbol = row.orders[0].market;

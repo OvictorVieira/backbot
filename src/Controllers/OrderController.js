@@ -442,12 +442,6 @@ class OrderController {
         if (positions.length > 0) {
           // Verifica se há posições que não estão sendo monitoradas
           const monitoredMarkets = Object.keys(accountOrders || {});
-          const unmonitoredPositions = positions.filter(
-            pos => !monitoredMarkets.includes(pos.symbol)
-          );
-
-          // ✅ REMOVIDO: Take profit agora é gerenciado APENAS pelo monitor dedicado (startTakeProfitMonitor)
-          // Evita duplicação de ordens. Posições órfãs serão tratadas pelo monitor dedicado de TP
         }
       } catch (error) {
         Logger.warn(

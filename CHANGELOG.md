@@ -5,6 +5,28 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.8.11] - 2025-09-24
+
+### 🚨 **CRITICAL CONCURRENCY FIX: Account Variable Conflict**
+
+#### 🔧 **Account Variable Conflict Resolution**
+- ✅ **Critical Fix:** Resolved variable naming conflict in Decision.js causing NaN capitalAvailable
+- ✅ **Global Account Import:** Added missing Account import to prevent undefined references
+- ✅ **Variable Scoping:** Renamed local Account to accountData to avoid masking global Account
+- ✅ **Data Synchronization:** Added Object.assign to update global Account with fresh data
+
+#### 💰 **Capital Availability Issue Fixed**
+- ✅ **Root Cause:** Local and global Account variables were conflicting, causing capitalAvailable to be NaN
+- ✅ **Concurrent Access:** Multiple functions accessing Account globally while local variable masked it
+- ✅ **Data Consistency:** Ensured Account global is always updated with latest account data
+- ✅ **Error Prevention:** Fixed "capitalAvailable inválido: NaN" errors that prevented trading
+
+#### 🛡️ **Code Quality Improvements**
+- ✅ **Import Organization:** Added proper Account import alongside AccountController
+- ✅ **Variable Naming:** Clear distinction between local accountData and global Account
+- ✅ **Data Flow:** Proper data flow from AccountController.get() to global Account instance
+- ✅ **Error Handling:** Better error handling for account data loading failures
+
 ## [1.8.10] - 2025-09-24
 
 ### 🚨 **CRITICAL RUNTIME FIXES: API Response & Price Detection**
