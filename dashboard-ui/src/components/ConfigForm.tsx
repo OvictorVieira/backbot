@@ -282,8 +282,8 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
         newErrors[field] = 'Stop Loss deve ser um número válido';
       } else if (numValue >= 0) {
         newErrors[field] = 'Stop Loss deve ser um valor negativo';
-      } else if (numValue > -1) {
-        newErrors[field] = 'Stop Loss deve ser menor que -1%';
+      } else if (numValue > -0.5) {
+        newErrors[field] = 'Stop Loss deve ser menor que -0.5%';
       }
     } else if (field === 'capitalPercentage') {
       const numValue = parseFloat(String(value));
@@ -1818,7 +1818,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
               <Input
                 id="maxNegativePnlStopPct"
                 type="text"
-                placeholder="Ex: -10"
+                placeholder="Ex: -0.5, -1, -10"
                 value={formData.maxNegativePnlStopPct}
                 onChange={(e) => handleInputChange('maxNegativePnlStopPct', e.target.value)}
                 className={errors.maxNegativePnlStopPct ? "border-red-500" : ""}

@@ -5,6 +5,30 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.8.15] - 2025-09-24
+
+### 🎛️ **DASHBOARD UI FIX: Stop Loss Validation Enhancement**
+
+#### 💻 **Stop Loss Field Validation Update**
+- ✅ **Minimum Value Fix:** Changed Stop Loss minimum from -1% to -0.5%
+- ✅ **Decimal Support:** Now allows precise decimal values like -0.5, -0.75, etc.
+- ✅ **Validation Message:** Updated error message to reflect new -0.5% minimum
+- ✅ **Placeholder Update:** Enhanced input placeholder to show valid examples
+
+#### 🔧 **Form Validation Enhancement**
+- ✅ **Flexible Range:** Stop Loss field now accepts values from -0.5% to any negative value
+- ✅ **User Experience:** Clearer validation messages and input examples
+- ✅ **Trading Precision:** Supports more precise stop loss configurations
+- ✅ **Form Consistency:** Maintains proper negative value validation
+
+#### 🎯 **Fixed Issues**
+- ❌ **Stop Loss Field:** Unable to enter values between -1 and 0 (like -0.5%)
+- ❌ **Validation Error:** "Stop Loss deve ser menor que -1%" blocking valid inputs
+- ❌ **Input Restrictions:** Form preventing legitimate decimal stop loss values
+- ❌ **User Confusion:** Unclear minimum value requirements in form
+
+---
+
 ## [1.8.14] - 2025-09-24
 
 ### 🔧 **BOT EXECUTION FIX: ON_CANDLE_CLOSE Status Issue**

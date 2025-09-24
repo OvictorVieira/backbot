@@ -1,13 +1,13 @@
 {
   "name": "backbot",
-  "version": "1.8.14",
+  "version": "1.8.15",
   "description": "",
   "main": "app.js",
   "scripts": {
+    "achievements:extract": "node scripts/extract-achievements.js",
     "start": "node check-updates.js && concurrently \"npm run api\" \"npm run dashboard\"",
     "start:no-update": "concurrently \"npm run api\" \"npm run dashboard\"",
     "start:bot": "cross-env NODE_TLS_REJECT_UNAUTHORIZED=0 TRADING_STRATEGY=DEFAULT nodemon bootstrap-app.js",
-    "alphaflow": "cross-env NODE_TLS_REJECT_UNAUTHORIZED=0 TRADING_STRATEGY=ALPHA_FLOW nodemon bootstrap-app.js",
     "api": "cross-env NODE_TLS_REJECT_UNAUTHORIZED=0 nodemon app-api.js",
     "dashboard": "node scripts/start-dashboard.js",
     "dashboard:build": "cd dashboard-ui && npm run build",
