@@ -5,6 +5,28 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.8.7] - 2025-09-24
+
+### 🚨 **CRITICAL HOTFIX: Auto-Update Script Issue**
+
+#### 🔧 **Update Script Critical Fix**
+- ✅ **BREAKING:** Fixed auto-update script removing HFTController.js during updates
+- ✅ **User Protection:** Added preservation system for local files during updates
+- ✅ **Future-Proof:** Enhanced updateSrcSelectively() to maintain local customizations
+- ✅ **Backward Compatibility:** Ensures existing installations don't break on update
+
+#### 🛡️ **File Preservation System**
+- ✅ **srcPreserveItems Array:** List of files to preserve during src/ updates
+- ✅ **HFTController.js Protected:** Ensures HFT functionality survives updates
+- ✅ **Intelligent Restoration:** Backs up and restores local files automatically
+- ✅ **Directory Structure Safety:** Maintains proper directory hierarchy
+
+#### ⚠️ **Impact & Urgency**
+- 🚨 **CRITICAL:** Previous update script could break user installations
+- 🛡️ **USER PROTECTION:** Prevents loss of HFT trading functionality
+- 📦 **IMMEDIATE RELEASE:** Urgent fix to protect user installations
+- 🔄 **UPDATE SAFETY:** Ensures safe updates moving forward
+
 ## [1.8.6] - 2025-09-24
 
 ### 🚨 **CRITICAL BUG FIXES: Iterator & Duplicate Orders**

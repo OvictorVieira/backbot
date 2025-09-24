@@ -246,6 +246,12 @@ class AutoUpdater {
     // Lista arquivos/pastas no novo src/
     const newSrcItems = await fs.readdir(newSrcPath);
 
+    // Lista de arquivos/pastas a preservar em src/
+    const srcPreserveItems = [
+      'persistence', // dados do usuário
+      'Controllers/HFTController.js', // controlador HFT local
+    ];
+
     for (const item of newSrcItems) {
       const sourcePath = path.join(newSrcPath, item);
       const destPath = path.join(destSrcPath, item);
@@ -265,6 +271,24 @@ class AutoUpdater {
       // Copia o novo item
       await fs.copy(sourcePath, destPath);
       console.log(`  ✅ Atualizado: src/${item}`);
+    }
+
+    // Restaura arquivos específicos que devem ser preservados
+    const backupSrcPath = path.join(this.backupDir, 'src');
+    if (await fs.pathExists(backupSrcPath)) {
+      for (const preserveItem of srcPreserveItems) {
+        if (preserveItem === 'persistence') continue; // já tratado acima
+
+        const backupFilePath = path.join(backupSrcPath, preserveItem);
+        const destFilePath = path.join(destSrcPath, preserveItem);
+
+        if (await fs.pathExists(backupFilePath)) {
+          // Garante que o diretório pai existe
+          await fs.ensureDir(path.dirname(destFilePath));
+          await fs.copy(backupFilePath, destFilePath);
+          console.log(`  🛡️ Restaurado: src/${preserveItem} (arquivo local)`);
+        }
+      }
     }
   }
 
