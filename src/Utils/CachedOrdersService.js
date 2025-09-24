@@ -26,7 +26,17 @@ class CachedOrdersService {
     bypassCache = false
   ) {
     try {
-      return await Order.getOpenOrders(symbol, marketType, apiKey, apiSecret, bypassCache);
+      const orders = await Order.getOpenOrders(symbol, marketType, apiKey, apiSecret, bypassCache);
+
+      // 🔒 VALIDAÇÃO CRÍTICA: Garante que o retorno é sempre um array iterável
+      if (!orders || !Array.isArray(orders)) {
+        Logger.warn(
+          `⚠️ [CACHED_ORDERS_SERVICE] Order.getOpenOrders retornou dados inválidos: ${typeof orders}, convertendo para array vazio`
+        );
+        return [];
+      }
+
+      return orders;
     } catch (error) {
       Logger.error(`❌ [CACHED_ORDERS_SERVICE] Erro ao buscar ordens abertas:`, error.message);
       // Em caso de rate limit, invalida cache para próxima tentativa
@@ -50,6 +60,18 @@ class CachedOrdersService {
     try {
       // Busca TODAS as ordens de uma vez (mais eficiente que múltiplas chamadas)
       const allOrders = await this.getOpenOrders(null, marketType, apiKey, apiSecret);
+
+      // 🔒 VALIDAÇÃO CRÍTICA: Garante que allOrders é um array iterável
+      if (!allOrders || !Array.isArray(allOrders)) {
+        Logger.warn(
+          `⚠️ [CACHED_ORDERS_SERVICE] allOrders não é um array válido: ${typeof allOrders}, retornando arrays vazios`
+        );
+        const emptyResult = {};
+        symbols.forEach(symbol => {
+          emptyResult[symbol] = [];
+        });
+        return emptyResult;
+      }
 
       // Filtra ordens por símbolo localmente
       const ordersBySymbol = {};

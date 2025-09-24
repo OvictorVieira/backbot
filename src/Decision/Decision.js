@@ -60,31 +60,49 @@ class Decision {
     }
 
     try {
-      // Paraleliza a coleta de dados de todos os mercados com cache
+      // Busca TODOS os preços de uma vez só (otimização)
+      const marketsPrices = new Markets();
+      const now = Date.now();
+      let allMarkPrices = null;
+
+      // Verifica cache global de preços
+      const pricesCacheKey = 'all_mark_prices';
+      const cachedPrices = this.marketCache.get(pricesCacheKey);
+
+      if (cachedPrices && now - cachedPrices.timestamp < this.cacheTimeout) {
+        allMarkPrices = cachedPrices.prices;
+        Logger.debug(`📦 Cache hit para todos os preços`);
+      } else {
+        // Busca todos os preços de uma vez (SEM parâmetro symbol)
+        allMarkPrices = await marketsPrices.getAllMarkPrices();
+
+        // Cache global dos preços
+        this.marketCache.set(pricesCacheKey, {
+          prices: allMarkPrices,
+          timestamp: now,
+        });
+        Logger.debug(`🔄 Preços atualizados para todos os símbolos`);
+      }
+
+      // Paraleliza a coleta de dados de todos os mercados
       const dataPromises = markets.map(async market => {
         try {
           const cacheKey = `${market.symbol}_${currentTimeframe}`;
-          const now = Date.now();
           const cached = this.marketCache.get(cacheKey);
 
-          let getAllMarkPrices, candles;
+          let candles;
 
-          // Verifica se há cache válido
+          // Verifica se há cache válido para candles
           if (cached && now - cached.timestamp < this.cacheTimeout) {
-            getAllMarkPrices = cached.markPrices;
             candles = cached.candles;
-            Logger.debug(`📦 Cache hit para ${market.symbol}`);
+            Logger.debug(`📦 Cache hit para candles ${market.symbol}`);
           } else {
-            // Busca dados novos
+            // Busca apenas os candles (preços já temos)
             const markets = new Markets();
-            [getAllMarkPrices, candles] = await Promise.all([
-              markets.getAllMarkPrices(market.symbol),
-              markets.getKLines(market.symbol, currentTimeframe, candleCount),
-            ]);
+            candles = await markets.getKLines(market.symbol, currentTimeframe, candleCount);
 
             // Salva no cache
             this.marketCache.set(cacheKey, {
-              markPrices: getAllMarkPrices,
               candles: candles,
               timestamp: now,
             });
@@ -92,15 +110,18 @@ class Decision {
 
           const analyze = await calculateIndicators(candles, currentTimeframe, market.symbol);
 
-          // Find the correct price for this symbol
+          // Find the correct price for this symbol from the global prices array
           let marketPrice;
-          if (Array.isArray(getAllMarkPrices)) {
-            const symbolPriceData = getAllMarkPrices.find(item => item.symbol === market.symbol);
-            marketPrice = symbolPriceData
-              ? symbolPriceData.markPrice
-              : getAllMarkPrices[0]?.markPrice;
+          if (Array.isArray(allMarkPrices)) {
+            const symbolPriceData = allMarkPrices.find(item => item.symbol === market.symbol);
+            if (!symbolPriceData) {
+              throw new Error(
+                `No price data found for ${market.symbol} in global mark prices array`
+              );
+            }
+            marketPrice = symbolPriceData.markPrice;
           } else {
-            marketPrice = getAllMarkPrices?.markPrice || getAllMarkPrices;
+            throw new Error(`Expected allMarkPrices to be an array, got: ${typeof allMarkPrices}`);
           }
 
           if (!marketPrice) {

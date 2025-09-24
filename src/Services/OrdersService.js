@@ -21,6 +21,9 @@ class OrdersService {
     this.dbService = dbService;
   }
 
+  // Lock global para prevenir criação múltipla de stop loss
+  static stopLossCreationLock = new Map(); // symbol -> timestamp
+
   /**
    * Aguarda um tempo determinado para evitar rate limiting
    * @param {number} ms - Tempo em milissegundos para aguardar
@@ -368,9 +371,31 @@ class OrdersService {
   }
 
   async createStopLossOrder(params) {
+    const { symbol } = params;
+
+    // 🔒 SISTEMA DE LOCK GLOBAL PARA PREVENIR CRIAÇÕES MÚLTIPLAS
+    const now = Date.now();
+    const lockKey = symbol;
+    const existingLock = OrdersService.stopLossCreationLock.get(lockKey);
+
+    // Se há um lock recente (menos de 30 segundos), rejeita a criação
+    if (existingLock && now - existingLock < 30000) {
+      const remainingTime = Math.ceil((30000 - (now - existingLock)) / 1000);
+      Logger.warn(
+        `🔒 [STOP_LOSS_LOCK] ${symbol}: Criação bloqueada - aguarde ${remainingTime}s (lock ativo para prevenir duplicação)`
+      );
+      return {
+        error: 'DUPLICATE_PREVENTION_LOCK_ACTIVE',
+        message: `Stop loss creation blocked for ${remainingTime}s`,
+      };
+    }
+
+    // Adquire o lock
+    OrdersService.stopLossCreationLock.set(lockKey, now);
+    Logger.debug(`🔒 [STOP_LOSS_LOCK] ${symbol}: Lock adquirido`);
+
     try {
       const {
-        symbol,
         side,
         quantity,
         stopLossTriggerPrice,
@@ -429,6 +454,12 @@ class OrdersService {
     } catch (error) {
       Logger.error(`❌ [ORDERS_SERVICE] Erro ao criar ordem STOP LOSS:`, error.message);
       return { error: error.message };
+    } finally {
+      // 🔓 LIMPA O LOCK (mas mantém por 5 segundos para evitar tentativas imediatas)
+      setTimeout(() => {
+        OrdersService.stopLossCreationLock.delete(lockKey);
+        Logger.debug(`🔓 [STOP_LOSS_LOCK] ${symbol}: Lock liberado`);
+      }, 5000);
     }
   }
 

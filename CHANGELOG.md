@@ -5,6 +5,44 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.8.5] - 2025-09-24
+
+### 🎯 **MAJOR ENHANCEMENT: OrderBook Integration & Safety Improvements**
+
+#### 📊 **Advanced OrderBook Price Calculation**
+- ✅ **Percentage-Based Targeting:** OrderBook now calculates prices based on user-defined percentage targets instead of closest price matching
+- ✅ **Precise Price Selection:** Finds exact prices in order book that match configured Stop Loss (-3%) and Take Profit (+3%) percentages
+- ✅ **Smart Price Discovery:** Searches through entire order book to find optimal prices within configured distance
+- ✅ **Market Maker Orders:** Ensures orders are placed as makers, not takers, for better execution
+
+#### 🛡️ **Enhanced Safety Order Management**
+- ✅ **API Processing Delay:** Added 10-second delay for safety order creation to allow exchange API to process position updates
+- ✅ **Reduced Duplicates:** Prevents duplicate Stop Loss orders caused by timing issues
+- ✅ **Order Validation:** All safety orders confirmed to use `reduceOnly: true` flag for security
+- ✅ **Position Synchronization:** Improved timing between order execution and safety order creation
+
+#### 🔧 **Bot Configuration Improvements**
+- ✅ **Status Preservation:** Fixed bot status changing to 'running' when updating configuration - now preserves current status
+- ✅ **Configuration Safety:** Bot updates no longer accidentally change paused bots to running state
+- ✅ **Update API Enhancement:** Improved configuration update endpoints to maintain bot state integrity
+
+#### ⚡ **Performance & Execution Optimizations**
+- ✅ **Extended Timeout:** Increased order execution timeout from 12 seconds to 50 seconds for better fill rates
+- ✅ **Take Profit Logic Fix:** Corrected Take Profit side selection for SHORT positions (now uses BUY orders correctly)
+- ✅ **Order Execution Flow:** Improved hybrid execution strategy with better market order fallbacks
+
+#### 🔍 **Logging & Debug Improvements**
+- ✅ **Clean Log Output:** Converted debug logs from ERROR to DEBUG level to reduce log pollution
+- ✅ **OrderBook Transparency:** Added comprehensive logging for order book price selection process
+- ✅ **Debug Information:** Enhanced visibility into percentage calculations and target price discovery
+- ✅ **Error Tracking:** Better error messages for troubleshooting order execution issues
+
+#### 🚨 **Financial Safety Enhancements**
+- ✅ **No Fallback Policy:** Removed dangerous fallbacks in financial operations - operations cancel if order book fails
+- ✅ **Secure Order Placement:** All Stop Loss and Take Profit orders confirmed to be reduce-only
+- ✅ **Risk Management:** Enhanced validation to prevent accidental position increases
+- ✅ **Market Safety:** Orders only execute with verified prices from actual order book data
+
 ## [1.8.4] - 2025-09-17
 
 ### 🔧 **CRITICAL FIX: Import System**

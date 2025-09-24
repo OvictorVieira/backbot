@@ -24,7 +24,15 @@ class PositionUtils {
         config.apiSecret
       );
 
-      if (!allOrders || allOrders.length === 0) {
+      // 🔒 VALIDAÇÃO CRÍTICA: Garante que allOrders é um array iterável antes do loop
+      if (!allOrders || !Array.isArray(allOrders)) {
+        Logger.warn(
+          `⚠️ [ORDER_FILTER] allOrders não é um array válido para ${symbol}: ${typeof allOrders}`
+        );
+        return [];
+      }
+
+      if (allOrders.length === 0) {
         return [];
       }
 

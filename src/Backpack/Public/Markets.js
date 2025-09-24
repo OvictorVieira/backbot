@@ -161,14 +161,15 @@ class Markets {
     return (unitToSeconds[unit] || 60) * value;
   }
 
-  async getAllMarkPrices(symbol) {
+  async getAllMarkPrices(symbol = null) {
     try {
+      const params = symbol ? { symbol } : {};
       const response = await requestManager.get(
         `${process.env.API_URL}/api/v1/markPrices`,
         {
-          params: { symbol },
+          params,
         },
-        'Get All Mark Prices',
+        symbol ? `Get Mark Price for ${symbol}` : 'Get All Mark Prices',
         'LOW'
       );
       return response.data;
