@@ -1418,6 +1418,10 @@ async function startBot(botId, forceRestart = false) {
         `⏰ [STARTUP] Bot ${botId}: Modo ON_CANDLE_CLOSE - aguardando próximo fechamento de vela (${botConfig.time})`
       );
 
+      // 🚨 FIX: Atualiza status para "running" mesmo em modo ON_CANDLE_CLOSE
+      // O bot está funcionalmente ativo (agendado), não deve ficar em "starting"
+      await ConfigManagerSQLite.updateBotStatusById(botId, 'running');
+
       // Calcula e salva o próximo fechamento de vela correto
       const timeframeConfig = new TimeframeConfig(botConfig);
       const nextCandleCloseMs = timeframeConfig.getTimeUntilNextCandleClose(botConfig.time || '5m');

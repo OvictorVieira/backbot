@@ -5,6 +5,30 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.8.14] - 2025-09-24
+
+### 🔧 **BOT EXECUTION FIX: ON_CANDLE_CLOSE Status Issue**
+
+#### 🚀 **Bot Status Management Fix**
+- ✅ **Critical Fix:** Resolved bots stuck in "starting" status in ON_CANDLE_CLOSE mode
+- ✅ **Status Update:** Bots now immediately transition to "running" after successful scheduling
+- ✅ **Dual Bot Support:** Fixed volume mode (two bots simultaneously) execution
+- ✅ **Execution Logic:** Separated bot functional state from execution timing
+
+#### ⚡ **ON_CANDLE_CLOSE Mode Enhancement**
+- ✅ **Proper Scheduling:** Bots are functionally active (scheduled) immediately after start
+- ✅ **Status Clarity:** "running" status indicates bot is operational and scheduled
+- ✅ **Execution Timing:** First execution waits for next candle close as intended
+- ✅ **API Consistency:** /api/bot/status now correctly shows "running" for active bots
+
+#### 🎯 **Fixed Issues**
+- ❌ **Volume Mode:** "Bot 2 iniciado com sucesso" but status stuck at "starting"
+- ❌ **Status API:** GET /api/bot/status showing incorrect "starting" for active bots
+- ❌ **ON_CANDLE_CLOSE:** Bots not transitioning from "starting" to "running"
+- ❌ **Dashboard:** Bot status display confusion for scheduled bots
+
+---
+
 ## [1.8.13] - 2025-09-24
 
 ### 🎯 **ENHANCED STOP LOSS FIX: Intelligent Price Finding**
