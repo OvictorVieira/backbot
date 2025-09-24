@@ -15,8 +15,8 @@ const __dirname = dirname(__filename);
 const GITHUB_REPO = 'ovictorvieira/backbot';
 const ZIP_URL = `https://github.com/${GITHUB_REPO}/archive/refs/heads/main.zip`;
 // CRÍTICO: Lista de arquivos/pastas que NUNCA devem ser removidos durante atualização
+// APENAS dados/configurações do usuário - NÃO código do GitHub!
 // - .env: configurações do usuário
-// - src/: código fonte (será atualizado seletivamente)
 // - src/persistence/: banco de dados do bot (NUNCA remover)
 // - persistence/: backup alternativo do banco
 // - node_modules/: dependências instaladas
@@ -24,7 +24,6 @@ const ZIP_URL = `https://github.com/${GITHUB_REPO}/archive/refs/heads/main.zip`;
 // - .git/: repositório Git (NUNCA remover)
 const PRESERVE_ITEMS = [
   '.env',
-  'src/',
   'src/persistence/',
   'persistence/',
   'node_modules/',
@@ -227,9 +226,9 @@ class AutoUpdater {
       const sourcePath = path.join(this.extractedDir, file);
       const destPath = path.join(__dirname, file);
 
-      // Se for o diretório src/, precisa de tratamento especial
+      // Se for o diretório src/, precisa de tratamento especial para preservar persistence/
       if (file === 'src') {
-        await this.updateSrcSelectively(sourcePath, destPath);
+        await this.updateSrcDirectory(sourcePath, destPath);
       } else {
         await fs.copy(sourcePath, destPath);
         console.log(`  ✅ Copiado: ${file}`);
@@ -237,114 +236,37 @@ class AutoUpdater {
     }
   }
 
-  async updateSrcSelectively(newSrcPath, destSrcPath) {
-    console.log('🔄 Atualizando diretório src/ seletivamente...');
+  async updateSrcDirectory(newSrcPath, destSrcPath) {
+    console.log('🔄 Atualizando diretório src/ - preservando apenas persistence/...');
 
-    // Garante que o diretório src/ existe
-    await fs.ensureDir(destSrcPath);
+    // 1. Faz backup do src/persistence/ se existir
+    const persistencePath = path.join(destSrcPath, 'persistence');
+    const tempPersistencePath = path.join(this.backupDir, 'temp_persistence');
 
-    // Lista arquivos/pastas no novo src/
-    const newSrcItems = await fs.readdir(newSrcPath);
-
-    // Lista de arquivos/pastas a preservar em src/
-    const srcPreserveItems = [
-      'persistence', // dados do usuário
-      'Controllers/HFTController.js', // controlador HFT local
-      'Services/FeatureToggleService.js', // serviço de feature flags
-      // Adicione aqui outros arquivos locais que devem ser preservados
-    ];
-
-    // Sistema inteligente: preserva arquivos que existem localmente mas não no GitHub
-    await this.identifyLocalOnlyFiles(newSrcPath, destSrcPath, srcPreserveItems);
-
-    for (const item of newSrcItems) {
-      const sourcePath = path.join(newSrcPath, item);
-      const destPath = path.join(destSrcPath, item);
-
-      // NUNCA substitui src/persistence/ - preserva dados do usuário
-      if (item === 'persistence') {
-        console.log(`  🛡️ Preservado: src/${item}/ (dados do usuário)`);
-        continue;
-      }
-
-      // Remove o item antigo se existir (exceto persistence)
-      if (await fs.pathExists(destPath)) {
-        await fs.remove(destPath);
-        console.log(`  🗑️ Removido: src/${item}`);
-      }
-
-      // Copia o novo item
-      await fs.copy(sourcePath, destPath);
-      console.log(`  ✅ Atualizado: src/${item}`);
+    if (await fs.pathExists(persistencePath)) {
+      await fs.copy(persistencePath, tempPersistencePath);
+      console.log('  🛡️ Backup de src/persistence/ criado');
     }
 
-    // Restaura arquivos específicos que devem ser preservados
-    const backupSrcPath = path.join(this.backupDir, 'src');
-    if (await fs.pathExists(backupSrcPath)) {
-      for (const preserveItem of srcPreserveItems) {
-        if (preserveItem === 'persistence') continue; // já tratado acima
+    // 2. Remove o diretório src/ inteiro
+    if (await fs.pathExists(destSrcPath)) {
+      await fs.remove(destSrcPath);
+      console.log('  🗑️ src/ removido completamente');
+    }
 
-        const backupFilePath = path.join(backupSrcPath, preserveItem);
-        const destFilePath = path.join(destSrcPath, preserveItem);
+    // 3. Copia o novo src/ do GitHub
+    await fs.copy(newSrcPath, destSrcPath);
+    console.log('  ✅ Novo src/ copiado do GitHub');
 
-        if (await fs.pathExists(backupFilePath)) {
-          // Garante que o diretório pai existe
-          await fs.ensureDir(path.dirname(destFilePath));
-          await fs.copy(backupFilePath, destFilePath);
-          console.log(`  🛡️ Restaurado: src/${preserveItem} (arquivo local)`);
-        }
-      }
+    // 4. Restaura src/persistence/ se existia
+    if (await fs.pathExists(tempPersistencePath)) {
+      const newPersistencePath = path.join(destSrcPath, 'persistence');
+      await fs.copy(tempPersistencePath, newPersistencePath);
+      await fs.remove(tempPersistencePath);
+      console.log('  🛡️ src/persistence/ restaurado (dados do usuário)');
     }
   }
 
-  async identifyLocalOnlyFiles(newSrcPath, destSrcPath, srcPreserveItems) {
-    console.log('🔍 Identificando arquivos locais que devem ser preservados...');
-
-    try {
-      // Encontra todos os arquivos .js no src/ local
-      const findLocalFiles = async (dir, relativePath = '') => {
-        const files = [];
-        const items = await fs.readdir(dir);
-
-        for (const item of items) {
-          const itemPath = path.join(dir, item);
-          const relativeItemPath = path.join(relativePath, item);
-          const stat = await fs.stat(itemPath);
-
-          if (stat.isDirectory()) {
-            if (item !== 'persistence') { // Skip persistence folder
-              const subFiles = await findLocalFiles(itemPath, relativeItemPath);
-              files.push(...subFiles);
-            }
-          } else if (item.endsWith('.js')) {
-            files.push(relativeItemPath);
-          }
-        }
-        return files;
-      };
-
-      const localFiles = await findLocalFiles(destSrcPath);
-      const githubFiles = await findLocalFiles(newSrcPath);
-
-      // Identifica arquivos que existem localmente mas não no GitHub
-      const localOnlyFiles = localFiles.filter(file => !githubFiles.includes(file));
-
-      if (localOnlyFiles.length > 0) {
-        console.log('📋 Arquivos locais detectados que serão preservados:');
-        for (const file of localOnlyFiles) {
-          console.log(`  🛡️ ${file}`);
-          // Adiciona automaticamente à lista de preservação se não estiver lá
-          if (!srcPreserveItems.includes(file)) {
-            srcPreserveItems.push(file);
-          }
-        }
-      } else {
-        console.log('✅ Nenhum arquivo local único detectado');
-      }
-    } catch (error) {
-      console.log(`⚠️ Erro ao identificar arquivos locais: ${error.message}`);
-    }
-  }
 
   async restoreUserData() {
     console.log('🔄 Restaurando dados do usuário...');

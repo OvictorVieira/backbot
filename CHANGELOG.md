@@ -5,6 +5,28 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.8.9] - 2025-09-24
+
+### 🚨 **FUNDAMENTAL FIX: Proper Update Logic Implementation**
+
+#### 🔧 **Correct Update Behavior**
+- ✅ **FUNDAMENTAL:** Fixed update script to work properly - replaces ALL GitHub code
+- ✅ **Simple Logic:** Only preserves user data (.env, src/persistence/, etc.)
+- ✅ **Complete Replacement:** src/ directory completely replaced with GitHub version
+- ✅ **No More Missing Files:** HFT, FeatureToggle, and all future files automatically included
+
+#### 🛡️ **Simplified Preservation System**
+- ✅ **PRESERVE_ITEMS:** Reduced to only user data (not GitHub code)
+- ✅ **updateSrcDirectory():** Clean replacement logic for src/ folder
+- ✅ **Backup/Restore:** Only src/persistence/ preserved (user database)
+- ✅ **Zero Configuration:** No manual file lists - everything from GitHub gets included
+
+#### 🎯 **Root Cause Resolution**
+- ❌ **Previous Problem:** Script tried to selectively update files = guaranteed breakage
+- ✅ **Correct Solution:** Complete replacement + preserve only user data
+- 🔄 **Future-Proof:** ANY new file added to GitHub automatically included
+- 🧹 **Clean Logic:** Removed complex file detection systems - not needed
+
 ## [1.8.8] - 2025-09-24
 
 ### 🚨 **ENHANCED HOTFIX: Intelligent File Preservation System**
