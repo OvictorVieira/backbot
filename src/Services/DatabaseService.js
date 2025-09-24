@@ -3,6 +3,7 @@ import { open } from 'sqlite';
 import path from 'path';
 import { promises as fs } from 'fs';
 import Logger from '../Utils/Logger.js';
+import FeatureToggleService from './FeatureToggleService.js';
 
 class DatabaseService {
   constructor() {
@@ -92,6 +93,7 @@ class DatabaseService {
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           botId INTEGER UNIQUE NOT NULL,
           config TEXT NOT NULL,
+          bot_type TEXT NOT NULL DEFAULT 'TRADITIONAL',
           createdAt TEXT NOT NULL,
           updatedAt TEXT NOT NULL
         );
@@ -128,10 +130,49 @@ class DatabaseService {
         CREATE INDEX IF NOT EXISTS idx_positions_botId ON positions(botId);
       `);
 
+      // Create trading_locks table for HFT semaphore system
+      await this.db.exec(`
+        CREATE TABLE IF NOT EXISTS trading_locks (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          botId INTEGER NOT NULL,
+          symbol TEXT NOT NULL,
+          lockType TEXT NOT NULL,
+          lockReason TEXT,
+          positionId TEXT,
+          lockedAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          unlockAt TEXT,
+          status TEXT NOT NULL DEFAULT 'ACTIVE',
+          metadata TEXT,
+          UNIQUE(botId, symbol, lockType),
+          FOREIGN KEY (botId) REFERENCES bot_configs(botId) ON DELETE CASCADE
+        );
+      `);
+
+      // Create index for trading locks
+      await this.db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_trading_locks_active ON trading_locks(botId, symbol, status) WHERE status = 'ACTIVE';
+      `);
+
+      // Create feature_toggles table
+      await this.db.exec(`
+        CREATE TABLE IF NOT EXISTS feature_toggles (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          feature_name TEXT UNIQUE NOT NULL,
+          enabled INTEGER NOT NULL DEFAULT 0,
+          description TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+      `);
+
       // Migra tabela existente se necessário
       await this.migrateBotOrdersTable();
       await this.migrateTrailingStateTable();
       await this.migrateTrailingStateActiveStopColumn();
+      await this.migrateBotConfigsBotTypeColumn();
+
+      // Initialize feature toggles
+      await this.initializeFeatureToggles();
 
       Logger.info(`📋 [DATABASE] Tables created successfully`);
     } catch (error) {
@@ -226,6 +267,31 @@ class DatabaseService {
   }
 
   /**
+   * Migra a tabela bot_configs para incluir a coluna bot_type se necessário
+   */
+  async migrateBotConfigsBotTypeColumn() {
+    try {
+      // Verifica se a coluna bot_type já existe
+      const tableInfo = await this.getAll('PRAGMA table_info(bot_configs)');
+      const columnNames = tableInfo.map(col => col.name);
+
+      // Se não tem bot_type, adiciona a coluna
+      if (!columnNames.includes('bot_type')) {
+        Logger.info(`🔄 [DATABASE] Adicionando coluna bot_type à tabela bot_configs`);
+
+        await this.db.exec(`
+          ALTER TABLE bot_configs
+          ADD COLUMN bot_type TEXT NOT NULL DEFAULT 'TRADITIONAL'
+        `);
+
+        Logger.info(`✅ [DATABASE] Migração da coluna bot_type concluída`);
+      }
+    } catch (error) {
+      console.error(`❌ [DATABASE] Erro na migração da coluna bot_type:`, error.message);
+    }
+  }
+
+  /**
    * Migra a tabela trailing_state para incluir a coluna active_stop_order_id
    */
   async migrateTrailingStateActiveStopColumn() {
@@ -301,12 +367,114 @@ class DatabaseService {
   }
 
   /**
+   * Trading Lock Management Methods
+   */
+
+  /**
+   * Check if there's an active trading lock for a bot/symbol
+   */
+  async hasActiveTradingLock(botId, symbol, lockType = 'POSITION_OPEN') {
+    try {
+      const lock = await this.get(
+        'SELECT * FROM trading_locks WHERE botId = ? AND symbol = ? AND lockType = ? AND status = ?',
+        [botId, symbol, lockType, 'ACTIVE']
+      );
+      return !!lock;
+    } catch (error) {
+      Logger.error(`❌ [DATABASE] Error checking trading lock:`, error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Create a trading lock
+   */
+  async createTradingLock(botId, symbol, lockType, lockReason, positionId = null, metadata = null) {
+    try {
+      await this.run(
+        `INSERT OR REPLACE INTO trading_locks
+         (botId, symbol, lockType, lockReason, positionId, lockedAt, status, metadata)
+         VALUES (?, ?, ?, ?, ?, datetime('now'), 'ACTIVE', ?)`,
+        [
+          botId,
+          symbol,
+          lockType,
+          lockReason,
+          positionId,
+          metadata ? JSON.stringify(metadata) : null,
+        ]
+      );
+      Logger.info(
+        `🔒 [TRADING_LOCK] Created lock for bot ${botId}, symbol ${symbol}, type ${lockType}`
+      );
+      return true;
+    } catch (error) {
+      Logger.error(`❌ [DATABASE] Error creating trading lock:`, error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Release a trading lock
+   */
+  async releaseTradingLock(botId, symbol, lockType = 'POSITION_OPEN') {
+    try {
+      await this.run(
+        `UPDATE trading_locks
+         SET status = 'RELEASED', unlockAt = datetime('now')
+         WHERE botId = ? AND symbol = ? AND lockType = ? AND status = 'ACTIVE'`,
+        [botId, symbol, lockType]
+      );
+      Logger.info(
+        `🔓 [TRADING_LOCK] Released lock for bot ${botId}, symbol ${symbol}, type ${lockType}`
+      );
+      return true;
+    } catch (error) {
+      Logger.error(`❌ [DATABASE] Error releasing trading lock:`, error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Get active trading lock details
+   */
+  async getTradingLock(botId, symbol, lockType = 'POSITION_OPEN') {
+    try {
+      return await this.get(
+        'SELECT * FROM trading_locks WHERE botId = ? AND symbol = ? AND lockType = ? AND status = ?',
+        [botId, symbol, lockType, 'ACTIVE']
+      );
+    } catch (error) {
+      Logger.error(`❌ [DATABASE] Error getting trading lock:`, error.message);
+      return null;
+    }
+  }
+
+  /**
    * Close the database connection
    */
   async close() {
     if (this.db) {
       await this.db.close();
       console.log(`🔒 [DATABASE] Database connection closed`);
+    }
+  }
+
+  /**
+   * Initialize feature toggles with default values
+   */
+  async initializeFeatureToggles() {
+    try {
+      // Initialize FeatureToggleService with this database instance
+      FeatureToggleService.initialize(this);
+
+      // Set up default toggles
+      await FeatureToggleService.initializeDefaultToggles();
+
+      Logger.info('🎛️ [DATABASE] Feature toggles initialized');
+    } catch (error) {
+      Logger.error('❌ [DATABASE] Error initializing feature toggles:', error.message);
+      throw error;
     }
   }
 

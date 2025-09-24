@@ -392,9 +392,9 @@ class TrailingStop {
   }
 
   /**
-   * Carrega o estado do trailing stop da base de dados
+   * Carrega o estado do trailing stop da base de dados durante a inicialização
    */
-  static async loadStateFromDB(dbService) {
+  static async initializeFromDB(dbService) {
     try {
       if (!dbService || !dbService.isInitialized()) {
         throw new Error('Database service must be initialized before loading state');
@@ -448,6 +448,21 @@ class TrailingStop {
    */
   static async getState(botId, symbol) {
     try {
+      // Validate parameters
+      if (!symbol) {
+        Logger.error(
+          `❌ [VALIDATION] getState called with undefined symbol for botId: ${botId} (type: ${typeof botId})`
+        );
+        return null;
+      }
+
+      if (!botId || typeof botId !== 'string') {
+        Logger.error(
+          `❌ [VALIDATION] getState called with invalid botId: ${botId} (type: ${typeof botId}), symbol: ${symbol}`
+        );
+        Logger.error(`❌ [STACK_TRACE] Call stack:`, new Error().stack);
+        return null;
+      }
       const botKey = `bot_${botId}`;
 
       // 1. PRIMEIRO: Tenta buscar do cache (memória)
@@ -522,6 +537,21 @@ class TrailingStop {
    */
   static async loadStateFromDB(botId, symbol) {
     try {
+      // Validate parameters
+      if (!symbol) {
+        Logger.error(
+          `❌ [VALIDATION] loadStateFromDB called with undefined symbol for botId: ${botId} (type: ${typeof botId})`
+        );
+        return null;
+      }
+
+      if (!botId || typeof botId !== 'string') {
+        Logger.error(
+          `❌ [VALIDATION] loadStateFromDB called with invalid botId: ${botId} (type: ${typeof botId}), symbol: ${symbol}`
+        );
+        Logger.error(`❌ [STACK_TRACE] Call stack:`, new Error().stack);
+        return null;
+      }
       if (!TrailingStop.dbService || !TrailingStop.dbService.isInitialized()) {
         Logger.warn(`❌ [DB_SAVE] Serviço de banco não inicializado para ${symbol}`);
         TrailingStop.dbService = new DatabaseService();
@@ -600,6 +630,15 @@ class TrailingStop {
   }
 
   static async createTrailingStopOrder(position, state, botId, config) {
+    // Validate position has symbol
+    if (!position || !position.symbol) {
+      Logger.error(
+        `❌ [VALIDATION] createTrailingStopOrder called with invalid position:`,
+        position
+      );
+      return;
+    }
+
     const symbol = position.symbol;
 
     try {

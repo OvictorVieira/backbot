@@ -417,8 +417,8 @@ async function startBot() {
     // Inicializa o ConfigManagerSQLite
     ConfigManagerSQLite.initialize(dbService);
 
-    // Carrega todas as configurações de bots
-    const allConfigs = await ConfigManagerSQLite.loadConfigs();
+    // Carrega apenas bots tradicionais (não HFT)
+    const allConfigs = await ConfigManagerSQLite.loadTraditionalBots();
     console.log(`📋 Encontradas ${allConfigs.length} configurações de bots`);
 
     // Filtra apenas bots habilitados (inclui bots que não estão rodando mas estão habilitados)
@@ -489,7 +489,7 @@ async function startBot() {
 
     // 3. Carregar o estado do Trailing Stop da base de dados
     console.log('📂 [PERSISTENCE] Carregando estado do Trailing Stop...');
-    await TrailingStop.loadStateFromDB(dbService);
+    await TrailingStop.initializeFromDB(dbService);
 
     // Inicializa a estratégia selecionada
     initializeDecisionStrategy(activeBotConfig.strategyName);
@@ -700,6 +700,24 @@ async function gracefulShutdown(signal) {
   try {
     // Para o timer global se estiver rodando
     stopGlobalTimer();
+
+    // Limpa todos os trading locks ativos para evitar problemas na próxima inicialização
+    try {
+      const dbService = ConfigManagerSQLite.dbService;
+      if (dbService && dbService.isInitialized()) {
+        const result = await dbService.run(
+          'UPDATE trading_locks SET status = ?, unlockAt = datetime(?) WHERE status = ?',
+          ['RELEASED', 'now', 'ACTIVE']
+        );
+        if (result.changes > 0) {
+          console.log(
+            `🔓 [SHUTDOWN] ${result.changes} trading locks ativos foram liberados no graceful shutdown`
+          );
+        }
+      }
+    } catch (error) {
+      console.error('❌ [SHUTDOWN] Erro ao liberar trading locks:', error.message);
+    }
 
     console.log('✅ [SHUTDOWN] BackBot encerrado com sucesso');
     process.exit(0);

@@ -44,6 +44,11 @@ import OrdersService from './src/Services/OrdersService.js';
 import Order from './src/Backpack/Authenticated/Order.js';
 import AccountController from './src/Controllers/AccountController.js';
 import CachedOrdersService from './src/Utils/CachedOrdersService.js';
+import HFTController from './src/Controllers/HFTController.js';
+import FeatureToggleService from './src/Services/FeatureToggleService.js';
+
+// Instância global do HFTController
+const hftController = new HFTController();
 
 // Instancia PositionSyncService (será inicializado depois que o DatabaseService estiver pronto)
 let PositionSyncService = null;
@@ -193,8 +198,8 @@ async function loadAndRecoverBots() {
   try {
     CachedOrdersService.clearAllCache();
 
-    // Carrega todos os bots habilitados que estavam rodando ou em erro
-    const configs = await ConfigManagerSQLite.loadConfigs();
+    // Carrega apenas bots tradicionais (não HFT) que estavam rodando ou em erro
+    const configs = await ConfigManagerSQLite.loadTraditionalBots();
 
     const botsToRecover = configs.filter(
       config =>
@@ -1657,6 +1662,85 @@ async function stopBot(botId, updateStatus = true) {
 
 // API Routes
 
+// Feature Toggles Routes
+// GET /api/feature-toggles - Lista todas as feature toggles
+app.get('/api/feature-toggles', async (req, res) => {
+  try {
+    const toggles = await FeatureToggleService.getAllToggles();
+    res.json({
+      success: true,
+      data: toggles,
+    });
+  } catch (error) {
+    Logger.error('❌ [API] Error getting feature toggles:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// POST /api/feature-toggles/:featureName/enable - Habilita uma feature
+app.post('/api/feature-toggles/:featureName/enable', async (req, res) => {
+  try {
+    const { featureName } = req.params;
+    const { description } = req.body;
+
+    await FeatureToggleService.enable(featureName, description || '');
+
+    res.json({
+      success: true,
+      message: `Feature '${featureName}' enabled successfully`,
+    });
+  } catch (error) {
+    Logger.error(`❌ [API] Error enabling feature toggle:`, error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// POST /api/feature-toggles/:featureName/disable - Desabilita uma feature
+app.post('/api/feature-toggles/:featureName/disable', async (req, res) => {
+  try {
+    const { featureName } = req.params;
+
+    await FeatureToggleService.disable(featureName);
+
+    res.json({
+      success: true,
+      message: `Feature '${featureName}' disabled successfully`,
+    });
+  } catch (error) {
+    Logger.error(`❌ [API] Error disabling feature toggle:`, error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// GET /api/feature-toggles/:featureName - Verifica status de uma feature
+app.get('/api/feature-toggles/:featureName', async (req, res) => {
+  try {
+    const { featureName } = req.params;
+    const enabled = await FeatureToggleService.isEnabled(featureName);
+
+    res.json({
+      success: true,
+      feature: featureName,
+      enabled,
+    });
+  } catch (error) {
+    Logger.error(`❌ [API] Error checking feature toggle:`, error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
 // POST /api/bot/debug/fix-status - Corrige status inconsistente
 app.post('/api/bot/debug/fix-status', async (req, res) => {
   try {
@@ -2212,11 +2296,22 @@ app.post('/api/configs', async (req, res) => {
           });
         } else {
           // Se não está rodando, atualiza normalmente
-          await ConfigManagerSQLite.updateBotConfigById(botConfig.id, botConfig);
+          // Preserva o status atual
+          const currentConfig = await ConfigManagerSQLite.getBotConfigById(botConfig.id);
+          const currentStatus = currentConfig ? currentConfig.status : 'stopped';
+
+          // Remove o status do config enviado para não sobrescrever
+          const configToUpdate = { ...botConfig };
+          delete configToUpdate.status;
+
+          await ConfigManagerSQLite.updateBotConfigById(botConfig.id, configToUpdate);
+
+          // Explicitamente preserva o status atual
+          await ConfigManagerSQLite.updateBotStatusById(botConfig.id, currentStatus);
 
           res.json({
             success: true,
-            message: `Bot ${botConfig.id} atualizado com sucesso`,
+            message: `Bot ${botConfig.id} atualizado com sucesso (status preservado: ${currentStatus})`,
             botId: botConfig.id,
             wasRunning: false,
           });
@@ -2287,11 +2382,22 @@ app.post('/api/configs', async (req, res) => {
           });
         } else {
           // Se não está rodando, atualiza normalmente
-          await ConfigManagerSQLite.updateBotConfigById(botConfig.id, botConfig);
+          // Preserva o status atual
+          const currentConfig = await ConfigManagerSQLite.getBotConfigById(botConfig.id);
+          const currentStatus = currentConfig ? currentConfig.status : 'stopped';
+
+          // Remove o status do config enviado para não sobrescrever
+          const configToUpdate = { ...botConfig };
+          delete configToUpdate.status;
+
+          await ConfigManagerSQLite.updateBotConfigById(botConfig.id, configToUpdate);
+
+          // Explicitamente preserva o status atual
+          await ConfigManagerSQLite.updateBotStatusById(botConfig.id, currentStatus);
 
           res.json({
             success: true,
-            message: `Bot ${botConfig.id} atualizado com sucesso`,
+            message: `Bot ${botConfig.id} atualizado com sucesso (status preservado: ${currentStatus})`,
             botId: botConfig.id,
             wasRunning: false,
           });
@@ -2359,11 +2465,22 @@ app.post('/api/configs', async (req, res) => {
           });
         } else {
           // Se não está rodando, atualiza normalmente
-          await ConfigManagerSQLite.updateBotConfigById(config.id, config);
+          // Preserva o status atual
+          const currentConfigLegacy = await ConfigManagerSQLite.getBotConfigById(config.id);
+          const currentStatusLegacy = currentConfigLegacy ? currentConfigLegacy.status : 'stopped';
+
+          // Remove o status do config enviado para não sobrescrever
+          const configToUpdateLegacy = { ...config };
+          delete configToUpdateLegacy.status;
+
+          await ConfigManagerSQLite.updateBotConfigById(config.id, configToUpdateLegacy);
+
+          // Explicitamente preserva o status atual
+          await ConfigManagerSQLite.updateBotStatusById(config.id, currentStatusLegacy);
 
           res.json({
             success: true,
-            message: `Bot ${config.id} atualizado com sucesso`,
+            message: `Bot ${config.id} atualizado com sucesso (status preservado: ${currentStatusLegacy})`,
             botId: config.id,
             wasRunning: false,
           });
@@ -2461,50 +2578,19 @@ app.delete('/api/configs/:botId', async (req, res) => {
 
     // === LIMPEZA COMPLETA DO BOT ===
 
-    // 1. Remove a configuração do bot
+    // 1. Remove a configuração do bot (inclui ordens, trailing states e bot orders)
     await ConfigManagerSQLite.removeBotConfigById(botIdNum);
     Logger.info(`✅ [DELETE] Configuração do bot ${botIdNum} removida`);
 
-    // 2. Limpa o estado do trailing stop do bot
-    const botKey = `bot_${botIdNum}`;
-    const TrailingStateAdapter = await import('./src/Persistence/adapters/TrailingStateAdapter.js');
-    const trailingRemoved = TrailingStateAdapter.default.removeBotState(botKey);
+    // Nota: trailing_state, bot_orders, ordens e posições já foram removidos pelo ConfigManagerSQLite
 
-    if (trailingRemoved) {
-      Logger.info(`🧹 [DELETE] Estado do trailing stop do bot ${botIdNum} removido`);
-    }
-
-    // 3. Limpa ordens do bot usando OrdersService
-    try {
-      const OrdersService = await import('./src/Services/OrdersService.js');
-      const ordersRemoved = await OrdersService.default.clearOrdersByBotId(botIdNum);
-      if (ordersRemoved > 0) {
-        Logger.info(`🧹 [DELETE] ${ordersRemoved} ordens do bot ${botIdNum} removidas`);
-      }
-    } catch (error) {
-      Logger.info(`ℹ️ [DELETE] OrdersService não disponível ou erro: ${error.message}`);
-    }
-
-    // 4. Limpa posições do bot da nova tabela positions
-    try {
-      const positionsResult = await ConfigManagerSQLite.dbService.run(
-        'DELETE FROM positions WHERE botId = ?',
-        [botIdNum]
-      );
-      if (positionsResult.changes > 0) {
-        Logger.info(`🧹 [DELETE] ${positionsResult.changes} posições do bot ${botIdNum} removidas`);
-      }
-    } catch (error) {
-      Logger.info(`ℹ️ [DELETE] Erro ao remover posições: ${error.message}`);
-    }
-
-    // 5. Remove de instâncias ativas (se ainda estiver lá)
+    // 2. Remove de instâncias ativas (se ainda estiver lá)
     if (activeBotInstances.has(botIdNum)) {
       activeBotInstances.delete(botIdNum);
       Logger.info(`🧹 [DELETE] Instância ativa do bot ${botIdNum} removida`);
     }
 
-    // 6. Remove configurações de rate limit
+    // 3. Remove configurações de rate limit
     if (monitorRateLimits.has(botIdNum)) {
       monitorRateLimits.delete(botIdNum);
       Logger.info(`🧹 [DELETE] Rate limits do bot ${botIdNum} removidos`);
@@ -3523,8 +3609,8 @@ async function startMonitorsForAllEnabledBots() {
   try {
     Logger.info('🔄 [MONITORS] Iniciando monitores para todos os bots habilitados...');
 
-    // Carrega todos os bots habilitados
-    const configs = await ConfigManagerSQLite.loadConfigs();
+    // Carrega apenas bots tradicionais habilitados (não HFT)
+    const configs = await ConfigManagerSQLite.loadTraditionalBots();
     const enabledBots = configs.filter(config => config.enabled);
 
     if (enabledBots.length === 0) {
@@ -3588,7 +3674,7 @@ async function initializeServer() {
 
     // Carrega o estado persistido do Trailing Stop do banco de dados
     if (dbService && dbService.isInitialized()) {
-      await TrailingStop.loadStateFromDB(dbService);
+      await TrailingStop.initializeFromDB(dbService);
     } else {
       Logger.warn(
         '⚠️ [SERVER] Database service não inicializado, Trailing Stop será carregado individualmente para cada bot'
@@ -3634,6 +3720,11 @@ async function initializeServer() {
     // Carrega e recupera bots em background (não bloqueia o servidor)
     loadAndRecoverBots().catch(error => {
       Logger.error('❌ [SERVER] Erro ao carregar e recuperar bots:', error.message);
+    });
+
+    // Inicia HFTController em background
+    hftController.start().catch(error => {
+      Logger.error('❌ [SERVER] Erro ao iniciar HFTController:', error.message);
     });
 
     // Inicia monitores para todos os bots habilitados (independente de estarem rodando)
@@ -3953,6 +4044,231 @@ app.get('/api/bot/test-api/:botId', async (req, res) => {
   }
 });
 
+// ======= HFT APIs =======
+
+// Inicia bot HFT
+app.post('/api/hft/start', async (req, res) => {
+  try {
+    const { botId } = req.body;
+
+    if (!botId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bot ID é obrigatório',
+      });
+    }
+
+    // Busca configuração do bot
+    const botConfig = await ConfigManagerSQLite.getBotConfigById(botId);
+    if (!botConfig) {
+      return res.status(404).json({
+        success: false,
+        error: `Bot ${botId} não encontrado`,
+      });
+    }
+
+    // Verifica se é modo HFT
+    if (botConfig.strategyName !== 'HFT') {
+      return res.status(400).json({
+        success: false,
+        error: 'Bot não está configurado para modo HFT',
+      });
+    }
+
+    // Inicia estratégia HFT
+    const result = await hftController.startHFTBot(botConfig);
+
+    Logger.info(`🚀 [API] Bot HFT iniciado: ${botId}`);
+
+    res.json({
+      success: true,
+      message: 'Bot HFT iniciado com sucesso',
+      data: result,
+    });
+  } catch (error) {
+    Logger.error('❌ [API] Erro ao iniciar bot HFT:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Para bot HFT
+app.post('/api/hft/stop', async (req, res) => {
+  try {
+    const { botId } = req.body;
+
+    if (!botId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bot ID é obrigatório',
+      });
+    }
+
+    const result = await hftController.stopHFTBot(botId);
+
+    Logger.info(`🛑 [API] Bot HFT parado: ${botId}`);
+
+    res.json({
+      success: true,
+      message: 'Bot HFT parado com sucesso',
+      data: result,
+    });
+  } catch (error) {
+    Logger.error('❌ [API] Erro ao parar bot HFT:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Para todos os bots HFT
+app.post('/api/hft/stop-all', async (req, res) => {
+  try {
+    const result = await hftController.stopAllHFTBots();
+
+    Logger.info(`🛑 [API] Todos os bots HFT parados`);
+
+    res.json({
+      success: true,
+      message: 'Todos os bots HFT parados com sucesso',
+      data: result,
+    });
+  } catch (error) {
+    Logger.error('❌ [API] Erro ao parar todos os bots HFT:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Status de um bot HFT específico
+app.get('/api/hft/status/:botId', async (req, res) => {
+  try {
+    const { botId } = req.params;
+
+    if (!botId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bot ID é obrigatório',
+      });
+    }
+
+    const status = HFTController.getHFTBotStatus(parseInt(botId));
+
+    res.json({
+      success: true,
+      data: status,
+    });
+  } catch (error) {
+    Logger.error('❌ [API] Erro ao obter status do bot HFT:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Status de todos os bots HFT
+app.get('/api/hft/status', async (req, res) => {
+  try {
+    const status = HFTController.getAllHFTStatus();
+
+    res.json({
+      success: true,
+      data: status,
+    });
+  } catch (error) {
+    Logger.error('❌ [API] Erro ao obter status de todos os bots HFT:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Métricas e relatório de performance HFT
+app.get('/api/hft/performance', async (req, res) => {
+  try {
+    const report = HFTController.getPerformanceReport();
+
+    res.json({
+      success: true,
+      data: report,
+    });
+  } catch (error) {
+    Logger.error('❌ [API] Erro ao obter relatório de performance HFT:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Habilita/desabilita sistema HFT globalmente
+app.post('/api/hft/toggle', async (req, res) => {
+  try {
+    const { enabled } = req.body;
+
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        error: 'Campo "enabled" deve ser boolean',
+      });
+    }
+
+    HFTController.setHFTEnabled(enabled);
+
+    Logger.info(`🔧 [API] Sistema HFT ${enabled ? 'habilitado' : 'desabilitado'}`);
+
+    res.json({
+      success: true,
+      message: `Sistema HFT ${enabled ? 'habilitado' : 'desabilitado'} com sucesso`,
+      data: { enabled },
+    });
+  } catch (error) {
+    Logger.error('❌ [API] Erro ao alterar status do sistema HFT:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Atualiza configuração de um bot HFT em execução
+app.put('/api/hft/config/:botId', async (req, res) => {
+  try {
+    const { botId } = req.params;
+    const newConfig = req.body;
+
+    if (!botId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bot ID é obrigatório',
+      });
+    }
+
+    const result = await HFTController.updateHFTBotConfig(parseInt(botId), newConfig);
+
+    Logger.info(`🔧 [API] Configuração do bot HFT atualizada: ${botId}`);
+
+    res.json({
+      success: true,
+      message: 'Configuração do bot HFT atualizada com sucesso',
+      data: result,
+    });
+  } catch (error) {
+    Logger.error('❌ [API] Erro ao atualizar configuração do bot HFT:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
 // ======= SHUTDOWN HANDLERS =======
 // Função para fazer shutdown graceful de todos os bots
 async function gracefulShutdown(signal) {
@@ -3990,8 +4306,12 @@ async function gracefulShutdown(signal) {
       Logger.info(`✅ [SHUTDOWN] PositionSyncService parado`);
     }
 
-    if (typeof TrailingStop.cleanup === 'function') {
-      await TrailingStop.cleanup();
+    // Para todos os bots HFT
+    try {
+      await hftController.stopAllHFTBots();
+      Logger.info(`✅ [SHUTDOWN] Todos os bots HFT parados`);
+    } catch (error) {
+      Logger.error(`❌ [SHUTDOWN] Erro ao parar bots HFT:`, error.message);
     }
 
     Logger.info(`✅ [SHUTDOWN] Shutdown graceful concluído`);

@@ -241,8 +241,13 @@ class RequestManager {
    * @returns {Promise} - Promise que resolve com o resultado da request
    */
   async enqueue(requestFunction, description = 'API Request', priority = 'MEDIUM', options = {}) {
+    Logger.debug(
+      `🔍 [REQUEST_MANAGER_DEBUG] enqueue called for: ${description}, priority: ${priority}`
+    );
+
     // Convert legacy numeric priority to string
     const normalizedPriority = this.normalizePriority(priority);
+    Logger.debug(`🔍 [REQUEST_MANAGER_DEBUG] normalized priority: ${normalizedPriority}`);
 
     // Enhanced request wrapper
     const requestData = {
@@ -528,11 +533,14 @@ class RequestManager {
    * Generates timestamp immediately before HTTP call to prevent expiration
    */
   async authenticatedRequest(method, url, config = {}, authParams, description, priority = 'HIGH') {
+    Logger.debug(
+      `🔍 [REQUEST_MANAGER_DEBUG] authenticatedRequest called: ${method} ${url}, description: ${description}`
+    );
+
     const requestFunction = async () => {
-      // 🚀 CRITICAL: Generate timestamp RIGHT before the HTTP call
+      Logger.debug(`🔍 [REQUEST_MANAGER_DEBUG] requestFunction executing for: ${description}`);
       const timestamp = Date.now();
 
-      // Debug: verificar se auth está disponível
       if (!auth || typeof auth !== 'function') {
         Logger.error(`❌ [AUTH_ERROR] auth is not available: ${typeof auth}`);
         throw new Error('auth function is not available');
@@ -543,7 +551,6 @@ class RequestManager {
         timestamp,
       });
 
-      // Merge auth headers with any existing headers
       const finalConfig = {
         ...this.axiosDefaults,
         ...config,

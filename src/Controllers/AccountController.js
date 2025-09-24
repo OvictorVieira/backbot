@@ -157,7 +157,9 @@ class AccountController {
     AccountController.globalRateLimit.lastApiCall = Date.now();
 
     const Accounts = await Account.getAccount(strategy, apiKey, apiSecret);
+    Logger.debug(`🔍 [ACCOUNT_DEBUG] Calling Capital.getCollateral for strategy: ${strategy}`);
     const Collateral = await Capital.getCollateral(strategy, apiKey, apiSecret);
+    Logger.debug(`🔍 [ACCOUNT_DEBUG] Capital.getCollateral returned:`, Collateral);
 
     // ✅ FALHA SEGURA: Se não conseguir dados da conta, PARA a operação
     if (!Accounts || !Collateral) {
@@ -204,18 +206,44 @@ class AccountController {
           decimal_price = 6;
         }
 
-        return {
+        const marketObj = {
           symbol: el.symbol,
           decimal_quantity: decimal_quantity,
           decimal_price: decimal_price,
           stepSize_quantity: Number(el.filters.quantity.stepSize),
           tickSize: Number(el.filters.price.tickSize),
+          minQuantity: el.filters?.quantity?.minQuantity || Number(el.filters.quantity.stepSize),
         };
+
+        // Debug log para verificar se minQuantity está sendo incluído
+        if (el.symbol === 'LINEA_USDC_PERP') {
+          Logger.debug(`🔍 [ACCOUNT_MARKET_DEBUG] ${el.symbol}:`, {
+            'el.filters.quantity.minQuantity': el.filters?.quantity?.minQuantity,
+            'stepSize fallback': Number(el.filters.quantity.stepSize),
+            'final minQuantity': marketObj.minQuantity,
+            'marketObj complete': marketObj,
+          });
+        }
+
+        return marketObj;
       });
 
     const makerFee = parseFloat(Accounts.futuresMakerFee) / 10000;
     const leverage = parseInt(Accounts.leverageLimit); // Alavancagem definida pelo usuário na corretora
+
+    // 🔍 DEBUG: Verificar valores do Collateral
+    Logger.debug(`🔍 [ACCOUNT_DEBUG] Collateral object:`, Collateral);
+    Logger.debug(
+      `🔍 [ACCOUNT_DEBUG] Collateral.netEquityAvailable raw:`,
+      Collateral.netEquityAvailable
+    );
+    Logger.debug(
+      `🔍 [ACCOUNT_DEBUG] typeof Collateral.netEquityAvailable:`,
+      typeof Collateral.netEquityAvailable
+    );
+
     const netEquityAvailable = parseFloat(Collateral.netEquityAvailable);
+    Logger.debug(`🔍 [ACCOUNT_DEBUG] netEquityAvailable after parseFloat:`, netEquityAvailable);
 
     // 💡 USANDO ALAVANCAGEM DA CORRETORA: Usuário define a alavancagem que quer usar
     // Respeitamos a configuração do usuário sem impor limites arbitrários
@@ -305,13 +333,26 @@ class AccountController {
           decimal_price = 6;
         }
 
-        return {
+        const marketObj = {
           symbol: el.symbol,
           decimal_quantity: decimal_quantity,
           decimal_price: decimal_price,
           stepSize_quantity: Number(el.filters.quantity.stepSize),
           tickSize: Number(el.filters.price.tickSize),
+          minQuantity: el.filters?.quantity?.minQuantity || Number(el.filters.quantity.stepSize),
         };
+
+        // Debug log para verificar se minQuantity está sendo incluído
+        if (el.symbol === 'LINEA_USDC_PERP') {
+          Logger.debug(`🔍 [ACCOUNT_MARKET_DEBUG] ${el.symbol}:`, {
+            'el.filters.quantity.minQuantity': el.filters?.quantity?.minQuantity,
+            'stepSize fallback': Number(el.filters.quantity.stepSize),
+            'final minQuantity': marketObj.minQuantity,
+            'marketObj complete': marketObj,
+          });
+        }
+
+        return marketObj;
       });
 
     return markets;

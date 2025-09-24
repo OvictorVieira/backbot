@@ -121,6 +121,130 @@ class OrderBookAnalyzer {
   }
 
   /**
+   * Encontra o preço no order book baseado nas porcentagens de stop/profit configuradas
+   * @param {string} symbol - Símbolo do par
+   * @param {string} side - 'BUY' ou 'SELL'
+   * @param {number} entryPrice - Preço de entrada da posição
+   * @param {number} targetPercentage - Porcentagem alvo (ex: -3 para stop loss, +3 para take profit)
+   * @returns {number|null} - Preço ajustado do order book ou null se falhar
+   */
+  static async findClosestOrderBookPrice(symbol, side, entryPrice, targetPercentage) {
+    try {
+      const book = await this.getOrderBook(symbol);
+      if (!book) return null;
+
+      const bestBid = parseFloat(book.bids[0]?.[0]);
+      const bestAsk = parseFloat(book.asks[0]?.[0]);
+
+      if (!bestBid || !bestAsk || !entryPrice || !targetPercentage) {
+        Logger.info(
+          `[ORDER_BOOK] ${symbol}: Dados insuficientes para ajuste de preço - bestBid=${bestBid}, bestAsk=${bestAsk}, entryPrice=${entryPrice}, targetPercentage=${targetPercentage}`
+        );
+        return null;
+      }
+
+      // 📊 Calcula o preço alvo baseado na porcentagem configurada
+      const targetPrice = entryPrice * (1 + targetPercentage / 100);
+
+      Logger.debug(
+        `🎯 [ORDER_BOOK_CALC] ${symbol}: entryPrice=${entryPrice.toFixed(6)}, targetPercentage=${targetPercentage}%, targetPrice=${targetPrice.toFixed(6)}, side=${side}`
+      );
+
+      if (side.toUpperCase() === 'BUY' || side.toUpperCase() === 'BID') {
+        // Para compra (Stop Loss em SHORT): procura no book de bids
+        const maxAllowedPrice = bestAsk * 0.9999; // Buffer para evitar execução imediata
+
+        let closestPrice = null;
+        let smallestDifference = Infinity;
+
+        for (const [price, quantity] of book.bids) {
+          const bidPrice = parseFloat(price);
+          const isValid = bidPrice <= maxAllowedPrice && bidPrice > 0;
+          const difference = Math.abs(bidPrice - targetPrice);
+
+          // Só considera preços válidos (não executarão imediatamente)
+          if (isValid) {
+            if (difference < smallestDifference) {
+              smallestDifference = difference;
+              closestPrice = bidPrice;
+            }
+          }
+        }
+
+        if (closestPrice !== null) {
+          Logger.debug(
+            `🔍 [ORDER_BOOK] ${symbol}: BID result = ${closestPrice.toFixed(6)} (target: ${targetPrice.toFixed(6)}, diff: ${smallestDifference.toFixed(6)})`
+          );
+          return closestPrice;
+        }
+
+        // 🚨 CRÍTICO: Order book é ENORME - se não encontrou, há bug no código
+        // NUNCA usar fallback em operações financeiras
+        Logger.error(
+          `❌ [ORDER_BOOK] ${symbol}: ERRO CRÍTICO - Impossível encontrar preço BID próximo ao target ${targetPrice.toFixed(6)}`
+        );
+        Logger.error(
+          `❌ [ORDER_BOOK] ${symbol}: Cancelando operação - não podemos arriscar em mercado financeiro`
+        );
+        return null;
+      } else {
+        // Para venda (Take Profit em SHORT, Stop Loss em LONG): procura no book de asks
+        const minAllowedPrice = bestBid * 1.0001; // Buffer para evitar execução imediata
+
+        let closestPrice = null;
+        let smallestDifference = Infinity;
+
+        Logger.debug(
+          `🔍 [ASK_DEBUG] ${symbol}: targetPrice=${targetPrice.toFixed(6)}, minAllowedPrice=${minAllowedPrice.toFixed(6)}, bestBid=${bestBid}, bestAsk=${bestAsk}`
+        );
+        Logger.debug(`🔍 [ASK_DEBUG] ${symbol}: book.asks (primeiros 10):`, book.asks.slice(0, 10));
+
+        for (const [price, quantity] of book.asks) {
+          const askPrice = parseFloat(price);
+          // CORREÇÃO: Para Take Profit, aceita qualquer preço válido no book (não força minAllowedPrice)
+          // O importante é encontrar o preço mais próximo do TARGET, não do bestBid
+          const isValid = askPrice >= minAllowedPrice || askPrice >= targetPrice;
+          const difference = Math.abs(askPrice - targetPrice);
+
+          Logger.debug(
+            `🔍 [ASK_DEBUG] ${symbol}: askPrice=${askPrice.toFixed(6)}, isValid=${isValid}, diff=${difference.toFixed(6)}`
+          );
+
+          if (isValid) {
+            if (difference < smallestDifference) {
+              Logger.debug(
+                `🔍 [ASK_DEBUG] ${symbol}: NEW CLOSEST! ${askPrice.toFixed(6)} (diff: ${difference.toFixed(6)})`
+              );
+              smallestDifference = difference;
+              closestPrice = askPrice;
+            }
+          }
+        }
+
+        if (closestPrice !== null) {
+          Logger.debug(
+            `🔍 [ORDER_BOOK] ${symbol}: ASK result = ${closestPrice.toFixed(6)} (target: ${targetPrice.toFixed(6)}, diff: ${smallestDifference.toFixed(6)})`
+          );
+          return closestPrice;
+        }
+
+        // 🚨 CRÍTICO: Order book é ENORME - se não encontrou, há bug no código
+        // NUNCA usar fallback em operações financeiras
+        Logger.error(
+          `❌ [ORDER_BOOK] ${symbol}: ERRO CRÍTICO - Impossível encontrar preço ASK próximo ao target ${targetPrice.toFixed(6)}`
+        );
+        Logger.error(
+          `❌ [ORDER_BOOK] ${symbol}: Cancelando operação - não podemos arriscar em mercado financeiro`
+        );
+        return null;
+      }
+    } catch (error) {
+      Logger.error(`[ORDER_BOOK] ${symbol}: Erro ao encontrar preço próximo:`, error.message);
+      return null;
+    }
+  }
+
+  /**
    * Valida se um preço pode ser usado em ordem limit sem executar imediatamente
    * @param {string} symbol - Símbolo do par
    * @param {string} side - 'BUY' ou 'SELL'

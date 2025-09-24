@@ -64,7 +64,7 @@ class ConfigManagerSQLite {
       }
 
       const results = await ConfigManagerSQLite.dbService.getAll(
-        'SELECT botId, config, createdAt, updatedAt FROM bot_configs ORDER BY botId'
+        'SELECT botId, config, bot_type, createdAt, updatedAt FROM bot_configs ORDER BY botId'
       );
 
       const configs = results
@@ -74,6 +74,7 @@ class ConfigManagerSQLite {
             return {
               id: row.botId,
               ...config,
+              bot_type: row.bot_type,
               createdAt: row.createdAt,
               updatedAt: row.updatedAt,
             };
@@ -115,13 +116,13 @@ class ConfigManagerSQLite {
 
       // Insere as novas configurações
       for (const config of configs) {
-        const { id, createdAt, updatedAt, ...configData } = config;
+        const { id, createdAt, updatedAt, bot_type, ...configData } = config;
         const configJson = JSON.stringify(configData);
         const now = new Date().toISOString();
 
         await ConfigManagerSQLite.dbService.run(
-          'INSERT INTO bot_configs (botId, config, createdAt, updatedAt) VALUES (?, ?, ?, ?)',
-          [id, configJson, createdAt || now, updatedAt || now]
+          'INSERT INTO bot_configs (botId, config, bot_type, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)',
+          [id, configJson, bot_type || 'TRADITIONAL', createdAt || now, updatedAt || now]
         );
       }
 
@@ -160,7 +161,7 @@ class ConfigManagerSQLite {
   static async getBotConfigById(botId) {
     try {
       const result = await ConfigManagerSQLite.dbService.get(
-        'SELECT botId, config, createdAt, updatedAt FROM bot_configs WHERE botId = ?',
+        'SELECT botId, config, bot_type, createdAt, updatedAt FROM bot_configs WHERE botId = ?',
         [botId]
       );
 
@@ -170,6 +171,7 @@ class ConfigManagerSQLite {
       return {
         id: result.botId,
         ...config,
+        bot_type: result.bot_type,
         createdAt: result.createdAt,
         updatedAt: result.updatedAt,
       };
@@ -257,9 +259,12 @@ class ConfigManagerSQLite {
       const configJson = JSON.stringify(newBotConfig);
       const now = new Date().toISOString();
 
+      // Determina o tipo de bot baseado na estratégia
+      const botType = config.strategyName === 'HFT' ? 'HFT' : 'TRADITIONAL';
+
       await ConfigManagerSQLite.dbService.run(
-        'INSERT INTO bot_configs (botId, config, createdAt, updatedAt) VALUES (?, ?, ?, ?)',
-        [botId, configJson, now, now]
+        'INSERT INTO bot_configs (botId, config, bot_type, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)',
+        [botId, configJson, botType, now, now]
       );
 
       console.log(
@@ -282,11 +287,29 @@ class ConfigManagerSQLite {
    */
   static async removeBotConfigById(botId) {
     try {
-      // Primeiro remove todas as ordens do bot
+      // 1. Remove todas as ordens do bot
       const { default: OrdersService } = await import('../Services/OrdersService.js');
       const removedOrdersCount = await OrdersService.removeOrdersByBotId(botId);
 
-      // Depois remove a configuração do bot
+      // 2. Remove estados de trailing stop do bot
+      const trailingStateResult = await ConfigManagerSQLite.dbService.run(
+        'DELETE FROM trailing_state WHERE bot_id = ?',
+        [botId]
+      );
+
+      // 3. Remove ordens específicas do bot (bot_orders)
+      const botOrdersResult = await ConfigManagerSQLite.dbService.run(
+        'DELETE FROM bot_orders WHERE bot_id = ?',
+        [botId]
+      );
+
+      // 4. Remove posições do bot
+      const positionsResult = await ConfigManagerSQLite.dbService.run(
+        'DELETE FROM positions WHERE botId = ?',
+        [botId]
+      );
+
+      // 5. Remove a configuração do bot
       const result = await ConfigManagerSQLite.dbService.run(
         'DELETE FROM bot_configs WHERE botId = ?',
         [botId]
@@ -294,14 +317,14 @@ class ConfigManagerSQLite {
 
       if (result.changes > 0) {
         console.log(
-          `✅ [CONFIG_SQLITE] Bot ${botId} removido com sucesso (${removedOrdersCount} ordens removidas)`
+          `✅ [CONFIG_SQLITE] Bot ${botId} removido com sucesso (${removedOrdersCount} ordens, ${trailingStateResult.changes} trailing states, ${botOrdersResult.changes} bot orders, ${positionsResult.changes} posições removidos)`
         );
 
         // Invalida cache após remoção
         ConfigManagerSQLite.invalidateCache();
       } else {
         console.log(
-          `ℹ️ [CONFIG_SQLITE] Bot ${botId} não encontrado para remoção (${removedOrdersCount} ordens removidas)`
+          `ℹ️ [CONFIG_SQLITE] Bot ${botId} não encontrado para remoção (${removedOrdersCount} ordens, ${trailingStateResult.changes} trailing states, ${botOrdersResult.changes} bot orders, ${positionsResult.changes} posições removidos)`
         );
       }
     } catch (error) {
@@ -506,6 +529,71 @@ class ConfigManagerSQLite {
         error.message
       );
     }
+  }
+
+  /**
+   * Carrega configurações de bots filtradas por tipo
+   * @param {string} botType - Tipo de bot ('TRADITIONAL' ou 'HFT')
+   * @returns {Promise<Array>} Array de configurações de bots do tipo especificado
+   */
+  static async loadConfigsByType(botType) {
+    try {
+      if (!ConfigManagerSQLite.dbService || !ConfigManagerSQLite.dbService.isInitialized()) {
+        Logger.error('❌ [CONFIG_SQLITE] Database service não está inicializado');
+        throw new Error('Database service não está inicializado');
+      }
+
+      const results = await ConfigManagerSQLite.dbService.getAll(
+        'SELECT botId, config, bot_type, createdAt, updatedAt FROM bot_configs WHERE bot_type = ? ORDER BY botId',
+        [botType]
+      );
+
+      const configs = results
+        .map(row => {
+          try {
+            const config = JSON.parse(row.config);
+            return {
+              id: row.botId,
+              ...config,
+              bot_type: row.bot_type,
+              createdAt: row.createdAt,
+              updatedAt: row.updatedAt,
+            };
+          } catch (parseError) {
+            Logger.error(
+              `❌ [CONFIG_SQLITE] Erro ao fazer parse do JSON para botId ${row.botId}:`,
+              parseError.message
+            );
+            return null;
+          }
+        })
+        .filter(config => config !== null);
+
+      Logger.infoOnce(
+        `config-load-${botType}`,
+        `✅ [CONFIG_SQLITE] ${configs.length} configurações ${botType} carregadas`
+      );
+      return configs;
+    } catch (error) {
+      Logger.error(`❌ [CONFIG_SQLITE] Erro ao carregar configurações ${botType}:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Carrega apenas bots tradicionais
+   * @returns {Promise<Array>} Array de configurações de bots tradicionais
+   */
+  static async loadTraditionalBots() {
+    return await this.loadConfigsByType('TRADITIONAL');
+  }
+
+  /**
+   * Carrega apenas bots HFT
+   * @returns {Promise<Array>} Array de configurações de bots HFT
+   */
+  static async loadHFTBots() {
+    return await this.loadConfigsByType('HFT');
   }
 
   /**

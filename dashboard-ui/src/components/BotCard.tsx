@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Play, Edit, Square, Trash2 } from 'lucide-react';
+import { Play, Edit, Square, Trash2, Zap, Activity } from 'lucide-react';
 import { DeleteBotModal } from './DeleteBotModal';
 
 interface BotConfig {
@@ -50,6 +50,12 @@ interface BotConfig {
   // Configuração de Confluência
   enableConfluenceMode?: boolean;
   minConfluences?: number;
+  // Configurações HFT
+  hftSpread?: number;
+  hftRebalanceFrequency?: number;
+  hftOrderSize?: number;
+  hftDailyHours?: number;
+  hftMaxPriceDeviation?: number;
 }
 
 
@@ -84,6 +90,28 @@ export const BotCard: React.FC<BotCardProps> = ({
   const [countdown, setCountdown] = useState<string>('');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Determina se é bot HFT ou Traditional
+  const isHFTBot = config.strategyName === 'HFT';
+
+  // Componente para renderizar flag do tipo de bot
+  const getBotTypeFlag = () => {
+    if (isHFTBot) {
+      return (
+        <div className="inline-flex items-center gap-1 px-2 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 rounded-full text-xs font-medium">
+          <Zap className="h-3 w-3" />
+          HFT
+        </div>
+      );
+    } else {
+      return (
+        <div className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-xs font-medium">
+          <Activity className="h-3 w-3" />
+          TRADICIONAL
+        </div>
+      );
+    }
+  };
 
   // Cálculo direto e simplificado do countdown
   useEffect(() => {
@@ -247,7 +275,10 @@ export const BotCard: React.FC<BotCardProps> = ({
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex-1 min-w-0">
-            <CardTitle className="text-sm sm:text-base truncate">{config.botName}</CardTitle>
+            <div className="flex items-center gap-2 mb-1">
+              <CardTitle className="text-sm sm:text-base truncate">{config.botName}</CardTitle>
+              {getBotTypeFlag()}
+            </div>
             <p className="text-xs text-muted-foreground truncate">{config.strategyName}</p>
           </div>
           <div className="flex-shrink-0 ml-2">
@@ -272,74 +303,112 @@ export const BotCard: React.FC<BotCardProps> = ({
 
         {/* Configurações Básicas */}
         <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <div>
-              <span className="font-medium">Capital:</span>
-              <p className="text-muted-foreground">{config.capitalPercentage}%</p>
+          {isHFTBot ? (
+            // Configurações HFT
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div>
+                <span className="font-medium">Capital:</span>
+                <p className="text-muted-foreground">{config.capitalPercentage}%</p>
+              </div>
+              <div>
+                <span className="font-medium">Spread:</span>
+                <p className="text-muted-foreground">{config.hftSpread}%</p>
+              </div>
+              <div>
+                <span className="font-medium">Rebalanceamento:</span>
+                <p className="text-muted-foreground">{config.hftRebalanceFrequency}s</p>
+              </div>
+              <div>
+                <span className="font-medium">Ordem Size:</span>
+                <p className="text-muted-foreground">{config.hftOrderSize}%</p>
+              </div>
+              <div>
+                <span className="font-medium">Horas Ativas:</span>
+                <p className="text-muted-foreground">{config.hftDailyHours}h</p>
+              </div>
+              <div>
+                <span className="font-medium">Max Deviation:</span>
+                <p className="text-muted-foreground">{config.hftMaxPriceDeviation}%</p>
+              </div>
             </div>
-            <div>
-              <span className="font-medium">Timeframe:</span>
-              <p className="text-muted-foreground">{config.time}</p>
-            </div>
-            <div>
-              <span className="font-medium">Stop Loss:</span>
-              <p className="text-muted-foreground">{config.maxNegativePnlStopPct}%</p>
-            </div>
-            <div>
-              <span className="font-medium">Lucro Mínimo:</span>
-              <p className="text-muted-foreground">{config.minProfitPercentage}%</p>
-            </div>
-            <div>
-              <span className="font-medium">Max Slippage:</span>
-              <p className="text-muted-foreground">{config.maxSlippagePct}%</p>
-            </div>
-            <div>
-              <span className="font-medium">Max Ordens:</span>
-              <p className="text-muted-foreground">{config.maxOpenOrders}</p>
-            </div>
-          </div>
-
-          <div className="text-xs">
-            <span className="font-medium">Modo Execução:</span>
-            <p className="text-muted-foreground">
-              {config.executionMode === 'REALTIME' ? 'REALTIME (60s)' : 'ON_CANDLE_CLOSE'}
-            </p>
-          </div>
-
-          {/* Configurações de Stop Loss Híbrido */}
-          {config.enableHybridStopStrategy && (
-            <div className="border-t pt-2">
-              <div className="text-xs font-medium mb-2 text-blue-600">Configurações ATR (Stop Loss Híbrido)</div>
+          ) : (
+            // Configurações Tradicionais
+            <>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div>
-                  <span className="font-medium">Stop ATR:</span>
-                  <p className="text-muted-foreground">{config.initialStopAtrMultiplier}x</p>
+                  <span className="font-medium">Capital:</span>
+                  <p className="text-muted-foreground">{config.capitalPercentage}%</p>
                 </div>
                 <div>
-                  <span className="font-medium">Trailing ATR:</span>
-                  <p className="text-muted-foreground">{config.trailingStopAtrMultiplier}x</p>
+                  <span className="font-medium">Timeframe:</span>
+                  <p className="text-muted-foreground">{config.time}</p>
                 </div>
                 <div>
-                  <span className="font-medium">TP ATR:</span>
-                  <p className="text-muted-foreground">{config.partialTakeProfitAtrMultiplier}x</p>
+                  <span className="font-medium">Stop Loss:</span>
+                  <p className="text-muted-foreground">{config.maxNegativePnlStopPct}%</p>
                 </div>
                 <div>
-                  <span className="font-medium">TP Parcial:</span>
-                  <p className="text-muted-foreground">{config.partialTakeProfitPercentage}%</p>
+                  <span className="font-medium">Lucro Mínimo:</span>
+                  <p className="text-muted-foreground">{config.minProfitPercentage}%</p>
+                </div>
+                <div>
+                  <span className="font-medium">Max Slippage:</span>
+                  <p className="text-muted-foreground">{config.maxSlippagePct}%</p>
+                </div>
+                <div>
+                  <span className="font-medium">Max Ordens:</span>
+                  <p className="text-muted-foreground">{config.maxOpenOrders}</p>
                 </div>
               </div>
-            </div>
+
+              <div className="text-xs">
+                <span className="font-medium">Modo Execução:</span>
+                <p className="text-muted-foreground">
+                  {config.executionMode === 'REALTIME' ? 'REALTIME (60s)' : 'ON_CANDLE_CLOSE'}
+                </p>
+              </div>
+            </>
           )}
 
-          {/* Configurações de Trailing Stop */}
-          {config.enableTrailingStop && (
-            <div className="border-t pt-2">
-              <div className="text-xs font-medium mb-2 text-green-600">Configurações Trailing Stop</div>
-              <div className="text-xs">
-                <span className="font-medium">Distância:</span>
-                <p className="text-muted-foreground">{config.trailingStopDistance}%</p>
-              </div>
-            </div>
+          {/* Configurações específicas do bot tradicional */}
+          {!isHFTBot && (
+            <>
+              {/* Configurações de Stop Loss Híbrido */}
+              {config.enableHybridStopStrategy && (
+                <div className="border-t pt-2">
+                  <div className="text-xs font-medium mb-2 text-blue-600">Configurações ATR (Stop Loss Híbrido)</div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <span className="font-medium">Stop ATR:</span>
+                      <p className="text-muted-foreground">{config.initialStopAtrMultiplier}x</p>
+                    </div>
+                    <div>
+                      <span className="font-medium">Trailing ATR:</span>
+                      <p className="text-muted-foreground">{config.trailingStopAtrMultiplier}x</p>
+                    </div>
+                    <div>
+                      <span className="font-medium">TP ATR:</span>
+                      <p className="text-muted-foreground">{config.partialTakeProfitAtrMultiplier}x</p>
+                    </div>
+                    <div>
+                      <span className="font-medium">TP Parcial:</span>
+                      <p className="text-muted-foreground">{config.partialTakeProfitPercentage}%</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Configurações de Trailing Stop */}
+              {config.enableTrailingStop && (
+                <div className="border-t pt-2">
+                  <div className="text-xs font-medium mb-2 text-green-600">Configurações Trailing Stop</div>
+                  <div className="text-xs">
+                    <span className="font-medium">Distância:</span>
+                    <p className="text-muted-foreground">{config.trailingStopDistance}%</p>
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {/* Tokens Ativos */}
@@ -400,42 +469,74 @@ export const BotCard: React.FC<BotCardProps> = ({
           )}
         </div>
 
-        {/* Status das Funcionalidades */}
-        <div className="grid grid-cols-2 gap-1 text-xs">
-          <div className="flex items-center gap-1">
-            <div className={`w-2 h-2 rounded-full ${config.enableTrailingStop ? 'bg-green-500' : 'bg-gray-300'}`} />
-            <span className="truncate">Trailing Stop</span>
+        {/* Status das Funcionalidades - Apenas para bots tradicionais */}
+        {!isHFTBot && (
+          <div className="grid grid-cols-2 gap-1 text-xs">
+            <div className="flex items-center gap-1">
+              <div className={`w-2 h-2 rounded-full ${config.enableTrailingStop ? 'bg-green-500' : 'bg-gray-300'}`} />
+              <span className="truncate">Trailing Stop</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className={`w-2 h-2 rounded-full ${config.enablePostOnly ? 'bg-green-500' : 'bg-gray-300'}`} />
+              <span className="truncate">Post Only Limit Orders</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className={`w-2 h-2 rounded-full ${config.enableHybridStopStrategy ? 'bg-green-500' : 'bg-gray-300'}`} />
+              <span className="truncate">Stop Loss Híbrido</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className={`w-2 h-2 rounded-full ${config.enableMarketFallback ? 'bg-green-500' : 'bg-gray-300'}`} />
+              <span className="truncate">Market Orders Fallback</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className={`w-2 h-2 rounded-full ${config.enableRsiSignals ? 'bg-purple-500' : 'bg-gray-300'}`} />
+              <span className="truncate">Sinais RSI</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className={`w-2 h-2 rounded-full ${config.enableHeikinAshi ? 'bg-blue-500' : 'bg-gray-300'}`} />
+              <span className="truncate">Filtro Heikin Ashi</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className={`w-2 h-2 rounded-full ${config.enableConfluenceMode ? 'bg-yellow-500' : 'bg-gray-300'}`} />
+              <span className="truncate">
+                {config.enableConfluenceMode
+                  ? `Confluência (${config.minConfluences || 2}+ sinais)`
+                  : 'Confluência Desabilitada'
+                }
+              </span>
+            </div>
           </div>
-          <div className="flex items-center gap-1">
-            <div className={`w-2 h-2 rounded-full ${config.enablePostOnly ? 'bg-green-500' : 'bg-gray-300'}`} />
-            <span className="truncate">Post Only Limit Orders</span>
+        )}
+
+        {/* Funcionalidades específicas do HFT */}
+        {isHFTBot && (
+          <div className="grid grid-cols-2 gap-1 text-xs">
+            <div className="flex items-center gap-1">
+              <div className="w-2 h-2 rounded-full bg-orange-500" />
+              <span className="truncate">WebSocket Real-time</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-2 h-2 rounded-full bg-blue-500" />
+              <span className="truncate">Grid Trading</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-2 h-2 rounded-full bg-green-500" />
+              <span className="truncate">Auto Rebalanceamento</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-2 h-2 rounded-full bg-purple-500" />
+              <span className="truncate">Market Making</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-2 h-2 rounded-full bg-yellow-500" />
+              <span className="truncate">Price Deviation Control</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-2 h-2 rounded-full bg-indigo-500" />
+              <span className="truncate">High Frequency Execution</span>
+            </div>
           </div>
-          <div className="flex items-center gap-1">
-            <div className={`w-2 h-2 rounded-full ${config.enableHybridStopStrategy ? 'bg-green-500' : 'bg-gray-300'}`} />
-            <span className="truncate">Stop Loss Híbrido</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <div className={`w-2 h-2 rounded-full ${config.enableMarketFallback ? 'bg-green-500' : 'bg-gray-300'}`} />
-            <span className="truncate">Market Orders Fallback</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <div className={`w-2 h-2 rounded-full ${config.enableRsiSignals ? 'bg-purple-500' : 'bg-gray-300'}`} />
-            <span className="truncate">Sinais RSI</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <div className={`w-2 h-2 rounded-full ${config.enableHeikinAshi ? 'bg-blue-500' : 'bg-gray-300'}`} />
-            <span className="truncate">Filtro Heikin Ashi</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <div className={`w-2 h-2 rounded-full ${config.enableConfluenceMode ? 'bg-yellow-500' : 'bg-gray-300'}`} />
-            <span className="truncate">
-              {config.enableConfluenceMode
-                ? `Confluência (${config.minConfluences || 2}+ sinais)`
-                : 'Confluência Desabilitada'
-              }
-            </span>
-          </div>
-        </div>
+        )}
 
       </CardContent>
 

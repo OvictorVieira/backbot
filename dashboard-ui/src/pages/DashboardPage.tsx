@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { BotCard } from '../components/BotCard'
 import { ConfigForm } from '../components/ConfigForm'
+import { HFTConfigForm } from '../components/HFTConfigForm'
+import { BotTypeSelection } from '../components/BotTypeSelection'
 import { ErrorModal } from '../components/ErrorModal'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { Button } from '../components/ui/button'
@@ -43,6 +45,12 @@ interface BotConfig {
   maxOpenOrders: number
   // Tokens autorizados
   authorizedTokens: string[]
+  // HFT specific fields
+  hftSpread?: number
+  hftDailyVolumeGoal?: number
+  hftSymbols?: string[]
+  hftQuantityMultiplier?: number
+  leverage?: number
   // TODO: Alavancagem da conta - Removido temporariamente
   // leverageLimit: number
   // Próxima validação
@@ -66,8 +74,12 @@ export function DashboardPage() {
   const [showConfigForm, setShowConfigForm] = useState(false)
   const [selectedStrategy, setSelectedStrategy] = useState<string>('')
   const [showCreateBot, setShowCreateBot] = useState(false)
+  const [showBotTypeSelection, setShowBotTypeSelection] = useState(false)
+  const [showHFTForm, setShowHFTForm] = useState(false)
+  const [showHFTEditForm, setShowHFTEditForm] = useState(false)
   const [loadingBots, setLoadingBots] = useState<Record<string, boolean>>({})
   const [restartingBots, setRestartingBots] = useState<Record<string, boolean>>({})
+  const [hftModeEnabled, setHftModeEnabled] = useState(false)
 
   const [errorModal, setErrorModal] = useState<{
     isOpen: boolean;
@@ -93,6 +105,21 @@ export function DashboardPage() {
       }
     }
     fetchStrategies()
+  }, [])
+
+  // Buscar status do feature toggle HFT_MODE
+  useEffect(() => {
+    const fetchHFTModeStatus = async () => {
+      try {
+        const response = await axios.get(`${API_BASE_URL}/api/feature-toggles`)
+        const hftToggle = response.data.find((toggle: any) => toggle.name === 'HFT_MODE')
+        setHftModeEnabled(hftToggle?.enabled || false)
+      } catch (error) {
+        console.error('Erro ao buscar status do HFT_MODE:', error)
+        setHftModeEnabled(false) // Default to false on error
+      }
+    }
+    fetchHFTModeStatus()
   }, [])
 
   // Buscar configurações dos bots
@@ -131,7 +158,17 @@ export function DashboardPage() {
     try {
       setLoadingBots(prev => ({ ...prev, [botId]: true }))
 
-      await axios.post(`${API_BASE_URL}/api/bot/start`, { botId: parseInt(botId) })
+      // Check if this is an HFT bot
+      const botConfig = configs.find(c => c.id?.toString() === botId || c.strategyName === botId)
+      const isHFTBot = botConfig?.strategyName === 'HFT'
+
+      if (isHFTBot) {
+        // Use HFT API endpoint
+        await axios.post(`${API_BASE_URL}/api/hft/start`, { botId: parseInt(botId) })
+      } else {
+        // Use traditional API endpoint
+        await axios.post(`${API_BASE_URL}/api/bot/start`, { botId: parseInt(botId) })
+      }
 
       // Aguarda um tempo para o backend processar completamente
       await new Promise(resolve => setTimeout(resolve, 1500))
@@ -139,11 +176,11 @@ export function DashboardPage() {
       // Recarregar status após iniciar (com retry se necessário)
       let retries = 3
       let statusUpdated = false
-      
+
       while (retries > 0 && !statusUpdated) {
         const response = await axios.get(`${API_BASE_URL}/api/bot/status`)
         setBotStatuses(response.data.data)
-        
+
         // Verifica se o status foi realmente atualizado
         const botStatus = response.data.data.find((bot: any) => bot.id?.toString() === botId)
         if (botStatus && botStatus.status === 'running') {
@@ -178,7 +215,17 @@ export function DashboardPage() {
     try {
       setLoadingBots(prev => ({ ...prev, [botId]: true }))
 
-      await axios.post(`${API_BASE_URL}/api/bot/stop`, { botId: parseInt(botId) })
+      // Check if this is an HFT bot
+      const botConfig = configs.find(c => c.id?.toString() === botId || c.strategyName === botId)
+      const isHFTBot = botConfig?.strategyName === 'HFT'
+
+      if (isHFTBot) {
+        // Use HFT API endpoint
+        await axios.post(`${API_BASE_URL}/api/hft/stop`, { botId: parseInt(botId) })
+      } else {
+        // Use traditional API endpoint
+        await axios.post(`${API_BASE_URL}/api/bot/stop`, { botId: parseInt(botId) })
+      }
 
       // Aguarda um tempo para o backend processar completamente
       await new Promise(resolve => setTimeout(resolve, 1000))
@@ -186,16 +233,16 @@ export function DashboardPage() {
       // Recarregar status após parar (com retry se necessário)
       let retries = 3
       let statusUpdated = false
-      
+
       while (retries > 0 && !statusUpdated) {
         const response = await axios.get(`${API_BASE_URL}/api/bot/status`)
         console.log(`[DEBUG STOP] Bot ${botId} - Setting bot statuses, data length: ${response.data.data.length}`);
         setBotStatuses(response.data.data)
-        
+
         // Verifica se o status foi realmente atualizado
         const botStatus = response.data.data.find((bot: any) => bot.id?.toString() === botId)
         console.log(`[DEBUG STOP] Bot ${botId} - API returned status: "${botStatus?.status}", attempt: ${4-retries}`);
-        
+
         if (botStatus && botStatus.status === 'stopped') {
           statusUpdated = true
           console.log(`[DEBUG STOP] Bot ${botId} - Status confirmed as stopped!`);
@@ -272,6 +319,7 @@ export function DashboardPage() {
       setRestartingBots(prev => ({ ...prev, [config.strategyName]: false }));
 
       setShowConfigForm(false)
+      setShowHFTEditForm(false)
       setSelectedStrategy('')
 
     } catch (error: any) {
@@ -298,11 +346,36 @@ export function DashboardPage() {
 
   const handleEditBot = (strategyName: string) => {
     setSelectedStrategy(strategyName)
-    setShowConfigForm(true)
+
+    // Check if this is an HFT bot to show the appropriate form
+    const botId = parseInt(strategyName);
+    const foundConfig = configs.find(c => c.id === botId);
+    const isHFTBot = foundConfig?.strategyName === 'HFT';
+
+    if (isHFTBot) {
+      setShowHFTEditForm(true)
+    } else {
+      setShowConfigForm(true)
+    }
   }
 
   const handleCreateBot = () => {
-    setShowCreateBot(true)
+    // Check if HFT mode is enabled to decide which modal to show
+    if (hftModeEnabled) {
+      // Show bot type selection modal when HFT is enabled
+      setShowBotTypeSelection(true)
+    } else {
+      // Directly show traditional bot creation when HFT is disabled
+      setShowCreateBot(true)
+    }
+  }
+
+  const handleBotTypeSelection = (type: 'DEFAULT' | 'HFT') => {
+    if (type === 'DEFAULT') {
+      setShowCreateBot(true)
+    } else {
+      setShowHFTForm(true)
+    }
   }
 
   const handleCreateBotSaved = async (config: BotConfig) => {
@@ -337,6 +410,138 @@ export function DashboardPage() {
       setErrorModal({
         isOpen: true,
         title: 'Erro ao criar bot',
+        message: errorMessage
+      })
+    }
+  }
+
+  const handleEditHFTBotSaved = async (config: any) => {
+    try {
+      // Verificar se o bot estava rodando antes da atualização
+      const currentStatus = botStatuses.find(s => s.id?.toString() === selectedStrategy);
+      const wasRunning = currentStatus?.isRunning || false;
+
+      if (wasRunning) {
+        setRestartingBots(prev => ({ ...prev, [selectedStrategy]: true }));
+      }
+
+      // Salvar configuração na API
+      const saveResponse = await axios.post(`${API_BASE_URL}/api/configs`, {
+        strategyName: config.strategyName,
+        config: config
+      })
+
+      // Se o bot estava rodando, aguardar mais tempo para garantir que reiniciou
+      if (wasRunning) {
+        await new Promise(resolve => setTimeout(resolve, 5000)); // Aguarda 5 segundos
+      }
+
+      // Recarregar configurações após salvar
+      const response = await axios.get(`${API_BASE_URL}/api/configs`)
+      setConfigs(response.data.data)
+
+      // Recarregar status dos bots
+      const statusResponse = await axios.get(`${API_BASE_URL}/api/bot/status`)
+      setBotStatuses(statusResponse.data.data)
+
+      // Se o bot estiver rodando, recalcular nextValidationAt
+      const updatedStatus = statusResponse.data.data.find((s: any) => s.id?.toString() === selectedStrategy);
+      if (updatedStatus?.isRunning) {
+        try {
+          await axios.get(`${API_BASE_URL}/api/bot/${updatedStatus.id}/next-execution`);
+
+          // Recarregar status novamente para pegar o novo nextValidationAt
+          const finalStatusResponse = await axios.get(`${API_BASE_URL}/api/bot/status`);
+          setBotStatuses(finalStatusResponse.data.data);
+        } catch (error) {
+          // Error handling without console logs
+        }
+      }
+
+      // Limpar estado de reinicialização
+      setRestartingBots(prev => ({ ...prev, [selectedStrategy]: false }));
+
+      setShowHFTEditForm(false)
+      setSelectedStrategy('')
+
+    } catch (error: any) {
+      console.error('❌ Erro ao salvar configuração HFT:', error);
+      console.error('Detalhes do erro:', error.response?.data || error.message);
+
+      // Limpar estado de reinicialização em caso de erro
+      setRestartingBots(prev => ({ ...prev, [selectedStrategy]: false }));
+
+      let errorMessage = 'Erro ao salvar as configurações do bot HFT. Tente novamente.';
+      if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      } else if (error.message) {
+        errorMessage = `Erro: ${error.message}`;
+      }
+
+      setErrorModal({
+        isOpen: true,
+        title: 'Erro ao salvar configuração HFT',
+        message: errorMessage
+      });
+    }
+  }
+
+  const handleCreateHFTBotSaved = async (config: any) => {
+    try {
+      // Validar se já existe um bot com a mesma API Key
+      const existingBot = configs.find(c => c.apiKey === config.apiKey && c.apiSecret === config.apiSecret)
+      if (existingBot) {
+        setErrorModal({
+          isOpen: true,
+          title: 'Bot já existe',
+          message: 'Já existe um bot configurado com essas credenciais de API. Use credenciais diferentes para cada bot.'
+        })
+        return
+      }
+
+      // Add HFT-specific configurations including monitoring exclusions
+      const hftConfig = {
+        ...config,
+        // HFT bots use their own management system - disable traditional monitors
+        enableOrphanOrderMonitor: false,
+        enablePendingOrdersMonitor: false,
+        // Add other required fields for compatibility
+        time: '1m', // HFT uses fast timeframes
+        maxNegativePnlStopPct: "-10",
+        minProfitPercentage: "0.1", // Lower profit target for HFT
+        maxSlippagePct: "0.1", // Lower slippage for HFT
+        executionMode: 'REALTIME',
+        enableHybridStopStrategy: false,
+        initialStopAtrMultiplier: 2.0,
+        trailingStopAtrMultiplier: 1.5,
+        partialTakeProfitAtrMultiplier: 3.0,
+        partialTakeProfitPercentage: 50,
+        enableTrailingStop: false,
+        trailingStopDistance: 1.5,
+        enablePostOnly: true,
+        enableMarketFallback: true,
+        maxOpenOrders: 10, // HFT can have more orders
+      }
+
+      // Salvar configuração na API
+      await axios.post(`${API_BASE_URL}/api/configs`, {
+        strategyName: config.strategyName,
+        config: hftConfig
+      })
+
+      // Recarregar configurações após salvar
+      const response = await axios.get(`${API_BASE_URL}/api/configs`)
+      setConfigs(response.data.data)
+      setShowHFTForm(false)
+    } catch (error: any) {
+      let errorMessage = 'Erro ao criar bot HFT. Verifique suas credenciais e tente novamente.'
+      if (error.response?.data?.error) {
+        errorMessage = error.response.data.error
+      }
+
+      setErrorModal({
+        isOpen: true,
+        title: 'Erro ao criar bot HFT',
         message: errorMessage
       })
     }
@@ -579,25 +784,94 @@ export function DashboardPage() {
       ) : (
         <div className="w-full max-w-[2400px]">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 3xl:grid-cols-6 gap-4 gap-y-6">
-            {configs.map((config) => {
-              const status = getBotStatus(config.id || 0)
+            {configs
+              .filter((config) => {
+                // If HFT mode is disabled, only show traditional bots
+                if (!hftModeEnabled && config.strategyName === 'HFT') {
+                  return false;
+                }
+                return true;
+              })
+              .map((config) => {
+                const status = getBotStatus(config.id || 0)
 
-              return (
-                <BotCard
-                  key={config.id || config.strategyName}
-                  config={config}
-                  // REMOVIDO: isRunning - BotCard usa config.status
-                  isLoading={loadingBots[config.id?.toString() || config.strategyName] || false}
-                  isRestarting={restartingBots[config.id?.toString() || config.strategyName] || false}
-                  botStatus={status}
-                  onStart={() => handleStartBot(config.id?.toString() || config.strategyName)}
-                  onStop={() => handleStopBot(config.id?.toString() || config.strategyName)}
-                  onEdit={() => handleEditBot(config.id?.toString() || config.strategyName)}
-                  onDelete={handleDeleteBot}
-                  onForceSync={handleForceSync}
-                />
-              )
-            })}
+                return (
+                  <BotCard
+                    key={config.id || config.strategyName}
+                    config={config}
+                    // REMOVIDO: isRunning - BotCard usa config.status
+                    isLoading={loadingBots[config.id?.toString() || config.strategyName] || false}
+                    isRestarting={restartingBots[config.id?.toString() || config.strategyName] || false}
+                    botStatus={status}
+                    onStart={() => handleStartBot(config.id?.toString() || config.strategyName)}
+                    onStop={() => handleStopBot(config.id?.toString() || config.strategyName)}
+                    onEdit={() => handleEditBot(config.id?.toString() || config.strategyName)}
+                    onDelete={handleDeleteBot}
+                    onForceSync={handleForceSync}
+                  />
+                )
+              })}
+          </div>
+        </div>
+      )}
+
+      {/* Bot Type Selection Modal */}
+      <BotTypeSelection
+        isOpen={showBotTypeSelection}
+        onClose={() => setShowBotTypeSelection(false)}
+        onSelectType={handleBotTypeSelection}
+      />
+
+      {/* HFT Bot Form */}
+      {showHFTForm && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4"
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
+        >
+          <div className="bg-background p-6 rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto border shadow-lg">
+            <HFTConfigForm
+              onSave={handleCreateHFTBotSaved}
+              onCancel={() => setShowHFTForm(false)}
+              isEditMode={false}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* HFT Bot Edit Form */}
+      {showHFTEditForm && selectedStrategy && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4"
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
+        >
+          <div className="bg-background p-6 rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto border shadow-lg">
+            <HFTConfigForm
+              config={(() => {
+                const botId = parseInt(selectedStrategy);
+                const foundConfig = configs.find(c => c.id === botId);
+                if (foundConfig && foundConfig.strategyName === 'HFT') {
+                  return {
+                    id: foundConfig.id,
+                    botName: foundConfig.botName,
+                    apiKey: foundConfig.apiKey,
+                    apiSecret: foundConfig.apiSecret,
+                    strategyName: 'HFT' as const,
+                    hftSpread: foundConfig.hftSpread || 0.05,
+                    // Map from new HFT config fields or use defaults
+                    hftRebalanceFrequency: (foundConfig as any).hftRebalanceFrequency || 60,
+                    hftDailyHours: (foundConfig as any).hftDailyHours || 16,
+                    hftMaxPriceDeviation: (foundConfig as any).hftMaxPriceDeviation || 2,
+                    capitalPercentage: foundConfig.capitalPercentage,
+                    enabled: foundConfig.enabled,
+                    authorizedTokens: foundConfig.authorizedTokens || []
+                  };
+                }
+                return undefined;
+              })()}
+              onSave={handleEditHFTBotSaved}
+              onCancel={() => setShowHFTEditForm(false)}
+              isEditMode={true}
+            />
           </div>
         </div>
       )}

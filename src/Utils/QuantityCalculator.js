@@ -156,26 +156,42 @@ class QuantityCalculator {
         return { quantity: '0', orderValue: 0, isValid: false, error };
       }
 
-      // 🔍 LOG CRÍTICO DO CÁLCULO DE QUANTIDADE
-      Logger.error(`🚨 [QUANTITY_CALC] ${market} - CÁLCULO DA QUANTIDADE:`);
-      Logger.error(`   • volumeUSD (recebido): $${volumeUSD.toFixed(2)}`);
-      Logger.error(`   • entryPrice: $${entryPrice.toFixed(6)}`);
-      Logger.error(`   • stepSize: ${stepSize}`);
-      Logger.error(`   • decimalQuantity: ${decimalQuantity}`);
+      // Log do cálculo de quantidade
+      Logger.debug(
+        `[QUANTITY_CALC] ${market} - Volume: $${volumeUSD.toFixed(2)}, Price: $${entryPrice.toFixed(6)}, StepSize: ${stepSize}`
+      );
 
       // Cálculo principal: Volume USD / Preço = Quantidade
       const rawQuantity = volumeUSD / entryPrice;
-      Logger.error(
-        `   • rawQuantity = $${volumeUSD.toFixed(2)} ÷ $${entryPrice.toFixed(6)} = ${rawQuantity.toFixed(8)}`
-      );
 
-      // Se há stepSize, arredonda para múltiplo válido ANTES de aplicar decimais
+      // 🎯 APLICA VALIDAÇÃO DE QUANTIDADE MÍNIMA PRIMEIRO (como no HFT)
       let adjustedQuantity = rawQuantity;
+
+      // 1. Aplica minQuantity se disponível
+      if (marketInfo?.minQuantity) {
+        const minQty = parseFloat(marketInfo.minQuantity);
+        if (rawQuantity < minQty) {
+          Logger.warn(
+            `⚠️ [QUANTITY_CALC] ${market}: Quantidade ${rawQuantity.toFixed(8)} abaixo do mínimo ${minQty}, usando quantidade mínima`
+          );
+          adjustedQuantity = minQty;
+        }
+      }
+
+      // 2. Aplica stepSize se disponível
       if (stepSize && stepSize > 0) {
-        adjustedQuantity = Math.floor(rawQuantity / stepSize) * stepSize;
-        Logger.error(`   • adjustedQuantity (stepSize) = ${adjustedQuantity.toFixed(8)}`);
-      } else {
-        Logger.error(`   • adjustedQuantity (sem stepSize) = ${adjustedQuantity.toFixed(8)}`);
+        // Garante que seja múltiplo do stepSize, mas mantém pelo menos a quantidade mínima
+        const stepAdjusted = Math.floor(adjustedQuantity / stepSize) * stepSize;
+
+        // Se o stepSize zeraria a quantidade e temos minQuantity, usa a minQuantity
+        if (stepAdjusted <= 0 && marketInfo?.minQuantity) {
+          adjustedQuantity = parseFloat(marketInfo.minQuantity);
+          Logger.warn(
+            `⚠️ [QUANTITY_CALC] ${market}: stepSize zeraria quantidade, mantendo minQuantity ${adjustedQuantity}`
+          );
+        } else {
+          adjustedQuantity = stepAdjusted;
+        }
       }
 
       // 🎯 CORREÇÃO INTELIGENTE: Limita decimais mas mantém precisão necessária
@@ -204,12 +220,8 @@ class QuantityCalculator {
       // Calcula valor real da ordem (pode diferir ligeiramente devido ao arredondamento)
       const actualOrderValue = finalQuantity * entryPrice;
 
-      // 🔍 LOG FINAL DO RESULTADO
-      Logger.error(`🚨 [QUANTITY_FINAL] ${market} - RESULTADO FINAL:`);
-      Logger.error(`   • finalQuantity: ${finalQuantity}`);
-      Logger.error(`   • formattedQuantity: "${formattedQuantity}"`);
-      Logger.error(
-        `   • actualOrderValue = ${finalQuantity} × $${entryPrice.toFixed(6)} = $${actualOrderValue.toFixed(2)}`
+      Logger.debug(
+        `[QUANTITY_CALC] ${market}: Final quantity: ${finalQuantity}, Value: $${actualOrderValue.toFixed(2)}`
       );
 
       // Log detalhado do cálculo
