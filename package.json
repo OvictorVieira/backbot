@@ -1,6 +1,6 @@
 {
   "name": "backbot",
-  "version": "1.8.15",
+  "version": "1.8.16",
   "description": "",
   "main": "app.js",
   "scripts": {
@@ -32,6 +32,7 @@
     "adm-zip": "^0.5.16",
     "axios": "^1.8.4",
     "bs58": "^6.0.0",
+    "cheerio": "^1.1.2",
     "cors": "^2.8.5",
     "cron": "^4.3.0",
     "dotenv": "^16.5.0",

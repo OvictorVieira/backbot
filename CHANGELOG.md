@@ -5,6 +5,36 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.8.16] - 2025-09-24
+
+### 🏆 **ACHIEVEMENTS FILTER: Enhanced Token Selection**
+
+#### 🎯 **Achievements Token Filter**
+- ✅ **New Filter:** Added "Apenas Tokens de Achievements" checkbox in bot creation/edit
+- ✅ **Visual Indicators:** 🏆 Achievement badges for tokens that earn more points
+- ✅ **Smart Tooltip:** User-friendly explanation with link to Backpack achievements page
+- ✅ **API Enhancement:** Added `isAchievement` flag to `/api/tokens/available` endpoint
+
+#### 🔧 **Frontend-Only Filtering**
+- ✅ **Efficient Logic:** Client-side filtering based on tokens.json data
+- ✅ **Combined Filters:** Works alongside existing search functionality
+- ✅ **Token Highlighting:** Achievement tokens clearly marked with golden badge
+- ✅ **TypeScript Support:** Proper type definitions for achievement properties
+
+#### 💻 **User Experience Improvements**
+- ✅ **Clear Visual Cues:** Achievement tokens stand out with 🏆 Achievement badge
+- ✅ **Informative Tooltip:** Explains achievements program and provides direct link
+- ✅ **Seamless Integration:** Filter works with existing search and selection logic
+- ✅ **Performance Optimized:** No additional API calls when filtering
+
+#### 🎯 **Achievement Integration**
+- ✅ **Token Data Source:** Automatically loads from `src/persistence/tokens.json`
+- ✅ **Dynamic Updates:** Achievement tokens automatically detected and flagged
+- ✅ **Point Farming Focus:** Helps users identify tokens that earn more Backpack points
+- ✅ **Direct Link:** Easy access to Backpack achievements page
+
+---
+
 ## [1.8.15] - 2025-09-24
 
 ### 🎛️ **DASHBOARD UI FIX: Stop Loss Validation Enhancement**

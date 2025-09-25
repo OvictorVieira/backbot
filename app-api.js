@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import fs from 'fs';
 import Logger from './src/Utils/Logger.js';
 
 dotenv.config();
@@ -2728,6 +2729,16 @@ app.get('/api/tokens/available', async (req, res) => {
   try {
     Logger.info('🔍 [API] Buscando tokens disponíveis com dados de volume...');
 
+    // Carregar tokens de achievements do JSON para adicionar a flag isAchievement
+    let achievementTokens = [];
+    try {
+      const tokensData = JSON.parse(fs.readFileSync('./src/persistence/tokens.json', 'utf8'));
+      achievementTokens = tokensData.perp_tokens_formatted || [];
+      Logger.debug(`🏆 [API] ${achievementTokens.length} tokens de achievements carregados`);
+    } catch (error) {
+      Logger.warn(`⚠️ [API] Erro ao carregar tokens de achievements: ${error.message}`);
+    }
+
     // Usar a classe Markets para obter dados da Backpack API
     const Markets = await import('./src/Backpack/Public/Markets.js');
     Logger.debug('✅ [API] Markets importado com sucesso');
@@ -2770,6 +2781,8 @@ app.get('/api/tokens/available', async (req, res) => {
       .filter(market => market.marketType === 'PERP' && market.orderBookState === 'Open')
       .map(market => {
         const ticker = tickersMap.get(market.symbol) || {};
+        const isAchievement = achievementTokens.includes(market.symbol);
+
         return {
           symbol: market.symbol,
           baseSymbol: market.baseSymbol,
@@ -2777,6 +2790,7 @@ app.get('/api/tokens/available', async (req, res) => {
           marketType: market.marketType,
           orderBookState: market.orderBookState,
           status: market.status || 'Unknown',
+          isAchievement: isAchievement, // 🏆 Flag para tokens de achievements
           // Dados de volume e change das últimas 24h
           volume24h: ticker.volume || '0',
           quoteVolume24h: ticker.quoteVolume || '0',
@@ -2795,8 +2809,9 @@ app.get('/api/tokens/available', async (req, res) => {
         return volumeB - volumeA;
       });
 
+    const achievementCount = availableTokens.filter(token => token.isAchievement).length;
     Logger.debug(
-      `✅ [API] Tokens filtrados e ordenados por volume: ${availableTokens.length} PERP ativos`
+      `✅ [API] Tokens filtrados e ordenados por volume: ${availableTokens.length} PERP ativos (${achievementCount} achievements)`
     );
 
     res.json({

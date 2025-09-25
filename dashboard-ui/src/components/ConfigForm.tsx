@@ -122,9 +122,11 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
     marketType: string;
     orderBookState: string;
     status: string;
+    isAchievement?: boolean; // 🏆 Flag para tokens de achievements
   }>>([]);
   const [loadingTokens, setLoadingTokens] = useState(false);
   const [tokenSearchTerm, setTokenSearchTerm] = useState('');
+  const [showAchievementsOnly, setShowAchievementsOnly] = useState(false);
   const [timeDropdownOpen, setTimeDropdownOpen] = useState(false);
   const [executionModeDropdownOpen, setExecutionModeDropdownOpen] = useState(false);
 
@@ -426,11 +428,17 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
     }));
   };
 
-  // Filtrar tokens baseado no termo de busca
-  const filteredTokens = availableTokens.filter(token =>
-    token.symbol?.toLowerCase().includes(tokenSearchTerm.toLowerCase()) ||
-    token.baseSymbol?.toLowerCase().includes(tokenSearchTerm.toLowerCase())
-  );
+  // Filtrar tokens baseado no termo de busca e filtro de achievements
+  const filteredTokens = availableTokens.filter(token => {
+    // Filtro por termo de busca
+    const matchesSearch = token.symbol?.toLowerCase().includes(tokenSearchTerm.toLowerCase()) ||
+                         token.baseSymbol?.toLowerCase().includes(tokenSearchTerm.toLowerCase());
+
+    // Filtro por achievements (se ativo, mostrar apenas tokens de achievements)
+    const matchesAchievements = !showAchievementsOnly || token.isAchievement;
+
+    return matchesSearch && matchesAchievements;
+  });
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -909,6 +917,44 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
               />
             </div>
 
+            {/* Filtro de Achievements */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="achievementsFilter"
+                  checked={showAchievementsOnly}
+                  onChange={(e) => setShowAchievementsOnly(e.target.checked)}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <Label htmlFor="achievementsFilter" className="flex items-center gap-2">
+                  🏆 Apenas Tokens de Achievements
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="max-w-xs">
+                          Tokens de Achievements são tokens que a Backpack está dando mais pontos quando usados para trade.
+                          Você pode visualizar na sua página de achievements ou{' '}
+                          <a
+                            href="https://backpack.exchange/achievements"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-400 hover:text-blue-300 underline"
+                          >
+                            clicando aqui
+                          </a>
+                          .
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </Label>
+              </div>
+            </div>
+
             {/* Status de carregamento */}
             {loadingTokens && (
               <div className="flex items-center gap-2 text-sm text-blue-600">
@@ -979,6 +1025,15 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                                 <div className="font-medium text-sm">
                                   {token.symbol.replace('_USDC_PERP', '')}-PERP
                                 </div>
+                                {/* Flag de Achievement */}
+                                {token.isAchievement && (
+                                  <span
+                                    className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-800/30"
+                                    title="Token de Achievement - Mais pontos no trading!"
+                                  >
+                                    🏆 Achievement
+                                  </span>
+                                )}
                                 <div className={`text-xs font-medium ${changeColor}`}>
                                   {/* @ts-ignore */}
                                   {formatChangePercent(token.priceChangePercent24h || '0')}
