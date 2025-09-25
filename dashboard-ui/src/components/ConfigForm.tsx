@@ -877,7 +877,43 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-medium">Tokens Autorizados</h3>
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
+              {/* Filtro de Achievements - Melhorado */}
+              <div className="flex items-center gap-2 bg-gradient-to-r from-yellow-50 to-amber-50 dark:from-yellow-950/20 dark:to-amber-950/20 border border-yellow-200 dark:border-yellow-800/30 rounded-lg px-3 py-1.5">
+                <input
+                  type="checkbox"
+                  id="achievementsFilter"
+                  checked={showAchievementsOnly}
+                  onChange={(e) => setShowAchievementsOnly(e.target.checked)}
+                  className="rounded border-yellow-400 text-yellow-600 focus:ring-yellow-500 focus:ring-2"
+                />
+                <Label htmlFor="achievementsFilter" className="flex items-center gap-1.5 text-sm font-medium text-yellow-800 dark:text-yellow-200 cursor-pointer">
+                  🏆 Achievements
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-3.5 w-3.5 text-yellow-600 dark:text-yellow-400 cursor-help hover:text-yellow-800 dark:hover:text-yellow-200 transition-colors" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="max-w-xs">
+                          Tokens de Achievements são tokens que a Backpack está dando mais pontos quando usados para trade.
+                          Você pode visualizar na sua página de achievements ou{' '}
+                          <a
+                            href="https://backpack.exchange/achievements"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-400 hover:text-blue-300 underline"
+                          >
+                            clicando aqui
+                          </a>
+                          .
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </Label>
+              </div>
+
               <Button
                 type="button"
                 variant="outline"
@@ -915,44 +951,6 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                 onChange={(e) => setTokenSearchTerm(e.target.value)}
                 className="w-full"
               />
-            </div>
-
-            {/* Filtro de Achievements */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="achievementsFilter"
-                  checked={showAchievementsOnly}
-                  onChange={(e) => setShowAchievementsOnly(e.target.checked)}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <Label htmlFor="achievementsFilter" className="flex items-center gap-2">
-                  🏆 Apenas Tokens de Achievements
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="max-w-xs">
-                          Tokens de Achievements são tokens que a Backpack está dando mais pontos quando usados para trade.
-                          Você pode visualizar na sua página de achievements ou{' '}
-                          <a
-                            href="https://backpack.exchange/achievements"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-400 hover:text-blue-300 underline"
-                          >
-                            clicando aqui
-                          </a>
-                          .
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </Label>
-              </div>
             </div>
 
             {/* Status de carregamento */}

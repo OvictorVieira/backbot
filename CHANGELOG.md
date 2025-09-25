@@ -5,6 +5,36 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.8.17] - 2025-09-24
+
+### 🎨 **UI ENHANCEMENT: Prominent Achievements Filter**
+
+#### 🚀 **Major Visual Improvements**
+- ✅ **Prime Location:** Moved achievements filter next to "Limpar Seleção" button for maximum visibility
+- ✅ **Eye-Catching Design:** Golden gradient background with yellow/amber styling theme
+- ✅ **Professional Badge:** Compact "🏆 Achievements" label with refined typography
+- ✅ **Enhanced Interactivity:** Improved hover states and focus indicators
+
+#### 🎯 **User Experience Enhancements**
+- ✅ **Strategic Placement:** Filter now prominently displayed at top of tokens section
+- ✅ **Visual Hierarchy:** Golden styling ensures filter stands out from other UI elements
+- ✅ **Consistent Branding:** Achievement theme carried through with trophy emoji and golden colors
+- ✅ **Accessibility:** Proper focus states and clickable areas for better usability
+
+#### 💎 **Design System Integration**
+- ✅ **Dark Mode Support:** Proper contrast and visibility in both light and dark themes
+- ✅ **Responsive Design:** Maintains layout integrity across different screen sizes
+- ✅ **Color Harmony:** Yellow/amber palette complements existing achievement badges
+- ✅ **Typography Consistency:** Maintains font hierarchy and readability standards
+
+#### 🎨 **Visual Specifications**
+- ✅ **Background:** Gradient from yellow-50 to amber-50 (dark: yellow-950/20 to amber-950/20)
+- ✅ **Border:** Yellow-200 border with subtle transparency for depth
+- ✅ **Text:** Yellow-800 for contrast (dark: yellow-200 for visibility)
+- ✅ **Icon:** 3.5x3.5 HelpCircle with hover transition effects
+
+---
+
 ## [1.8.16] - 2025-09-24
 
 ### 🏆 **ACHIEVEMENTS FILTER: Enhanced Token Selection**

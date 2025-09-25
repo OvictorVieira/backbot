@@ -2734,9 +2734,9 @@ app.get('/api/tokens/available', async (req, res) => {
     try {
       const tokensData = JSON.parse(fs.readFileSync('./src/persistence/tokens.json', 'utf8'));
       achievementTokens = tokensData.perp_tokens_formatted || [];
-      Logger.debug(`🏆 [API] ${achievementTokens.length} tokens de achievements carregados`);
+      Logger.info(`🏆 [API] ${achievementTokens.length} tokens de achievements carregados: ${achievementTokens.join(', ')}`);
     } catch (error) {
-      Logger.warn(`⚠️ [API] Erro ao carregar tokens de achievements: ${error.message}`);
+      Logger.error(`❌ [API] Erro ao carregar tokens de achievements: ${error.message}`);
     }
 
     // Usar a classe Markets para obter dados da Backpack API
@@ -2782,6 +2782,10 @@ app.get('/api/tokens/available', async (req, res) => {
       .map(market => {
         const ticker = tickersMap.get(market.symbol) || {};
         const isAchievement = achievementTokens.includes(market.symbol);
+
+        if (isAchievement) {
+          Logger.debug(`🏆 [API] Token de achievement detectado: ${market.symbol}`);
+        }
 
         return {
           symbol: market.symbol,
