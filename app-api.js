@@ -3697,9 +3697,19 @@ async function startMonitorsForAllEnabledBots() {
   try {
     Logger.info('🔄 [MONITORS] Iniciando monitores para todos os bots habilitados...');
 
-    // Carrega apenas bots tradicionais habilitados (não HFT)
+    // 🚨 CORREÇÃO CRÍTICA: Carrega apenas bots que estão habilitados E estavam rodando
+    // Bots pausados (enabled=true, status!='running') devem permanecer pausados
     const configs = await ConfigManagerSQLite.loadTraditionalBots();
-    const enabledBots = configs.filter(config => config.enabled);
+    const enabledBots = configs.filter(config => {
+      const isEnabled = config.enabled;
+      const wasRunning = !config.status || config.status === 'running';
+
+      if (isEnabled && !wasRunning) {
+        Logger.debug(`⏸️ [MONITORS_FILTER] Bot ${config.botName} está habilitado mas pausado - não iniciando monitores`);
+      }
+
+      return isEnabled && wasRunning;
+    });
 
     if (enabledBots.length === 0) {
       Logger.debug('ℹ️ [MONITORS] Nenhum bot habilitado encontrado');
