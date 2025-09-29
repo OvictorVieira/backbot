@@ -455,9 +455,21 @@ async function startBot() {
       );
     }
 
-    // Filtra apenas bots habilitados (inclui bots que não estão rodando mas estão habilitados)
-    let enabledBots = allConfigs.filter(config => config.enabled);
-    console.log(`✅ ${enabledBots.length} bots habilitados encontrados`);
+    // 🚨 CORREÇÃO CRÍTICA: Filtra apenas bots que estão habilitados E estavam rodando
+    // Bots pausados (enabled=true, status!='running') devem permanecer pausados após despressurização
+    let enabledBots = allConfigs.filter(config => {
+      const isEnabled = config.enabled;
+      const wasRunning = !config.status || config.status === 'running'; // Se não tem status ou status='running'
+
+      if (isEnabled && !wasRunning) {
+        console.log(
+          `⏸️ [BOT_FILTER] Bot ${config.botName} está habilitado mas pausado - mantendo pausado`
+        );
+      }
+
+      return isEnabled && wasRunning;
+    });
+    console.log(`✅ ${enabledBots.length} bots habilitados e em execução encontrados`);
 
     // Filtra bots com credenciais válidas
     const botsWithCredentials = enabledBots.filter(config => config.apiKey && config.apiSecret);

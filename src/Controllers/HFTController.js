@@ -118,9 +118,19 @@ class HFTController {
 
       // Carrega apenas bots HFT
       const hftBots = await ConfigManagerSQLite.loadHFTBots();
-      const enabledHFTBots = hftBots.filter(
-        bot => bot.enabled && (!bot.status || bot.status === 'idle' || bot.status === 'running')
-      );
+      // 🚨 FILTRO INTELIGENTE: Só inicia bots que estão habilitados E não estão pausados
+      const enabledHFTBots = hftBots.filter(bot => {
+        const isEnabled = bot.enabled;
+        const canRun = !bot.status || bot.status === 'idle' || bot.status === 'running';
+
+        if (isEnabled && !canRun) {
+          Logger.debug(
+            `⏸️ [HFT_FILTER] Bot HFT ${bot.botName || bot.id} está pausado - mantendo pausado`
+          );
+        }
+
+        return isEnabled && canRun;
+      });
 
       Logger.debug(`📋 [HFT_CONTROLLER] Encontrados ${enabledHFTBots.length} bots HFT habilitados`);
 
@@ -398,9 +408,19 @@ class HFTController {
     try {
       // Verifica se há novos bots HFT para iniciar
       const hftBots = await ConfigManagerSQLite.loadHFTBots();
-      const enabledHFTBots = hftBots.filter(
-        bot => bot.enabled && (!bot.status || bot.status === 'idle' || bot.status === 'running')
-      );
+      // 🚨 FILTRO INTELIGENTE: Só inicia bots que estão habilitados E não estão pausados
+      const enabledHFTBots = hftBots.filter(bot => {
+        const isEnabled = bot.enabled;
+        const canRun = !bot.status || bot.status === 'idle' || bot.status === 'running';
+
+        if (isEnabled && !canRun) {
+          Logger.debug(
+            `⏸️ [HFT_FILTER] Bot HFT ${bot.botName || bot.id} está pausado - mantendo pausado`
+          );
+        }
+
+        return isEnabled && canRun;
+      });
 
       for (const botConfig of enabledHFTBots) {
         if (!this.activeHFTBots.has(botConfig.id)) {
