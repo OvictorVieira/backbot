@@ -1,6 +1,6 @@
 {
   "name": "backbot",
-  "version": "1.8.18",
+  "version": "1.8.19",
   "description": "",
   "main": "app.js",
   "scripts": {

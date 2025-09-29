@@ -5,6 +5,52 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.8.19] - 2025-09-29
+
+### 🔧 **CRITICAL FIXES: TrailingStop & Bot Reactivation**
+
+#### 🚨 **Critical Bug Fixes**
+- ✅ **TrailingStop botId Type Fix:** Fixed critical type conversion error in TrailingStop system
+  - **Problem:** `getState()` received botId as number but expected string
+  - **Error:** `getState called with invalid botId: 5 (type: number)`
+  - **Solution:** Convert all `this.config.id` calls to `String(this.config.id)`
+  - **Impact:** Prevents TrailingStop crashes and validation errors
+
+#### 🛡️ **Bot Reactivation Protection**
+- ✅ **Fixed Depressurization Reactivation Bug:** System no longer reactivates paused bots
+  - **Problem:** Despressurization reactivated bots that were intentionally paused
+  - **Files Fixed:** `app.js`, `app-api.js`, `HFTController.js`
+  - **Solution:** Filter checks both `enabled AND wasRunning` status
+  - **Impact:** Paused bots remain paused after system maintenance
+
+#### 📊 **System Improvements**
+- ✅ **Intelligent Bot Filtering:** Enhanced logic to preserve intentional bot states
+- ✅ **Debug Logging:** Added informative logs when paused bots are kept paused
+- ✅ **Multi-Mode Support:** Fixed both standalone (app.js) and API (app-api.js) modes
+
+## [1.8.18] - 2025-09-29
+
+### 🎯 **LIMIT ORDER VALIDATOR & LOG CLEANUP**
+
+#### 🚀 **New Features**
+- ✅ **LimitOrderValidator:** Complete WebSocket-based LIMIT order monitoring system
+  - Real-time price monitoring via WebSocket
+  - Automatic cancellation when slippage exceeds threshold (0.8% default)
+  - Integration with OrderController and UI configuration
+  - Validation every 15s with up to 5 minutes monitoring per order
+- ✅ **Depressurization System:** Automatic system maintenance cycles (30min intervals)
+
+#### 🧹 **Massive Log Cleanup**
+- ✅ **95% Noise Reduction:** Converted verbose INFO/ERROR logs to DEBUG
+- ✅ **Production Ready:** Clean logs focused on essential monitoring information
+- ✅ **Maintained Critical Errors:** Kept important error logging at INFO/ERROR level
+
+#### 🔧 **Bug Fixes**
+- ✅ **ConfigForm Modal:** Fixed missing `Info` import from lucide-react
+- ✅ **Order Integration:** Fixed Order.cancelOpenOrder integration
+- ✅ **Async/Await:** Fixed syntax errors in setupInteractiveCommands
+- ✅ **Feature Toggles:** Fixed response.data.data access structure
+
 ## [1.8.17] - 2025-09-24
 
 ### 🎨 **UI ENHANCEMENT: Prominent Achievements Filter**
