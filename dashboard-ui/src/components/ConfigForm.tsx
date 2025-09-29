@@ -137,13 +137,17 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
 
   // Atualizar formData quando config mudar
   useEffect(() => {
-    const shouldReset = !isEditMode || 
-                       (isEditMode && (config.apiKey !== formData.apiKey || config.apiSecret !== formData.apiSecret));
-    
+    const shouldReset = (!isEditMode ||
+                       (isEditMode && (config.apiKey !== formData.apiKey || config.apiSecret !== formData.apiSecret))) &&
+                       selectedMode === 'none'; // 🔥 NÃO resetar se um modo está ativo
+
     if (shouldReset) {
+      console.log('🔄 RESETANDO formData para config original');
       setFormData(config);
+    } else if (selectedMode !== 'none') {
+      console.log(`🚫 NÃO resetando - modo ativo: ${selectedMode}`);
     }
-  }, [config.strategyName, config.botName, config.apiKey, config.apiSecret]);
+  }, [config.strategyName, config.botName, config.apiKey, config.apiSecret, selectedMode]);
   
   const apiKeysChanged = isEditMode && (
     formData.apiKey !== config.apiKey || 
@@ -233,36 +237,54 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
   };
 
   const applyProfitMode = () => {
+    console.log('🚀 APLICANDO MODO LUCRO - Iniciando...');
     setSelectedMode('profit');
-    setFormData(prev => ({
-      ...prev,
+    setFormData(prev => {
+      const newFormData = {
+        ...prev,
       capitalPercentage: 20,
-      time: '30m',
-      maxNegativePnlStopPct: -10,
+      time: '1h', // 🔥 PADRÃO: timeframe 1h
+      maxNegativePnlStopPct: -15, // 🔥 PADRÃO: Stop Loss -15%
       minProfitPercentage: 10,
       maxSlippagePct: 0.5,
       executionMode: 'REALTIME',
+      orderExecutionMode: 'LIMIT', // 🔥 PADRÃO: Limit
       enableHybridStopStrategy: true,
       enableTrailingStop: true,
-      trailingStopDistance: 1, // 🔥 PADRÃO: 1% trailing distance
-      partialTakeProfitAtrMultiplier: 2.0,
-      partialTakeProfitPercentage: 30, // 🔥 PADRÃO: 30% para fechamento parcial
+      trailingStopDistance: 1,
+      partialTakeProfitAtrMultiplier: 3.0, // 🔥 PADRÃO: ATR 3 para fechamento parcial
+      partialTakeProfitPercentage: 30,
       maxOpenOrders: 3,
-      // 🎯 CONFIGURAÇÕES DE SINAIS (padrão = habilitados para máxima precisão)
-      enableMomentumSignals: true,
-      enableRsiSignals: true,
-      enableStochasticSignals: true,
-      enableMacdSignals: true,
-      enableAdxSignals: true,
-      // 📊 FILTROS DE CONFIRMAÇÃO (padrão = habilitados)
-      enableMoneyFlowFilter: true,
-      enableVwapFilter: true,
-      enableBtcTrendFilter: true,
-      // ✅ FUNCIONALIDADES AVANÇADAS (habilitadas para máxima segurança)
-      enableHeikinAshi: true, // 🔥 HABILITADO para filtrar melhor as tendências
-      enableConfluenceMode: true, // 🔥 HABILITADO com 2 indicadores mínimos
-      minConfluences: 2 // 🔥 PADRÃO: 2 indicadores para confluência
-    }));
+      // 🎯 CONFIGURAÇÕES DE SINAIS (somente selecionados)
+      enableMomentumSignals: true, // ✅ ATIVO
+      enableRsiSignals: true, // ✅ ATIVO
+      enableStochasticSignals: true, // ✅ ATIVO
+      enableMacdSignals: false, // ❌ DESABILITADO
+      enableAdxSignals: false, // ❌ DESABILITADO
+      // 📊 FILTROS DE CONFIRMAÇÃO (somente selecionados)
+      enableMoneyFlowFilter: true, // ✅ ATIVO - Fluxo de dinheiro
+      enableVwapFilter: false, // ❌ DESABILITADO
+      enableBtcTrendFilter: true, // ✅ ATIVO - Tendência do BTC
+      // ✅ FUNCIONALIDADES AVANÇADAS
+      enableHeikinAshi: true, // ✅ ATIVO - Heikin Ashi
+      enableConfluenceMode: false, // ❌ DESABILITADO - Confluências desabilitadas no modo LUCRO
+      minConfluences: 2
+      };
+      console.log('✅ MODO LUCRO APLICADO - Novos valores:', {
+        time: newFormData.time,
+        maxNegativePnlStopPct: newFormData.maxNegativePnlStopPct,
+        orderExecutionMode: newFormData.orderExecutionMode,
+        partialTakeProfitAtrMultiplier: newFormData.partialTakeProfitAtrMultiplier,
+        enableMomentumSignals: newFormData.enableMomentumSignals,
+        enableRsiSignals: newFormData.enableRsiSignals,
+        enableStochasticSignals: newFormData.enableStochasticSignals,
+        enableMoneyFlowFilter: newFormData.enableMoneyFlowFilter,
+        enableBtcTrendFilter: newFormData.enableBtcTrendFilter,
+        enableHeikinAshi: newFormData.enableHeikinAshi,
+        enableConfluenceMode: newFormData.enableConfluenceMode
+      });
+      return newFormData;
+    });
   };
 
 
