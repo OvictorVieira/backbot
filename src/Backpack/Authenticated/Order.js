@@ -198,6 +198,16 @@ class Order {
       '/api/v1/conditional_orders',
     ];
 
+    // 🔒 VALIDAÇÃO DE ITERATOR: Garante que possibleEndpoints é iterável
+    if (
+      !possibleEndpoints ||
+      !possibleEndpoints[Symbol.iterator] ||
+      typeof possibleEndpoints[Symbol.iterator] !== 'function'
+    ) {
+      Logger.error(`❌ [ORDER] possibleEndpoints não tem iterator válido`);
+      throw new Error('Internal error: endpoints array não é iterável');
+    }
+
     for (const endpoint of possibleEndpoints) {
       try {
         const response = await requestManager.get(

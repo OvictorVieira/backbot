@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import fs from 'fs';
 import Logger from './src/Utils/Logger.js';
+import DepressurizationManager from './src/Utils/DepressurizationManager.js';
 
 dotenv.config();
 
@@ -286,10 +287,6 @@ async function recoverBot(botId, config, startTime) {
         `⏰ [REALTIME] Bot ${botId}: Próxima análise em ${Math.floor(executionInterval / 1000)}s`
       );
     }
-
-    Logger.info(
-      `🔧 [DEBUG] Bot ${botId}: Execution Mode: ${executionMode}, Next Interval: ${executionInterval}ms`
-    );
 
     // Função de execução do bot
     const executeBot = async () => {
@@ -1279,6 +1276,27 @@ async function startBot(botId, forceRestart = false) {
       throw new Error(`Bot ${botId} não está habilitado`);
     }
 
+    // 🚨 VALIDAÇÃO: Limite máximo de tokens por bot
+    const maxTokensPerBot = parseInt(process.env.MAX_TOKENS_PER_BOT) || 12;
+    const authorizedTokens = botConfig.authorizedTokens || [];
+
+    if (authorizedTokens.length > maxTokensPerBot) {
+      Logger.warn(
+        `⚠️ [BOT_VALIDATION] Bot ${botConfig.botName} (ID: ${botId}) tem ${authorizedTokens.length} tokens, excedendo o limite de ${maxTokensPerBot}`
+      );
+      Logger.warn(
+        `🔒 [BOT_VALIDATION] Pausando bot automaticamente para prevenir degradação do sistema`
+      );
+
+      // Pausa o bot automaticamente
+      await ConfigManagerSQLite.updateBotStatusById(botId, 'paused', new Date().toISOString());
+
+      throw new Error(
+        `Bot pausado: Excede limite de ${maxTokensPerBot} tokens por bot. ` +
+          `Configure menos tokens (atual: ${authorizedTokens.length}) e tente novamente.`
+      );
+    }
+
     // Verifica se a estratégia é válida
     if (!StrategyFactory.isValidStrategy(botConfig.strategyName)) {
       throw new Error(`Estratégia ${botConfig.strategyName} não é válida`);
@@ -1325,10 +1343,6 @@ async function startBot(botId, forceRestart = false) {
         `⏰ [REALTIME] Bot ${botId}: Próxima análise em ${Math.floor(executionInterval / 1000)}s`
       );
     }
-
-    Logger.debug(
-      `🔧 [DEBUG] Bot ${botId}: Execution Mode: ${executionMode}, Next Interval: ${executionInterval}ms`
-    );
 
     // Função de execução do bot
     const executeBot = async () => {
@@ -1550,6 +1564,12 @@ async function startBot(botId, forceRestart = false) {
     });
 
     Logger.info(`✅ [BOT] Bot ${botId} iniciado com sucesso`);
+
+    // Inicializa sistema de despressurização apenas uma vez
+    if (!global.depressurizationManager) {
+      global.depressurizationManager = new DepressurizationManager();
+      Logger.info('🔄 [DEPRESSURIZATION] Sistema de despressurização inicializado');
+    }
 
     // Emite evento de início bem-sucedido
     broadcastViaWs({
@@ -2252,6 +2272,33 @@ app.post('/api/configs', async (req, res) => {
         });
       }
 
+      // 🚨 VALIDAÇÃO CRÍTICA: Verifica se já existe bot com essas credenciais
+      const existingConfigs = await ConfigManagerSQLite.loadConfigs();
+      const duplicateBot = existingConfigs.find(
+        config =>
+          config.apiKey === botConfig.apiKey &&
+          config.apiSecret === botConfig.apiSecret &&
+          config.id !== botConfig.id // Permite atualização do próprio bot
+      );
+
+      if (duplicateBot) {
+        return res.status(400).json({
+          success: false,
+          error: `Já existe um bot (ID: ${duplicateBot.id}, Nome: "${duplicateBot.botName}") configurado com essas credenciais de API. Cada bot deve ter uma subconta/API Key única.`,
+        });
+      }
+
+      // 🚨 VALIDAÇÃO: Limite máximo de tokens por bot
+      const maxTokensPerBot = parseInt(process.env.MAX_TOKENS_PER_BOT) || 12;
+      const authorizedTokens = botConfig.authorizedTokens || [];
+
+      if (authorizedTokens.length > maxTokensPerBot) {
+        return res.status(400).json({
+          success: false,
+          error: `Limite máximo de ${maxTokensPerBot} tokens por bot excedido. Você selecionou ${authorizedTokens.length} tokens. Reduza a quantidade para continuar.`,
+        });
+      }
+
       // Adiciona o botName ao config se não estiver presente
       if (!botConfig.botName) {
         botConfig.botName = botName;
@@ -2335,6 +2382,22 @@ app.post('/api/configs', async (req, res) => {
         return res.status(400).json({
           success: false,
           error: 'apiKey e apiSecret são obrigatórios',
+        });
+      }
+
+      // 🚨 VALIDAÇÃO CRÍTICA: Verifica se já existe bot com essas credenciais
+      const existingConfigs = await ConfigManagerSQLite.loadConfigs();
+      const duplicateBot = existingConfigs.find(
+        config =>
+          config.apiKey === botConfig.apiKey &&
+          config.apiSecret === botConfig.apiSecret &&
+          config.id !== botConfig.id // Permite atualização do próprio bot
+      );
+
+      if (duplicateBot) {
+        return res.status(400).json({
+          success: false,
+          error: `Já existe um bot (ID: ${duplicateBot.id}, Nome: "${duplicateBot.botName}") configurado com essas credenciais de API. Cada bot deve ter uma subconta/API Key única.`,
         });
       }
 
@@ -2734,7 +2797,9 @@ app.get('/api/tokens/available', async (req, res) => {
     try {
       const tokensData = JSON.parse(fs.readFileSync('./src/persistence/tokens.json', 'utf8'));
       achievementTokens = tokensData.perp_tokens_formatted || [];
-      Logger.info(`🏆 [API] ${achievementTokens.length} tokens de achievements carregados: ${achievementTokens.join(', ')}`);
+      Logger.info(
+        `🏆 [API] ${achievementTokens.length} tokens de achievements carregados: ${achievementTokens.join(', ')}`
+      );
     } catch (error) {
       Logger.error(`❌ [API] Erro ao carregar tokens de achievements: ${error.message}`);
     }
@@ -3022,7 +3087,7 @@ app.get('/api/backpack-positions/bot/:botName', async (req, res) => {
     const positions = await makeBackpackRequest(
       botConfig.apiKey,
       botConfig.apiSecret,
-      '/api/v1/positions'
+      '/api/v1/position'
     );
 
     res.json({
@@ -3677,6 +3742,113 @@ async function startMonitorsForAllEnabledBots() {
 }
 
 // Inicialização do servidor
+/**
+ * Valida se todos os bots têm orderExecutionMode definido
+ */
+async function validateOrderExecutionMode() {
+  try {
+    Logger.info('🔧 [ORDER_MODE_VALIDATION] Verificando orderExecutionMode dos bots...');
+
+    const allBots = await ConfigManagerSQLite.loadConfigs();
+
+    if (!allBots || allBots.length === 0) {
+      Logger.info('✅ [ORDER_MODE_VALIDATION] Nenhum bot encontrado para validar');
+      return;
+    }
+
+    let botsUpdated = 0;
+
+    for (const config of allBots) {
+      if (!config.orderExecutionMode) {
+        Logger.info(
+          `🔧 [ORDER_MODE_VALIDATION] Bot ${config.botName || config.id} não possui orderExecutionMode - adicionando "LIMIT"`
+        );
+
+        try {
+          // Atualiza o bot no banco de dados
+          await ConfigManagerSQLite.updateBotConfigById(config.id, { orderExecutionMode: 'LIMIT' });
+          botsUpdated++;
+          Logger.debug(
+            `✅ [ORDER_MODE_VALIDATION] orderExecutionMode adicionado ao bot ${config.botName || config.id}`
+          );
+        } catch (error) {
+          Logger.error(
+            `❌ [ORDER_MODE_VALIDATION] Erro ao atualizar bot ${config.botName || config.id}:`,
+            error.message
+          );
+        }
+      }
+    }
+
+    if (botsUpdated > 0) {
+      Logger.info(
+        `✅ [ORDER_MODE_VALIDATION] ${botsUpdated} bots atualizados com orderExecutionMode: "LIMIT"`
+      );
+    } else {
+      Logger.debug(
+        '✅ [ORDER_MODE_VALIDATION] Todos os bots já possuem orderExecutionMode definido'
+      );
+    }
+  } catch (error) {
+    Logger.error(
+      '❌ [ORDER_MODE_VALIDATION] Erro durante validação de orderExecutionMode:',
+      error.message
+    );
+  }
+}
+
+/**
+ * Valida todos os bots existentes no startup e pausa os que excedem o limite de tokens
+ */
+async function validateAndPauseBotsWithExcessiveTokens() {
+  try {
+    Logger.info('🔍 [TOKEN_VALIDATION] Verificando bots com excesso de tokens...');
+
+    const maxTokensPerBot = parseInt(process.env.MAX_TOKENS_PER_BOT) || 12;
+    const allBots = await ConfigManagerSQLite.loadConfigs();
+
+    if (!allBots || allBots.length === 0) {
+      Logger.info('✅ [TOKEN_VALIDATION] Nenhum bot encontrado para validar');
+      return;
+    }
+
+    let pausedCount = 0;
+
+    for (const bot of allBots) {
+      const authorizedTokens = bot.authorizedTokens || [];
+
+      if (authorizedTokens.length > maxTokensPerBot) {
+        Logger.warn(
+          `🚨 [TOKEN_VALIDATION] Bot "${bot.botName}" (ID: ${bot.id}) tem ${authorizedTokens.length} tokens (limite: ${maxTokensPerBot})`
+        );
+
+        // Pausa o bot se não estiver já pausado
+        if (bot.enabled && bot.status !== 'paused') {
+          await ConfigManagerSQLite.updateBotStatusById(bot.id, 'paused', new Date().toISOString());
+
+          pausedCount++;
+          Logger.warn(`🔒 [TOKEN_VALIDATION] Bot "${bot.botName}" pausado automaticamente`);
+        }
+      }
+    }
+
+    if (pausedCount > 0) {
+      Logger.warn(
+        `⚠️ [TOKEN_VALIDATION] ${pausedCount} bot(s) pausado(s) por exceder limite de ${maxTokensPerBot} tokens`
+      );
+      Logger.info(
+        `💡 [TOKEN_VALIDATION] Configure menos tokens nos bots pausados para reativá-los`
+      );
+    } else {
+      Logger.info(
+        `✅ [TOKEN_VALIDATION] Todos os bots respeitam o limite de ${maxTokensPerBot} tokens`
+      );
+    }
+  } catch (error) {
+    Logger.error('❌ [TOKEN_VALIDATION] Erro ao validar tokens dos bots:', error.message);
+  }
+}
+
 async function initializeServer() {
   try {
     Logger.info('🚀 [SERVER] Iniciando servidor API...');
@@ -3694,6 +3866,12 @@ async function initializeServer() {
 
     // Inicializa o BotOrdersManager
     await initializeBotOrdersManager();
+
+    // 🔧 VALIDAÇÃO DE STARTUP: Garante que todos os bots tenham orderExecutionMode
+    await validateOrderExecutionMode();
+
+    // 🚨 VALIDAÇÃO DE STARTUP: Pausa bots com muitos tokens
+    await validateAndPauseBotsWithExcessiveTokens();
 
     // Carrega o estado persistido do Trailing Stop do banco de dados
     if (dbService && dbService.isInitialized()) {
@@ -3716,6 +3894,13 @@ async function initializeServer() {
     // Inicializa o PositionSyncService
     Logger.info('🔄 [SERVER] Inicializando PositionSyncService...');
     PositionSyncService = new PositionSyncServiceClass(ConfigManagerSQLite.dbService);
+
+    // 🔄 SISTEMA DE DESPRESSURIZAÇÃO - Inicializa independentemente dos bots
+    if (!global.depressurizationManager) {
+      Logger.info('🔧 [DEPRESSURIZATION] Inicializando sistema de despressurização...');
+      global.depressurizationManager = new DepressurizationManager();
+      Logger.info('✅ [DEPRESSURIZATION] Sistema de despressurização inicializado durante startup');
+    }
 
     // Verifica e libera a porta antes de iniciar o servidor
     await killProcessOnPort(PORT);
@@ -4274,6 +4459,35 @@ app.put('/api/hft/config/:botId', async (req, res) => {
       });
     }
 
+    // 🚨 VALIDAÇÃO CRÍTICA: Verifica se já existe bot com essas credenciais (se apiKey foi alterada)
+    if (newConfig.apiKey && newConfig.apiSecret) {
+      const existingConfigs = await ConfigManagerSQLite.loadConfigs();
+      const duplicateBot = existingConfigs.find(
+        config =>
+          config.apiKey === newConfig.apiKey &&
+          config.apiSecret === newConfig.apiSecret &&
+          config.id !== parseInt(botId) // Permite atualização do próprio bot
+      );
+
+      if (duplicateBot) {
+        return res.status(400).json({
+          success: false,
+          error: `Já existe um bot (ID: ${duplicateBot.id}, Nome: "${duplicateBot.botName}") configurado com essas credenciais de API. Cada bot deve ter uma subconta/API Key única.`,
+        });
+      }
+    }
+
+    // 🚨 VALIDAÇÃO: Limite máximo de tokens por bot HFT
+    const maxTokensPerBot = parseInt(process.env.MAX_TOKENS_PER_BOT) || 12;
+    const authorizedTokens = newConfig.authorizedTokens || [];
+
+    if (authorizedTokens.length > maxTokensPerBot) {
+      return res.status(400).json({
+        success: false,
+        error: `Limite máximo de ${maxTokensPerBot} tokens por bot HFT excedido. Você selecionou ${authorizedTokens.length} tokens. Reduza a quantidade para continuar.`,
+      });
+    }
+
     const result = await HFTController.updateHFTBotConfig(parseInt(botId), newConfig);
 
     Logger.info(`🔧 [API] Configuração do bot HFT atualizada: ${botId}`);
@@ -4335,6 +4549,12 @@ async function gracefulShutdown(signal) {
       Logger.info(`✅ [SHUTDOWN] Todos os bots HFT parados`);
     } catch (error) {
       Logger.error(`❌ [SHUTDOWN] Erro ao parar bots HFT:`, error.message);
+    }
+
+    // Para sistema de despressurização
+    if (global.depressurizationManager) {
+      global.depressurizationManager.stop();
+      Logger.info(`✅ [SHUTDOWN] Sistema de despressurização parado`);
     }
 
     Logger.info(`✅ [SHUTDOWN] Shutdown graceful concluído`);

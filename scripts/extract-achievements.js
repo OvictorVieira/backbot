@@ -77,21 +77,24 @@ function extractAndFormatPerpTokens() {
 
     // 2. Cria o objeto JSON final com a lista única e ordenada de tokens formatados
     const jsonOutput = {
-      perp_tokens_formatted: Array.from(uniqueFormattedTokens).sort()
+      perp_tokens_formatted: Array.from(uniqueFormattedTokens).sort(),
     };
 
     const jsonString = JSON.stringify(jsonOutput, null, 2);
     const jsonPath = path.join(__dirname, JSON_FILE);
     fs.writeFileSync(jsonPath, jsonString, 'utf-8');
 
-    console.log(`\n✅ Sucesso! ${uniqueFormattedTokens.size} tokens futuros (em formato de corretora) extraídos e salvos em: ${JSON_FILE}`);
+    console.log(
+      `\n✅ Sucesso! ${uniqueFormattedTokens.size} tokens futuros (em formato de corretora) extraídos e salvos em: ${JSON_FILE}`
+    );
     console.log(`Tokens Originais Encontrados: ${Array.from(rawTokensList).sort().join(', ')}`);
     console.log(`Tokens Formatados Salvos: ${Array.from(uniqueFormattedTokens).sort().join(', ')}`);
-
   } catch (error) {
     console.error(`\n❌ Erro ao processar o arquivo: ${error.message}`);
     if (error.code === 'ENOENT') {
-      console.error(`Certifique-se de que o arquivo '${HTML_FILE}' está no mesmo diretório do script.`);
+      console.error(
+        `Certifique-se de que o arquivo '${HTML_FILE}' está no mesmo diretório do script.`
+      );
     }
   }
 }

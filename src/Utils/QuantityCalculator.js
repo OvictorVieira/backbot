@@ -171,7 +171,7 @@ class QuantityCalculator {
       if (marketInfo?.minQuantity) {
         const minQty = parseFloat(marketInfo.minQuantity);
         if (rawQuantity < minQty) {
-          Logger.warn(
+          Logger.debug(
             `⚠️ [QUANTITY_CALC] ${market}: Quantidade ${rawQuantity.toFixed(8)} abaixo do mínimo ${minQty}, usando quantidade mínima`
           );
           adjustedQuantity = minQty;
@@ -186,7 +186,7 @@ class QuantityCalculator {
         // Se o stepSize zeraria a quantidade e temos minQuantity, usa a minQuantity
         if (stepAdjusted <= 0 && marketInfo?.minQuantity) {
           adjustedQuantity = parseFloat(marketInfo.minQuantity);
-          Logger.warn(
+          Logger.debug(
             `⚠️ [QUANTITY_CALC] ${market}: stepSize zeraria quantidade, mantendo minQuantity ${adjustedQuantity}`
           );
         } else {
@@ -234,7 +234,7 @@ class QuantityCalculator {
       const discrepancyPercent = (discrepancy / volumeUSD) * 100;
 
       if (discrepancyPercent > 5) {
-        Logger.warn(
+        Logger.debug(
           `⚠️ [QUANTITY_CALC] ${market}: Discrepância de ${discrepancyPercent.toFixed(2)}% entre volume solicitado($${volumeUSD.toFixed(2)}) e real($${actualOrderValue.toFixed(2)})`
         );
       }
@@ -279,7 +279,7 @@ class QuantityCalculator {
       // Valida pesos
       const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
       if (Math.abs(totalWeight - 100) > 0.1) {
-        Logger.warn(`⚠️ [QUANTITY_CALC] ${market}: Pesos não somam 100%: ${totalWeight}%`);
+        Logger.debug(`⚠️ [QUANTITY_CALC] ${market}: Pesos não somam 100%: ${totalWeight}%`);
       }
 
       const orders = [];

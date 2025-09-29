@@ -156,7 +156,7 @@ class OrdersCache {
   invalidateAll(reason = 'manual') {
     const count = this.cache.size;
     this.cache.clear();
-    Logger.info(`🗑️ [ORDERS_CACHE] Todo cache invalidado (${count} entradas): ${reason}`);
+    Logger.debug(`🗑️ [ORDERS_CACHE] Todo cache invalidado (${count} entradas): ${reason}`);
   }
 
   /**
@@ -170,6 +170,17 @@ class OrdersCache {
       maxEntries: this.maxCacheEntries,
       entries: [],
     };
+
+    // 🔒 VALIDAÇÃO DE ITERATOR: Garante que cache.entries é iterável
+    if (
+      !this.cache ||
+      !this.cache.entries ||
+      !this.cache.entries()[Symbol.iterator] ||
+      typeof this.cache.entries()[Symbol.iterator] !== 'function'
+    ) {
+      Logger.error(`❌ [ORDERS_CACHE] cache.entries não tem iterator válido`);
+      return stats;
+    }
 
     for (const [key, cached] of this.cache.entries()) {
       const age = Date.now() - cached.timestamp;
@@ -192,6 +203,18 @@ class OrdersCache {
    */
   cleanup() {
     let cleaned = 0;
+
+    // 🔒 VALIDAÇÃO DE ITERATOR: Garante que cache.entries é iterável
+    if (
+      !this.cache ||
+      !this.cache.entries ||
+      !this.cache.entries()[Symbol.iterator] ||
+      typeof this.cache.entries()[Symbol.iterator] !== 'function'
+    ) {
+      Logger.error(`❌ [ORDERS_CACHE] cleanup: cache.entries não tem iterator válido`);
+      return cleaned;
+    }
+
     for (const [key, cached] of this.cache.entries()) {
       const age = Date.now() - cached.timestamp;
       if (age >= this.cacheTimeout) {

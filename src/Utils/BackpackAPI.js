@@ -162,7 +162,7 @@ class BackpackAPI {
   }
 
   async getOpenPositions(headers, description = 'Get Open Positions') {
-    return this.get('/api/v1/positions', { headers, description, priority: 1 });
+    return this.get('/api/v1/position', { headers, description, priority: 1 });
   }
 
   async getCollateral(headers, description = 'Get Collateral') {

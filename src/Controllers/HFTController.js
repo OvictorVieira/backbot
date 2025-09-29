@@ -54,6 +54,18 @@ class HFTController {
         this.monitorInterval = null;
       }
 
+      // 🚨 VALIDAÇÃO CRÍTICA: Verifica se activeHFTBots é iterável
+      if (
+        !this.activeHFTBots ||
+        !this.activeHFTBots[Symbol.iterator] ||
+        typeof this.activeHFTBots[Symbol.iterator] !== 'function'
+      ) {
+        Logger.error(
+          `❌ [HFT_CONTROLLER] activeHFTBots não é iterável em pauseAllHFTBots - type: ${typeof this.activeHFTBots}`
+        );
+        return;
+      }
+
       // Para todos os bots HFT ativos
       for (const [botId, hftStrategy] of this.activeHFTBots.entries()) {
         await this.stopHFTBot(botId);
@@ -110,10 +122,22 @@ class HFTController {
         bot => bot.enabled && (!bot.status || bot.status === 'idle' || bot.status === 'running')
       );
 
-      Logger.info(`📋 [HFT_CONTROLLER] Encontrados ${enabledHFTBots.length} bots HFT habilitados`);
+      Logger.debug(`📋 [HFT_CONTROLLER] Encontrados ${enabledHFTBots.length} bots HFT habilitados`);
 
       if (enabledHFTBots.length === 0) {
-        Logger.info('ℹ️ [HFT_CONTROLLER] Nenhum bot HFT habilitado encontrado');
+        Logger.debug('ℹ️ [HFT_CONTROLLER] Nenhum bot HFT habilitado encontrado');
+        return;
+      }
+
+      // 🚨 VALIDAÇÃO CRÍTICA: Verifica se enabledHFTBots é iterável
+      if (
+        !Array.isArray(enabledHFTBots) ||
+        !enabledHFTBots[Symbol.iterator] ||
+        typeof enabledHFTBots[Symbol.iterator] !== 'function'
+      ) {
+        Logger.error(
+          `❌ [HFT_CONTROLLER] enabledHFTBots não é iterável em loadAllHFTBots - type: ${typeof enabledHFTBots}, isArray: ${Array.isArray(enabledHFTBots)}`
+        );
         return;
       }
 
@@ -162,6 +186,18 @@ class HFTController {
         throw new Error('Nenhum token autorizado encontrado na configuração do bot HFT');
       }
 
+      // 🚨 VALIDAÇÃO: Limite máximo de tokens por bot
+      const maxTokensPerBot = parseInt(process.env.MAX_TOKENS_PER_BOT) || 12; // Default: 12 tokens
+      if (authorizedTokens.length > maxTokensPerBot) {
+        Logger.warn(
+          `⚠️ [HFT_CONTROLLER] Bot ${botConfig.botName} tem ${authorizedTokens.length} tokens configurados, mas o limite é ${maxTokensPerBot}`
+        );
+        Logger.warn(
+          `🔧 [HFT_CONTROLLER] Processando apenas os primeiros ${maxTokensPerBot} tokens para evitar timing conflicts`
+        );
+        authorizedTokens.splice(maxTokensPerBot); // Remove tokens excedentes
+      }
+
       Logger.info(
         `📋 [HFT_CONTROLLER] Bot ${botConfig.botName} processará ${authorizedTokens.length} tokens: ${authorizedTokens.join(', ')}`
       );
@@ -169,11 +205,23 @@ class HFTController {
       // Cria uma estratégia para cada token
       const strategies = new Map();
 
+      // 🚨 VALIDAÇÃO CRÍTICA: Verifica se authorizedTokens é iterável
+      if (
+        !Array.isArray(authorizedTokens) ||
+        !authorizedTokens[Symbol.iterator] ||
+        typeof authorizedTokens[Symbol.iterator] !== 'function'
+      ) {
+        Logger.error(
+          `❌ [HFT_CONTROLLER] authorizedTokens não é iterável em startHFTBot - type: ${typeof authorizedTokens}, isArray: ${Array.isArray(authorizedTokens)}`
+        );
+        return;
+      }
+
       for (const symbol of authorizedTokens) {
         try {
-          Logger.info(`🧮 [HFT_CONTROLLER] Calculando amount para ${symbol}...`);
+          Logger.debug(`🧮 [HFT_CONTROLLER] Calculando amount para ${symbol}...`);
           const amount = await this.calculateOptimalAmountFromConfig(botConfig, symbol);
-          Logger.info(`💰 [HFT_CONTROLLER] Amount calculado para ${symbol}: ${amount}`);
+          Logger.debug(`💰 [HFT_CONTROLLER] Amount calculado para ${symbol}: ${amount}`);
 
           // Cria instância separada da HFTStrategy para este token
           const tokenStrategy = new HFTStrategy();

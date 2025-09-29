@@ -223,6 +223,12 @@ export function HFTConfigForm({ config, onSave, onCancel, isEditMode }: HFTConfi
       newErrors.authorizedTokens = 'Selecione pelo menos um token'
     }
 
+    // Validação de limite máximo de tokens
+    const maxTokens = 12; // Deve coincidir com MAX_TOKENS_PER_BOT do .env
+    if (formData.authorizedTokens.length > maxTokens) {
+      newErrors.authorizedTokens = `Máximo de ${maxTokens} tokens por bot HFT para evitar timing conflicts. Você selecionou ${formData.authorizedTokens.length}.`;
+    }
+
     // Validate API was tested (only if not in edit mode or if keys changed)
     if (!isEditMode) {
       // Creation mode: always require API test
@@ -441,10 +447,16 @@ export function HFTConfigForm({ config, onSave, onCancel, isEditMode }: HFTConfi
                   <span className={`font-medium ${
                     formData.authorizedTokens.length === 0
                       ? 'text-red-600 dark:text-red-400'
-                      : 'text-green-600 dark:text-green-400'
+                      : formData.authorizedTokens.length > 12
+                        ? 'text-red-600 dark:text-red-400'
+                        : formData.authorizedTokens.length > 10
+                          ? 'text-yellow-600 dark:text-yellow-400'
+                          : 'text-green-600 dark:text-green-400'
                   }`}>
                     {formData.authorizedTokens.length} selecionados
                     {formData.authorizedTokens.length === 0 && ' (mínimo 1)'}
+                    {formData.authorizedTokens.length > 12 && ' (EXCEDE LIMITE!)'}
+                    {formData.authorizedTokens.length > 10 && formData.authorizedTokens.length <= 12 && ' (próximo ao limite)'}
                   </span>
                 </div>
 

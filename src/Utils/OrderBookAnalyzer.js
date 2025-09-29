@@ -16,9 +16,16 @@ class OrderBookAnalyzer {
     try {
       const depth = await markets.getDepth(symbol);
       if (!depth || !depth.bids || !depth.asks) {
-        Logger.warn(`[ORDER_BOOK] ${symbol}: Book de ordens inválido ou vazio`);
+        Logger.debug(`[ORDER_BOOK] ${symbol}: Book de ordens inválido ou vazio`);
         return null;
       }
+
+      // Log simplificado do order book
+      const bestBid = parseFloat(depth.bids[0]?.[0]);
+      const bestAsk = parseFloat(depth.asks[0]?.[0]);
+      Logger.debug(
+        `📊 [ORDER_BOOK] ${symbol}: Bid: ${bestBid}, Ask: ${bestAsk}, Depth: ${depth.bids.length}/${depth.asks.length}`
+      );
 
       Logger.debug(
         `[ORDER_BOOK] ${symbol}: Book obtido - ${depth.bids.length} bids, ${depth.asks.length} asks`
@@ -44,7 +51,7 @@ class OrderBookAnalyzer {
     const bestAsk = parseFloat(book.asks[0]?.[0]); // Melhor preço de venda
 
     if (!bestBid || !bestAsk) {
-      Logger.warn(`[ORDER_BOOK] ${symbol}: Best bid/ask não disponível`);
+      Logger.debug(`[ORDER_BOOK] ${symbol}: Best bid/ask não disponível`);
       return null;
     }
 
@@ -75,7 +82,7 @@ class OrderBookAnalyzer {
     const bestAsk = parseFloat(book.asks[0]?.[0]);
 
     if (!bestBid || !bestAsk) {
-      Logger.warn(`[ORDER_BOOK] ${symbol}: Best bid/ask não disponível`);
+      Logger.debug(`[ORDER_BOOK] ${symbol}: Best bid/ask não disponível`);
       return null;
     }
 
@@ -137,7 +144,7 @@ class OrderBookAnalyzer {
       const bestAsk = parseFloat(book.asks[0]?.[0]);
 
       if (!bestBid || !bestAsk || !entryPrice || !targetPercentage) {
-        Logger.info(
+        Logger.debug(
           `[ORDER_BOOK] ${symbol}: Dados insuficientes para ajuste de preço - bestBid=${bestBid}, bestAsk=${bestAsk}, entryPrice=${entryPrice}, targetPercentage=${targetPercentage}`
         );
         return null;
@@ -174,7 +181,7 @@ class OrderBookAnalyzer {
         let closestPrice = null;
         let smallestDifference = Infinity;
 
-        // 🔍 VALIDAÇÃO ANTES DA ITERAÇÃO
+        // 🔍 VALIDAÇÃO CRÍTICA ANTES DA ITERAÇÃO
         if (!Array.isArray(book.bids) || book.bids.length === 0) {
           Logger.error(
             `❌ [ORDER_BOOK] ${symbol}: book.bids inválido antes da iteração BID - type: ${typeof book.bids}, length: ${book.bids?.length}`
@@ -182,9 +189,35 @@ class OrderBookAnalyzer {
           return null;
         }
 
+        // 🚨 VERIFICAÇÃO EXTRA: Testa se o array é iterável e tem dados válidos
+        try {
+          if (!book.bids[Symbol.iterator] || typeof book.bids[Symbol.iterator] !== 'function') {
+            Logger.error(
+              `❌ [ORDER_BOOK] ${symbol}: book.bids não tem iterator válido - @@iterator: ${typeof book.bids[Symbol.iterator]}`
+            );
+            return null;
+          }
+
+          // Testa se o primeiro elemento existe e é válido
+          const firstBid = book.bids[0];
+          if (!firstBid || (typeof firstBid !== 'object' && !Array.isArray(firstBid))) {
+            Logger.error(
+              `❌ [ORDER_BOOK] ${symbol}: Primeiro bid inválido - type: ${typeof firstBid}, value:`,
+              firstBid
+            );
+            return null;
+          }
+        } catch (iteratorError) {
+          Logger.error(
+            `❌ [ORDER_BOOK] ${symbol}: Erro de validação do iterator para bids:`,
+            iteratorError.message
+          );
+          return null;
+        }
+
         for (const bid of book.bids) {
           if (!Array.isArray(bid) || bid.length < 2) {
-            Logger.warn(`⚠️ [ORDER_BOOK] ${symbol}: Bid inválido ignorado:`, bid);
+            Logger.debug(`⚠️ [ORDER_BOOK] ${symbol}: Bid inválido ignorado:`, bid);
             continue;
           }
 
@@ -201,8 +234,10 @@ class OrderBookAnalyzer {
             // O importante é encontrar o mais próximo do target
             isValid = bidPrice > 0; // Qualquer preço válido do orderbook
           } else if (isTakeProfit) {
-            // Para Take Profit: mantém a lógica existente com buffer
-            isValid = bidPrice <= maxAllowedPrice && bidPrice > 0;
+            // Para Take Profit: usa buffer mais flexível - aceita se está próximo do target OU abaixo do buffer máximo
+            isValid =
+              bidPrice <= maxAllowedPrice * 1.001 ||
+              Math.abs(bidPrice - targetPrice) / targetPrice < 0.01; // 1% de tolerância
           } else {
             // Fallback: aceita qualquer preço válido
             isValid = bidPrice > 0;
@@ -220,6 +255,20 @@ class OrderBookAnalyzer {
         }
 
         if (closestPrice !== null) {
+          // 🚨 VALIDAÇÃO CRÍTICA: Verifica se o preço retornado é razoável
+          const priceRatio = closestPrice / targetPrice;
+          const maxDeviationRatio = 2.0; // Máximo 100% de desvio do target
+
+          if (priceRatio > maxDeviationRatio || priceRatio < 1 / maxDeviationRatio) {
+            Logger.error(
+              `❌ [ORDER_BOOK] ${symbol}: Preço BID suspeito - closestPrice=${closestPrice.toFixed(6)}, targetPrice=${targetPrice.toFixed(6)}, ratio=${priceRatio.toFixed(3)}`
+            );
+            Logger.error(
+              `❌ [ORDER_BOOK] ${symbol}: Rejeitando preço para evitar erro "Price is too far from the last active price"`
+            );
+            return null;
+          }
+
           Logger.debug(
             `🔍 [ORDER_BOOK] ${symbol}: BID result = ${closestPrice.toFixed(6)} (target: ${targetPrice.toFixed(6)}, diff: ${smallestDifference.toFixed(6)})`
           );
@@ -230,6 +279,12 @@ class OrderBookAnalyzer {
         // NUNCA usar fallback em operações financeiras
         Logger.error(
           `❌ [ORDER_BOOK] ${symbol}: ERRO CRÍTICO - Impossível encontrar preço BID próximo ao target ${targetPrice.toFixed(6)}`
+        );
+        Logger.error(
+          `❌ [ORDER_BOOK] ${symbol}: maxAllowedPrice=${maxAllowedPrice.toFixed(6)}, bestBid=${bestBid}, bestAsk=${bestAsk}`
+        );
+        Logger.error(
+          `❌ [ORDER_BOOK] ${symbol}: Verificar se book tem dados suficientes: ${book.bids.length} bids`
         );
         Logger.error(
           `❌ [ORDER_BOOK] ${symbol}: Cancelando operação - não podemos arriscar em mercado financeiro`
@@ -245,10 +300,36 @@ class OrderBookAnalyzer {
         Logger.debug(
           `🔍 [ASK_DEBUG] ${symbol}: targetPrice=${targetPrice.toFixed(6)}, minAllowedPrice=${minAllowedPrice.toFixed(6)}, bestBid=${bestBid}, bestAsk=${bestAsk}`
         );
-        // 🔍 VALIDAÇÃO ANTES DA ITERAÇÃO ASK
+        // 🔍 VALIDAÇÃO CRÍTICA ANTES DA ITERAÇÃO ASK
         if (!Array.isArray(book.asks) || book.asks.length === 0) {
           Logger.error(
             `❌ [ORDER_BOOK] ${symbol}: book.asks inválido antes da iteração ASK - type: ${typeof book.asks}, length: ${book.asks?.length}`
+          );
+          return null;
+        }
+
+        // 🚨 VERIFICAÇÃO EXTRA: Testa se o array é iterável e tem dados válidos
+        try {
+          if (!book.asks[Symbol.iterator] || typeof book.asks[Symbol.iterator] !== 'function') {
+            Logger.error(
+              `❌ [ORDER_BOOK] ${symbol}: book.asks não tem iterator válido - @@iterator: ${typeof book.asks[Symbol.iterator]}`
+            );
+            return null;
+          }
+
+          // Testa se o primeiro elemento existe e é válido
+          const firstAsk = book.asks[0];
+          if (!firstAsk || (typeof firstAsk !== 'object' && !Array.isArray(firstAsk))) {
+            Logger.error(
+              `❌ [ORDER_BOOK] ${symbol}: Primeiro ask inválido - type: ${typeof firstAsk}, value:`,
+              firstAsk
+            );
+            return null;
+          }
+        } catch (iteratorError) {
+          Logger.error(
+            `❌ [ORDER_BOOK] ${symbol}: Erro de validação do iterator para asks:`,
+            iteratorError.message
           );
           return null;
         }
@@ -257,7 +338,7 @@ class OrderBookAnalyzer {
 
         for (const ask of book.asks) {
           if (!Array.isArray(ask) || ask.length < 2) {
-            Logger.warn(`⚠️ [ORDER_BOOK] ${symbol}: Ask inválido ignorado:`, ask);
+            Logger.debug(`⚠️ [ORDER_BOOK] ${symbol}: Ask inválido ignorado:`, ask);
             continue;
           }
 
@@ -274,8 +355,10 @@ class OrderBookAnalyzer {
             // O importante é encontrar o mais próximo do target, não precisa de minAllowedPrice
             isValid = askPrice > 0; // Qualquer preço válido do orderbook
           } else if (isTakeProfit) {
-            // Para Take Profit: mantém a lógica existente com buffer
-            isValid = askPrice >= minAllowedPrice || askPrice >= targetPrice;
+            // Para Take Profit: usa buffer mais flexível - aceita se está próximo do target OU acima do buffer mínimo
+            isValid =
+              askPrice >= minAllowedPrice * 0.999 ||
+              Math.abs(askPrice - targetPrice) / targetPrice < 0.01; // 1% de tolerância
           } else {
             // Fallback: aceita qualquer preço válido
             isValid = askPrice > 0;
@@ -299,6 +382,20 @@ class OrderBookAnalyzer {
         }
 
         if (closestPrice !== null) {
+          // 🚨 VALIDAÇÃO CRÍTICA: Verifica se o preço retornado é razoável
+          const priceRatio = closestPrice / targetPrice;
+          const maxDeviationRatio = 2.0; // Máximo 100% de desvio do target
+
+          if (priceRatio > maxDeviationRatio || priceRatio < 1 / maxDeviationRatio) {
+            Logger.error(
+              `❌ [ORDER_BOOK] ${symbol}: Preço ASK suspeito - closestPrice=${closestPrice.toFixed(6)}, targetPrice=${targetPrice.toFixed(6)}, ratio=${priceRatio.toFixed(3)}`
+            );
+            Logger.error(
+              `❌ [ORDER_BOOK] ${symbol}: Rejeitando preço para evitar erro "Price is too far from the last active price"`
+            );
+            return null;
+          }
+
           Logger.debug(
             `🔍 [ORDER_BOOK] ${symbol}: ASK result = ${closestPrice.toFixed(6)} (target: ${targetPrice.toFixed(6)}, diff: ${smallestDifference.toFixed(6)})`
           );
@@ -309,6 +406,12 @@ class OrderBookAnalyzer {
         // NUNCA usar fallback em operações financeiras
         Logger.error(
           `❌ [ORDER_BOOK] ${symbol}: ERRO CRÍTICO - Impossível encontrar preço ASK próximo ao target ${targetPrice.toFixed(6)}`
+        );
+        Logger.error(
+          `❌ [ORDER_BOOK] ${symbol}: minAllowedPrice=${minAllowedPrice.toFixed(6)}, bestBid=${bestBid}, bestAsk=${bestAsk}`
+        );
+        Logger.error(
+          `❌ [ORDER_BOOK] ${symbol}: Verificar se book tem dados suficientes: ${book.asks.length} asks`
         );
         Logger.error(
           `❌ [ORDER_BOOK] ${symbol}: Cancelando operação - não podemos arriscar em mercado financeiro`

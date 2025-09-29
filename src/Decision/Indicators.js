@@ -273,9 +273,28 @@ async function calculateMacroMoneyFlow(candles, timeframe = '5m', symbol = null)
     }
 
     // Usa os candles da Backpack que já temos (mais confiável que buscar da Binance)
-    if (!candles || !Array.isArray(candles) || candles.length < 150) {
+    if (!candles || !Array.isArray(candles)) {
+      console.warn(`⚠️ [MACRO] ${symbol}: Nenhum candle disponível`);
+      return {
+        macroBias: 0,
+        mfiCurrent: 50,
+        mfiPrevious: 50,
+        mfiEmaCurrent: 50,
+        mfiEmaPrevious: 50,
+        isBullish: false,
+        isBearish: false,
+        direction: 'NEUTRAL',
+        error: 'Nenhum candle disponível',
+        dataSource: 'NO_CANDLES',
+        symbol,
+      };
+    }
+
+    // ✅ AJUSTE: Para tokens recém-listados, aceita mínimo de 50 candles
+    const minimumCandles = 50;
+    if (candles.length < minimumCandles) {
       console.warn(
-        `⚠️ [MACRO] ${symbol}: Candles insuficientes (${candles?.length || 0} candles) - mínimo 150 para Heikin Ashi Money Flow`
+        `⚠️ [MACRO] ${symbol}: Candles insuficientes para análise (${candles?.length || 0} < ${minimumCandles})`
       );
       return {
         macroBias: 0,
@@ -286,10 +305,18 @@ async function calculateMacroMoneyFlow(candles, timeframe = '5m', symbol = null)
         isBullish: false,
         isBearish: false,
         direction: 'NEUTRAL',
-        error: 'Candles insuficientes',
+        error: 'Candles insuficientes para análise',
         dataSource: 'BACKPACK_INSUFFICIENT',
         symbol,
       };
+    }
+
+    // Para tokens com menos de 150 candles, usa análise simplificada
+    const hasFullHistory = candles.length >= 150;
+    if (!hasFullHistory) {
+      console.info(
+        `ℹ️ [MACRO] ${symbol}: Token recém-listado (${candles.length} candles) - usando análise simplificada`
+      );
     }
 
     Logger.debug(
@@ -1151,9 +1178,11 @@ function calculateHeikinAshi(candles, timeframe = '5m') {
  * @returns {Object} - Money Flow baseado em Heikin Ashi com current/previous
  */
 function calculateHeikinAshiMoneyFlow(candles, timeframe = '5m') {
-  // Validação de entrada - precisa de dados suficientes para SMA(60) + SMA(5) + SMA(5)
-  if (!candles || candles.length < 150) {
-    // Precisa de pelo menos 150 velas para garantir dados suficientes para SMAs cascateadas
+  // Validação de entrada adaptativa
+  const minimumCandles = 50; // Mínimo absoluto para qualquer análise
+  const optimalCandles = 150; // Ideal para análise completa
+
+  if (!candles || candles.length < minimumCandles) {
     return {
       current: {
         value: 0,
@@ -1173,8 +1202,19 @@ function calculateHeikinAshiMoneyFlow(candles, timeframe = '5m') {
       },
       history: [],
       heikinAshiData: null,
-      error: 'Dados insuficientes para Heikin Ashi Money Flow - mínimo 150 candles',
+      error: `Dados insuficientes para Heikin Ashi Money Flow - mínimo ${minimumCandles} candles`,
     };
+  }
+
+  // Para tokens recém-listados, ajusta os períodos das médias móveis
+  const useAdaptivePeriods = candles.length < optimalCandles;
+  const smaPeriod = useAdaptivePeriods ? Math.floor(candles.length * 0.4) : 60; // 40% dos candles ou 60
+  const emaPeriod = Math.min(5, Math.floor(candles.length * 0.1)); // 10% dos candles ou 5
+
+  if (useAdaptivePeriods) {
+    console.info(
+      `🔧 [ADAPTIVE_MF] Token recém-listado: usando SMA(${smaPeriod}) ao invés de SMA(60) para ${candles.length} candles`
+    );
   }
 
   try {
@@ -1250,8 +1290,8 @@ function calculateHeikinAshiMoneyFlow(candles, timeframe = '5m') {
       }
     }
 
-    // 6. Calcular mf = SMA(i, 60) - exato como Pine Script
-    const mf = SMA.calculate({ period: 60, values: i });
+    // 6. Calcular mf = SMA(i, periodo_adaptativo) - adaptado para tokens recém-listados
+    const mf = SMA.calculate({ period: smaPeriod, values: i });
 
     if (!mf || mf.length < 2) {
       Logger.debug(`⚠️ [HEIKIN_ASHI_MF] Resultado MF insuficiente: ${mf?.length || 0} valores`);

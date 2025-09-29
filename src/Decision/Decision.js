@@ -57,7 +57,21 @@ class Decision {
 
     // Se config tem authorizedTokens, filtra apenas esses tokens
     if (config?.authorizedTokens && config.authorizedTokens.length > 0) {
-      markets = markets.filter(el => config.authorizedTokens.includes(el.symbol));
+      let authorizedTokens = [...config.authorizedTokens]; // Cópia para não modificar o original
+
+      // 🚨 VALIDAÇÃO: Limite máximo de tokens por bot
+      const maxTokensPerBot = parseInt(process.env.MAX_TOKENS_PER_BOT) || 12; // Default: 12 tokens
+      if (authorizedTokens.length > maxTokensPerBot) {
+        Logger.warn(
+          `⚠️ [DECISION] Bot tem ${authorizedTokens.length} tokens configurados, mas o limite é ${maxTokensPerBot}`
+        );
+        Logger.warn(
+          `🔧 [DECISION] Processando apenas os primeiros ${maxTokensPerBot} tokens para evitar timing conflicts`
+        );
+        authorizedTokens = authorizedTokens.slice(0, maxTokensPerBot); // Limita aos primeiros N tokens
+      }
+
+      markets = markets.filter(el => authorizedTokens.includes(el.symbol));
     }
 
     try {
@@ -130,11 +144,31 @@ class Decision {
           if (Array.isArray(allMarkPrices)) {
             const symbolPriceData = allMarkPrices.find(item => item.symbol === market.symbol);
             if (!symbolPriceData) {
-              throw new Error(
-                `No price data found for ${market.symbol} in global mark prices array`
+              Logger.warn(
+                `⚠️ [PRICE_FALLBACK] ${market.symbol} não encontrado na lista global de preços - tentando busca individual`
               );
+              // 🔄 FALLBACK: Tenta buscar preço individual para este token
+              try {
+                const individualPriceData = await marketsPrices.getAllMarkPrices(market.symbol);
+                if (
+                  individualPriceData &&
+                  (individualPriceData.markPrice || individualPriceData[0]?.markPrice)
+                ) {
+                  marketPrice = individualPriceData.markPrice || individualPriceData[0]?.markPrice;
+                  Logger.info(
+                    `✅ [PRICE_FALLBACK] ${market.symbol}: Preço obtido individualmente: ${marketPrice}`
+                  );
+                } else {
+                  throw new Error(`No individual price data found for ${market.symbol}`);
+                }
+              } catch (fallbackError) {
+                throw new Error(
+                  `No price data found for ${market.symbol} in global array nor individual lookup: ${fallbackError.message}`
+                );
+              }
+            } else {
+              marketPrice = symbolPriceData.markPrice;
             }
-            marketPrice = symbolPriceData.markPrice;
           } else {
             throw new Error(`Expected allMarkPrices to be an array, got: ${typeof allMarkPrices}`);
           }
@@ -291,6 +325,14 @@ class Decision {
         } catch (statusError) {
           Logger.debug(`⚠️ Erro ao verificar status do bot: ${statusError.message}`);
         }
+      }
+
+      // 🔄 VERIFICAÇÃO DE DESPRESSURIZAÇÃO: Interrompe se sistema em manutenção
+      if (global.depressurizationManager && global.depressurizationManager.isActive()) {
+        Logger.info(
+          `🔄 [DEPRESSURIZATION] Sistema em manutenção - análise interrompida temporariamente`
+        );
+        return;
       }
 
       // Usa o timeframe passado como parâmetro ou fallback para configuração da conta
@@ -507,9 +549,9 @@ class Decision {
       }
 
       if (logger) {
-        logger.info(validationSummary);
+        logger.debug(validationSummary);
       } else {
-        console.log(validationSummary);
+        // console.log(validationSummary); // Removido para evitar spam
       }
 
       // Log personalizado por estratégia
@@ -527,9 +569,9 @@ class Decision {
         // Outras estratégias mostram média RSI
         const rsiMsg = `📊 Média do RSI: ${media_rsi.toFixed(2)}`;
         if (logger) {
-          logger.info(rsiMsg);
+          logger.debug(rsiMsg);
         } else {
-          console.log(rsiMsg);
+          // console.log(rsiMsg); // Removido para evitar spam
         }
       }
 
@@ -652,8 +694,17 @@ class Decision {
             continue;
           }
 
-          // ✅ DEFENSIVE CHECK: Se Account ou markets não disponíveis
-          if (!Account || !Account.markets) {
+          // 🚨 CORREÇÃO CRÍTICA: Obter Account específico para este marketSymbol para evitar conflito de cache entre bots
+          const marketSpecificConfig = {
+            ...config,
+            symbol: marketSymbol,
+            strategy: config?.strategyName || this.strategy.constructor.name || 'DEFAULT',
+          };
+
+          const MarketAccount = await AccountController.get(marketSpecificConfig);
+
+          // ✅ DEFENSIVE CHECK: Se MarketAccount ou markets não disponíveis
+          if (!MarketAccount || !MarketAccount.markets) {
             Logger.debug(
               `⚠️ [${config?.botName || 'DEFAULT'}] Dados da conta não disponíveis para ${marketSymbol}`
             );
@@ -665,12 +716,12 @@ class Decision {
             continue;
           }
 
-          const marketInfo = Account.markets.find(el => el.symbol === marketSymbol);
+          const marketInfo = MarketAccount.markets.find(el => el.symbol === marketSymbol);
 
           // Verifica se o market foi encontrado
           if (!marketInfo) {
             Logger.error(
-              `❌ [${config?.botName || 'DEFAULT'}] Market não encontrado para ${marketSymbol}. Markets disponíveis: ${Account.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`
+              `❌ [${config?.botName || 'DEFAULT'}] Market não encontrado para ${marketSymbol}. Markets disponíveis: ${MarketAccount.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`
             );
             orderResults.push({
               index,

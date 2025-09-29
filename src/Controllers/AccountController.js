@@ -30,6 +30,31 @@ class AccountController {
     const botKey = `${strategy}_${apiKey}`;
     const symbol = config?.symbol || 'UNKNOWN'; // Para determinar alavancagem específica do token
 
+    // 🔍 DEBUG CRÍTICO: Log das credenciais para cada bot
+    const apiKeyShort = apiKey ? `${apiKey.substring(0, 8)}...` : 'UNDEFINED';
+
+    // Se botName não está disponível, tenta inferir do cache ou usar estratégia
+    const botName = config?.botName || config?.strategy || strategy || 'UNKNOWN';
+    const botId = config?.botId || config?.id || 'UNKNOWN';
+
+    // Para authorizedTokens, só loga se realmente há dados válidos
+    const tokens = config?.authorizedTokens;
+    let tokenInfo = 'nenhum';
+    if (Array.isArray(tokens) && tokens.length > 0) {
+      tokenInfo = `${tokens.slice(0, 5).join(', ')}${tokens.length > 5 ? '...' : ''}`;
+    } else if (typeof tokens === 'string' && tokens.length > 0) {
+      tokenInfo = tokens.split(',').slice(0, 3).join(', ') + '...';
+    }
+
+    // Só loga quando há dados significativos para evitar spam
+    if (config?.botName || tokens) {
+    } else {
+      // Log minimal para chamadas internas
+      Logger.debug(
+        `🔍 [ACCOUNT_MINIMAL] Strategy: ${strategy}, Symbol: ${symbol}, ApiKey: ${apiKeyShort}`
+      );
+    }
+
     // 🎯 CACHE POR RODADA: 1 chamada por minuto para todos os tokens
     // Valida tokens a cada ~1min, todos tokens da mesma rodada usam os mesmos dados
 
@@ -157,14 +182,33 @@ class AccountController {
     AccountController.globalRateLimit.lastApiCall = Date.now();
 
     const Accounts = await Account.getAccount(strategy, apiKey, apiSecret);
-    Logger.debug(`🔍 [ACCOUNT_DEBUG] Calling Capital.getCollateral for strategy: ${strategy}`);
     const Collateral = await Capital.getCollateral(strategy, apiKey, apiSecret);
-    Logger.debug(`🔍 [ACCOUNT_DEBUG] Capital.getCollateral returned:`, Collateral);
 
-    // ✅ FALHA SEGURA: Se não conseguir dados da conta, PARA a operação
+    // ✅ FALHA SEGURA: Se não conseguir dados da conta, tenta usar cache antigo
     if (!Accounts || !Collateral) {
+      const failedAPIs = [];
+      if (!Accounts) failedAPIs.push('Account');
+      if (!Collateral) failedAPIs.push('Collateral');
+
       Logger.warn(
-        '⚠️ [ACCOUNT_API] Dados da conta temporariamente indisponíveis - aguardando próxima tentativa'
+        `⚠️ [ACCOUNT_API] ${strategy}: APIs falharam [${failedAPIs.join(', ')}] - verificando cache emergencial...`
+      );
+
+      // 🛡️ FALLBACK: Tenta usar cache antigo (até 10 minutos em emergência)
+      const cachedData = AccountController.accountCacheByBot.get(botKey);
+      const lastCacheTime = AccountController.lastCacheTimeByBot.get(botKey) || 0;
+      const emergencyCacheAge = Date.now() - lastCacheTime;
+      const emergencyCacheLimit = 600000; // 10 minutos para emergências graves
+
+      if (cachedData && emergencyCacheAge < emergencyCacheLimit) {
+        Logger.info(
+          `🚨 [EMERGENCY_CACHE] ${strategy}: Usando cache antigo de ${Math.round(emergencyCacheAge / 1000)}s durante falha da API`
+        );
+        return { ...cachedData };
+      }
+
+      Logger.error(
+        `❌ [ACCOUNT_CRITICAL] ${strategy}: API indisponível e sem cache válido - cancelando operações`
       );
       throw new Error('Dados da conta temporariamente indisponíveis - tentando novamente em breve');
     }
@@ -231,19 +275,7 @@ class AccountController {
     const makerFee = parseFloat(Accounts.futuresMakerFee) / 10000;
     const leverage = parseInt(Accounts.leverageLimit); // Alavancagem definida pelo usuário na corretora
 
-    // 🔍 DEBUG: Verificar valores do Collateral
-    Logger.debug(`🔍 [ACCOUNT_DEBUG] Collateral object:`, Collateral);
-    Logger.debug(
-      `🔍 [ACCOUNT_DEBUG] Collateral.netEquityAvailable raw:`,
-      Collateral.netEquityAvailable
-    );
-    Logger.debug(
-      `🔍 [ACCOUNT_DEBUG] typeof Collateral.netEquityAvailable:`,
-      typeof Collateral.netEquityAvailable
-    );
-
     const netEquityAvailable = parseFloat(Collateral.netEquityAvailable);
-    Logger.debug(`🔍 [ACCOUNT_DEBUG] netEquityAvailable after parseFloat:`, netEquityAvailable);
 
     // 💡 USANDO ALAVANCAGEM DA CORRETORA: Usuário define a alavancagem que quer usar
     // Respeitamos a configuração do usuário sem impor limites arbitrários
@@ -297,8 +329,11 @@ class AccountController {
     AccountController.accountCacheByBot.set(botKey, obj);
     AccountController.lastCacheTimeByBot.set(botKey, now);
 
-    Logger.info(
-      `✅ [ACCOUNT_CACHED] RODADA: Capital real: $${realCapital.toFixed(2)}, Capital p/ posição: $${capitalAvailable.toFixed(2)} (${leverage}x) - Cache para próximos 55s`
+    Logger.debug(
+      `✅ [ACCOUNT_CACHED] ${botKey} RODADA: Capital real: $${realCapital.toFixed(2)}, Capital p/ posição: $${capitalAvailable.toFixed(2)} (${leverage}x) - Cache para próximos 55s`
+    );
+    Logger.debug(
+      `✅ [MARKETS_FINAL] ${botKey}: ${markets.length} markets carregados: ${markets.map(m => m.symbol).join(', ')}`
     );
 
     return obj;

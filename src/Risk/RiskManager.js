@@ -43,12 +43,9 @@ export class RiskManager {
 
       const investmentUSD = (capitalAvailable * capitalPercentage) / 100;
 
-      // 🔍 LOG CRÍTICO DO CÁLCULO DE INVESTMENT
-      Logger.error(`🚨 [RISK_CALC] CÁLCULO DO INVESTMENT:`);
-      Logger.error(`   • capitalAvailable (recebido): $${capitalAvailable.toFixed(2)}`);
-      Logger.error(`   • capitalPercentage (config): ${capitalPercentage}%`);
-      Logger.error(
-        `   • investmentUSD = $${capitalAvailable.toFixed(2)} × ${capitalPercentage}% / 100 = $${investmentUSD.toFixed(2)}`
+      // 🔍 LOG DO CÁLCULO DE INVESTMENT
+      Logger.debug(
+        `💰 [RISK_CALC] Investment: $${capitalAvailable.toFixed(2)} × ${capitalPercentage}% = $${investmentUSD.toFixed(2)}`
       );
 
       return investmentUSD;

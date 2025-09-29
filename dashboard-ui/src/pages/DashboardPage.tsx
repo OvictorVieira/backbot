@@ -5,6 +5,7 @@ import { ConfigForm } from '../components/ConfigForm'
 import { HFTConfigForm } from '../components/HFTConfigForm'
 import { BotTypeSelection } from '../components/BotTypeSelection'
 import { ErrorModal } from '../components/ErrorModal'
+import { WarningModal } from '../components/WarningModal'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
@@ -91,6 +92,18 @@ export function DashboardPage() {
     message: ''
   })
 
+  const [warningModal, setWarningModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    botId?: string;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    botId: undefined
+  })
+
   const [strategies, setStrategies] = useState<string[]>([])
   const navigate = useNavigate()
 
@@ -112,7 +125,9 @@ export function DashboardPage() {
     const fetchHFTModeStatus = async () => {
       try {
         const response = await axios.get(`${API_BASE_URL}/api/feature-toggles`)
-        const hftToggle = response.data.find((toggle: any) => toggle.name === 'HFT_MODE')
+        // A API retorna { success: true, data: toggles }
+        const toggles = response.data.data || []
+        const hftToggle = Array.isArray(toggles) ? toggles.find((toggle: any) => toggle.name === 'HFT_MODE') : null
         setHftModeEnabled(hftToggle?.enabled || false)
       } catch (error) {
         console.error('Erro ao buscar status do HFT_MODE:', error)
@@ -201,11 +216,23 @@ export function DashboardPage() {
         errorMessage = `Erro: ${error.message}`;
       }
 
-      setErrorModal({
-        isOpen: true,
-        title: 'Erro ao iniciar bot',
-        message: errorMessage
-      });
+      // Verifica se é erro relacionado a excesso de tokens
+      const isTokenLimitError = errorMessage.includes('Excede limite de') && errorMessage.includes('tokens');
+
+      if (isTokenLimitError) {
+        setWarningModal({
+          isOpen: true,
+          title: 'Bot Pausado - Muitos Tokens',
+          message: 'Este bot foi pausado automaticamente por ter mais tokens configurados do que o limite permitido (12 tokens). Para reativá-lo, edite a configuração e reduza a quantidade de tokens selecionados.',
+          botId: botId
+        });
+      } else {
+        setErrorModal({
+          isOpen: true,
+          title: 'Erro ao iniciar bot',
+          message: errorMessage
+        });
+      }
     } finally {
       setLoadingBots(prev => ({ ...prev, [botId]: false }))
     }
@@ -236,16 +263,13 @@ export function DashboardPage() {
 
       while (retries > 0 && !statusUpdated) {
         const response = await axios.get(`${API_BASE_URL}/api/bot/status`)
-        console.log(`[DEBUG STOP] Bot ${botId} - Setting bot statuses, data length: ${response.data.data.length}`);
         setBotStatuses(response.data.data)
 
         // Verifica se o status foi realmente atualizado
         const botStatus = response.data.data.find((bot: any) => bot.id?.toString() === botId)
-        console.log(`[DEBUG STOP] Bot ${botId} - API returned status: "${botStatus?.status}", attempt: ${4-retries}`);
 
         if (botStatus && botStatus.status === 'stopped') {
           statusUpdated = true
-          console.log(`[DEBUG STOP] Bot ${botId} - Status confirmed as stopped!`);
         } else {
           retries--
           if (retries > 0) {
@@ -579,10 +603,9 @@ export function DashboardPage() {
   const handleForceSync = async (botId: number) => {
     try {
       const response = await axios.post(`${API_BASE_URL}/api/bot/force-sync`, { botId })
-      
+
       if (response.data.success) {
         // Sucesso - estatísticas serão atualizadas automaticamente
-        console.log('Force sync executado com sucesso:', response.data.message)
       } else {
         setErrorModal({
           isOpen: true,
@@ -620,7 +643,7 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="w-full px-8 sm:px-12 lg:px-16 pt-8">
+    <div className="w-full px-8 sm:px-12 lg:px-16 pt-8 pb-24">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-8">
         <div>
@@ -650,6 +673,28 @@ export function DashboardPage() {
         </div>
       </div>
 
+      {/* Banner informativo sobre limite de tokens */}
+      <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
+        <div className="flex items-start space-x-3">
+          <div className="flex-shrink-0">
+            <svg className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="text-sm font-medium text-blue-800 dark:text-blue-200">Nova Melhoria: Limite de Tokens por Bot</h3>
+            <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+              Para melhorar a estabilidade e performance do sistema, agora limitamos cada bot a <strong>máximo 12 tokens</strong> simultaneamente.
+              Esta decisão reduz significativamente erros de execução, conflitos de timing e uso excessivo de recursos.
+            </p>
+            <p className="text-sm text-blue-600 dark:text-blue-400 mt-2 font-medium">
+              ⚠️ <strong>Importante:</strong> Bots com mais de 12 tokens serão pausados automaticamente.
+              Se você alterar o limite padrão no .env, assume o risco de possível degradação do sistema.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Configuração Form */}
       {showConfigForm && selectedStrategy && (
         <div
@@ -657,16 +702,12 @@ export function DashboardPage() {
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
         >
           <div className="bg-background p-6 rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto border shadow-lg">
-            <ConfigForm
-              config={(() => {
+            {(() => {
+              try {
                 // selectedStrategy agora é o botId (string)
                 const botId = parseInt(selectedStrategy);
                 const foundConfig = configs.find(c => c.id === botId);
-                if (foundConfig) {
-                  return foundConfig;
-                }
-                // Fallback para configuração padrão
-                return {
+                const configToUse = foundConfig || {
                   strategyName: 'DEFAULT',
                   botName: `Bot ${botId}`,
                   apiKey: '',
@@ -691,13 +732,35 @@ export function DashboardPage() {
                   enablePendingOrdersMonitor: true, // Sempre habilitado
                   maxOpenOrders: 5, // Valor padrão
                   // leverageLimit: 10, // Valor padrão - TODO: Removido temporariamente
-                  authorizedTokens: [] // Lista vazia = todos os tokens permitidos
+                  authorizedTokens: [], // Lista vazia = todos os tokens permitidos
+                  orderExecutionMode: 'HYBRID', // Modo padrão
+                  limitOrderSlippageThreshold: 0.8 // Limite padrão de slippage
                 };
-              })()}
-              onSave={handleConfigSaved}
-              onCancel={() => setShowConfigForm(false)}
-              isEditMode={true}
-            />
+
+                return (
+                  <ConfigForm
+                    config={configToUse}
+                    onSave={handleConfigSaved}
+                    onCancel={() => setShowConfigForm(false)}
+                    isEditMode={true}
+                  />
+                );
+              } catch (error) {
+                console.error('Erro no ConfigForm:', error);
+                return (
+                  <div className="p-4 text-red-600">
+                    <h3 className="font-bold">Erro ao carregar formulário:</h3>
+                    <p>{error instanceof Error ? error.message : 'Erro desconhecido'}</p>
+                    <button
+                      onClick={() => setShowConfigForm(false)}
+                      className="mt-2 px-4 py-2 bg-red-600 text-white rounded"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                );
+              }
+            })()}
           </div>
         </div>
       )}
@@ -883,6 +946,43 @@ export function DashboardPage() {
         title={errorModal.title}
         message={errorModal.message}
       />
+
+      {/* Warning Modal */}
+      <WarningModal
+        isOpen={warningModal.isOpen}
+        onClose={() => setWarningModal({ isOpen: false, title: '', message: '', botId: undefined })}
+        title={warningModal.title}
+        message={warningModal.message}
+        onEdit={warningModal.botId ? () => {
+          setWarningModal({ isOpen: false, title: '', message: '', botId: undefined });
+          handleEditBot(warningModal.botId!);
+        } : undefined}
+      />
+
+      {/* Disclaimer Footer */}
+      <div className="fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur-sm border-t border-border/40 z-10">
+        <div className="max-w-screen-2xl mx-auto px-4 py-3">
+          <div className="bg-muted/50 rounded-lg p-3">
+          <div className="flex items-start space-x-3">
+            <div className="flex-shrink-0">
+              <svg className="w-5 h-5 text-muted-foreground mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div>
+              <h4 className="text-sm font-medium text-muted-foreground mb-1">Aviso Legal</h4>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Este é um sistema de código aberto desenvolvido para fins educacionais e experimentais.
+                <strong> A equipe de desenvolvimento não se responsabiliza por quaisquer perdas financeiras</strong> que possam
+                ocorrer durante o uso deste bot. Trading automatizado envolve riscos significativos e você
+                <strong> utiliza este software por sua própria conta e risco</strong>.
+                Sempre inicie com capital baixo e baixa alavancagem para testes antes de usar valores maiores.
+              </p>
+            </div>
+          </div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

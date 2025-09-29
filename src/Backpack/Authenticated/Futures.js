@@ -30,9 +30,12 @@ class Futures {
     );
 
     try {
+      const endpoint = `${process.env.API_URL}/api/v1/position`;
+      Logger.debug(`🔍 [FUTURES] Consultando posições para apiKey: ${apiKey.substring(0, 8)}...`);
+
       // ✅ FIX: Using authenticated request with fresh timestamp generated in RequestManager
       const response = await requestManager.authenticatedGet(
-        `${process.env.API_URL}/api/v1/position`,
+        endpoint,
         { timeout: 15000 },
         {
           instruction: 'positionQuery',
@@ -42,6 +45,44 @@ class Futures {
         'Get Open Positions',
         'CRITICAL'
       );
+
+      // 🚨 DEBUG CRÍTICO: Log do que a API está retornando
+      Logger.debug(
+        `🔍 [FUTURES_DEBUG] Resposta recebida - Type: ${typeof response.data}, Length: ${Array.isArray(response.data) ? response.data.length : 'N/A'}`
+      );
+
+      if (response.data && typeof response.data === 'object') {
+        const hasPositionFields =
+          response.data.hasOwnProperty('symbol') || response.data.hasOwnProperty('netQuantity');
+        const hasOrderBookFields =
+          response.data.hasOwnProperty('asks') || response.data.hasOwnProperty('bids');
+
+        Logger.debug(
+          `🔍 [FUTURES_DEBUG] Campos detectados - Position fields: ${hasPositionFields}, OrderBook fields: ${hasOrderBookFields}`
+        );
+
+        if (hasOrderBookFields) {
+          Logger.error(
+            `❌ [FUTURES_CRITICAL] API retornou ORDER BOOK ao invés de POSITIONS! Endpoint: ${endpoint}`
+          );
+          Logger.error(
+            `❌ [FUTURES_CRITICAL] Dados recebidos:`,
+            JSON.stringify(response.data, null, 2)
+          );
+        }
+      }
+
+      // 🚨 PROTEÇÃO CRÍTICA: Não cacheia dados errados
+      if (
+        response.data &&
+        typeof response.data === 'object' &&
+        (response.data.hasOwnProperty('asks') || response.data.hasOwnProperty('bids'))
+      ) {
+        Logger.error(
+          `❌ [POSITIONS_CACHE] RECUSANDO cachear dados de ORDER BOOK - cancelando operação`
+        );
+        return null;
+      }
 
       // Salva no cache por 10 segundos
       this.positionsCache.set(cacheKey, response.data);
@@ -55,9 +96,12 @@ class Futures {
         // Retry após 2 segundos
         await new Promise(resolve => setTimeout(resolve, 2000));
         try {
+          const retryEndpoint = `${process.env.API_URL}/api/v1/position`;
+          Logger.debug(`🔍 [FUTURES_RETRY_DEBUG] Chamando endpoint (retry): ${retryEndpoint}`);
+
           // ✅ FIX: Using authenticated request for retry with fresh timestamp
           const retryResponse = await requestManager.authenticatedGet(
-            `${process.env.API_URL}/api/v1/position`,
+            retryEndpoint,
             { timeout: 20000 }, // Timeout maior na segunda tentativa
             {
               instruction: 'positionQuery',
@@ -67,6 +111,39 @@ class Futures {
             'Get Open Positions Retry',
             'CRITICAL'
           );
+
+          // 🚨 DEBUG CRÍTICO: Log do que a API está retornando (retry)
+          Logger.debug(
+            `🔍 [FUTURES_RETRY_DEBUG] Resposta recebida (retry) - Type: ${typeof retryResponse.data}, Length: ${Array.isArray(retryResponse.data) ? retryResponse.data.length : 'N/A'}`
+          );
+
+          if (retryResponse.data && typeof retryResponse.data === 'object') {
+            const hasOrderBookFields =
+              retryResponse.data.hasOwnProperty('asks') ||
+              retryResponse.data.hasOwnProperty('bids');
+
+            if (hasOrderBookFields) {
+              Logger.error(
+                `❌ [FUTURES_CRITICAL] API retornou ORDER BOOK ao invés de POSITIONS (retry)! Endpoint: ${retryEndpoint}`
+              );
+              Logger.error(
+                `❌ [FUTURES_CRITICAL] Dados recebidos (retry):`,
+                JSON.stringify(retryResponse.data, null, 2)
+              );
+            }
+          }
+
+          // 🚨 PROTEÇÃO CRÍTICA: Não cacheia dados errados (retry)
+          if (
+            retryResponse.data &&
+            typeof retryResponse.data === 'object' &&
+            (retryResponse.data.hasOwnProperty('asks') || retryResponse.data.hasOwnProperty('bids'))
+          ) {
+            Logger.error(
+              `❌ [POSITIONS_CACHE] RECUSANDO cachear dados de ORDER BOOK (retry) - cancelando operação`
+            );
+            return null;
+          }
 
           // Salva no cache por 10 segundos
           this.positionsCache.set(cacheKey, retryResponse.data);
@@ -132,6 +209,35 @@ class Futures {
   async getOpenPositionsForceRefresh(apiKey, apiSecret) {
     this.clearPositionsCache(apiKey);
     return await this.getOpenPositions(apiKey, apiSecret);
+  }
+
+  /**
+   * Método específico para obter posições detalhadas (endpoint /positions)
+   * Usado quando precisamos de dados completos de posições sem cache
+   */
+  async getDetailedPositions(apiKey, apiSecret) {
+    if (!apiKey || !apiSecret) {
+      throw new Error('API_KEY e API_SECRET são obrigatórios');
+    }
+
+    try {
+      const response = await requestManager.authenticatedGet(
+        `${process.env.API_URL}/api/v1/position`,
+        { timeout: 15000 },
+        {
+          instruction: 'positionQuery',
+          apiKey: apiKey,
+          apiSecret: apiSecret,
+        },
+        'Get Detailed Positions',
+        'CRITICAL'
+      );
+
+      return response.data;
+    } catch (error) {
+      Logger.error('❌ getDetailedPositions - ERROR!', error.response?.data || error.message);
+      return null;
+    }
   }
 
   /**

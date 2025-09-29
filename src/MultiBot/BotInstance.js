@@ -6,6 +6,7 @@ import OrderController from '../Controllers/OrderController.js';
 import PositionTrackingService from '../Services/PositionTrackingService.js';
 import DatabaseService from '../Services/DatabaseService.js';
 import History from '../Backpack/Authenticated/History.js';
+import LimitOrderValidator from '../Utils/LimitOrderValidator.js';
 
 /**
  * Instância individual do bot para cada conta
@@ -71,6 +72,18 @@ class BotInstance {
       // Inicia monitoramento (para PRO_MAX)
       if (this.strategy === 'PRO_MAX') {
         this.startMonitoring();
+      }
+
+      // 🎯 INTEGRAÇÃO: Inicia LimitOrderValidator se modo LIMIT estiver ativo
+      if (this.config?.orderExecutionMode === 'LIMIT') {
+        try {
+          if (!LimitOrderValidator.isActive) {
+            await LimitOrderValidator.start();
+            this.logger.success('✅ Sistema de validação de ordens LIMIT iniciado');
+          }
+        } catch (error) {
+          this.logger.warn(`⚠️ Erro ao iniciar LimitOrderValidator: ${error.message}`);
+        }
       }
 
       this.isRunning = true;
@@ -240,6 +253,18 @@ class BotInstance {
       }
 
       this.logger.debug(`📊 [FILL_MONITOR] Encontrados ${fills.length} fills para processar`);
+
+      // 🚨 VALIDAÇÃO CRÍTICA: Verifica se fills é iterável
+      if (
+        !Array.isArray(fills) ||
+        !fills[Symbol.iterator] ||
+        typeof fills[Symbol.iterator] !== 'function'
+      ) {
+        this.logger.error(
+          `❌ [BOT_INSTANCE] fills não é iterável em processFills - type: ${typeof fills}, isArray: ${Array.isArray(fills)}`
+        );
+        return;
+      }
 
       // Processa cada fill
       for (const fill of fills) {
@@ -506,6 +531,19 @@ class BotInstance {
       if (this.fillMonitoringInterval) {
         clearInterval(this.fillMonitoringInterval);
         this.fillMonitoringInterval = null;
+      }
+
+      // Cancela todos os timeouts ativos do OrderController
+      OrderController.cancelAllActiveTimeouts();
+
+      // 🎯 INTEGRAÇÃO: Para LimitOrderValidator se estava ativo
+      if (this.config?.orderExecutionMode === 'LIMIT' && LimitOrderValidator.isActive) {
+        try {
+          await LimitOrderValidator.stop();
+          this.logger.success('✅ Sistema de validação de ordens LIMIT parado');
+        } catch (error) {
+          this.logger.warn(`⚠️ Erro ao parar LimitOrderValidator: ${error.message}`);
+        }
       }
 
       this.logger.success('Bot parado com sucesso');

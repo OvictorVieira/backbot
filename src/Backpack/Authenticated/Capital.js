@@ -1,56 +1,80 @@
 import Logger from '../../Utils/Logger.js';
 import requestManager from '../../Utils/RequestManager.js';
 import { auth } from './Authentication.js';
+import axios from 'axios';
 
 class Capital {
   async getBalances() {
-    const timestamp = Date.now();
+    // 🚨 CRÍTICO: Request direto sem fila para dados de balances
+    // Motivo: Balance da conta é crítico e não pode falhar por fila sobrecarregada
+    Logger.debug(`🔍 [BALANCE_DIRECT] Making direct API call for balance data`);
 
+    const timestamp = Date.now();
+    const instruction = 'balanceQuery';
+
+    // Cria headers de autenticação diretamente
     const headers = auth({
-      instruction: 'balanceQuery',
+      instruction,
       timestamp,
     });
 
     try {
+      // Request direto com axios, bypassing RequestManager
       const response = await axios.get(`${process.env.API_URL}/api/v1/capital`, {
         headers,
+        timeout: 10000, // 10s timeout
       });
 
+      Logger.debug(`🔍 [BALANCE_DIRECT] Direct API response received successfully`);
       return response.data;
     } catch (error) {
-      Logger.error('getBalances - ERROR!', error.response?.data || error.message);
+      Logger.error(
+        `❌ [BALANCE_DIRECT] Direct API call failed:`,
+        error.response?.data || error.message
+      );
       return null;
     }
   }
 
   async getCollateral(strategy = null, apiKey = null, apiSecret = null) {
     try {
-      Logger.debug(`🔍 [CAPITAL_DEBUG] Starting getCollateral request for strategy: ${strategy}`);
-      Logger.debug(`🔍 [CAPITAL_DEBUG] API URL: ${process.env.API_URL}/api/v1/capital/collateral`);
-      Logger.debug(`🔍 [CAPITAL_DEBUG] API Key present: ${!!apiKey}`);
-      Logger.debug(`🔍 [CAPITAL_DEBUG] API Secret present: ${!!apiSecret}`);
-
-      const response = await requestManager.authenticatedGet(
-        `${process.env.API_URL}/api/v1/capital/collateral`,
-        {},
-        {
-          instruction: 'collateralQuery',
-          params: {},
-          apiKey,
-          apiSecret,
-        },
-        'Get Collateral',
-        'HIGH'
+      // 🚨 CRÍTICO: Request direto sem fila para dados de capital
+      // Motivo: Capital da conta é crítico e não pode falhar por fila sobrecarregada
+      Logger.debug(
+        `🔍 [CAPITAL_DIRECT] Making direct API call for collateral data - strategy: ${strategy}`
       );
+      Logger.debug(`🔍 [CAPITAL_DIRECT] API URL: ${process.env.API_URL}/api/v1/capital/collateral`);
 
-      Logger.debug(`🔍 [CAPITAL_DEBUG] getCollateral response received:`, response?.data);
-      Logger.debug(`🔍 [CAPITAL_DEBUG] response.status:`, response?.status);
-      Logger.debug(`🔍 [CAPITAL_DEBUG] response type:`, typeof response?.data);
-      Logger.debug(`🔍 [CAPITAL_DEBUG] response is array:`, Array.isArray(response?.data));
+      const timestamp = Date.now();
+      const instruction = 'collateralQuery';
+      const params = {};
+
+      // Cria headers de autenticação diretamente
+      const headers = auth({
+        instruction,
+        timestamp,
+        params,
+        apiKey,
+        apiSecret,
+      });
+
+      // Request direto com axios, bypassing RequestManager
+      const response = await axios.get(`${process.env.API_URL}/api/v1/capital/collateral`, {
+        headers,
+        timeout: 10000, // 10s timeout
+      });
+
+      Logger.debug(`🔍 [CAPITAL_DIRECT] Direct API response received successfully`);
+      Logger.debug(
+        `🔍 [CAPITAL_DIRECT] Response type: ${typeof response.data}, Array: ${Array.isArray(response.data)}`
+      );
 
       return response.data;
     } catch (error) {
-      Logger.error('getCollateral - ERROR!', error.response?.data || error.message);
+      Logger.error(
+        `❌ [CAPITAL_DIRECT] Direct API call failed for strategy ${strategy}:`,
+        error.response?.data || error.message
+      );
       return null;
     }
   }

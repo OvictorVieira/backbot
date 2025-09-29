@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import Logger from './src/Utils/Logger.js';
 import TerminalCleaner from './src/Utils/TerminalCleaner.js';
+import DepressurizationManager from './src/Utils/DepressurizationManager.js';
 
 dotenv.config();
 
@@ -267,10 +268,6 @@ async function startDecision() {
     );
   }
 
-  console.log(
-    `🔧 [${activeBotConfig.botName}][DEBUG] Execution Mode: ${executionMode}, Next Interval: ${nextInterval}ms`
-  );
-
   // Inicia o timer geral após cada análise
   showGlobalTimer();
 
@@ -410,6 +407,12 @@ async function startBot() {
   try {
     console.log('🚀 Iniciando BackBot...');
 
+    // 🔄 SISTEMA DE DESPRESSURIZAÇÃO - Inicializa antes de tudo
+    console.log('🔧 [DEPRESSURIZATION] Inicializando sistema de despressurização...');
+    const depressurizationManager = new DepressurizationManager();
+    // Armazena globalmente para possível acesso posterior
+    global.depressurizationManager = depressurizationManager;
+
     // Inicializa o DatabaseService
     const dbService = new DatabaseService();
     await dbService.initialize();
@@ -420,6 +423,37 @@ async function startBot() {
     // Carrega apenas bots tradicionais (não HFT)
     const allConfigs = await ConfigManagerSQLite.loadTraditionalBots();
     console.log(`📋 Encontradas ${allConfigs.length} configurações de bots`);
+
+    // 🔧 VALIDAÇÃO: Garante que todos os bots tenham orderExecutionMode definido
+    let botsUpdated = 0;
+    for (const config of allConfigs) {
+      if (!config.orderExecutionMode) {
+        console.log(
+          `🔧 [CONFIG_VALIDATION] Bot ${config.botName || config.id} não possui orderExecutionMode - adicionando "LIMIT"`
+        );
+        config.orderExecutionMode = 'LIMIT';
+
+        try {
+          // Atualiza o bot no banco de dados
+          await ConfigManagerSQLite.updateBotConfigById(config.id, { orderExecutionMode: 'LIMIT' });
+          botsUpdated++;
+          Logger.debug(
+            `✅ [CONFIG_VALIDATION] orderExecutionMode adicionado ao bot ${config.botName || config.id}`
+          );
+        } catch (error) {
+          Logger.error(
+            `❌ [CONFIG_VALIDATION] Erro ao atualizar bot ${config.botName || config.id}:`,
+            error.message
+          );
+        }
+      }
+    }
+
+    if (botsUpdated > 0) {
+      console.log(
+        `✅ [CONFIG_VALIDATION] ${botsUpdated} bots atualizados com orderExecutionMode: "LIMIT"`
+      );
+    }
 
     // Filtra apenas bots habilitados (inclui bots que não estão rodando mas estão habilitados)
     let enabledBots = allConfigs.filter(config => config.enabled);
@@ -549,11 +583,6 @@ async function startBot() {
     const timeframeConfig = new TimeframeConfig(activeBotConfig);
     const waitCheck = timeframeConfig.shouldWaitBeforeAnalysis(activeBotConfig.time);
 
-    console.log(`🔧 [DEBUG] Execution Mode: ${activeBotConfig.executionMode}`);
-    console.log(`🔧 [DEBUG] Strategy: ${activeBotConfig.strategyName}`);
-    console.log(`🔧 [DEBUG] Timeframe: ${activeBotConfig.time}`);
-    console.log(`🔧 [DEBUG] Wait Check:`, waitCheck);
-
     if (waitCheck.shouldWait) {
       console.log(
         `⏰ [ON_CANDLE_CLOSE] Próxima análise em ${Math.floor(waitCheck.waitTime / 1000)}s (fechamento de vela)`
@@ -573,7 +602,7 @@ async function startBot() {
     }
 
     // Configura comandos interativos
-    setupInteractiveCommands();
+    await setupInteractiveCommands();
 
     console.log('✅ BackBot iniciado com sucesso!');
     console.log(`📊 Bot ativo: ${activeBotConfig.botName}`);
@@ -587,13 +616,13 @@ async function startBot() {
 }
 
 // Sistema de comandos interativos
-function setupInteractiveCommands() {
+async function setupInteractiveCommands() {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
   });
 
-  rl.on('line', input => {
+  rl.on('line', async input => {
     const command = input.trim().toLowerCase();
 
     switch (command) {
@@ -671,8 +700,60 @@ function setupInteractiveCommands() {
         console.log(
           '   • "scan-cleanup" - Varredura completa da corretora (verifica TODOS os símbolos)'
         );
+        console.log('   • "depress" - Força despressurização imediata (10min pausa)');
+        console.log('   • "depress-status" - Ver status do sistema de despressurização');
         console.log('   • "exit" - Sair do bot');
         console.log('   • "help" - Ver esta ajuda\n');
+        break;
+      case 'depress':
+        console.log('\n🚨 Forçando despressurização imediata...');
+        if (global.depressurizationManager) {
+          await global.depressurizationManager.forceDepressurization();
+        } else {
+          console.log('❌ Sistema de despressurização não disponível');
+        }
+        break;
+      case 'depress-status':
+        if (global.depressurizationManager) {
+          const isActive = global.depressurizationManager.isActive();
+          const lastTime = new Date(global.depressurizationManager.lastDepressurizationTime);
+          const nextTime = new Date(
+            global.depressurizationManager.lastDepressurizationTime +
+              global.depressurizationManager.depressurizationInterval
+          );
+
+          // Função helper para formatar tempo (igual à do DepressurizationManager)
+          const formatTime = minutes => {
+            if (minutes >= 60) {
+              const hours = Math.floor(minutes / 60);
+              const remainingMinutes = minutes % 60;
+              if (remainingMinutes === 0) {
+                return `${hours}h`;
+              }
+              return `${hours}h${remainingMinutes}min`;
+            }
+            return `${minutes}min`;
+          };
+
+          const intervalMinutes =
+            global.depressurizationManager.depressurizationInterval / (60 * 1000);
+          const durationMinutes =
+            global.depressurizationManager.depressurizationDuration / (60 * 1000);
+
+          console.log('\n📊 Status do Sistema de Despressurização:');
+          console.log(
+            `   • Status: ${isActive ? '🔄 ATIVO (em despressurização)' : '✅ INATIVO (operando normalmente)'}`
+          );
+          console.log(`   • Última despressurização: ${lastTime.toLocaleString()}`);
+          console.log(`   • Próxima despressurização: ${nextTime.toLocaleString()}`);
+          console.log(`   • Intervalo: ${formatTime(intervalMinutes)}`);
+          console.log(`   • Duração da pausa: ${formatTime(durationMinutes)}`);
+          console.log(
+            `   • ENV configurado: ${process.env.DEPRESSURIZATION_INTERVAL_MINUTES || 'default (60min)'}\n`
+          );
+        } else {
+          console.log('❌ Sistema de despressurização não disponível\n');
+        }
         break;
       case 'exit':
         console.log('\n👋 Encerrando BackBot...');
@@ -688,8 +769,8 @@ function setupInteractiveCommands() {
 startBot();
 
 // Configura comandos interativos após 3 segundos
-setTimeout(() => {
-  setupInteractiveCommands();
+setTimeout(async () => {
+  await setupInteractiveCommands();
 }, 3000);
 
 // ======= SHUTDOWN HANDLERS =======
@@ -698,6 +779,12 @@ async function gracefulShutdown(signal) {
   console.log(`\n🛑 [SHUTDOWN] Recebido sinal ${signal}. Encerrando BackBot...`);
 
   try {
+    // Para o sistema de despressurização se estiver ativo
+    if (global.depressurizationManager) {
+      global.depressurizationManager.stop();
+      console.log('🔄 [SHUTDOWN] Sistema de despressurização interrompido');
+    }
+
     // Para o timer global se estiver rodando
     stopGlobalTimer();
 

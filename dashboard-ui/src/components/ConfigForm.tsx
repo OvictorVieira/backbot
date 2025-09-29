@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Eye, EyeOff, Save, X, HelpCircle, TestTube, BarChart3, DollarSign, RotateCcw, ChevronDown } from 'lucide-react';
+import { Eye, EyeOff, Save, X, HelpCircle, TestTube, BarChart3, DollarSign, RotateCcw, ChevronDown, Info } from 'lucide-react';
 import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
@@ -37,6 +37,8 @@ interface BotConfig {
   // leverageLimit: number; // TODO: Removido temporariamente
   botClientOrderId?: number;
   maxOpenOrders: number;
+  orderExecutionMode: 'LIMIT' | 'HYBRID';
+  limitOrderSlippageThreshold?: number; // Limite de slippage para cancelamento automático (%)
   // Configurações de Validação de Sinais
   enableMomentumSignals?: boolean;
   enableRsiSignals?: boolean;
@@ -79,6 +81,7 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
     authorizedTokens: config.authorizedTokens || [],
     // leverageLimit: config.leverageLimit || 10, // TODO: Removido temporariamente
     maxOpenOrders: config.maxOpenOrders || 5,
+    orderExecutionMode: config.orderExecutionMode || 'HYBRID',
     enableHybridStopStrategy: config.enableHybridStopStrategy || false,
     initialStopAtrMultiplier: config.initialStopAtrMultiplier || 2.0,
     trailingStopAtrMultiplier: config.trailingStopAtrMultiplier || 1.5,
@@ -101,7 +104,9 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
     enableBtcTrendFilter: config.enableBtcTrendFilter !== undefined ? config.enableBtcTrendFilter : true,
     // Configurações de Confluência (default: false para manter comportamento atual)
     enableConfluenceMode: config.enableConfluenceMode !== undefined ? config.enableConfluenceMode : false,
-    minConfluences: config.minConfluences !== undefined ? config.minConfluences : 2
+    minConfluences: config.minConfluences !== undefined ? config.minConfluences : 2,
+    // Configuração de LIMIT order slippage
+    limitOrderSlippageThreshold: config.limitOrderSlippageThreshold !== undefined ? config.limitOrderSlippageThreshold : 0.8
   });
   const [showApiKey, setShowApiKey] = useState(false);
   const [showApiSecret, setShowApiSecret] = useState(false);
@@ -494,6 +499,12 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
     // Validação obrigatória para tokens autorizados
     if (!formData.authorizedTokens || formData.authorizedTokens.length === 0) {
       newErrors.authorizedTokens = 'Selecione pelo menos 1 token para operar';
+    }
+
+    // Validação de limite máximo de tokens
+    const maxTokens = 12; // Deve coincidir com MAX_TOKENS_PER_BOT do .env
+    if (formData.authorizedTokens && formData.authorizedTokens.length > maxTokens) {
+      newErrors.authorizedTokens = `Máximo de ${maxTokens} tokens por bot para evitar timing conflicts. Você selecionou ${formData.authorizedTokens.length}.`;
     }
 
     const validTimeframes = ['5m', '15m', '30m', '1h', '2h', '3h', '4h', '1d'];
@@ -969,12 +980,18 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
                     {filteredTokens.length} tokens encontrados
                   </span>
                   <span className={`font-medium ${
-                    formData.authorizedTokens.length === 0 
-                      ? 'text-red-600 dark:text-red-400' 
-                      : 'text-green-600 dark:text-green-400'
+                    formData.authorizedTokens.length === 0
+                      ? 'text-red-600 dark:text-red-400'
+                      : formData.authorizedTokens.length > 12
+                        ? 'text-red-600 dark:text-red-400'
+                        : formData.authorizedTokens.length > 10
+                          ? 'text-yellow-600 dark:text-yellow-400'
+                          : 'text-green-600 dark:text-green-400'
                   }`}>
                     {formData.authorizedTokens.length} selecionados
                     {formData.authorizedTokens.length === 0 && ' (mínimo 1)'}
+                    {formData.authorizedTokens.length > 12 && ' (EXCEDE LIMITE!)'}
+                    {formData.authorizedTokens.length > 10 && formData.authorizedTokens.length <= 12 && ' (próximo ao limite)'}
                   </span>
                 </div>
                 
@@ -1532,6 +1549,103 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Order Execution Mode */}
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <h3 className="text-lg font-medium">Modo de Execução de Ordens</h3>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <HelpCircle className="w-4 h-4 text-gray-400" />
+                </TooltipTrigger>
+                <TooltipContent className="z-50">
+                  <div className="p-2 max-w-sm">
+                    <p className="font-medium mb-2">Escolha como as ordens serão executadas:</p>
+                    <p className="text-sm mb-1"><strong>LIMIT:</strong> Apenas ordens limitadas. Se não executar, ordem permanece no livro.</p>
+                    <p className="text-sm"><strong>HÍBRIDO:</strong> Tenta ordem limitada por 12 segundos. Se não executar, cancela e envia a mercado.</p>
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+
+          <div className="flex gap-4">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant={formData.orderExecutionMode === 'LIMIT' ? 'default' : 'outline'}
+                    className={`flex-1 ${formData.orderExecutionMode === 'LIMIT' ? 'bg-blue-600 hover:bg-blue-700 text-white' : ''}`}
+                    onClick={() => setFormData(prev => ({ ...prev, orderExecutionMode: 'LIMIT' }))}
+                  >
+                    📋 LIMIT
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="z-50">
+                  <p>Ordens apenas limitadas - permanecem no livro se não executarem</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant={formData.orderExecutionMode === 'HYBRID' ? 'default' : 'outline'}
+                    className={`flex-1 ${formData.orderExecutionMode === 'HYBRID' ? 'bg-orange-600 hover:bg-orange-700 text-white' : ''}`}
+                    onClick={() => setFormData(prev => ({ ...prev, orderExecutionMode: 'HYBRID' }))}
+                  >
+                    ⚡ HÍBRIDO (Limit + Mercado)
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="z-50">
+                  <p>Tenta limit por 12s, depois cancela e envia a mercado</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        </div>
+
+        {/* Campo de Slippage para modo LIMIT */}
+        {formData.orderExecutionMode === 'LIMIT' && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <label htmlFor="limitOrderSlippageThreshold" className="text-sm font-medium">
+                🎯 Limite de Slippage (%)
+              </label>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="h-4 w-4 text-gray-400 cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent className="z-50 max-w-xs">
+                    <p>Cancela automaticamente ordens LIMIT quando o slippage ultrapassar este limite. Valor recomendado: 0.8%</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+            <Input
+              id="limitOrderSlippageThreshold"
+              type="number"
+              step="0.1"
+              min="0.1"
+              max="5.0"
+              value={formData.limitOrderSlippageThreshold || 0.8}
+              onChange={(e) => setFormData(prev => ({
+                ...prev,
+                limitOrderSlippageThreshold: parseFloat(e.target.value) || 0.8
+              }))}
+              placeholder="0.8"
+              className="w-full"
+            />
+            <p className="text-xs text-gray-500">
+              Ordens LIMIT serão canceladas se o preço se afastar mais que {formData.limitOrderSlippageThreshold || 0.8}% do preço atual
+            </p>
+          </div>
+        )}
 
         {/* Trading Configuration */}
         <div className="space-y-4">

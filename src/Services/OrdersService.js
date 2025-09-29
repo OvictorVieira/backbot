@@ -86,12 +86,12 @@ class OrdersService {
         ...additionalParams,
       };
 
-      Logger.info(`📦 [ORDERS_SERVICE] Criando ordem MARKET: ${symbol} ${side} ${quantity}`);
+      Logger.debug(`📦 [ORDERS_SERVICE] Criando ordem MARKET: ${symbol} ${side} ${quantity}`);
 
       const result = await this.orderClient.executeOrder(orderBody, apiKey, apiSecret);
 
       if (result && !result.error) {
-        Logger.info(
+        Logger.debug(
           `✅ [ORDERS_SERVICE] Ordem MARKET criada com sucesso: ${result.id || result.orderId}`
         );
 

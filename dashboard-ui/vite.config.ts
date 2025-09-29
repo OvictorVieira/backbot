@@ -9,6 +9,7 @@ export default defineConfig({
     port: parseInt(process.env.FRONTEND_PORT || '5173'),
     host: '0.0.0.0',
   },
+  logLevel: 'warn', // Reduz logs do Vite
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

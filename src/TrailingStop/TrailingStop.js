@@ -675,7 +675,6 @@ class TrailingStop {
         Logger.info(
           `🔍 [STATE_LOADED] ${symbol}: TrailingPrice=${foundState.trailingStopPrice}, isLong=${foundState.isLong}, isShort=${foundState.isShort}`
         );
-        Logger.debug(`🔍 [STATE_DEBUG] ${symbol}: Estado completo: ${JSON.stringify(foundState)}`);
 
         // Se houve atualização do activeStopOrderId, salva de volta
         if (foundState.activeStopOrderId !== externalOrderId) {
@@ -1306,7 +1305,7 @@ class TrailingStop {
    */
   static async cleanOrphanedTrailingStates(apiKey, apiSecret, botId = 1) {
     try {
-      Logger.info(`🧹 [TRAILING_CLEANER] Iniciando limpeza de estados órfãos para bot ${botId}`);
+      Logger.debug(`🧹 [TRAILING_CLEANER] Iniciando limpeza de estados órfãos para bot ${botId}`);
 
       // Inicializa database se necessário
       if (!TrailingStop.dbService || !TrailingStop.dbService.isInitialized()) {
@@ -1817,15 +1816,8 @@ class TrailingStop {
           }
         }
       } else if (isShort) {
-        Logger.debug(
-          `🔍 [HYBRID_DEBUG] ${position.symbol}: SHORT - CurrentPrice: ${currentPrice}, LowestPrice: ${trailingState.lowestPrice}, TrailingStopPrice: ${trailingState.trailingStopPrice}`
-        );
-
         if (currentPrice < trailingState.lowestPrice || trailingState.lowestPrice === null) {
           trailingState.lowestPrice = currentPrice;
-          Logger.debug(
-            `✅ [HYBRID_DEBUG] ${position.symbol}: SHORT - Novo preço mínimo registrado: ${currentPrice}`
-          );
 
           const trailingStopAtrMultiplier = Number(this.config?.trailingStopAtrMultiplier || 1.5);
           const atrValue = await TrailingStop.calculateDynamicATR(position.symbol);
@@ -1900,9 +1892,6 @@ class TrailingStop {
 
       return trailingState;
     } catch (error) {
-      Logger.debug(
-        `🔍 [HYBRID_DEBUG] ERRO: Exception caught in updateTrailingStopHybrid for ${position.symbol}: ${error.message}`
-      );
       Logger.error(
         `[HYBRID_TRAILING] Erro ao atualizar trailing stop híbrido para ${position.symbol}:`,
         error.message
@@ -1998,20 +1987,9 @@ class TrailingStop {
         return null;
       }
 
-      Logger.debug(
-        `🔍 [TRAILING_DEBUG] ${position.symbol}: Verificando atualização - PnL: ${pnl}, PnL%: ${pnlPct.toFixed(2)}%, IsLong: ${isLong}, IsShort: ${isShort}, TrailingDistance: ${trailingStopDistance}%`
-      );
-
       if (isLong) {
-        Logger.debug(
-          `🔍 [TRAILING_DEBUG] ${position.symbol}: LONG - CurrentPrice: ${currentPrice}, HighestPrice: ${trailingState.highestPrice}, TrailingStopPrice: ${trailingState.trailingStopPrice}`
-        );
-
         if (currentPrice > trailingState.highestPrice || trailingState.highestPrice === null) {
           trailingState.highestPrice = currentPrice;
-          Logger.debug(
-            `✅ [TRAILING_DEBUG] ${position.symbol}: LONG - Novo preço máximo registrado: ${currentPrice}`
-          );
 
           // 🚨 CORREÇÃO: Calcula trailing stop baseado no HIGHEST PRICE - (ATR × multiplier)
           const trailingStopAtrMultiplier = Number(this.config?.trailingStopAtrMultiplier || 1.5);
@@ -2036,10 +2014,6 @@ class TrailingStop {
           const currentStopPrice = trailingState.trailingStopPrice;
 
           const finalStopPrice = Math.max(currentStopPrice, newTrailingStopPrice);
-
-          Logger.debug(
-            `🔍 [TRAILING_DEBUG] ${position.symbol}: LONG - NewTrailingStop: ${newTrailingStopPrice}, CurrentStop: ${currentStopPrice}, FinalStop: ${finalStopPrice}`
-          );
 
           // 🚨 CORREÇÃO: Só atualiza se a melhoria for SIGNIFICATIVA (baseada no ATR dinâmico)
           if (finalStopPrice > currentStopPrice) {
@@ -2109,15 +2083,8 @@ class TrailingStop {
           }
         }
       } else if (isShort) {
-        Logger.debug(
-          `🔍 [TRAILING_DEBUG] ${position.symbol}: SHORT - CurrentPrice: ${currentPrice}, LowestPrice: ${trailingState.lowestPrice}, TrailingStopPrice: ${trailingState.trailingStopPrice}`
-        );
-
         if (currentPrice < trailingState.lowestPrice || trailingState.lowestPrice === null) {
           trailingState.lowestPrice = currentPrice;
-          Logger.debug(
-            `✅ [TRAILING_DEBUG] ${position.symbol}: SHORT - Novo preço mínimo registrado: ${currentPrice}`
-          );
 
           // 🚨 CORREÇÃO: Calcula trailing stop baseado no LOWEST PRICE + (ATR × multiplier)
           const trailingStopAtrMultiplier = Number(this.config?.trailingStopAtrMultiplier || 1.5);
@@ -2138,10 +2105,6 @@ class TrailingStop {
 
           const currentStopPrice = trailingState.trailingStopPrice;
           const finalStopPrice = Math.min(currentStopPrice, newTrailingStopPrice);
-
-          Logger.debug(
-            `🔍 [TRAILING_DEBUG] ${position.symbol}: SHORT - NewTrailingStop: ${newTrailingStopPrice}, CurrentStop: ${currentStopPrice}, FinalStop: ${finalStopPrice}`
-          );
 
           // 🚨 CORREÇÃO: Só atualiza se a melhoria for SIGNIFICATIVA (baseada no ATR dinâmico)
           if (finalStopPrice < currentStopPrice) {
@@ -2754,9 +2717,6 @@ class TrailingStop {
         : [];
 
       // 📡 SISTEMA REATIVO: Inicializa WebSocket se trailing stop estiver ativo
-      Logger.debug(
-        `🔍 [REACTIVE_DEBUG] ${this.strategyType}: enableTrailingStop=${enableTrailingStop}, activePositions=${activePositions.length}`
-      );
 
       if (enableTrailingStop) {
         Logger.info(

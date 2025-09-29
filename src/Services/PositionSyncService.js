@@ -24,7 +24,7 @@ class PositionSyncService {
       clearInterval(intervalId);
       this.syncIntervals.delete(botId);
       this.lastSyncTimes.delete(botId);
-      Logger.info(`🛑 [POSITION_SYNC] Sincronização parada para bot ${botId}`);
+      Logger.debug(`🛑 [POSITION_SYNC] Sincronização parada para bot ${botId}`);
     }
   }
 
@@ -39,7 +39,7 @@ class PositionSyncService {
       Logger.debug(`🔄 [POSITION_SYNC] Iniciando sincronização para bot ${botId}`);
 
       // NOVO SISTEMA: Usa PositionTrackingService para rastreamento baseado em fills
-      Logger.info(`🔄 [POSITION_SYNC] Usando novo sistema de rastreamento de posições`);
+      Logger.debug(`🔄 [POSITION_SYNC] Usando novo sistema de rastreamento de posições`);
 
       // 1. Rastreia posições usando o novo sistema
       const positionTracker = new PositionTrackingService(this.dbService);
@@ -174,9 +174,30 @@ class PositionSyncService {
         Logger.debug(`🔍 [POSITION_SYNC] Bot ${botId}: Nenhuma posição fechada detectada`);
       }
 
+      // 🚨 VALIDAÇÃO CRÍTICA: Verifica se closedPositionsData é iterável
+      if (
+        !Array.isArray(closedPositionsData) ||
+        !closedPositionsData[Symbol.iterator] ||
+        typeof closedPositionsData[Symbol.iterator] !== 'function'
+      ) {
+        Logger.error(
+          `❌ [POSITION_SYNC] Bot ${botId}: closedPositionsData não é iterável - type: ${typeof closedPositionsData}, isArray: ${Array.isArray(closedPositionsData)}`
+        );
+        return { closedPositions: [], recentFills: [] };
+      }
+
       // Para cada posição fechada, atualiza o banco
       for (const position of closedPositionsData) {
         try {
+          // 🚨 VALIDAÇÃO CRÍTICA: Verifica se position é um objeto válido
+          if (!position || typeof position !== 'object' || position === null) {
+            Logger.error(
+              `❌ [POSITION_SYNC] Bot ${botId}: position é null ou inválido - type: ${typeof position}, value:`,
+              position
+            );
+            continue;
+          }
+
           await this.handleClosedPositionNew(botId, position);
 
           closedPositions.push({
@@ -227,8 +248,29 @@ class PositionSyncService {
       // Agrupa fills por símbolo
       const fillsBySymbol = this.groupFillsBySymbol(recentFills);
 
+      // 🚨 VALIDAÇÃO CRÍTICA: Verifica se ourOpenOrders é iterável
+      if (
+        !Array.isArray(ourOpenOrders) ||
+        !ourOpenOrders[Symbol.iterator] ||
+        typeof ourOpenOrders[Symbol.iterator] !== 'function'
+      ) {
+        Logger.error(
+          `❌ [POSITION_SYNC] Bot ${botId}: ourOpenOrders não é iterável - type: ${typeof ourOpenOrders}, isArray: ${Array.isArray(ourOpenOrders)}`
+        );
+        return { closedPositions: [], recentFills: [] };
+      }
+
       // Para cada ordem aberta do nosso lado
       for (const order of ourOpenOrders) {
+        // 🚨 VALIDAÇÃO CRÍTICA: Verifica se order é um objeto válido
+        if (!order || typeof order !== 'object' || order === null) {
+          Logger.error(
+            `❌ [POSITION_SYNC] Bot ${botId}: order é null ou inválido - type: ${typeof order}, value:`,
+            order
+          );
+          continue;
+        }
+
         const symbol = order.symbol;
         const symbolFills = fillsBySymbol[symbol] || [];
 
@@ -282,6 +324,18 @@ class PositionSyncService {
 
     // Ordena fills por timestamp
     const sortedFills = symbolFills.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+    // 🚨 VALIDAÇÃO CRÍTICA: Verifica se sortedFills é iterável
+    if (
+      !Array.isArray(sortedFills) ||
+      !sortedFills[Symbol.iterator] ||
+      typeof sortedFills[Symbol.iterator] !== 'function'
+    ) {
+      Logger.error(
+        `❌ [POSITION_SYNC] sortedFills não é iterável - type: ${typeof sortedFills}, isArray: ${Array.isArray(sortedFills)}`
+      );
+      return { isClosed: false, closureType: null };
+    }
 
     for (const fill of sortedFills) {
       const fillSide = fill.side === 'Bid' ? 'BUY' : fill.side === 'Ask' ? 'SELL' : fill.side;
@@ -450,6 +504,18 @@ class PositionSyncService {
   filterBotFills(fills, botClientOrderId) {
     if (!botClientOrderId) return [];
 
+    // 🚨 VALIDAÇÃO CRÍTICA: Verifica se fills é iterável
+    if (
+      !Array.isArray(fills) ||
+      !fills[Symbol.iterator] ||
+      typeof fills[Symbol.iterator] !== 'function'
+    ) {
+      Logger.error(
+        `❌ [POSITION_SYNC] fills não é iterável em filterBotFills - type: ${typeof fills}, isArray: ${Array.isArray(fills)}`
+      );
+      return [];
+    }
+
     const botFills = [];
     const botClientOrderIdStr = botClientOrderId.toString();
 
@@ -471,7 +537,28 @@ class PositionSyncService {
   groupFillsBySymbol(fills) {
     const grouped = {};
 
+    // 🚨 VALIDAÇÃO CRÍTICA: Verifica se fills é iterável
+    if (
+      !Array.isArray(fills) ||
+      !fills[Symbol.iterator] ||
+      typeof fills[Symbol.iterator] !== 'function'
+    ) {
+      Logger.error(
+        `❌ [POSITION_SYNC] fills não é iterável em groupFillsBySymbol - type: ${typeof fills}, isArray: ${Array.isArray(fills)}`
+      );
+      return {};
+    }
+
     for (const fill of fills) {
+      // 🚨 VALIDAÇÃO CRÍTICA: Verifica se fill é um objeto válido
+      if (!fill || typeof fill !== 'object' || fill === null) {
+        Logger.error(
+          `❌ [POSITION_SYNC] fill é null ou inválido em groupFillsBySymbol - type: ${typeof fill}, value:`,
+          fill
+        );
+        continue;
+      }
+
       const symbol = fill.symbol;
       if (!grouped[symbol]) {
         grouped[symbol] = [];
@@ -486,6 +573,18 @@ class PositionSyncService {
    * Para sincronização de todos os bots
    */
   stopAllSync() {
+    // 🚨 VALIDAÇÃO CRÍTICA: Verifica se syncIntervals é iterável
+    if (
+      !this.syncIntervals ||
+      !this.syncIntervals[Symbol.iterator] ||
+      typeof this.syncIntervals[Symbol.iterator] !== 'function'
+    ) {
+      Logger.error(
+        `❌ [POSITION_SYNC] syncIntervals não é iterável em stopAllSync - type: ${typeof this.syncIntervals}`
+      );
+      return;
+    }
+
     for (const [botId, intervalId] of this.syncIntervals.entries()) {
       clearInterval(intervalId);
     }
@@ -499,6 +598,18 @@ class PositionSyncService {
    */
   getSyncStatus() {
     const status = {};
+
+    // 🚨 VALIDAÇÃO CRÍTICA: Verifica se syncIntervals é iterável
+    if (
+      !this.syncIntervals ||
+      !this.syncIntervals[Symbol.iterator] ||
+      typeof this.syncIntervals[Symbol.iterator] !== 'function'
+    ) {
+      Logger.error(
+        `❌ [POSITION_SYNC] syncIntervals não é iterável em getSyncStatus - type: ${typeof this.syncIntervals}`
+      );
+      return {};
+    }
 
     for (const [botId, intervalId] of this.syncIntervals.entries()) {
       status[botId] = {

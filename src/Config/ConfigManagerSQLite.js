@@ -19,7 +19,7 @@ class ConfigManagerSQLite {
    */
   static initialize(dbService) {
     ConfigManagerSQLite.dbService = dbService;
-    Logger.info('🔧 [CONFIG_SQLITE] ConfigManager SQLite inicializado');
+    Logger.debug('🔧 [CONFIG_SQLITE] ConfigManager SQLite inicializado');
   }
 
   /**
@@ -109,7 +109,7 @@ class ConfigManagerSQLite {
    */
   static async saveConfigs(configs) {
     try {
-      Logger.info(`💾 [CONFIG_SQLITE] Iniciando salvamento de ${configs.length} configurações...`);
+      Logger.debug(`💾 [CONFIG_SQLITE] Iniciando salvamento de ${configs.length} configurações...`);
 
       // Limpa todas as configurações existentes
       await ConfigManagerSQLite.dbService.run('DELETE FROM bot_configs');
@@ -126,7 +126,7 @@ class ConfigManagerSQLite {
         );
       }
 
-      Logger.info(`✅ [CONFIG_SQLITE] Configurações salvas com sucesso`);
+      Logger.debug(`✅ [CONFIG_SQLITE] Configurações salvas com sucesso`);
     } catch (error) {
       Logger.error('❌ [CONFIG_SQLITE] Erro ao salvar configurações:', error.message);
       throw error;
