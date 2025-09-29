@@ -5,6 +5,37 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.8.20] - 2025-09-29
+
+### 🔧 **CRITICAL FIX: TrailingStop Maintenance Integration**
+
+#### 🚨 **Critical Bug Resolution**
+- ✅ **TrailingStop Null Account Handling:** Fixed critical null reference errors during system maintenance
+  - **Problem:** Account refresh blocking caused `AccountController.get()` to return null
+  - **Error:** `Cannot read properties of null (reading 'leverage')`
+  - **Root Cause:** Integration bug from selective blocking implementation
+  - **Impact:** TrailingStop operations crashed during depressurization cycles
+
+#### 🛠️ **Technical Fixes**
+- ✅ **updateTrailingStopForPosition():** Added null Account verification (line 1504)
+- ✅ **shouldCloseForMinimumProfit():** Added null Account verification (line 2507)
+- ✅ **shouldExecuteProfitClosure():** Added null Account verification (line 2618)
+- ✅ **Graceful Degradation:** TrailingStop now pauses cleanly during maintenance
+- ✅ **Smart Logging:** DEBUG logs during maintenance vs ERROR logs for real issues
+
+#### 📊 **System Improvements**
+- ✅ **Selective Blocking Works:** Rate limiting prevention without breaking protection systems
+- ✅ **Maintenance Integration:** TrailingStop integrates properly with depressurization cycles
+- ✅ **Clean Logs:** No more spam errors during scheduled maintenance
+- ✅ **Position Safety:** Active positions remain protected even during system maintenance
+
+#### 🎯 **Behavioral Changes**
+- During maintenance: TrailingStop pauses with clean DEBUG logs
+- Outside maintenance: Normal operation with appropriate ERROR handling
+- Account refresh blocked to prevent rate limiting
+- Trading analysis blocked to prevent unnecessary API calls
+- Protection systems continue running with graceful degradation
+
 ## [1.8.19] - 2025-09-29
 
 ### 🔧 **CRITICAL FIXES: TrailingStop & Bot Reactivation**
