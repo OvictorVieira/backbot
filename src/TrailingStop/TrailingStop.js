@@ -741,6 +741,20 @@ class TrailingStop {
               strategy: config?.strategyName || 'DEFAULT',
               symbol,
             });
+
+            // 🚫 VERIFICAÇÃO: Durante manutenção, dados de conta não estão disponíveis
+            if (!Account) {
+              const DepressurizationManager = await import('../Utils/DepressurizationManager.js');
+              if (DepressurizationManager.default.isSystemInMaintenance()) {
+                Logger.debug(
+                  `🚫 [TRAILING_SKIP] ${symbol}: Stop loss pausado durante manutenção - dados de conta indisponíveis`
+                );
+              } else {
+                Logger.error(`❌ [TRAILING_STOP] ${symbol}: Dados da conta não disponíveis`);
+              }
+              return;
+            }
+
             const marketInfo = Account.markets.find(m => m.symbol === symbol);
             if (!marketInfo) {
               Logger.error(`❌ [TRAILING_STOP] Market info não encontrada para ${symbol}`);
@@ -2793,6 +2807,19 @@ class TrailingStop {
         strategy: this.strategyType,
       });
 
+      // 🚫 VERIFICAÇÃO: Durante manutenção, dados de conta não estão disponíveis
+      if (!Account) {
+        const DepressurizationManager = await import('../Utils/DepressurizationManager.js');
+        if (DepressurizationManager.default.isSystemInMaintenance()) {
+          Logger.debug(
+            `🚫 [TRAILING_SKIP] Monitor pausado durante manutenção - dados de conta indisponíveis`
+          );
+        } else {
+          Logger.error(`❌ [TRAILING_MONITOR] Dados da conta não disponíveis`);
+        }
+        return;
+      }
+
       for (const position of activePositions) {
         // Stop loss é gerenciado pela corretora através das orders criadas
         // Não fechamos manualmente por stop loss - apenas monitoramos
@@ -3011,6 +3038,21 @@ class TrailingStop {
         }
 
         try {
+          // 🚫 VERIFICAÇÃO: Account pode ser null durante manutenção
+          if (!Account || !Account.markets) {
+            const DepressurizationManager = await import('../Utils/DepressurizationManager.js');
+            if (DepressurizationManager.default.isSystemInMaintenance()) {
+              Logger.debug(
+                `🚫 [FAILSAFE_SKIP] ${position.symbol}: Failsafe pausado durante manutenção`
+              );
+            } else {
+              Logger.error(
+                `❌ [FAILSAFE_ERROR] ${position.symbol}: Account inválido para failsafe check`
+              );
+            }
+            continue;
+          }
+
           const marketInfo = Account.markets.find(m => m.symbol === position.symbol);
 
           if (!marketInfo) {

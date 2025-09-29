@@ -5616,7 +5616,14 @@ class OrderController {
       }
 
       if (!Account || !Account.markets) {
-        Logger.error(`❌ [TP_CREATE] ${symbol}: Account inválido ou sem markets:`, Account);
+        // Verificar se é pausa por manutenção
+        const DepressurizationManager = (await import('../Utils/DepressurizationManager.js'))
+          .default;
+        if (DepressurizationManager.isSystemInMaintenance()) {
+          Logger.debug(`🚫 [TP_CREATE] ${symbol}: Take Profit pausado durante manutenção`);
+        } else {
+          Logger.error(`❌ [TP_CREATE] ${symbol}: Account inválido ou sem markets:`, Account);
+        }
         return { success: false, message: 'Account inválido ou sem markets' };
       }
 

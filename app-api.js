@@ -3705,7 +3705,9 @@ async function startMonitorsForAllEnabledBots() {
       const wasRunning = !config.status || config.status === 'running';
 
       if (isEnabled && !wasRunning) {
-        Logger.debug(`⏸️ [MONITORS_FILTER] Bot ${config.botName} está habilitado mas pausado - não iniciando monitores`);
+        Logger.debug(
+          `⏸️ [MONITORS_FILTER] Bot ${config.botName} está habilitado mas pausado - não iniciando monitores`
+        );
       }
 
       return isEnabled && wasRunning;

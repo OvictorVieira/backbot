@@ -325,7 +325,9 @@ class DepressurizationManager {
    * @param {string} component - Componente que tentou executar a operação
    */
   static logBlockedOperation(operation, component = 'UNKNOWN') {
-    Logger.info(`🚫 [MAINTENANCE_BLOCK] ${operation} bloqueada em ${component} - Evitando rate limit durante manutenção`);
+    Logger.info(
+      `🚫 [MAINTENANCE_BLOCK] ${operation} bloqueada em ${component} - Evitando rate limit durante manutenção`
+    );
   }
 
   /**
