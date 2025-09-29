@@ -291,7 +291,9 @@ class OrderController {
       Logger.debug(
         `🔍 [BOT_ORDERS] Buscando todas as ordens da conta para filtrar por bot ID: ${botId}`
       );
-      const allOrders = await Order.getOpenOrders(null, 'PERP', config.apiKey, config.apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+      const exchangeManager = OrderController.getExchangeManager(config);
+      const allOrders = await exchangeManager.getOpenOrdersForSymbol(null, config.apiKey, config.apiSecret);
 
       if (!allOrders || allOrders.length === 0) {
         Logger.debug(`📋 [BOT_ORDERS] Nenhuma ordem encontrada na conta`);
@@ -373,7 +375,9 @@ class OrderController {
       }
 
       // Obtém todas as ordens da exchange
-      const allOrders = await Order.getOpenOrders(null, 'PERP', config.apiKey, config.apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+      const exchangeManager = OrderController.getExchangeManager(config);
+      const allOrders = await exchangeManager.getOpenOrdersForSymbol(null, config.apiKey, config.apiSecret);
       if (!allOrders || allOrders.length === 0) {
         Logger.debug(`📋 [ALL_BOTS_ORDERS] Nenhuma ordem encontrada`);
         return {};
@@ -532,7 +536,9 @@ class OrderController {
       // Tenta obter posições com retry
       let positions = [];
       try {
-        positions = (await Futures.getOpenPositions(apiKey, apiSecret)) || [];
+        // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
+        const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+        positions = (await exchangeManager.getFuturesPositions(apiKey, apiSecret)) || [];
 
         if (positions.length > 0) {
           // Verifica se há posições que não estão sendo monitoradas
@@ -568,7 +574,10 @@ class OrderController {
             continue;
           }
 
-          const marketInfo = Account.markets.find(m => m.symbol === market);
+          // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+          const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+          const allMarkets = await exchangeManager.getMarkets();
+          const marketInfo = allMarkets?.find(m => m.symbol === market);
 
           // Verifica se marketInfo existe antes de acessar a propriedade fee
           if (!marketInfo) {
@@ -1207,7 +1216,9 @@ class OrderController {
   async validateMargin(market, volume, accountInfo, apiKey = null, apiSecret = null) {
     try {
       // Obtém posições abertas para calcular margem em uso
-      const positions = await Futures.getOpenPositions(apiKey, apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const positions = await exchangeManager.getFuturesPositions(apiKey, apiSecret);
       const currentPosition = positions?.find(p => p.symbol === market);
 
       // Calcula margem necessária para a nova ordem (volume / leverage)
@@ -1779,7 +1790,9 @@ class OrderController {
       };
 
       // Fecha parcialmente a posição
-      const closeResult = await Order.executeOrder(body, config?.apiKey, config?.apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+      const exchangeManager = OrderController.getExchangeManager(config);
+      const closeResult = await exchangeManager.executeOrder(body, config?.apiKey, config?.apiSecret);
 
       if (closeResult) {
         // Log detalhado da taxa de fechamento parcial
@@ -2267,7 +2280,9 @@ class OrderController {
           );
         }
 
-        limitResult = await Order.executeOrder(body, config.apiKey, config.apiSecret);
+        // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+        const exchangeManager = OrderController.getExchangeManager(config);
+        limitResult = await exchangeManager.executeOrder(body, config.apiKey, config.apiSecret);
 
         if (!limitResult || limitResult.error) {
           const errorMessage = limitResult && limitResult.error ? limitResult.error.toString() : '';

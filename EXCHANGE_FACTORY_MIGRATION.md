@@ -107,13 +107,21 @@ Migrar todos os bots tradicionais para usar o sistema Exchange Factory, permitin
 - [ ] **2.3** Implementar factory method pattern para configuração
 - [ ] **2.4** Criar sistema de fallback para compatibilidade
 
-### **Fase 3: Core Controllers Migration** ⚡
-- [ ] **3.1** Migrar `OrderController.js`
-  - [ ] Substituir imports diretos por ExchangeFactory
-  - [ ] Atualizar `createTakeProfit()` method
-  - [ ] Atualizar `cancelPendingOrder()` method
-  - [ ] Atualizar `placeOrder()` method
+### **Fase 3: Core Controllers Migration** ⚡ 🚧 **EM PROGRESSO**
+- [x] **3.1** Migrar `OrderController.js` - **🔄 50% CONCLUÍDO**
+  - [x] Substituir imports diretos por ExchangeFactory ✅
+  - [x] Criar infraestrutura de ExchangeManager ✅
+  - [x] Implementar cache inteligente ✅
+  - [ ] **🚧 WIP**: Migrar ~25 chamadas Order/Futures restantes
+  - [ ] Substituir Account.markets references
   - [ ] Testar compatibilidade com existing bots
+
+**📊 Progresso OrderController:**
+- ✅ Imports migrados para ExchangeManager
+- ✅ 2/9 Order.executeOrder migrados
+- ⏳ 15 Order.getOpenOrders pendentes
+- ⏳ 11 Futures.getOpenPositions pendentes
+- ⏳ 5+ Account.markets references pendentes
 
 - [ ] **3.2** Migrar `Decision.js`
   - [ ] Substituir imports diretos por ExchangeFactory
