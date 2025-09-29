@@ -362,7 +362,7 @@ class TrailingStop {
     if (!this.config) {
       throw new Error('Configuração do bot é obrigatória - deve ser passada no construtor');
     }
-    const botId = this.config.id;
+    const botId = String(this.config.id); // 🔧 FIX: Converte botId para string
     if (!botId) {
       throw new Error('ID do bot é obrigatório - deve ser passado da config do bot');
     }
@@ -1576,7 +1576,7 @@ class TrailingStop {
       return null;
     } finally {
       if (trailingState) {
-        await TrailingStop.setState(this.config?.id, position.symbol, trailingState);
+        await TrailingStop.setState(String(this.config?.id), position.symbol, trailingState); // 🔧 FIX: Converte botId
       }
     }
   }
@@ -1731,7 +1731,7 @@ class TrailingStop {
         // Salva o estado no bot atual
         const trailingStateMap = this.getTrailingState();
         trailingStateMap.set(position.symbol, newState);
-        await TrailingStop.setState(this.config?.id, position.symbol, newState);
+        await TrailingStop.setState(String(this.config?.id), position.symbol, newState); // 🔧 FIX: Converte botId
 
         TrailingStop.colorLogger.trailingActivated(
           `${position.symbol}: 🎯 Stop Loss Inteligente ATIVADO! Fase: Proteção Inicial - PnL: ${pnlPct.toFixed(2)}%, Entrada: $${entryPrice.toFixed(4)}, Atual: $${currentPrice.toFixed(4)}, Volatilidade: ${atrValue?.toFixed(6) || 'N/A'}, Stop Loss Final: $${finalStopPrice?.toFixed(4) || 'N/A'}, Take Profit: $${partialTakeProfitPrice?.toFixed(4) || 'N/A'}`
@@ -1805,7 +1805,7 @@ class TrailingStop {
               await TrailingStop.createTrailingStopOrder(
                 position,
                 trailingState,
-                this.config?.id,
+                String(this.config?.id), // 🔧 FIX: Converte botId para string
                 this.config
               );
             } else {
@@ -1874,7 +1874,7 @@ class TrailingStop {
               await TrailingStop.createTrailingStopOrder(
                 position,
                 trailingState,
-                this.config?.id,
+                String(this.config?.id), // 🔧 FIX: Converte botId para string
                 this.config
               );
             } else {
@@ -1945,7 +1945,7 @@ class TrailingStop {
 
         const trailingStateMap = this.getTrailingState();
         trailingStateMap.set(position.symbol, newState);
-        await TrailingStop.setState(this.config?.id, position.symbol, newState);
+        await TrailingStop.setState(String(this.config?.id), position.symbol, newState); // 🔧 FIX: Converte botId
 
         TrailingStop.colorLogger.trailingActivated(
           `${position.symbol}: Trailing Stop ATIVADO! Posição lucrativa detectada - PnL: ${pnlPct.toFixed(2)}%, Preço de Entrada: $${entryPrice.toFixed(4)}, Preço Atual: $${currentPrice.toFixed(4)}, Stop Inicial: $${initialStopLossPrice.toFixed(4)}`
@@ -1966,7 +1966,7 @@ class TrailingStop {
           trailingState.lowestPrice = currentPrice;
         }
 
-        await TrailingStop.setState(this.config?.id, position.symbol, trailingState);
+        await TrailingStop.setState(String(this.config?.id), position.symbol, trailingState); // 🔧 FIX: Converte botId
 
         TrailingStop.colorLogger.trailingActivated(
           `${position.symbol}: Trailing Stop REATIVADO! Estado existente ativado - PnL: ${pnlPct.toFixed(2)}%, Preço Atual: $${currentPrice.toFixed(4)}, Stop: $${trailingState.trailingStopPrice.toFixed(4)}`
@@ -2046,7 +2046,7 @@ class TrailingStop {
                 const activeStopResult = await this.manageActiveStopOrder(
                   position,
                   finalStopPrice,
-                  this.config?.id
+                  String(this.config?.id) // 🔧 FIX: Converte botId
                 );
                 if (activeStopResult) {
                   trailingState.trailingStopPrice = finalStopPrice;
@@ -2074,7 +2074,7 @@ class TrailingStop {
               }
 
               // Salva o estado atualizado no banco
-              await TrailingStop.setState(this.config?.id, position.symbol, trailingState);
+              await TrailingStop.setState(String(this.config?.id), position.symbol, trailingState); // 🔧 FIX: Converte botId
             } else {
               Logger.debug(
                 `⏭️ [TRAILING_SKIP] ${position.symbol} LONG: Melhoria insuficiente (${improvementPct.toFixed(3)}% < ${minImprovementPct.toFixed(3)}%), mantendo stop atual`
@@ -2137,7 +2137,7 @@ class TrailingStop {
                 const activeStopResult = await this.manageActiveStopOrder(
                   position,
                   finalStopPrice,
-                  this.config?.id
+                  String(this.config?.id) // 🔧 FIX: Converte botId
                 );
                 if (activeStopResult) {
                   trailingState.trailingStopPrice = finalStopPrice;
@@ -2165,7 +2165,7 @@ class TrailingStop {
               }
 
               // Salva o estado atualizado no banco
-              await TrailingStop.setState(this.config?.id, position.symbol, trailingState);
+              await TrailingStop.setState(String(this.config?.id), position.symbol, trailingState); // 🔧 FIX: Converte botId
             } else {
               Logger.debug(
                 `⏭️ [TRAILING_SKIP] ${position.symbol} SHORT: Melhoria insuficiente (${improvementPct.toFixed(3)}% < ${minImprovementPct.toFixed(3)}%), mantendo stop atual`
@@ -2202,7 +2202,7 @@ class TrailingStop {
           );
 
           // Salva o estado atualizado no banco
-          await TrailingStop.setState(this.config?.id, position.symbol, trailingState);
+          await TrailingStop.setState(String(this.config?.id), position.symbol, trailingState); // 🔧 FIX: Converte botId
         }
       }
 
