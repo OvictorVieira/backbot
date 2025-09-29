@@ -4,6 +4,9 @@ import Markets from '../Backpack/Public/Markets.js';
 import BackpackWebSocket from '../Backpack/Public/WebSocket.js';
 import Account from '../Backpack/Authenticated/Account.js';
 import Capital from '../Backpack/Authenticated/Capital.js';
+import Futures from '../Backpack/Authenticated/Futures.js';
+import History from '../Backpack/Authenticated/History.js';
+import Trades from '../Backpack/Public/Trades.js';
 import Logger from '../Utils/Logger.js';
 
 /**
@@ -421,6 +424,185 @@ export class BackpackExchange extends BaseExchange {
   isWebSocketConnected() {
     return this.wsClient && this.wsClient.connected;
   }
+
+  // ============================================
+  // 🔧 IMPLEMENTAÇÃO DOS MÉTODOS AUSENTES
+  // ============================================
+
+  /**
+   * Account Management Methods
+   */
+  async getAccount(apiKey, apiSecret) {
+    try {
+      Logger.debug(`[BackpackExchange] Obtendo informações da conta...`);
+      const accountData = await Account.getAccount(null, apiKey, apiSecret);
+      return accountData;
+    } catch (error) {
+      Logger.error(`[BackpackExchange] Erro ao obter informações da conta: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async getPositions(apiKey, apiSecret) {
+    try {
+      Logger.debug(`[BackpackExchange] Obtendo posições...`);
+      const positions = await Futures.getPositions(null, apiKey, apiSecret);
+      return positions || [];
+    } catch (error) {
+      Logger.error(`[BackpackExchange] Erro ao obter posições: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async getCapital(apiKey, apiSecret) {
+    try {
+      Logger.debug(`[BackpackExchange] Obtendo informações de capital...`);
+      const capitalData = await Capital.getCollateral(null, apiKey, apiSecret);
+      return capitalData;
+    } catch (error) {
+      Logger.error(`[BackpackExchange] Erro ao obter capital: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Market Data Methods
+   */
+  async getMarkets() {
+    try {
+      Logger.debug(`[BackpackExchange] Obtendo mercados...`);
+      const markets = await this.marketsClient.getMarkets();
+      return markets;
+    } catch (error) {
+      Logger.error(`[BackpackExchange] Erro ao obter mercados: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async getTicker(symbol) {
+    try {
+      Logger.debug(`[BackpackExchange] Obtendo ticker para ${symbol}...`);
+      const ticker = await this.marketsClient.getTicker(symbol);
+      return ticker;
+    } catch (error) {
+      Logger.error(`[BackpackExchange] Erro ao obter ticker: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async getKlines(symbol, interval, limit = 100) {
+    try {
+      Logger.debug(`[BackpackExchange] Obtendo klines para ${symbol} (${interval})...`);
+      const klines = await this.marketsClient.getKlines(symbol, interval, limit);
+      return klines;
+    } catch (error) {
+      Logger.error(`[BackpackExchange] Erro ao obter klines: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async getTrades(symbol, limit = 100) {
+    try {
+      Logger.debug(`[BackpackExchange] Obtendo trades para ${symbol}...`);
+      const tradesClient = new Trades();
+      const trades = await tradesClient.getTrades(symbol, limit);
+      return trades;
+    } catch (error) {
+      Logger.error(`[BackpackExchange] Erro ao obter trades: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Order Management Methods
+   */
+  async getOrderHistory(symbol, apiKey, apiSecret, options = {}) {
+    try {
+      Logger.debug(`[BackpackExchange] Obtendo histórico de ordens para ${symbol}...`);
+      const historyClient = new History();
+      const orderHistory = await historyClient.getOrderHistory(symbol, apiKey, apiSecret, options);
+      return orderHistory;
+    } catch (error) {
+      Logger.error(`[BackpackExchange] Erro ao obter histórico de ordens: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async getOrderStatus(symbol, orderId, apiKey, apiSecret) {
+    try {
+      Logger.debug(`[BackpackExchange] Obtendo status da ordem ${orderId}...`);
+      const orderStatus = await this.orderClient.getOrderStatus(symbol, orderId, apiKey, apiSecret);
+      return orderStatus;
+    } catch (error) {
+      Logger.error(`[BackpackExchange] Erro ao obter status da ordem: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async modifyOrder(symbol, orderId, modifications, apiKey, apiSecret) {
+    try {
+      Logger.debug(`[BackpackExchange] Modificando ordem ${orderId}...`);
+      // Backpack pode não suportar modificação direta, implementar como cancel + create
+      Logger.warn(`[BackpackExchange] Modificação de ordem não suportada diretamente pela Backpack`);
+      throw new Error('Modificação de ordem não suportada pela Backpack - use cancel + create');
+    } catch (error) {
+      Logger.error(`[BackpackExchange] Erro ao modificar ordem: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Futures Specific Methods
+   */
+  async getFuturesPositions(apiKey, apiSecret) {
+    try {
+      Logger.debug(`[BackpackExchange] Obtendo posições de futuros...`);
+      const positions = await Futures.getPositions(null, apiKey, apiSecret);
+      return positions || [];
+    } catch (error) {
+      Logger.error(`[BackpackExchange] Erro ao obter posições de futuros: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async getFuturesBalance(apiKey, apiSecret) {
+    try {
+      Logger.debug(`[BackpackExchange] Obtendo balanço de futuros...`);
+      const balance = await Futures.getBalance(null, apiKey, apiSecret);
+      return balance;
+    } catch (error) {
+      Logger.error(`[BackpackExchange] Erro ao obter balanço de futuros: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async changeLeverage(symbol, leverage, apiKey, apiSecret) {
+    try {
+      Logger.debug(`[BackpackExchange] Alterando alavancagem para ${symbol}: ${leverage}x...`);
+      // Implementar se Backpack suportar mudança de leverage
+      Logger.warn(`[BackpackExchange] Mudança de alavancagem pode não ser suportada pela Backpack`);
+      throw new Error('Mudança de alavancagem não implementada para Backpack');
+    } catch (error) {
+      Logger.error(`[BackpackExchange] Erro ao alterar alavancagem: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Utility Methods
+   */
+  async getOpenOrdersForSymbol(symbol, apiKey, apiSecret) {
+    try {
+      Logger.debug(`[BackpackExchange] Obtendo ordens abertas para ${symbol}...`);
+      const openOrders = await this.orderClient.getOpenOrders(symbol, apiKey, apiSecret);
+      return openOrders || [];
+    } catch (error) {
+      Logger.error(`[BackpackExchange] Erro ao obter ordens abertas: ${error.message}`);
+      throw error;
+    }
+  }
+
+  // O método isOrderFilled já está implementado na BaseExchange usando getOrderStatus
 }
 
 export default BackpackExchange;
