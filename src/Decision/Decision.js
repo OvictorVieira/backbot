@@ -313,6 +313,13 @@ class Decision {
 
   async analyze(timeframe = null, logger = null, config = null) {
     try {
+      // 🚫 VERIFICAÇÃO: Bloqueia análises durante manutenção para evitar rate limit
+      const DepressurizationManager = await import('../Utils/DepressurizationManager.js');
+      if (DepressurizationManager.default.isSystemInMaintenance()) {
+        DepressurizationManager.default.logBlockedOperation('Trading Analysis', 'Decision');
+        return;
+      }
+
       // VERIFICAÇÃO CRÍTICA: Se o bot foi pausado, interrompe imediatamente
       if (config?.botId) {
         try {

@@ -172,6 +172,13 @@ class AccountController {
    * Inclui rate limiting global e logs detalhados
    */
   static async _performAccountRefresh(config, botKey, strategy, cacheAge) {
+    // 🚫 VERIFICAÇÃO: Bloqueia operações durante manutenção
+    const DepressurizationManager = await import('../Utils/DepressurizationManager.js');
+    if (DepressurizationManager.default.isSystemInMaintenance()) {
+      DepressurizationManager.default.logBlockedOperation('Account Refresh', 'AccountController');
+      return null; // Retorna null para indicar que foi bloqueado
+    }
+
     const { apiKey, apiSecret } = config;
 
     Logger.info(

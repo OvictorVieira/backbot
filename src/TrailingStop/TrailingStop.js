@@ -1501,6 +1501,19 @@ class TrailingStop {
         strategy: this.strategyType,
       });
 
+      // 🚫 VERIFICAÇÃO: Durante manutenção, dados de conta não estão disponíveis
+      if (!Account) {
+        const DepressurizationManager = await import('../Utils/DepressurizationManager.js');
+        if (DepressurizationManager.default.isSystemInMaintenance()) {
+          Logger.debug(
+            `🚫 [TRAILING_SKIP] ${position.symbol}: Trailing stop pausado durante manutenção - dados de conta indisponíveis`
+          );
+        } else {
+          Logger.error(`❌ [TRAILING_ERROR] ${position.symbol}: Dados da conta não disponíveis`);
+        }
+        return null;
+      }
+
       if (!Account.leverage) {
         Logger.error(
           `❌ [TRAILING_ERROR] ${position.symbol}: Alavancagem não encontrada na Account`
@@ -2491,6 +2504,19 @@ class TrailingStop {
         symbol: position.symbol,
       });
 
+      // 🚫 VERIFICAÇÃO: Durante manutenção, dados de conta não estão disponíveis
+      if (!Account) {
+        const DepressurizationManager = await import('../Utils/DepressurizationManager.js');
+        if (DepressurizationManager.default.isSystemInMaintenance()) {
+          Logger.debug(
+            `🚫 [TRAILING_SKIP] ${position.symbol}: Verificação de lucro pausada durante manutenção`
+          );
+        } else {
+          Logger.error(`❌ [STOP_LOSS_CHECK] ${position.symbol}: Dados da conta não disponíveis`);
+        }
+        return false;
+      }
+
       if (!Account.leverage) {
         Logger.error(
           `❌ [STOP_LOSS_CHECK] ${position.symbol}: Alavancagem não encontrada na Account`
@@ -2588,6 +2614,19 @@ class TrailingStop {
         strategy: this.strategyType,
         symbol: position.symbol,
       });
+
+      // 🚫 VERIFICAÇÃO: Durante manutenção, dados de conta não estão disponíveis
+      if (!Account) {
+        const DepressurizationManager = await import('../Utils/DepressurizationManager.js');
+        if (DepressurizationManager.default.isSystemInMaintenance()) {
+          Logger.debug(
+            `🚫 [TRAILING_SKIP] ${position.symbol}: Verificação de fechamento pausada durante manutenção`
+          );
+        } else {
+          Logger.error(`❌ [PROFIT_CHECK] ${position.symbol}: Dados da conta não disponíveis`);
+        }
+        return false;
+      }
 
       if (!Account.leverage) {
         Logger.error(`${position.symbol}: Alavancagem não encontrada`);

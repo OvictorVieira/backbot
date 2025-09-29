@@ -312,6 +312,23 @@ class DepressurizationManager {
   }
 
   /**
+   * Função estática global para verificação rápida em qualquer lugar do código
+   * @returns {boolean} True se sistema está em manutenção
+   */
+  static isSystemInMaintenance() {
+    return global.depressurizationManager && global.depressurizationManager.isActive();
+  }
+
+  /**
+   * Função helper para logging de operações bloqueadas
+   * @param {string} operation - Nome da operação que foi bloqueada
+   * @param {string} component - Componente que tentou executar a operação
+   */
+  static logBlockedOperation(operation, component = 'UNKNOWN') {
+    Logger.info(`🚫 [MAINTENANCE_BLOCK] ${operation} bloqueada em ${component} - Evitando rate limit durante manutenção`);
+  }
+
+  /**
    * Para o ciclo de despressurização
    */
   stop() {
