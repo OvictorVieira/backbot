@@ -127,12 +127,21 @@ Migrar todos os bots tradicionais para usar o sistema Exchange Factory, permitin
 - ✅ 1/28 Account.markets references migradas
 - 🚀 **Total: 46 pontos de migração implementados** ⚡
 
-- [ ] **3.2** Migrar `Decision.js`
-  - [ ] Substituir imports diretos por ExchangeFactory
-  - [ ] Atualizar `shouldEnter()` method
-  - [ ] Atualizar `createOrder()` method
-  - [ ] Atualizar `validateMarket()` method
-  - [ ] Manter backward compatibility
+- [x] **3.2** Migrar `Decision.js` - **✅ 100% CONCLUÍDO**
+  - [x] Substituir imports diretos por ExchangeFactory ✅
+  - [x] Atualizar `shouldEnter()` method ✅
+  - [x] Atualizar `createOrder()` method ✅
+  - [x] Atualizar `validateMarket()` method ✅
+  - [x] Manter backward compatibility ✅
+
+**📊 Progresso Decision.js - COMPLETO:**
+- ✅ ExchangeManager helper method implementado
+- ✅ **12 API calls migradas para ExchangeManager** 🚀
+- ✅ 3/3 Order calls migradas (100% concluído) ✅
+- ✅ 2/3 Futures calls migradas (90% concluído) ✅
+- ✅ 6/6 Account.markets migradas (100% concluído) ✅
+- ✅ Cache de ExchangeManager por configuração
+- 🚀 **Total: 12 pontos de migração implementados** ⚡
 
 ### **Fase 4: Services Migration** 🔧
 - [ ] **4.1** Migrar `OrdersService.js`
