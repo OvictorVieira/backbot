@@ -1,5 +1,4 @@
-import History from '../Backpack/Authenticated/History.js';
-import Futures from '../Backpack/Authenticated/Futures.js';
+import ExchangeManager from '../Exchange/ExchangeManager.js';
 import BotOrdersManager from '../Config/BotOrdersManager.js';
 import Logger from '../Utils/Logger.js';
 import PositionTrackingService from './PositionTrackingService.js';
@@ -66,19 +65,8 @@ class PositionSyncService {
       const now = Date.now();
       const oneDayAgo = now - 24 * 60 * 60 * 1000;
 
-      const fills = await History.getFillHistory(
-        null, // symbol
-        null, // orderId
-        oneDayAgo,
-        now,
-        1000, // limit
-        0, // offset
-        null, // fillType
-        'PERP', // marketType
-        null, // sortDirection
-        config.apiKey,
-        config.apiSecret
-      );
+      const exchangeManager = ExchangeManager.createFromConfig(config);
+      const fills = await exchangeManager.getTrades(symbol, 1000); // Usando getTrades como alternativa ao getFillHistory
 
       if (!fills || !Array.isArray(fills)) {
         return [];
@@ -117,7 +105,8 @@ class PositionSyncService {
     // Código original comentado:
     /*
     try {
-      const positions = await Futures.getOpenPositions(config.apiKey, config.apiSecret);
+      const exchangeManager = ExchangeManager.createFromConfig(config);
+      const positions = await exchangeManager.getFuturesPositions(config.apiKey, config.apiSecret);
       return positions || [];
 
     } catch (error) {
