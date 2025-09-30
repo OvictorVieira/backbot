@@ -567,7 +567,7 @@ class OrderController {
           });
 
           // ✅ DEFENSIVE CHECK: Se Account ou markets não disponíveis, pula processamento
-          if (!Account || !Account.markets) {
+          if (!Account) {
             Logger.debug(
               `⚠️ [ORDER_MONITOR] ${market}: Dados da conta não disponíveis - pulando processamento`
             );
@@ -3158,7 +3158,10 @@ class OrderController {
         apiSecret,
         strategy: config?.strategyName || 'DEFAULT',
       });
-      const marketInfo = Account.markets.find(m => m.symbol === position.symbol);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+      const exchangeManager = OrderController.getExchangeManager(config || {});
+      const allMarkets = await exchangeManager.getMarkets();
+      const marketInfo = allMarkets.find(m => m.symbol === position.symbol);
       if (!marketInfo) {
         // Par não autorizado - retorna silenciosamente sem tentar criar stop loss
         OrderController.debug(
@@ -3387,7 +3390,10 @@ class OrderController {
         apiSecret,
         strategy: config?.strategyName || 'DEFAULT',
       });
-      const marketInfo = Account.markets.find(m => m.symbol === position.symbol);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+      const exchangeManager = OrderController.getExchangeManager(config || {});
+      const allMarkets = await exchangeManager.getMarkets();
+      const marketInfo = allMarkets.find(m => m.symbol === position.symbol);
       if (!marketInfo) {
         // Par não autorizado - retorna silenciosamente sem tentar criar take profit
         OrderController.debug(
@@ -3608,7 +3614,10 @@ class OrderController {
         apiSecret,
         strategy: config?.strategyName || 'DEFAULT',
       });
-      const marketInfo = Account.markets.find(m => m.symbol === position.symbol);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+      const exchangeManager = OrderController.getExchangeManager(config || {});
+      const allMarkets = await exchangeManager.getMarkets();
+      const marketInfo = allMarkets.find(m => m.symbol === position.symbol);
       if (!marketInfo) {
         Logger.error(`❌ [FAILSAFE] Market info não encontrada para ${position.symbol}`);
         return { error: 'Market info não encontrada' };
@@ -4286,7 +4295,10 @@ class OrderController {
           apiSecret,
           strategy: config?.strategyName || 'DEFAULT',
         });
-        const marketInfo = Account.markets.find(m => m.symbol === position.symbol);
+        // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+        const exchangeManager = OrderController.getExchangeManager(config || {});
+        const allMarkets = await exchangeManager.getMarkets();
+        const marketInfo = allMarkets.find(m => m.symbol === position.symbol);
 
         // Verifica se marketInfo existe antes de acessar a propriedade fee
         if (!marketInfo) {
@@ -4350,7 +4362,10 @@ class OrderController {
             apiSecret,
             strategy: config?.strategyName || 'DEFAULT',
           });
-          const marketInfo = Account.markets.find(m => m.symbol === position.symbol);
+          // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+          const exchangeManager = OrderController.getExchangeManager(config || {});
+          const allMarkets = await exchangeManager.getMarkets();
+          const marketInfo = allMarkets.find(m => m.symbol === position.symbol);
 
           if (!marketInfo) {
             OrderController.debug(
@@ -5743,7 +5758,7 @@ class OrderController {
         return { success: false, message: `Erro ao obter Account: ${error.message}` };
       }
 
-      if (!Account || !Account.markets) {
+      if (!Account) {
         // Verificar se é pausa por manutenção
         const DepressurizationManager = (await import('../Utils/DepressurizationManager.js'))
           .default;
@@ -5773,7 +5788,10 @@ class OrderController {
 
       Logger.info(`🎯 [TP_CREATE] ${symbol}: Criando Take Profit...`);
 
-      const marketInfo = Account.markets.find(m => m.symbol === symbol);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+      const exchangeManager = OrderController.getExchangeManager(config || {});
+      const allMarkets = await exchangeManager.getMarkets();
+      const marketInfo = allMarkets.find(m => m.symbol === symbol);
       if (!marketInfo) {
         Logger.error(`❌ [TP_CREATE] ${symbol}: Market info não encontrada`);
         return { success: false, message: 'Error: Market info não encontrada' };
