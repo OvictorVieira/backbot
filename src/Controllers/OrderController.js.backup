@@ -291,7 +291,9 @@ class OrderController {
       Logger.debug(
         `🔍 [BOT_ORDERS] Buscando todas as ordens da conta para filtrar por bot ID: ${botId}`
       );
-      const allOrders = await Order.getOpenOrders(null, 'PERP', config.apiKey, config.apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+      const exchangeManager = OrderController.getExchangeManager(config);
+      const allOrders = await exchangeManager.getOpenOrdersForSymbol(null, config.apiKey, config.apiSecret);
 
       if (!allOrders || allOrders.length === 0) {
         Logger.debug(`📋 [BOT_ORDERS] Nenhuma ordem encontrada na conta`);
@@ -373,7 +375,9 @@ class OrderController {
       }
 
       // Obtém todas as ordens da exchange
-      const allOrders = await Order.getOpenOrders(null, 'PERP', config.apiKey, config.apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+      const exchangeManager = OrderController.getExchangeManager(config);
+      const allOrders = await exchangeManager.getOpenOrdersForSymbol(null, config.apiKey, config.apiSecret);
       if (!allOrders || allOrders.length === 0) {
         Logger.debug(`📋 [ALL_BOTS_ORDERS] Nenhuma ordem encontrada`);
         return {};
@@ -532,7 +536,9 @@ class OrderController {
       // Tenta obter posições com retry
       let positions = [];
       try {
-        positions = (await Futures.getOpenPositions(apiKey, apiSecret)) || [];
+        // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
+        const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+        positions = (await exchangeManager.getFuturesPositions(apiKey, apiSecret)) || [];
 
         if (positions.length > 0) {
           // Verifica se há posições que não estão sendo monitoradas
@@ -561,14 +567,17 @@ class OrderController {
           });
 
           // ✅ DEFENSIVE CHECK: Se Account ou markets não disponíveis, pula processamento
-          if (!Account || !Account.markets) {
+          if (!Account) {
             Logger.debug(
               `⚠️ [ORDER_MONITOR] ${market}: Dados da conta não disponíveis - pulando processamento`
             );
             continue;
           }
 
-          const marketInfo = Account.markets.find(m => m.symbol === market);
+          // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+          const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+          const allMarkets = await exchangeManager.getMarkets();
+          const marketInfo = allMarkets?.find(m => m.symbol === market);
 
           // Verifica se marketInfo existe antes de acessar a propriedade fee
           if (!marketInfo) {
@@ -646,7 +655,10 @@ class OrderController {
             continue;
           }
 
-          const marketInfo = Account.markets.find(m => m.symbol === position.symbol);
+          // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+          const exchangeManager = OrderController.getExchangeManager({ symbol: position.symbol });
+          const markets = await exchangeManager.getMarkets();
+          const marketInfo = markets.find(m => m.symbol === position.symbol);
 
           if (!marketInfo) {
             OrderController.debug(
@@ -698,7 +710,10 @@ class OrderController {
         return;
       }
 
-      const marketInfo = Account.markets.find(m => m.symbol === market);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+      const exchangeManager = OrderController.getExchangeManager({ symbol: market });
+      const markets = await exchangeManager.getMarkets();
+      const marketInfo = markets.find(m => m.symbol === market);
       if (!marketInfo) {
         Logger.error(`❌ [PRO_MAX] Market info não encontrada para ${market}`);
         return;
@@ -720,8 +735,8 @@ class OrderController {
       // Para o cálculo, precisamos de dados de mercado (ATR, etc). Usamos o último candle disponível.
       // Usa o timeframe da ordem ou fallback para configuração
       const timeframe = orderData?.time || config?.time || '5m';
-      const markets = new Markets();
-      const candles = await markets.getKLines(market, timeframe, 30);
+      const marketsAPI = new Markets();
+      const candles = await marketsAPI.getKLines(market, timeframe, 30);
       const indicators = await calculateIndicators(candles, timeframe, market);
       const data = { ...indicators, market: marketInfo, marketPrice: entryPrice };
       const action = isLong ? 'long' : 'short';
@@ -964,7 +979,10 @@ class OrderController {
         return;
       }
 
-      const marketInfo = Account.markets.find(m => m.symbol === position.symbol);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+      const exchangeManager = OrderController.getExchangeManager({ symbol: position.symbol });
+      const markets = await exchangeManager.getMarkets();
+      const marketInfo = markets.find(m => m.symbol === position.symbol);
       if (!marketInfo) {
         Logger.error(`❌ [PRO_MAX] Market info não encontrada para ${position.symbol}`);
         return;
@@ -986,8 +1004,8 @@ class OrderController {
 
       // Usa timeframe da configuração
       const timeframe = config?.time || '5m';
-      const markets = new Markets();
-      const candles = await markets.getKLines(position.symbol, timeframe, 30);
+      const marketsAPI = new Markets();
+      const candles = await marketsAPI.getKLines(position.symbol, timeframe, 30);
       const indicators = await calculateIndicators(candles, timeframe, position.symbol);
       const data = { ...indicators, market: marketInfo, marketPrice: entryPrice };
       const action = isLong ? 'long' : 'short';
@@ -1207,7 +1225,9 @@ class OrderController {
   async validateMargin(market, volume, accountInfo, apiKey = null, apiSecret = null) {
     try {
       // Obtém posições abertas para calcular margem em uso
-      const positions = await Futures.getOpenPositions(apiKey, apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const positions = await exchangeManager.getFuturesPositions(apiKey, apiSecret);
       const currentPosition = positions?.find(p => p.symbol === market);
 
       // Calcula margem necessária para a nova ordem (volume / leverage)
@@ -1259,7 +1279,9 @@ class OrderController {
       const apiSecret = config.apiSecret;
 
       // Obtém ordens abertas para o símbolo
-      const openOrders = await Order.getOpenOrders(symbol, 'PERP', apiKey, apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const openOrders = await exchangeManager.getOpenOrdersForSymbol(symbol, apiKey, apiSecret);
 
       if (!openOrders || openOrders.length === 0) {
         return true;
@@ -1300,7 +1322,8 @@ class OrderController {
 
       // Cancela apenas as ordens de entrada pendentes específicas
       const cancelPromises = pendingEntryOrders.map(async order => {
-        const cancelResult = await Order.cancelOpenOrder(
+        // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+        const cancelResult = await exchangeManager.cancelOpenOrder(
           symbol,
           order.id,
           order.clientId,
@@ -1358,17 +1381,21 @@ class OrderController {
     const Account = account || (await AccountController.get(configWithSymbol));
 
     // Log detalhado para debug
+    // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+    const exchangeManager = OrderController.getExchangeManager(config || {});
+    const allMarkets = await exchangeManager.getMarkets();
+
     Logger.debug(
-      `🔍 [FORCE_CLOSE] Procurando market ${position.symbol} entre ${Account.markets?.length || 0} disponíveis`
+      `🔍 [FORCE_CLOSE] Procurando market ${position.symbol} entre ${allMarkets?.length || 0} disponíveis`
     );
 
-    let market = Account.markets.find(el => {
+    let market = allMarkets.find(el => {
       return el.symbol === position.symbol;
     });
 
     // Se não encontrou, tenta uma busca case-insensitive
     if (!market) {
-      const marketCaseInsensitive = Account.markets.find(el => {
+      const marketCaseInsensitive = allMarkets.find(el => {
         return el.symbol.toLowerCase() === position.symbol.toLowerCase();
       });
       if (marketCaseInsensitive) {
@@ -1382,7 +1409,7 @@ class OrderController {
     // Verifica se o market foi encontrado
     if (!market) {
       Logger.error(
-        `❌ [FORCE_CLOSE] Market não encontrado para ${position.symbol}. Markets disponíveis: ${Account.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`
+        `❌ [FORCE_CLOSE] Market não encontrado para ${position.symbol}. Markets disponíveis: ${allMarkets?.map(m => m.symbol).join(', ') || 'nenhum'}`
       );
       throw new Error(`Market não encontrado para ${position.symbol}`);
     }
@@ -1479,14 +1506,17 @@ class OrderController {
     try {
       // Se account não foi fornecido, obtém da API
       const Account = account || (await AccountController.get(config));
-      const market = Account.markets.find(el => {
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+      const exchangeManager = OrderController.getExchangeManager(config || {});
+      const allMarkets = await exchangeManager.getMarkets();
+      const market = allMarkets.find(el => {
         return el.symbol === position.symbol;
       });
 
       // Verifica se o market foi encontrado
       if (!market) {
         Logger.error(
-          `❌ [TAKE_PARTIAL] Market não encontrado para ${position.symbol}. Markets disponíveis: ${Account.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`
+          `❌ [TAKE_PARTIAL] Market não encontrado para ${position.symbol}. Markets disponíveis: ${allMarkets?.map(m => m.symbol).join(', ') || 'nenhum'}`
         );
         throw new Error(`Market não encontrado para ${position.symbol}`);
       }
@@ -1607,14 +1637,17 @@ class OrderController {
     try {
       // Se account não foi fornecido, obtém da API
       const Account = account || (await AccountController.get(config));
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+      const exchangeManager = OrderController.getExchangeManager(config || {});
+      const allMarkets = await exchangeManager.getMarkets();
 
-      let market = Account.markets.find(el => {
+      let market = allMarkets.find(el => {
         return el.symbol === position.symbol;
       });
 
       // Se não encontrou, tenta uma busca case-insensitive
       if (!market) {
-        const marketCaseInsensitive = Account.markets.find(el => {
+        const marketCaseInsensitive = allMarkets.find(el => {
           return el.symbol.toLowerCase() === position.symbol.toLowerCase();
         });
         if (marketCaseInsensitive) {
@@ -1628,7 +1661,7 @@ class OrderController {
       // Verifica se o market foi encontrado
       if (!market) {
         Logger.error(
-          `❌ [TP_LIMIT] Market não encontrado para ${position.symbol}. Markets disponíveis: ${Account.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`
+          `❌ [TP_LIMIT] Market não encontrado para ${position.symbol}. Markets disponíveis: ${allMarkets?.map(m => m.symbol).join(', ') || 'nenhum'}`
         );
         throw new Error(`Market não encontrado para ${position.symbol}`);
       }
@@ -1721,20 +1754,23 @@ class OrderController {
     try {
       // Se account não foi fornecido, obtém da API
       const Account = account || (await AccountController.get(config));
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+      const exchangeManager = OrderController.getExchangeManager(config || {});
+      const allMarkets = await exchangeManager.getMarkets();
 
       // Log detalhado para debug
       Logger.info(`🔍 [CLOSE_PARTIAL] Procurando market para ${position.symbol}`);
       Logger.info(
-        `🔍 [CLOSE_PARTIAL] Total de markets disponíveis: ${Account.markets?.length || 0}`
+        `🔍 [CLOSE_PARTIAL] Total de markets disponíveis: ${allMarkets?.length || 0}`
       );
 
-      let market = Account.markets.find(el => {
+      let market = allMarkets.find(el => {
         return el.symbol === position.symbol;
       });
 
       // Se não encontrou, tenta uma busca case-insensitive
       if (!market) {
-        const marketCaseInsensitive = Account.markets.find(el => {
+        const marketCaseInsensitive = allMarkets.find(el => {
           return el.symbol.toLowerCase() === position.symbol.toLowerCase();
         });
         if (marketCaseInsensitive) {
@@ -1748,7 +1784,7 @@ class OrderController {
       // Verifica se o market foi encontrado
       if (!market) {
         Logger.error(
-          `❌ [CLOSE_PARTIAL] Market não encontrado para ${position.symbol}. Markets disponíveis: ${Account.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`
+          `❌ [CLOSE_PARTIAL] Market não encontrado para ${position.symbol}. Markets disponíveis: ${allMarkets?.map(m => m.symbol).join(', ') || 'nenhum'}`
         );
         throw new Error(`Market não encontrado para ${position.symbol}`);
       }
@@ -1779,7 +1815,8 @@ class OrderController {
       };
 
       // Fecha parcialmente a posição
-      const closeResult = await Order.executeOrder(body, config?.apiKey, config?.apiSecret);
+      // 🔧 MIGRAÇÃO: Reutiliza ExchangeManager já criado acima
+      const closeResult = await exchangeManager.executeOrder(body, config?.apiKey, config?.apiSecret);
 
       if (closeResult) {
         // Log detalhado da taxa de fechamento parcial
@@ -1875,7 +1912,10 @@ class OrderController {
         return null;
       }
 
-      const marketInfo = Account.markets.find(m => m.symbol === market);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+      const exchangeManager = OrderController.getExchangeManager(config || {});
+      const allMarkets = await exchangeManager.getMarkets();
+      const marketInfo = allMarkets.find(m => m.symbol === market);
       const currentPrice = parseFloat(candles[candles.length - 1].close);
 
       // Cria dados para análise
@@ -2267,7 +2307,9 @@ class OrderController {
           );
         }
 
-        limitResult = await Order.executeOrder(body, config.apiKey, config.apiSecret);
+        // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+        const exchangeManager = OrderController.getExchangeManager(config);
+        limitResult = await exchangeManager.executeOrder(body, config.apiKey, config.apiSecret);
 
         if (!limitResult || limitResult.error) {
           const errorMessage = limitResult && limitResult.error ? limitResult.error.toString() : '';
@@ -2353,9 +2395,10 @@ class OrderController {
         await new Promise(r => setTimeout(r, 3000));
 
         try {
-          const openOrders = await Order.getOpenOrders(
+          // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+          const exchangeManager = OrderController.getExchangeManager(config);
+          const openOrders = await exchangeManager.getOpenOrdersForSymbol(
             market,
-            'PERP',
             config.apiKey,
             config.apiSecret
           );
@@ -2418,9 +2461,10 @@ class OrderController {
         await new Promise(r => setTimeout(r, 1000));
 
         try {
-          const openOrders = await Order.getOpenOrders(
+          // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+          const exchangeManager = OrderController.getExchangeManager(config);
+          const openOrders = await exchangeManager.getOpenOrdersForSymbol(
             market,
-            'PERP',
             config.apiKey,
             config.apiSecret
           );
@@ -2515,7 +2559,9 @@ class OrderController {
             `🔄 [${strategyNameToUse}] ${market}: Tentativa ${cancelAttempts}/${maxCancelAttempts} de cancelamento...`
           );
 
-          await Order.cancelOpenOrder(
+          // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+          const exchangeManager = OrderController.getExchangeManager(config);
+          await exchangeManager.cancelOpenOrder(
             market,
             limitResult.id,
             null,
@@ -2682,7 +2728,9 @@ class OrderController {
         );
       }
 
-      const marketResult = await Order.executeOrder(marketBody, config.apiKey, config.apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+      const exchangeManager = OrderController.getExchangeManager(config);
+      const marketResult = await exchangeManager.executeOrder(marketBody, config.apiKey, config.apiSecret);
       if (marketResult && !marketResult.error) {
         // Calcula slippage real
         const executionPrice = parseFloat(
@@ -2843,7 +2891,9 @@ class OrderController {
       throw new Error('API_KEY e API_SECRET são obrigatórios - deve ser passado da config do bot');
     }
 
-    const orders = await Order.getOpenOrders(market, 'PERP', config.apiKey, config.apiSecret);
+    // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+    const exchangeManager = OrderController.getExchangeManager(config);
+    const orders = await exchangeManager.getOpenOrdersForSymbol(market, config.apiKey, config.apiSecret);
 
     if (!orders || orders.length === 0) {
       return [];
@@ -2890,7 +2940,9 @@ class OrderController {
    * @returns {Array} - Lista de ordens de entrada
    */
   async getRecentEntryOrders(market) {
-    const orders = await Order.getOpenOrders(market);
+    // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+    const exchangeManager = OrderController.getExchangeManager({ symbol: market });
+    const orders = await exchangeManager.getOpenOrdersForSymbol(market, null, null);
 
     if (!orders || orders.length === 0) {
       return [];
@@ -2943,7 +2995,9 @@ class OrderController {
   }
 
   async getAllOrdersSchedule(markets_open) {
-    const orders = await Order.getOpenOrders();
+    // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+    const exchangeManager = OrderController.getExchangeManager({});
+    const orders = await exchangeManager.getOpenOrdersForSymbol(null, null, null);
     const orderShorted = orders.sort(
       (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
     );
@@ -2977,7 +3031,10 @@ class OrderController {
       throw new Error('Dados da conta indisponíveis - não é possível criar stop loss');
     }
 
-    const find = Account.markets.find(el => el.symbol === symbol);
+    // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+    const exchangeManager = OrderController.getExchangeManager(config || {});
+    const allMarkets = await exchangeManager.getMarkets();
+    const find = allMarkets.find(el => el.symbol === symbol);
 
     if (!find) throw new Error(`Symbol ${symbol} not found in account data`);
 
@@ -3032,7 +3089,8 @@ class OrderController {
       clientId: await OrderController.generateUniqueOrderId(config),
     };
 
-    const orderResult = await Order.executeOrder(body, config?.apiKey, config?.apiSecret);
+    // 🔧 MIGRAÇÃO: Reutiliza ExchangeManager já criado acima
+    const orderResult = await exchangeManager.executeOrder(body, config?.apiKey, config?.apiSecret);
 
     if (orderResult && orderResult.id) {
       Logger.debug(
@@ -3098,7 +3156,10 @@ class OrderController {
         apiSecret,
         strategy: config?.strategyName || 'DEFAULT',
       });
-      const marketInfo = Account.markets.find(m => m.symbol === position.symbol);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+      const exchangeManager = OrderController.getExchangeManager(config || {});
+      const allMarkets = await exchangeManager.getMarkets();
+      const marketInfo = allMarkets.find(m => m.symbol === position.symbol);
       if (!marketInfo) {
         // Par não autorizado - retorna silenciosamente sem tentar criar stop loss
         OrderController.debug(
@@ -3233,7 +3294,9 @@ class OrderController {
           `🔄 [${botName}] ${position.symbol}: Criando stop loss - Trigger Price: $${stopLossPrice.toFixed(6)}`
         );
 
-        const stopResult = await Order.executeOrder(stopBody, config?.apiKey, config?.apiSecret);
+        // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+        const exchangeManager = OrderController.getExchangeManager(config);
+        const stopResult = await exchangeManager.executeOrder(stopBody, config?.apiKey, config?.apiSecret);
 
         if (stopResult && !stopResult.error) {
           Logger.info(
@@ -3325,7 +3388,10 @@ class OrderController {
         apiSecret,
         strategy: config?.strategyName || 'DEFAULT',
       });
-      const marketInfo = Account.markets.find(m => m.symbol === position.symbol);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+      const exchangeManager = OrderController.getExchangeManager(config || {});
+      const allMarkets = await exchangeManager.getMarkets();
+      const marketInfo = allMarkets.find(m => m.symbol === position.symbol);
       if (!marketInfo) {
         // Par não autorizado - retorna silenciosamente sem tentar criar take profit
         OrderController.debug(
@@ -3464,9 +3530,11 @@ class OrderController {
   ) {
     try {
       // Se forceRefresh for true, força busca na exchange (usado quando há suspeita de dados stale)
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
       const positions = forceRefresh
-        ? await Futures.getOpenPositionsForceRefresh(apiKey, apiSecret)
-        : await Futures.getOpenPositions(apiKey, apiSecret);
+        ? await exchangeManager.getFuturesPositionsForceRefresh(apiKey, apiSecret)
+        : await exchangeManager.getFuturesPositions(apiKey, apiSecret);
 
       // 🚨 VALIDAÇÃO CRÍTICA: Verifica se positions é um array válido
       if (!Array.isArray(positions)) {
@@ -3544,7 +3612,10 @@ class OrderController {
         apiSecret,
         strategy: config?.strategyName || 'DEFAULT',
       });
-      const marketInfo = Account.markets.find(m => m.symbol === position.symbol);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+      const exchangeManager = OrderController.getExchangeManager(config || {});
+      const allMarkets = await exchangeManager.getMarkets();
+      const marketInfo = allMarkets.find(m => m.symbol === position.symbol);
       if (!marketInfo) {
         Logger.error(`❌ [FAILSAFE] Market info não encontrada para ${position.symbol}`);
         return { error: 'Market info não encontrada' };
@@ -3739,7 +3810,8 @@ class OrderController {
       }
 
       // 6. Envia ordens para a corretora
-      const stopLossResult = await Order.executeOrder(
+      // 🔧 MIGRAÇÃO: Reutiliza ExchangeManager já criado acima
+      const stopLossResult = await exchangeManager.executeOrder(
         stopLossBody,
         config?.apiKey,
         config?.apiSecret
@@ -3747,7 +3819,8 @@ class OrderController {
       let takeProfitResult = null;
 
       if (takeProfitBody) {
-        takeProfitResult = await Order.executeOrder(
+        // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+        takeProfitResult = await exchangeManager.executeOrder(
           takeProfitBody,
           config?.apiKey,
           config?.apiSecret
@@ -3835,7 +3908,9 @@ class OrderController {
       await new Promise(resolve => setTimeout(resolve, 2000));
 
       // Busca posições abertas
-      const positions = await Futures.getOpenPositions(config?.apiKey, config?.apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
+      const exchangeManager = OrderController.getExchangeManager(config);
+      const positions = await exchangeManager.getFuturesPositions(config?.apiKey, config?.apiSecret);
       const position = positions?.find(
         p => p.symbol === market && Math.abs(Number(p.netQuantity)) > 0
       );
@@ -3930,7 +4005,9 @@ class OrderController {
       const apiSecret = config.apiSecret;
 
       // Busca ordens abertas para o símbolo
-      const openOrders = await Order.getOpenOrders(symbol, 'PERP', apiKey, apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const openOrders = await exchangeManager.getOpenOrdersForSymbol(symbol, apiKey, apiSecret);
 
       if (!openOrders || openOrders.length === 0) {
         return true;
@@ -3963,7 +4040,9 @@ class OrderController {
 
       // Cancela todas as ordens de segurança
       const cancelPromises = failsafeOrders.map(async order => {
-        const cancelResult = await Order.cancelOpenOrder(
+        // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+        const exchangeManager = OrderController.getExchangeManager(config);
+        const cancelResult = await exchangeManager.cancelOpenOrder(
           symbol,
           order.id,
           order.clientId,
@@ -4033,7 +4112,9 @@ class OrderController {
       const apiSecret = config.apiSecret;
 
       // Busca ordens abertas para o símbolo
-      const openOrders = await Order.getOpenOrders(symbol, 'PERP', apiKey, apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const openOrders = await exchangeManager.getOpenOrdersForSymbol(symbol, apiKey, apiSecret);
 
       if (!openOrders || openOrders.length === 0) {
         return { hasStopLoss: false, hasTakeProfit: false, orders: [] };
@@ -4087,7 +4168,9 @@ class OrderController {
       const apiSecret = config.apiSecret;
 
       // Busca posições abertas
-      const positions = await Futures.getOpenPositions(apiKey, apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const positions = await exchangeManager.getFuturesPositions(apiKey, apiSecret);
 
       if (!positions || positions.length === 0) {
         return { checked: 0, recreated: 0 };
@@ -4188,7 +4271,9 @@ class OrderController {
       }
 
       // Busca posições abertas
-      const positions = (await Futures.getOpenPositions(apiKey, apiSecret)) || [];
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const positions = (await exchangeManager.getFuturesPositions(apiKey, apiSecret)) || [];
 
       if (positions.length === 0) {
         return;
@@ -4207,7 +4292,10 @@ class OrderController {
           apiSecret,
           strategy: config?.strategyName || 'DEFAULT',
         });
-        const marketInfo = Account.markets.find(m => m.symbol === position.symbol);
+        // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+        const exchangeManager = OrderController.getExchangeManager(config || {});
+        const allMarkets = await exchangeManager.getMarkets();
+        const marketInfo = allMarkets.find(m => m.symbol === position.symbol);
 
         // Verifica se marketInfo existe antes de acessar a propriedade fee
         if (!marketInfo) {
@@ -4271,7 +4359,10 @@ class OrderController {
             apiSecret,
             strategy: config?.strategyName || 'DEFAULT',
           });
-          const marketInfo = Account.markets.find(m => m.symbol === position.symbol);
+          // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+          const exchangeManager = OrderController.getExchangeManager(config || {});
+          const allMarkets = await exchangeManager.getMarkets();
+          const marketInfo = allMarkets.find(m => m.symbol === position.symbol);
 
           if (!marketInfo) {
             OrderController.debug(
@@ -4326,7 +4417,9 @@ class OrderController {
       const apiKey = config.apiKey;
       const apiSecret = config.apiSecret;
 
-      const existingOrders = await Order.getOpenOrders(symbol, 'PERP', apiKey, apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const existingOrders = await exchangeManager.getOpenOrdersForSymbol(symbol, apiKey, apiSecret);
 
       Logger.debug(
         `🔍 [STOP_LOSS_CHECK] ${symbol}: Encontradas ${existingOrders?.length || 0} ordens abertas`
@@ -4491,7 +4584,9 @@ class OrderController {
 
       Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] Iniciando verificação de ordens órfãs`);
 
-      const positionsResult = await Futures.getOpenPositions(apiKey, apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const positionsResult = await exchangeManager.getFuturesPositions(apiKey, apiSecret);
       const positions = Array.isArray(positionsResult) ? positionsResult : [];
       Logger.debug(
         `🧹 [${config.botName}][ORPHAN_MONITOR] Encontradas ${positions.length} posições abertas`
@@ -4559,7 +4654,9 @@ class OrderController {
             await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
           }
 
-          const openOrders = await Order.getOpenOrders(symbol, 'PERP', apiKey, apiSecret);
+          // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const openOrders = await exchangeManager.getOpenOrdersForSymbol(symbol, apiKey, apiSecret);
 
           if (!openOrders || openOrders.length === 0) {
             Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Nenhuma ordem aberta`);
@@ -4653,7 +4750,9 @@ class OrderController {
                   `🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Tentando cancelar ordem órfã ${orderId}`
                 );
 
-                const cancelResult = await Order.cancelOpenOrder(
+                // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+                const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+                const cancelResult = await exchangeManager.cancelOpenOrder(
                   symbol,
                   orderId,
                   null,
@@ -4806,7 +4905,9 @@ class OrderController {
       );
 
       // 1. Busca TODAS as ordens abertas na corretora (sem especificar símbolo)
-      const allOpenOrders = (await Order.getOpenOrders(null, 'PERP', apiKey, apiSecret)) || [];
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const allOpenOrders = (await exchangeManager.getOpenOrdersForSymbol(null, apiKey, apiSecret)) || [];
       Logger.debug(
         `🔍 [${config.botName}][SCAN_CLEANUP] Encontradas ${allOpenOrders.length} ordens abertas na corretora`
       );
@@ -4817,7 +4918,9 @@ class OrderController {
       }
 
       // 2. Busca TODAS as posições abertas na corretora
-      const positions = (await Futures.getOpenPositions(apiKey, apiSecret)) || [];
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const positions = (await exchangeManager.getFuturesPositions(apiKey, apiSecret)) || [];
       const activeSymbols = new Set();
 
       // 🚨 VALIDAÇÃO CRÍTICA: Verifica se positions é iterável
@@ -4941,7 +5044,9 @@ class OrderController {
             `🧹 [${config.botName}][SCAN_CLEANUP] Cancelando ordem órfã ${order.symbol} - ID: ${order.id}`
           );
 
-          const cancelResult = await Order.cancelOpenOrder(
+          // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+          const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+          const cancelResult = await exchangeManager.cancelOpenOrder(
             order.symbol,
             order.id,
             null,
@@ -5039,7 +5144,9 @@ class OrderController {
         `🧹 [${config.botName}][FORCE_CLEANUP] Iniciando limpeza agressiva de ordens órfãs`
       );
 
-      const positions = (await Futures.getOpenPositions(apiKey, apiSecret)) || [];
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const positions = (await exchangeManager.getFuturesPositions(apiKey, apiSecret)) || [];
       const activeSymbols = positions
         .filter(p => Math.abs(Number(p.netQuantity)) > 0)
         .map(p => p.symbol);
@@ -5072,7 +5179,9 @@ class OrderController {
           // Delay para evitar rate limit
           await new Promise(resolve => setTimeout(resolve, 300));
 
-          const openOrders = await Order.getOpenOrders(symbol, 'PERP', apiKey, apiSecret);
+          // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const openOrders = await exchangeManager.getOpenOrdersForSymbol(symbol, apiKey, apiSecret);
 
           if (!openOrders || openOrders.length === 0) {
             continue;
@@ -5097,7 +5206,9 @@ class OrderController {
             try {
               await new Promise(resolve => setTimeout(resolve, 150)); // Delay menor para limpeza rápida
 
-              const cancelResult = await Order.cancelOpenOrder(
+              // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+              const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+              const cancelResult = await exchangeManager.cancelOpenOrder(
                 symbol,
                 order.id,
                 null,
@@ -5373,7 +5484,9 @@ class OrderController {
       });
 
       try {
-        const response = await Order.executeOrder(orderBody, config.apiKey, config.apiSecret);
+        // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+        const exchangeManager = OrderController.getExchangeManager(config);
+        const response = await exchangeManager.executeOrder(orderBody, config.apiKey, config.apiSecret);
 
         if (response && (response.orderId || response.id)) {
           const orderId = response.orderId || response.id;
@@ -5524,7 +5637,9 @@ class OrderController {
       const apiSecret = config.apiSecret;
 
       // Busca ordens abertas para o símbolo
-      const openOrders = await Order.getOpenOrders(symbol, 'PERP', apiKey, apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const openOrders = await exchangeManager.getOpenOrdersForSymbol(symbol, apiKey, apiSecret);
 
       if (!openOrders || openOrders.length === 0) {
         return false;
@@ -5568,7 +5683,9 @@ class OrderController {
         return;
       }
 
-      const positions = await Futures.getOpenPositions(config.apiKey, config.apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
+      const exchangeManager = OrderController.getExchangeManager(config);
+      const positions = await exchangeManager.getFuturesPositions(config.apiKey, config.apiSecret);
       if (!positions || positions.length === 0) {
         return;
       }
@@ -5638,7 +5755,7 @@ class OrderController {
         return { success: false, message: `Erro ao obter Account: ${error.message}` };
       }
 
-      if (!Account || !Account.markets) {
+      if (!Account) {
         // Verificar se é pausa por manutenção
         const DepressurizationManager = (await import('../Utils/DepressurizationManager.js'))
           .default;
@@ -5668,7 +5785,10 @@ class OrderController {
 
       Logger.info(`🎯 [TP_CREATE] ${symbol}: Criando Take Profit...`);
 
-      const marketInfo = Account.markets.find(m => m.symbol === symbol);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+      const exchangeManager = OrderController.getExchangeManager(config || {});
+      const allMarkets = await exchangeManager.getMarkets();
+      const marketInfo = allMarkets.find(m => m.symbol === symbol);
       if (!marketInfo) {
         Logger.error(`❌ [TP_CREATE] ${symbol}: Market info não encontrada`);
         return { success: false, message: 'Error: Market info não encontrada' };
@@ -5681,7 +5801,9 @@ class OrderController {
 
       let currentPositions;
       try {
-        currentPositions = await Futures.getOpenPositions(config.apiKey, config.apiSecret);
+        // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
+        const exchangeManager = OrderController.getExchangeManager(config);
+        currentPositions = await exchangeManager.getFuturesPositions(config.apiKey, config.apiSecret);
       } catch (error) {
         Logger.error(`❌ [TP_CREATE] ${symbol}: Erro ao obter posições:`, error.message);
         return { success: false, message: `Erro ao obter posições: ${error.message}` };

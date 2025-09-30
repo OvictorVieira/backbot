@@ -1,6 +1,5 @@
 import Markets from '../Backpack/Public/Markets.js';
-import Account from '../Backpack/Authenticated/Account.js';
-import Capital from '../Backpack/Authenticated/Capital.js';
+import ExchangeManager from '../Exchange/ExchangeManager.js';
 import Logger from '../Utils/Logger.js';
 
 class AccountController {
@@ -188,8 +187,9 @@ class AccountController {
     // 🚨 ATUALIZA TIMESTAMP GLOBAL para rate limiting
     AccountController.globalRateLimit.lastApiCall = Date.now();
 
-    const Accounts = await Account.getAccount(strategy, apiKey, apiSecret);
-    const Collateral = await Capital.getCollateral(strategy, apiKey, apiSecret);
+    const exchangeManager = ExchangeManager.createFromConfig({ apiKey, apiSecret, strategy });
+    const Accounts = await exchangeManager.getAccount(apiKey, apiSecret);
+    const Collateral = await exchangeManager.getCapital(apiKey, apiSecret);
 
     // ✅ FALHA SEGURA: Se não conseguir dados da conta, tenta usar cache antigo
     if (!Accounts || !Collateral) {
