@@ -2314,7 +2314,7 @@ class OrderController {
         if (!limitResult || limitResult.error) {
           const errorMessage = limitResult && limitResult.error ? limitResult.error.toString() : '';
 
-          if (errorMessage.includes('Order would immediately match and take')) {
+          if (errorMessage.includes('Order would immediately match and take') && config.orderExecutionMode !== "LIMIT") {
             Logger.info(
               `🟡 [INFO] ${market}: A ordem com desconto (LIMIT) não foi aceita porque o mercado se moveu muito rápido.`
             );
@@ -2332,6 +2332,9 @@ class OrderController {
           } else {
             Logger.error(
               `❌ [${botName}] ${market}: Falha ao enviar ordem LIMIT: ${limitResult && limitResult.error}`
+            );
+            Logger.info(
+              `[${botName}] ${market}: Skip de ordem de fallback a Mercado. Bot configurado para ordens a Limit.`
             );
             return { error: limitResult && limitResult.error };
           }

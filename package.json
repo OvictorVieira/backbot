@@ -18,6 +18,7 @@
     "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
     "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
     "update": "node update.js",
+    "update:force": "node update.js --force",
     "test:update": "node test-update-check.js",
     "migrate-orders": "node migrate-orders.js",
     "format": "prettier --write .",

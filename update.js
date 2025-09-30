@@ -18,14 +18,12 @@ const ZIP_URL = `https://github.com/${GITHUB_REPO}/archive/refs/heads/main.zip`;
 // APENAS dados/configurações do usuário - NÃO código do GitHub!
 // - .env: configurações do usuário
 // - src/persistence/: banco de dados do bot (NUNCA remover)
-// - persistence/: backup alternativo do banco
 // - node_modules/: dependências instaladas
 // - .update_flag: flag de controle de atualização
 // - .git/: repositório Git (NUNCA remover)
 const PRESERVE_ITEMS = [
   '.env',
   'src/persistence/',
-  'persistence/',
   'node_modules/',
   '.update_flag',
   '.git/',
@@ -46,14 +44,23 @@ class AutoUpdater {
     console.log('📦 Repositório:', GITHUB_REPO);
     console.log('🛡️ Preservando dados do usuário...');
 
+    // Verifica se foi passado --force ou -f
+    const forceUpdate = process.argv.includes('--force') || process.argv.includes('-f');
+
     try {
       // Verifica se as dependências estão OK antes de começar
       await this.checkDependencies();
-      // Verifica se atualização já foi executada recentemente
-      if (await this.checkRecentUpdate()) {
+
+      // Verifica se atualização já foi executada recentemente (a menos que seja --force)
+      if (!forceUpdate && await this.checkRecentUpdate()) {
         console.log('⏸️ Atualização já foi executada recentemente (últimas 24h)');
-        console.log('💡 Para forçar atualização, delete o arquivo .update_flag');
+        console.log('💡 Para forçar atualização, use: npm run update -- --force');
+        console.log('💡 Ou delete o arquivo .update_flag');
         return;
+      }
+
+      if (forceUpdate) {
+        console.log('⚡ Modo FORCE ativado - ignorando verificação de atualização recente');
       }
 
       // Cria flag de atualização
@@ -113,6 +120,12 @@ class AutoUpdater {
 
       if (await fs.pathExists(sourcePath)) {
         const destPath = path.join(this.backupDir, item);
+
+        // IMPORTANTE: Para src/persistence/, garantir que criamos a estrutura correta
+        if (item === 'src/persistence/') {
+          await fs.ensureDir(path.dirname(destPath));
+        }
+
         await fs.copy(sourcePath, destPath);
         console.log(`  ✅ Backup: ${item}`);
       } else {
@@ -171,6 +184,7 @@ class AutoUpdater {
       path.basename(this.backupDir),
       path.basename(this.tempDir),
       'node_modules',
+      'src', // CRÍTICO: Preservar src/ aqui para que updateSrcDirectory() possa tratá-lo
     ];
 
     // Remove arquivos antigos (exceto os preservados)
@@ -226,7 +240,7 @@ class AutoUpdater {
       const sourcePath = path.join(this.extractedDir, file);
       const destPath = path.join(__dirname, file);
 
-      // Se for o diretório src/, precisa de tratamento especial para preservar persistence/
+      // Se for o diretório src/, precisa de tratamento especial para preservar src/persistence/
       if (file === 'src') {
         await this.updateSrcDirectory(sourcePath, destPath);
       } else {
@@ -278,6 +292,19 @@ class AutoUpdater {
     const backupFiles = await fs.readdir(this.backupDir);
 
     for (const file of backupFiles) {
+      // CRÍTICO: NÃO restaurar src/ pois já foi tratado especificamente em updateSrcDirectory()
+      // Se restaurarmos aqui, vamos sobrescrever o novo código do GitHub!
+      if (file === 'src') {
+        console.log(`  ⏭️ Pulando: ${file} (já tratado em updateSrcDirectory)`);
+        continue;
+      }
+
+      // CRÍTICO: NÃO restaurar temp_persistence pois é apenas um backup temporário
+      if (file === 'temp_persistence') {
+        console.log(`  ⏭️ Pulando: ${file} (backup temporário - já restaurado)`);
+        continue;
+      }
+
       const sourcePath = path.join(this.backupDir, file);
       const destPath = path.join(__dirname, file);
 
@@ -340,6 +367,10 @@ class AutoUpdater {
     console.log('   npm run start:bot # Bot individual');
     console.log('');
     console.log('📋 Verifique o CHANGELOG.md para ver as novidades');
+    console.log('');
+    console.log('💡 Comandos úteis:');
+    console.log('   npm run update           # Atualizar (com verificação de 24h)');
+    console.log('   npm run update -- --force # Forçar atualização (ignorar 24h)');
 
     // NÃO reinicia automaticamente para evitar loops infinitos
     // O usuário deve iniciar manualmente conforme necessário

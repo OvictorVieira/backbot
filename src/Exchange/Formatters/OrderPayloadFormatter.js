@@ -89,7 +89,21 @@ class OrderPayloadFormatter {
    * @returns {string} Preço formatado como string
    */
   formatPrice(price, decimals) {
-    return parseFloat(price).toFixed(decimals);
+    if (price === null || price === undefined) {
+      throw new Error('Preço não pode ser nulo ou indefinido.');
+    }
+
+    const priceAsString = String(price);
+
+    const sanitizedPrice = priceAsString.replace(/[^0-9.]/g, '');
+
+    const parsedPrice = parseFloat(sanitizedPrice);
+
+    if (isNaN(parsedPrice)) {
+      throw new Error(`Valor de preço inválido fornecido: "${price}"`);
+    }
+
+    return parsedPrice.toFixed(decimals);
   }
 
   /**
@@ -100,7 +114,21 @@ class OrderPayloadFormatter {
    * @returns {string} Quantidade formatada como string
    */
   formatQuantity(quantity, decimals) {
-    return parseFloat(quantity).toFixed(decimals);
+    if (quantity === null || quantity === undefined) {
+      throw new Error('Quantidade não pode ser nulo ou indefinido.');
+    }
+
+    const quantityAsString = String(quantity);
+
+    const sanitizedQuantity = quantityAsString.replace(/[^0-9.]/g, '');
+
+    const parsedQuantity = parseFloat(sanitizedQuantity);
+
+    if (isNaN(parsedQuantity)) {
+      throw new Error(`Valor de quantidade inválido fornecido: "${parsedQuantity}"`);
+    }
+
+    return parsedQuantity.toFixed(decimals);
   }
 
   /**
