@@ -446,7 +446,7 @@ export class BackpackExchange extends BaseExchange {
   async getPositions(apiKey, apiSecret) {
     try {
       Logger.debug(`[BackpackExchange] Obtendo posições...`);
-      const positions = await Futures.getPositions(null, apiKey, apiSecret);
+      const positions = await Futures.getOpenPositions(apiKey, apiSecret);
       return positions || [];
     } catch (error) {
       Logger.error(`[BackpackExchange] Erro ao obter posições: ${error.message}`);
@@ -557,7 +557,7 @@ export class BackpackExchange extends BaseExchange {
   async getFuturesPositions(apiKey, apiSecret) {
     try {
       Logger.debug(`[BackpackExchange] Obtendo posições de futuros...`);
-      const positions = await Futures.getPositions(null, apiKey, apiSecret);
+      const positions = await Futures.getOpenPositions(apiKey, apiSecret);
       return positions || [];
     } catch (error) {
       Logger.error(`[BackpackExchange] Erro ao obter posições de futuros: ${error.message}`);
