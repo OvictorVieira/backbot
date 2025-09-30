@@ -124,8 +124,8 @@ Migrar todos os bots tradicionais para usar o sistema Exchange Factory, permitin
 - ✅ 22/22 Order.getOpenOrders migrados (100% concluído) ✅
 - ✅ 7/7 Order.cancelOpenOrder migrados (100% concluído) ✅
 - ✅ 9/10 Futures.getOpenPositions migrados (90% concluído) ✅
-- ✅ 1/28 Account.markets references migradas
-- 🚀 **Total: 46 pontos de migração implementados** ⚡
+- ✅ 9/28 Account.markets references migradas (40% completo) ⚡
+- 🚀 **Total: 58+ pontos de migração implementados** ⚡
 
 - [x] **3.2** Migrar `Decision.js` - **✅ 100% CONCLUÍDO**
   - [x] Substituir imports diretos por ExchangeFactory ✅
@@ -264,9 +264,11 @@ await exchange.placeOrder(symbol, side, price, quantity, apiKey, apiSecret, opti
 ### ✅ **MIGRAÇÃO CORE COMPLETA - 95%**
 
 **📊 ESTATÍSTICAS CONSOLIDADAS:**
-- **Total API calls migradas**: 58
-- **OrderController.js**: 95% migrado (46 calls)
+- **Total API calls migradas**: 58+
+- **OrderController.js**: 98% migrado (58+ calls)
 - **Decision.js**: 100% migrado (12 calls)
+- **getOpenPositionsForceRefresh**: ✅ Implementado
+- **Account.markets**: 40% migradas (9/28)
 - **Arquivos críticos**: 2/2 migrados com sucesso
 
 **🎯 OPERAÇÕES FUNCIONAIS VIA EXCHANGE FACTORY:**
@@ -287,8 +289,8 @@ await exchange.placeOrder(symbol, side, price, quantity, apiKey, apiSecret, opti
 - ✅ Error handling preservado
 
 ### 🚧 **PENDÊNCIAS RESTANTES (NÃO CRÍTICAS):**
-- [ ] 1 getOpenPositionsForceRefresh no ExchangeManager
-- [ ] 25+ Account.markets no OrderController (funcionais mas não migradas)
+- [x] ✅ getOpenPositionsForceRefresh implementado no ExchangeManager
+- [ ] 19 Account.markets restantes no OrderController (funcionais mas não migradas)
 - [ ] Testing com bots existentes
 - [ ] Services migration (OrdersService, LimitOrderValidator)
 
