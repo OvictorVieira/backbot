@@ -251,6 +251,16 @@ export class BaseExchange {
   }
 
   /**
+   * Obtém posições de futuros com force refresh (bypass cache)
+   * @param {string} apiKey - API Key para autenticação.
+   * @param {string} apiSecret - API Secret para autenticação.
+   * @returns {Array} Lista de posições de futuros atualizada
+   */
+  async getFuturesPositionsForceRefresh(apiKey, apiSecret) {
+    throw new Error('O método getFuturesPositionsForceRefresh deve ser implementado pela subclasse.');
+  }
+
+  /**
    * Obtém balanço de futuros
    * @param {string} apiKey - API Key para autenticação.
    * @param {string} apiSecret - API Secret para autenticação.

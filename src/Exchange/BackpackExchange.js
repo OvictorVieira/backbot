@@ -565,6 +565,17 @@ export class BackpackExchange extends BaseExchange {
     }
   }
 
+  async getFuturesPositionsForceRefresh(apiKey, apiSecret) {
+    try {
+      Logger.debug(`[BackpackExchange] Obtendo posições de futuros com force refresh...`);
+      const positions = await Futures.getOpenPositionsForceRefresh(apiKey, apiSecret);
+      return positions || [];
+    } catch (error) {
+      Logger.error(`[BackpackExchange] Erro ao obter posições de futuros (force refresh): ${error.message}`);
+      throw error;
+    }
+  }
+
   async getFuturesBalance(apiKey, apiSecret) {
     try {
       Logger.debug(`[BackpackExchange] Obtendo balanço de futuros...`);

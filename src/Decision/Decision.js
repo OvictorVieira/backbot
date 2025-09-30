@@ -418,7 +418,7 @@ class Decision {
       );
       // 🔧 MIGRAÇÃO: Usa ExchangeManager - TODO: Implementar getOpenPositionsForceRefresh
       const exchangeManager = this.getExchangeManager({ apiKey, apiSecret });
-      const exchangePositions = await Futures.getOpenPositionsForceRefresh(apiKey, apiSecret); // TODO: await exchangeManager.getOpenPositionsForceRefresh(apiKey, apiSecret);
+      const exchangePositions = await exchangeManager.getFuturesPositionsForceRefresh(apiKey, apiSecret);
 
       // Filtra apenas posições que realmente têm quantidade (evita posições "fantasma")
       const activePositions = exchangePositions.filter(

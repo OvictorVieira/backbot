@@ -112,6 +112,10 @@ export class ExchangeManager {
     return this.exchange.getFuturesPositions(apiKey, apiSecret);
   }
 
+  async getFuturesPositionsForceRefresh(apiKey, apiSecret) {
+    return this.exchange.getFuturesPositionsForceRefresh(apiKey, apiSecret);
+  }
+
   async getFuturesBalance(apiKey, apiSecret) {
     return this.exchange.getFuturesBalance(apiKey, apiSecret);
   }

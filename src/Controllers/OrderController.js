@@ -1381,17 +1381,21 @@ class OrderController {
     const Account = account || (await AccountController.get(configWithSymbol));
 
     // Log detalhado para debug
+    // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+    const exchangeManager = OrderController.getExchangeManager(config || {});
+    const allMarkets = await exchangeManager.getMarkets();
+
     Logger.debug(
-      `🔍 [FORCE_CLOSE] Procurando market ${position.symbol} entre ${Account.markets?.length || 0} disponíveis`
+      `🔍 [FORCE_CLOSE] Procurando market ${position.symbol} entre ${allMarkets?.length || 0} disponíveis`
     );
 
-    let market = Account.markets.find(el => {
+    let market = allMarkets.find(el => {
       return el.symbol === position.symbol;
     });
 
     // Se não encontrou, tenta uma busca case-insensitive
     if (!market) {
-      const marketCaseInsensitive = Account.markets.find(el => {
+      const marketCaseInsensitive = allMarkets.find(el => {
         return el.symbol.toLowerCase() === position.symbol.toLowerCase();
       });
       if (marketCaseInsensitive) {
@@ -1405,7 +1409,7 @@ class OrderController {
     // Verifica se o market foi encontrado
     if (!market) {
       Logger.error(
-        `❌ [FORCE_CLOSE] Market não encontrado para ${position.symbol}. Markets disponíveis: ${Account.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`
+        `❌ [FORCE_CLOSE] Market não encontrado para ${position.symbol}. Markets disponíveis: ${allMarkets?.map(m => m.symbol).join(', ') || 'nenhum'}`
       );
       throw new Error(`Market não encontrado para ${position.symbol}`);
     }
@@ -3510,7 +3514,7 @@ class OrderController {
       // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
       const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
       const positions = forceRefresh
-        ? await Futures.getOpenPositionsForceRefresh(apiKey, apiSecret) // TODO: Implementar no ExchangeManager
+        ? await exchangeManager.getFuturesPositionsForceRefresh(apiKey, apiSecret)
         : await exchangeManager.getFuturesPositions(apiKey, apiSecret);
 
       // 🚨 VALIDAÇÃO CRÍTICA: Verifica se positions é um array válido
