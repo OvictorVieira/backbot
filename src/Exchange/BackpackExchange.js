@@ -605,7 +605,7 @@ export class BackpackExchange extends BaseExchange {
   async getOpenOrdersForSymbol(symbol, apiKey, apiSecret) {
     try {
       Logger.debug(`[BackpackExchange] Obtendo ordens abertas para ${symbol}...`);
-      const openOrders = await this.orderClient.getOpenOrders(symbol, apiKey, apiSecret);
+      const openOrders = await this.orderClient.getOpenOrders(symbol, 'PERP', apiKey, apiSecret);
       return openOrders || [];
     } catch (error) {
       Logger.error(`[BackpackExchange] Erro ao obter ordens abertas: ${error.message}`);
