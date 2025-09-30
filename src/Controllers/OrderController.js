@@ -1506,14 +1506,17 @@ class OrderController {
     try {
       // Se account não foi fornecido, obtém da API
       const Account = account || (await AccountController.get(config));
-      const market = Account.markets.find(el => {
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+      const exchangeManager = OrderController.getExchangeManager(config || {});
+      const allMarkets = await exchangeManager.getMarkets();
+      const market = allMarkets.find(el => {
         return el.symbol === position.symbol;
       });
 
       // Verifica se o market foi encontrado
       if (!market) {
         Logger.error(
-          `❌ [TAKE_PARTIAL] Market não encontrado para ${position.symbol}. Markets disponíveis: ${Account.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`
+          `❌ [TAKE_PARTIAL] Market não encontrado para ${position.symbol}. Markets disponíveis: ${allMarkets?.map(m => m.symbol).join(', ') || 'nenhum'}`
         );
         throw new Error(`Market não encontrado para ${position.symbol}`);
       }
@@ -1634,14 +1637,17 @@ class OrderController {
     try {
       // Se account não foi fornecido, obtém da API
       const Account = account || (await AccountController.get(config));
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+      const exchangeManager = OrderController.getExchangeManager(config || {});
+      const allMarkets = await exchangeManager.getMarkets();
 
-      let market = Account.markets.find(el => {
+      let market = allMarkets.find(el => {
         return el.symbol === position.symbol;
       });
 
       // Se não encontrou, tenta uma busca case-insensitive
       if (!market) {
-        const marketCaseInsensitive = Account.markets.find(el => {
+        const marketCaseInsensitive = allMarkets.find(el => {
           return el.symbol.toLowerCase() === position.symbol.toLowerCase();
         });
         if (marketCaseInsensitive) {
@@ -1655,7 +1661,7 @@ class OrderController {
       // Verifica se o market foi encontrado
       if (!market) {
         Logger.error(
-          `❌ [TP_LIMIT] Market não encontrado para ${position.symbol}. Markets disponíveis: ${Account.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`
+          `❌ [TP_LIMIT] Market não encontrado para ${position.symbol}. Markets disponíveis: ${allMarkets?.map(m => m.symbol).join(', ') || 'nenhum'}`
         );
         throw new Error(`Market não encontrado para ${position.symbol}`);
       }
@@ -1748,20 +1754,23 @@ class OrderController {
     try {
       // Se account não foi fornecido, obtém da API
       const Account = account || (await AccountController.get(config));
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+      const exchangeManager = OrderController.getExchangeManager(config || {});
+      const allMarkets = await exchangeManager.getMarkets();
 
       // Log detalhado para debug
       Logger.info(`🔍 [CLOSE_PARTIAL] Procurando market para ${position.symbol}`);
       Logger.info(
-        `🔍 [CLOSE_PARTIAL] Total de markets disponíveis: ${Account.markets?.length || 0}`
+        `🔍 [CLOSE_PARTIAL] Total de markets disponíveis: ${allMarkets?.length || 0}`
       );
 
-      let market = Account.markets.find(el => {
+      let market = allMarkets.find(el => {
         return el.symbol === position.symbol;
       });
 
       // Se não encontrou, tenta uma busca case-insensitive
       if (!market) {
-        const marketCaseInsensitive = Account.markets.find(el => {
+        const marketCaseInsensitive = allMarkets.find(el => {
           return el.symbol.toLowerCase() === position.symbol.toLowerCase();
         });
         if (marketCaseInsensitive) {
@@ -1775,7 +1784,7 @@ class OrderController {
       // Verifica se o market foi encontrado
       if (!market) {
         Logger.error(
-          `❌ [CLOSE_PARTIAL] Market não encontrado para ${position.symbol}. Markets disponíveis: ${Account.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`
+          `❌ [CLOSE_PARTIAL] Market não encontrado para ${position.symbol}. Markets disponíveis: ${allMarkets?.map(m => m.symbol).join(', ') || 'nenhum'}`
         );
         throw new Error(`Market não encontrado para ${position.symbol}`);
       }
@@ -1904,7 +1913,10 @@ class OrderController {
         return null;
       }
 
-      const marketInfo = Account.markets.find(m => m.symbol === market);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+      const exchangeManager = OrderController.getExchangeManager(config || {});
+      const allMarkets = await exchangeManager.getMarkets();
+      const marketInfo = allMarkets.find(m => m.symbol === market);
       const currentPrice = parseFloat(candles[candles.length - 1].close);
 
       // Cria dados para análise
@@ -3020,7 +3032,10 @@ class OrderController {
       throw new Error('Dados da conta indisponíveis - não é possível criar stop loss');
     }
 
-    const find = Account.markets.find(el => el.symbol === symbol);
+    // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+    const exchangeManager = OrderController.getExchangeManager(config || {});
+    const allMarkets = await exchangeManager.getMarkets();
+    const find = allMarkets.find(el => el.symbol === symbol);
 
     if (!find) throw new Error(`Symbol ${symbol} not found in account data`);
 
