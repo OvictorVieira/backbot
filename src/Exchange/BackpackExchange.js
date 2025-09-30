@@ -27,6 +27,11 @@ export class BackpackExchange extends BaseExchange {
       sharedWebSocketInstance = new BackpackWebSocket();
     }
     this.wsClient = sharedWebSocketInstance;
+
+    // Configuração específica da Backpack - Market Type padrão para Perpetuals
+    // Este parâmetro é específico da Backpack e não deve "vazar" para outras exchanges
+    // Outras exchanges podem usar valores diferentes ou não ter este conceito
+    this.defaultMarketType = 'PERP';
   }
 
   async connectWebSocket(callbacks) {
@@ -605,7 +610,8 @@ export class BackpackExchange extends BaseExchange {
   async getOpenOrdersForSymbol(symbol, apiKey, apiSecret) {
     try {
       Logger.debug(`[BackpackExchange] Obtendo ordens abertas para ${symbol}...`);
-      const openOrders = await this.orderClient.getOpenOrders(symbol, 'PERP', apiKey, apiSecret);
+      // Usa marketType padrão da Backpack internamente
+      const openOrders = await this.orderClient.getOpenOrders(symbol, this.defaultMarketType, apiKey, apiSecret);
       return openOrders || [];
     } catch (error) {
       Logger.error(`[BackpackExchange] Erro ao obter ordens abertas: ${error.message}`);
