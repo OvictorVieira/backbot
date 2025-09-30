@@ -1270,7 +1270,9 @@ class OrderController {
       const apiSecret = config.apiSecret;
 
       // Obtém ordens abertas para o símbolo
-      const openOrders = await Order.getOpenOrders(symbol, 'PERP', apiKey, apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const openOrders = await exchangeManager.getOpenOrdersForSymbol(symbol, apiKey, apiSecret);
 
       if (!openOrders || openOrders.length === 0) {
         return true;
@@ -1311,7 +1313,8 @@ class OrderController {
 
       // Cancela apenas as ordens de entrada pendentes específicas
       const cancelPromises = pendingEntryOrders.map(async order => {
-        const cancelResult = await Order.cancelOpenOrder(
+        // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+        const cancelResult = await exchangeManager.cancelOpenOrder(
           symbol,
           order.id,
           order.clientId,
@@ -2368,9 +2371,10 @@ class OrderController {
         await new Promise(r => setTimeout(r, 3000));
 
         try {
-          const openOrders = await Order.getOpenOrders(
+          // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+          const exchangeManager = OrderController.getExchangeManager(config);
+          const openOrders = await exchangeManager.getOpenOrdersForSymbol(
             market,
-            'PERP',
             config.apiKey,
             config.apiSecret
           );
@@ -2433,9 +2437,10 @@ class OrderController {
         await new Promise(r => setTimeout(r, 1000));
 
         try {
-          const openOrders = await Order.getOpenOrders(
+          // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+          const exchangeManager = OrderController.getExchangeManager(config);
+          const openOrders = await exchangeManager.getOpenOrdersForSymbol(
             market,
-            'PERP',
             config.apiKey,
             config.apiSecret
           );
@@ -2530,7 +2535,9 @@ class OrderController {
             `🔄 [${strategyNameToUse}] ${market}: Tentativa ${cancelAttempts}/${maxCancelAttempts} de cancelamento...`
           );
 
-          await Order.cancelOpenOrder(
+          // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+          const exchangeManager = OrderController.getExchangeManager(config);
+          await exchangeManager.cancelOpenOrder(
             market,
             limitResult.id,
             null,
@@ -2697,7 +2704,9 @@ class OrderController {
         );
       }
 
-      const marketResult = await Order.executeOrder(marketBody, config.apiKey, config.apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+      const exchangeManager = OrderController.getExchangeManager(config);
+      const marketResult = await exchangeManager.executeOrder(marketBody, config.apiKey, config.apiSecret);
       if (marketResult && !marketResult.error) {
         // Calcula slippage real
         const executionPrice = parseFloat(
@@ -2858,7 +2867,9 @@ class OrderController {
       throw new Error('API_KEY e API_SECRET são obrigatórios - deve ser passado da config do bot');
     }
 
-    const orders = await Order.getOpenOrders(market, 'PERP', config.apiKey, config.apiSecret);
+    // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+    const exchangeManager = OrderController.getExchangeManager(config);
+    const orders = await exchangeManager.getOpenOrdersForSymbol(market, config.apiKey, config.apiSecret);
 
     if (!orders || orders.length === 0) {
       return [];
@@ -2905,7 +2916,9 @@ class OrderController {
    * @returns {Array} - Lista de ordens de entrada
    */
   async getRecentEntryOrders(market) {
-    const orders = await Order.getOpenOrders(market);
+    // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+    const exchangeManager = OrderController.getExchangeManager({ symbol: market });
+    const orders = await exchangeManager.getOpenOrdersForSymbol(market, null, null);
 
     if (!orders || orders.length === 0) {
       return [];
@@ -2958,7 +2971,9 @@ class OrderController {
   }
 
   async getAllOrdersSchedule(markets_open) {
-    const orders = await Order.getOpenOrders();
+    // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+    const exchangeManager = OrderController.getExchangeManager({});
+    const orders = await exchangeManager.getOpenOrdersForSymbol(null, null, null);
     const orderShorted = orders.sort(
       (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
     );
@@ -3047,7 +3062,9 @@ class OrderController {
       clientId: await OrderController.generateUniqueOrderId(config),
     };
 
-    const orderResult = await Order.executeOrder(body, config?.apiKey, config?.apiSecret);
+    // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+    const exchangeManager = OrderController.getExchangeManager(config);
+    const orderResult = await exchangeManager.executeOrder(body, config?.apiKey, config?.apiSecret);
 
     if (orderResult && orderResult.id) {
       Logger.debug(
@@ -3248,7 +3265,9 @@ class OrderController {
           `🔄 [${botName}] ${position.symbol}: Criando stop loss - Trigger Price: $${stopLossPrice.toFixed(6)}`
         );
 
-        const stopResult = await Order.executeOrder(stopBody, config?.apiKey, config?.apiSecret);
+        // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+        const exchangeManager = OrderController.getExchangeManager(config);
+        const stopResult = await exchangeManager.executeOrder(stopBody, config?.apiKey, config?.apiSecret);
 
         if (stopResult && !stopResult.error) {
           Logger.info(
@@ -3479,9 +3498,11 @@ class OrderController {
   ) {
     try {
       // Se forceRefresh for true, força busca na exchange (usado quando há suspeita de dados stale)
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
       const positions = forceRefresh
-        ? await Futures.getOpenPositionsForceRefresh(apiKey, apiSecret)
-        : await Futures.getOpenPositions(apiKey, apiSecret);
+        ? await Futures.getOpenPositionsForceRefresh(apiKey, apiSecret) // TODO: Implementar no ExchangeManager
+        : await exchangeManager.getFuturesPositions(apiKey, apiSecret);
 
       // 🚨 VALIDAÇÃO CRÍTICA: Verifica se positions é um array válido
       if (!Array.isArray(positions)) {
@@ -3754,7 +3775,9 @@ class OrderController {
       }
 
       // 6. Envia ordens para a corretora
-      const stopLossResult = await Order.executeOrder(
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+      const exchangeManager = OrderController.getExchangeManager(config);
+      const stopLossResult = await exchangeManager.executeOrder(
         stopLossBody,
         config?.apiKey,
         config?.apiSecret
@@ -3762,7 +3785,8 @@ class OrderController {
       let takeProfitResult = null;
 
       if (takeProfitBody) {
-        takeProfitResult = await Order.executeOrder(
+        // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+        takeProfitResult = await exchangeManager.executeOrder(
           takeProfitBody,
           config?.apiKey,
           config?.apiSecret
@@ -3850,7 +3874,9 @@ class OrderController {
       await new Promise(resolve => setTimeout(resolve, 2000));
 
       // Busca posições abertas
-      const positions = await Futures.getOpenPositions(config?.apiKey, config?.apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
+      const exchangeManager = OrderController.getExchangeManager(config);
+      const positions = await exchangeManager.getFuturesPositions(config?.apiKey, config?.apiSecret);
       const position = positions?.find(
         p => p.symbol === market && Math.abs(Number(p.netQuantity)) > 0
       );
@@ -3945,7 +3971,9 @@ class OrderController {
       const apiSecret = config.apiSecret;
 
       // Busca ordens abertas para o símbolo
-      const openOrders = await Order.getOpenOrders(symbol, 'PERP', apiKey, apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const openOrders = await exchangeManager.getOpenOrdersForSymbol(symbol, apiKey, apiSecret);
 
       if (!openOrders || openOrders.length === 0) {
         return true;
@@ -3978,7 +4006,9 @@ class OrderController {
 
       // Cancela todas as ordens de segurança
       const cancelPromises = failsafeOrders.map(async order => {
-        const cancelResult = await Order.cancelOpenOrder(
+        // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+        const exchangeManager = OrderController.getExchangeManager(config);
+        const cancelResult = await exchangeManager.cancelOpenOrder(
           symbol,
           order.id,
           order.clientId,
@@ -4048,7 +4078,9 @@ class OrderController {
       const apiSecret = config.apiSecret;
 
       // Busca ordens abertas para o símbolo
-      const openOrders = await Order.getOpenOrders(symbol, 'PERP', apiKey, apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const openOrders = await exchangeManager.getOpenOrdersForSymbol(symbol, apiKey, apiSecret);
 
       if (!openOrders || openOrders.length === 0) {
         return { hasStopLoss: false, hasTakeProfit: false, orders: [] };
@@ -4102,7 +4134,9 @@ class OrderController {
       const apiSecret = config.apiSecret;
 
       // Busca posições abertas
-      const positions = await Futures.getOpenPositions(apiKey, apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const positions = await exchangeManager.getFuturesPositions(apiKey, apiSecret);
 
       if (!positions || positions.length === 0) {
         return { checked: 0, recreated: 0 };
@@ -4203,7 +4237,9 @@ class OrderController {
       }
 
       // Busca posições abertas
-      const positions = (await Futures.getOpenPositions(apiKey, apiSecret)) || [];
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const positions = (await exchangeManager.getFuturesPositions(apiKey, apiSecret)) || [];
 
       if (positions.length === 0) {
         return;
@@ -4341,7 +4377,9 @@ class OrderController {
       const apiKey = config.apiKey;
       const apiSecret = config.apiSecret;
 
-      const existingOrders = await Order.getOpenOrders(symbol, 'PERP', apiKey, apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const existingOrders = await exchangeManager.getOpenOrdersForSymbol(symbol, apiKey, apiSecret);
 
       Logger.debug(
         `🔍 [STOP_LOSS_CHECK] ${symbol}: Encontradas ${existingOrders?.length || 0} ordens abertas`
@@ -4506,7 +4544,9 @@ class OrderController {
 
       Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] Iniciando verificação de ordens órfãs`);
 
-      const positionsResult = await Futures.getOpenPositions(apiKey, apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const positionsResult = await exchangeManager.getFuturesPositions(apiKey, apiSecret);
       const positions = Array.isArray(positionsResult) ? positionsResult : [];
       Logger.debug(
         `🧹 [${config.botName}][ORPHAN_MONITOR] Encontradas ${positions.length} posições abertas`
@@ -4574,7 +4614,9 @@ class OrderController {
             await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
           }
 
-          const openOrders = await Order.getOpenOrders(symbol, 'PERP', apiKey, apiSecret);
+          // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const openOrders = await exchangeManager.getOpenOrdersForSymbol(symbol, apiKey, apiSecret);
 
           if (!openOrders || openOrders.length === 0) {
             Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Nenhuma ordem aberta`);
@@ -4668,7 +4710,9 @@ class OrderController {
                   `🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Tentando cancelar ordem órfã ${orderId}`
                 );
 
-                const cancelResult = await Order.cancelOpenOrder(
+                // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+                const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+                const cancelResult = await exchangeManager.cancelOpenOrder(
                   symbol,
                   orderId,
                   null,
@@ -4821,7 +4865,9 @@ class OrderController {
       );
 
       // 1. Busca TODAS as ordens abertas na corretora (sem especificar símbolo)
-      const allOpenOrders = (await Order.getOpenOrders(null, 'PERP', apiKey, apiSecret)) || [];
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const allOpenOrders = (await exchangeManager.getOpenOrdersForSymbol(null, apiKey, apiSecret)) || [];
       Logger.debug(
         `🔍 [${config.botName}][SCAN_CLEANUP] Encontradas ${allOpenOrders.length} ordens abertas na corretora`
       );
@@ -4832,7 +4878,9 @@ class OrderController {
       }
 
       // 2. Busca TODAS as posições abertas na corretora
-      const positions = (await Futures.getOpenPositions(apiKey, apiSecret)) || [];
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const positions = (await exchangeManager.getFuturesPositions(apiKey, apiSecret)) || [];
       const activeSymbols = new Set();
 
       // 🚨 VALIDAÇÃO CRÍTICA: Verifica se positions é iterável
@@ -4956,7 +5004,9 @@ class OrderController {
             `🧹 [${config.botName}][SCAN_CLEANUP] Cancelando ordem órfã ${order.symbol} - ID: ${order.id}`
           );
 
-          const cancelResult = await Order.cancelOpenOrder(
+          // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+          const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+          const cancelResult = await exchangeManager.cancelOpenOrder(
             order.symbol,
             order.id,
             null,
@@ -5054,7 +5104,9 @@ class OrderController {
         `🧹 [${config.botName}][FORCE_CLEANUP] Iniciando limpeza agressiva de ordens órfãs`
       );
 
-      const positions = (await Futures.getOpenPositions(apiKey, apiSecret)) || [];
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const positions = (await exchangeManager.getFuturesPositions(apiKey, apiSecret)) || [];
       const activeSymbols = positions
         .filter(p => Math.abs(Number(p.netQuantity)) > 0)
         .map(p => p.symbol);
@@ -5087,7 +5139,9 @@ class OrderController {
           // Delay para evitar rate limit
           await new Promise(resolve => setTimeout(resolve, 300));
 
-          const openOrders = await Order.getOpenOrders(symbol, 'PERP', apiKey, apiSecret);
+          // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const openOrders = await exchangeManager.getOpenOrdersForSymbol(symbol, apiKey, apiSecret);
 
           if (!openOrders || openOrders.length === 0) {
             continue;
@@ -5112,7 +5166,9 @@ class OrderController {
             try {
               await new Promise(resolve => setTimeout(resolve, 150)); // Delay menor para limpeza rápida
 
-              const cancelResult = await Order.cancelOpenOrder(
+              // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+              const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+              const cancelResult = await exchangeManager.cancelOpenOrder(
                 symbol,
                 order.id,
                 null,
@@ -5388,7 +5444,9 @@ class OrderController {
       });
 
       try {
-        const response = await Order.executeOrder(orderBody, config.apiKey, config.apiSecret);
+        // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+        const exchangeManager = OrderController.getExchangeManager(config);
+        const response = await exchangeManager.executeOrder(orderBody, config.apiKey, config.apiSecret);
 
         if (response && (response.orderId || response.id)) {
           const orderId = response.orderId || response.id;
@@ -5539,7 +5597,9 @@ class OrderController {
       const apiSecret = config.apiSecret;
 
       // Busca ordens abertas para o símbolo
-      const openOrders = await Order.getOpenOrders(symbol, 'PERP', apiKey, apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+      const openOrders = await exchangeManager.getOpenOrdersForSymbol(symbol, apiKey, apiSecret);
 
       if (!openOrders || openOrders.length === 0) {
         return false;
@@ -5583,7 +5643,9 @@ class OrderController {
         return;
       }
 
-      const positions = await Futures.getOpenPositions(config.apiKey, config.apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
+      const exchangeManager = OrderController.getExchangeManager(config);
+      const positions = await exchangeManager.getFuturesPositions(config.apiKey, config.apiSecret);
       if (!positions || positions.length === 0) {
         return;
       }
@@ -5696,7 +5758,9 @@ class OrderController {
 
       let currentPositions;
       try {
-        currentPositions = await Futures.getOpenPositions(config.apiKey, config.apiSecret);
+        // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
+        const exchangeManager = OrderController.getExchangeManager(config);
+        currentPositions = await exchangeManager.getFuturesPositions(config.apiKey, config.apiSecret);
       } catch (error) {
         Logger.error(`❌ [TP_CREATE] ${symbol}: Erro ao obter posições:`, error.message);
         return { success: false, message: `Erro ao obter posições: ${error.message}` };

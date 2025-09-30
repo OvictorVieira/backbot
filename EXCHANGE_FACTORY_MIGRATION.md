@@ -118,10 +118,12 @@ Migrar todos os bots tradicionais para usar o sistema Exchange Factory, permitin
 
 **📊 Progresso OrderController:**
 - ✅ Imports migrados para ExchangeManager
-- ✅ 2/9 Order.executeOrder migrados
-- ⏳ 15 Order.getOpenOrders pendentes
-- ⏳ 11 Futures.getOpenPositions pendentes
-- ⏳ 5+ Account.markets references pendentes
+- ✅ **9/15 chamadas críticas migradas** ⚡
+- ✅ 5/9 Order.executeOrder migrados (55% concluído)
+- ✅ 2/15 Order.getOpenOrders migrados
+- ✅ 2/11 Futures.getOpenPositions migrados
+- ✅ 1/28 Account.markets references migradas
+- 🚀 **Total: 11 pontos de migração implementados**
 
 - [ ] **3.2** Migrar `Decision.js`
   - [ ] Substituir imports diretos por ExchangeFactory
