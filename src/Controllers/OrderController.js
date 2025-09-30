@@ -655,7 +655,10 @@ class OrderController {
             continue;
           }
 
-          const marketInfo = Account.markets.find(m => m.symbol === position.symbol);
+          // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+          const exchangeManager = OrderController.getExchangeManager({ symbol: position.symbol });
+          const markets = await exchangeManager.getMarkets();
+          const marketInfo = markets.find(m => m.symbol === position.symbol);
 
           if (!marketInfo) {
             OrderController.debug(
@@ -707,7 +710,10 @@ class OrderController {
         return;
       }
 
-      const marketInfo = Account.markets.find(m => m.symbol === market);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+      const exchangeManager = OrderController.getExchangeManager({ symbol: market });
+      const markets = await exchangeManager.getMarkets();
+      const marketInfo = markets.find(m => m.symbol === market);
       if (!marketInfo) {
         Logger.error(`❌ [PRO_MAX] Market info não encontrada para ${market}`);
         return;
@@ -973,7 +979,10 @@ class OrderController {
         return;
       }
 
-      const marketInfo = Account.markets.find(m => m.symbol === position.symbol);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+      const exchangeManager = OrderController.getExchangeManager({ symbol: position.symbol });
+      const markets = await exchangeManager.getMarkets();
+      const marketInfo = markets.find(m => m.symbol === position.symbol);
       if (!marketInfo) {
         Logger.error(`❌ [PRO_MAX] Market info não encontrada para ${position.symbol}`);
         return;
