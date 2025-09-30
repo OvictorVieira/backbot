@@ -8,6 +8,8 @@ import Futures from '../Backpack/Authenticated/Futures.js';
 import History from '../Backpack/Authenticated/History.js';
 import Trades from '../Backpack/Public/Trades.js';
 import Logger from '../Utils/Logger.js';
+import BackpackMarketFormatter from './Formatters/BackpackMarketFormatter.js';
+import BackpackOrderFormatter from './Formatters/BackpackOrderFormatter.js';
 
 /**
  * Implementação concreta da BaseExchange para a Backpack.
@@ -32,6 +34,10 @@ export class BackpackExchange extends BaseExchange {
     // Este parâmetro é específico da Backpack e não deve "vazar" para outras exchanges
     // Outras exchanges podem usar valores diferentes ou não ter este conceito
     this.defaultMarketType = 'PERP';
+
+    // Formatadores específicos para transformar dados entre formato padrão e Backpack
+    this.marketFormatter = new BackpackMarketFormatter();
+    this.orderFormatter = new BackpackOrderFormatter();
   }
 
   async connectWebSocket(callbacks) {
@@ -217,55 +223,44 @@ export class BackpackExchange extends BaseExchange {
       // Get market info for proper price formatting
       const marketInfo = await this.getMarketInfo(symbol, apiKey, apiSecret);
 
-      // Converte side padrão para formato Backpack
-      const backpackSide = side === 'BUY' ? 'Bid' : side === 'SELL' ? 'Ask' : side;
-
       // Determina tipo de ordem baseado nas opções ou presença de preço
-      const orderType = options.orderType || (price ? 'Limit' : 'Market');
+      const orderType = options.orderType || (price ? 'LIMIT' : 'MARKET');
 
-      // Use quantity as-is if it's already a string (from MarketFormatter)
-      // Otherwise convert to string with proper precision
-      const formattedQuantity = typeof quantity === 'string' ? quantity : quantity.toString();
-
-      // Constrói orderBody baseado no tipo de ordem
-      const orderBody = {
+      // Monta ordem no formato padrão da aplicação
+      const standardOrder = {
         symbol,
-        side: backpackSide,
-        orderType: orderType,
-        quantity: formattedQuantity,
-        timeInForce: options.timeInForce || (orderType === 'Market' ? 'IOC' : 'GTC'),
-        selfTradePrevention: 'RejectTaker',
-        clientId: options.clientId || null,
-        ...options,
+        side: side.toUpperCase(), // Garante formato padrão (BUY/SELL)
+        price: price || null,
+        quantity,
+        orderType: orderType.toUpperCase(), // Garante formato padrão (LIMIT/MARKET)
+        timeInForce: options.timeInForce,
+        postOnly: options.postOnly,
+        reduceOnly: options.reduceOnly,
+        clientId: options.clientId,
+        options, // Passa todas as opções extras
       };
 
-      // Só inclui preço e postOnly para ordens Limit
-      if (orderType === 'Limit' && price) {
-        // Format price using market info for correct decimal places
-        const formattedPrice = parseFloat(price).toFixed(marketInfo.decimal_price);
-        orderBody.price = formattedPrice;
-        orderBody.postOnly = options.postOnly !== undefined ? options.postOnly : true;
-      }
-
-      // Para market orders, não incluir postOnly (incompatível)
-      if (orderType === 'Market') {
-        delete orderBody.postOnly;
-      }
-
-      const priceInfo = orderType === 'Market' ? 'MARKET' : `@ ${orderBody.price}`;
       Logger.debug(
-        `[BackpackExchange] Criando ordem: ${symbol} ${backpackSide} ${formattedQuantity} ${priceInfo} (${orderType})`,
+        `[BackpackExchange] Formatando ordem para Backpack: ${symbol} ${side} ${quantity} @ ${price || 'MARKET'}`
+      );
+
+      // Usa o formatador para transformar do formato padrão para formato Backpack
+      const backpackPayload = this.orderFormatter.formatOrderPayload(standardOrder, marketInfo);
+
+      const priceInfo = backpackPayload.orderType === 'Market' ? 'MARKET' : `@ ${backpackPayload.price}`;
+      Logger.debug(
+        `[BackpackExchange] Enviando ordem: ${symbol} ${backpackPayload.side} ${backpackPayload.quantity} ${priceInfo} (${backpackPayload.orderType})`,
         {
-          clientId: orderBody.clientId,
-          orderType: orderType,
+          clientId: backpackPayload.clientId,
+          orderType: backpackPayload.orderType,
           timestamp: new Date().toISOString(),
         }
       );
 
-      const order = await this.orderClient.executeOrder(orderBody, apiKey, apiSecret);
+      const order = await this.orderClient.executeOrder(backpackPayload, apiKey, apiSecret);
 
       Logger.debug(`[BackpackExchange] Ordem colocada com sucesso: ${order.id || order.orderId}`, {
-        clientId: orderBody.clientId,
+        clientId: backpackPayload.clientId,
         orderResponse: order,
       });
       return order;
@@ -277,10 +272,22 @@ export class BackpackExchange extends BaseExchange {
 
   async cancelOrder(symbol, orderId, apiKey, apiSecret) {
     try {
-      const result = await this.orderClient.cancelOpenOrder(
+      // Monta payload no formato padrão
+      const standardCancel = {
         symbol,
         orderId,
-        null,
+        clientId: null,
+      };
+
+      Logger.debug(`[BackpackExchange] Formatando cancelamento para Backpack...`);
+
+      // Usa o formatador para garantir formato correto
+      const backpackPayload = this.orderFormatter.formatCancelOrderPayload(standardCancel);
+
+      const result = await this.orderClient.cancelOpenOrder(
+        backpackPayload.symbol,
+        backpackPayload.orderId,
+        backpackPayload.clientId,
         apiKey,
         apiSecret
       );
@@ -294,8 +301,23 @@ export class BackpackExchange extends BaseExchange {
 
   async cancelAllOpenOrders(symbol, apiKey, apiSecret) {
     try {
-      const result = await this.orderClient.cancelOpenOrders(symbol, null, apiKey, apiSecret);
-      Logger.info(`[BackpackExchange] Todas as ordens para ${symbol} foram canceladas.`);
+      // Monta payload no formato padrão
+      const standardCancelAll = {
+        symbol,
+      };
+
+      Logger.debug(`[BackpackExchange] Formatando cancelamento total para Backpack...`);
+
+      // Usa o formatador para garantir formato correto
+      const backpackPayload = this.orderFormatter.formatCancelAllOrdersPayload(standardCancelAll);
+
+      const result = await this.orderClient.cancelOpenOrders(
+        backpackPayload.symbol,
+        null,
+        apiKey,
+        apiSecret
+      );
+      Logger.info(`[BackpackExchange] Todas as ordens para ${symbol || 'ALL'} foram canceladas.`);
       return result;
     } catch (error) {
       Logger.error(`[BackpackExchange] Erro ao cancelar todas as ordens: ${error.message}`);
@@ -475,9 +497,16 @@ export class BackpackExchange extends BaseExchange {
    */
   async getMarkets() {
     try {
-      Logger.debug(`[BackpackExchange] Obtendo mercados...`);
-      const markets = await this.marketsClient.getMarkets();
-      return markets;
+      Logger.debug(`[BackpackExchange] Obtendo mercados da API...`);
+      const rawMarkets = await this.marketsClient.getMarkets();
+
+      Logger.debug(
+        `[BackpackExchange] Formatando ${rawMarkets.length} mercados para formato padrão...`
+      );
+      const formattedMarkets = this.marketFormatter.formatMarkets(rawMarkets);
+
+      Logger.debug(`[BackpackExchange] ✅ ${formattedMarkets.length} mercados prontos`);
+      return formattedMarkets;
     } catch (error) {
       Logger.error(`[BackpackExchange] Erro ao obter mercados: ${error.message}`);
       throw error;
@@ -562,8 +591,14 @@ export class BackpackExchange extends BaseExchange {
   async getFuturesPositions(apiKey, apiSecret) {
     try {
       Logger.debug(`[BackpackExchange] Obtendo posições de futuros...`);
-      const positions = await Futures.getOpenPositions(apiKey, apiSecret);
-      return positions || [];
+      const backpackPositions = await Futures.getOpenPositions(apiKey, apiSecret);
+
+      // Parse para formato padrão
+      const standardPositions = this.orderFormatter.parsePositionsResponse(
+        backpackPositions || []
+      );
+
+      return standardPositions;
     } catch (error) {
       Logger.error(`[BackpackExchange] Erro ao obter posições de futuros: ${error.message}`);
       throw error;
@@ -573,8 +608,14 @@ export class BackpackExchange extends BaseExchange {
   async getFuturesPositionsForceRefresh(apiKey, apiSecret) {
     try {
       Logger.debug(`[BackpackExchange] Obtendo posições de futuros com force refresh...`);
-      const positions = await Futures.getOpenPositionsForceRefresh(apiKey, apiSecret);
-      return positions || [];
+      const backpackPositions = await Futures.getOpenPositionsForceRefresh(apiKey, apiSecret);
+
+      // Parse para formato padrão
+      const standardPositions = this.orderFormatter.parsePositionsResponse(
+        backpackPositions || []
+      );
+
+      return standardPositions;
     } catch (error) {
       Logger.error(`[BackpackExchange] Erro ao obter posições de futuros (force refresh): ${error.message}`);
       throw error;

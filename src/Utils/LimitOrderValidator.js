@@ -1,6 +1,6 @@
 import Logger from './Logger.js';
 import BackpackWebSocket from '../Backpack/Public/WebSocket.js';
-import Order from '../Backpack/Authenticated/Order.js';
+import ExchangeManager from '../Exchange/ExchangeManager.js';
 
 /**
  * LimitOrderValidator - Sistema de validação e cancelamento automático de ordens LIMIT
@@ -337,8 +337,9 @@ class LimitOrderValidator {
         `🚫 [LIMIT_VALIDATOR] Cancelando ordem ${orderId} (${symbol}) por slippage alto...`
       );
 
-      // Cancela ordem na exchange (Order já é uma instância exportada)
-      const result = await Order.cancelOpenOrder(
+      // Cancela ordem na exchange via ExchangeManager
+      const exchangeManager = ExchangeManager.createFromConfig(botConfig);
+      const result = await exchangeManager.cancelOpenOrder(
         symbol,
         orderId,
         null,

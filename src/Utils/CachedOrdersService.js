@@ -3,7 +3,7 @@
  * Substitui chamadas diretas ao Order.js nos Controllers
  */
 
-import Order from '../Backpack/Authenticated/Order.js';
+import ExchangeManager from '../Exchange/ExchangeManager.js';
 import OrdersCache from './OrdersCache.js';
 import CacheInvalidator from './CacheInvalidator.js';
 import Logger from './Logger.js';
@@ -26,7 +26,8 @@ class CachedOrdersService {
     bypassCache = false
   ) {
     try {
-      const orders = await Order.getOpenOrders(symbol, marketType, apiKey, apiSecret, bypassCache);
+      const exchangeManager = ExchangeManager.create('backpack');
+      const orders = await exchangeManager.getOpenOrdersForSymbol(symbol, apiKey, apiSecret);
 
       // 🔒 VALIDAÇÃO CRÍTICA: Garante que o retorno é sempre um array iterável
       if (!orders || !Array.isArray(orders)) {
@@ -103,7 +104,8 @@ class CachedOrdersService {
    */
   static async createOrder(orderData, apiKey, apiSecret) {
     try {
-      const result = await Order.executeOrder(orderData, apiKey, apiSecret);
+      const exchangeManager = ExchangeManager.create('backpack');
+      const result = await exchangeManager.executeOrder(orderData, apiKey, apiSecret);
 
       // Cache já é invalidado automaticamente no executeOrder()
       Logger.debug(`✅ [CACHED_ORDERS_SERVICE] Ordem criada para ${orderData.symbol}`);
@@ -126,7 +128,8 @@ class CachedOrdersService {
    */
   static async cancelOrder(symbol, orderId, clientId, apiKey, apiSecret) {
     try {
-      const result = await Order.cancelOpenOrder(symbol, orderId, clientId, apiKey, apiSecret);
+      const exchangeManager = ExchangeManager.create('backpack');
+      const result = await exchangeManager.cancelOpenOrder(symbol, orderId, clientId, apiKey, apiSecret);
 
       // Cache já é invalidado automaticamente no cancelOpenOrder()
       Logger.debug(`✅ [CACHED_ORDERS_SERVICE] Ordem cancelada ${orderId} para ${symbol}`);

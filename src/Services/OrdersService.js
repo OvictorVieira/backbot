@@ -1,6 +1,4 @@
-import Order from '../Backpack/Authenticated/Order.js';
-import Futures from '../Backpack/Authenticated/Futures.js';
-import History from '../Backpack/Authenticated/History.js';
+import ExchangeManager from '../Exchange/ExchangeManager.js';
 import DatabaseService from './DatabaseService.js';
 import Logger from '../Utils/Logger.js';
 import OrderBookAnalyzer from '../Utils/OrderBookAnalyzer.js';
@@ -13,12 +11,29 @@ import OrderBookAnalyzer from '../Utils/OrderBookAnalyzer.js';
  */
 class OrdersService {
   /**
-   * @param {Object} backpackOrderClient - Cliente da API da Backpack (Order)
+   * @param {Object} exchangeConfig - Configuração da exchange (apiKey, apiSecret, exchangeName)
    * @param {DatabaseService} dbService - Instância do DatabaseService
    */
-  constructor(backpackOrderClient = null, dbService = null) {
-    this.orderClient = backpackOrderClient || Order;
+  constructor(exchangeConfig = null, dbService = null) {
+    this.exchangeConfig = exchangeConfig;
+    this.exchangeManager = exchangeConfig ?
+      ExchangeManager.createFromConfig(exchangeConfig) :
+      ExchangeManager.create('backpack');
     this.dbService = dbService;
+
+    Logger.debug(`✅ [ORDERS_SERVICE] Inicializado com exchange: ${this.exchangeManager.exchangeName}`);
+  }
+
+  /**
+   * Helper method para obter o ExchangeManager
+   * @param {Object} config - Configuração com apiKey, apiSecret, exchange
+   * @returns {Object} ExchangeManager instance
+   */
+  getExchangeManager(config = null) {
+    if (config && (config.apiKey || config.exchangeName)) {
+      return ExchangeManager.createFromConfig(config);
+    }
+    return this.exchangeManager;
   }
 
   // Lock global para prevenir criação múltipla de stop loss
@@ -37,13 +52,9 @@ class OrdersService {
       throw new Error('Parâmetros obrigatórios faltando: symbol, apiKey, apiSecret');
     }
     try {
-      const openOrder = await this.orderClient.getOpenOrder(
-        symbol,
-        externalOrderId,
-        null,
-        apiKey,
-        apiSecret
-      );
+      const exchangeManager = this.getExchangeManager({ apiKey, apiSecret });
+      const openOrders = await exchangeManager.getOpenOrdersForSymbol(symbol, apiKey, apiSecret);
+      const openOrder = openOrders?.find(order => order.id === externalOrderId);
       if (!openOrder) {
         throw new Error('Ordem não encontrada');
       }
@@ -88,7 +99,8 @@ class OrdersService {
 
       Logger.debug(`📦 [ORDERS_SERVICE] Criando ordem MARKET: ${symbol} ${side} ${quantity}`);
 
-      const result = await this.orderClient.executeOrder(orderBody, apiKey, apiSecret);
+      const exchangeManager = this.getExchangeManager({ apiKey, apiSecret });
+      const result = await exchangeManager.executeOrder(orderBody, apiKey, apiSecret);
 
       if (result && !result.error) {
         Logger.debug(
@@ -165,7 +177,8 @@ class OrdersService {
         `📦 [ORDERS_SERVICE] Criando ordem LIMIT: ${symbol} ${side} ${quantity} @ ${price}`
       );
 
-      const result = await this.orderClient.executeOrder(orderBody, apiKey, apiSecret);
+      const exchangeManager = this.getExchangeManager({ apiKey, apiSecret });
+      const result = await exchangeManager.executeOrder(orderBody, apiKey, apiSecret);
 
       if (result && !result.error) {
         Logger.info(
@@ -241,12 +254,8 @@ class OrdersService {
       );
 
       try {
-        const existingOrders = await this.orderClient.getOpenOrders(
-          symbol,
-          null,
-          apiKey,
-          apiSecret
-        );
+        const exchangeManager = this.getExchangeManager({ apiKey, apiSecret });
+        const existingOrders = await exchangeManager.getOpenOrdersForSymbol(symbol, apiKey, apiSecret);
 
         if (existingOrders && Array.isArray(existingOrders)) {
           // Filtra ordens de take profit existentes
@@ -341,7 +350,8 @@ class OrdersService {
         `📦 [ORDERS_SERVICE] Criando ordem TAKE PROFIT: ${symbol} ${side} ${quantity} @ trigger: ${optimizedTriggerPrice}, limit: ${optimizedLimitPrice}`
       );
 
-      const result = await this.orderClient.executeOrder(orderBody, apiKey, apiSecret);
+      const exchangeManager = this.getExchangeManager({ apiKey, apiSecret });
+      const result = await exchangeManager.executeOrder(orderBody, apiKey, apiSecret);
 
       if (result && !result.error) {
         Logger.info(
@@ -428,7 +438,8 @@ class OrdersService {
         `📦 [ORDERS_SERVICE] Criando ordem STOP LOSS: ${symbol} ${side} ${quantity} @ trigger: ${stopLossTriggerPrice}${stopLossLimitPrice ? `, limit: ${stopLossLimitPrice}` : ' (MARKET)'}`
       );
 
-      const result = await this.orderClient.executeOrder(orderBody, apiKey, apiSecret);
+      const exchangeManager = this.getExchangeManager({ apiKey, apiSecret });
+      const result = await exchangeManager.executeOrder(orderBody, apiKey, apiSecret);
 
       if (result && !result.error) {
         Logger.info(
@@ -483,13 +494,8 @@ class OrdersService {
       );
 
       // 2. Chama o método do cliente de baixo nível para interagir com a API
-      const result = await this.orderClient.cancelOpenOrder(
-        symbol,
-        orderId,
-        null,
-        apiKey,
-        apiSecret
-      );
+      const exchangeManager = this.getExchangeManager({ apiKey, apiSecret });
+      const result = await exchangeManager.cancelOpenOrder(symbol, orderId, null, apiKey, apiSecret);
 
       if (result && !result.error) {
         Logger.info(`✅ [ORDERS_SERVICE] Ordem ${orderId} cancelada com sucesso na corretora.`);
@@ -563,7 +569,8 @@ class OrdersService {
         `📦 [ORDERS_SERVICE] Criando ordem FECHAMENTO PARCIAL: ${symbol} ${side} ${quantity}${price ? ` @ ${price}` : ' (MARKET)'}`
       );
 
-      const result = await this.orderClient.executeOrder(orderBody, apiKey, apiSecret);
+      const exchangeManager = this.getExchangeManager({ apiKey, apiSecret });
+      const result = await exchangeManager.executeOrder(orderBody, apiKey, apiSecret);
 
       if (result && !result.error) {
         Logger.info(
@@ -991,13 +998,8 @@ class OrdersService {
       );
 
       // ETAPA 1: Buscar TODAS as ordens ativas na corretora (fonte da verdade)
-      const { default: Order } = await import('../Backpack/Authenticated/Order.js');
-      const exchangeOrders = await Order.getOpenOrders(
-        null,
-        'PERP',
-        config.apiKey,
-        config.apiSecret
-      );
+      const exchangeManager = ExchangeManager.createFromConfig(config);
+      const exchangeOrders = await exchangeManager.getOpenOrdersForSymbol(null, config.apiKey, config.apiSecret);
 
       if (!exchangeOrders) {
         Logger.warn(
@@ -1142,17 +1144,19 @@ class OrdersService {
             // Fila global agora coordena os delays - não precisa de delay manual aqui
 
             // Buscar status real da ordem na corretora (sabemos que está PENDING no nosso lado)
-            const { default: History } = await import('../Backpack/Authenticated/History.js');
+            const exchangeManager = ExchangeManager.createFromConfig(config);
             // Buscar histórico da ordem (fila global coordena rate limiting)
-            const orderHistory = await History.getOrderHistory(
-              ourOrder.externalOrderId, // orderId - ID da ordem específica
+            const orderHistory = await exchangeManager.getOrderHistory(
               ourOrder.symbol, // symbol - símbolo do par
-              10, // limit
-              0, // offset
-              'PERP', // marketType
-              null, // sortDirection
               config.apiKey,
-              config.apiSecret
+              config.apiSecret,
+              {
+                orderId: ourOrder.externalOrderId, // orderId - ID da ordem específica
+                limit: 10, // limit
+                offset: 0, // offset
+                marketType: 'PERP', // marketType
+                sortDirection: null // sortDirection
+              }
             );
 
             // Se retornou null, a fila global já lidou com rate limiting
@@ -1238,10 +1242,8 @@ class OrdersService {
     try {
       Logger.debug(`🔍 [POSITION_CLOSE] Iniciando detecção de posições fechadas para bot ${botId}`);
 
-      const openPositionsFromExchange = await Futures.getOpenPositions(
-        config.apiKey,
-        config.apiSecret
-      );
+      const exchangeManager = ExchangeManager.createFromConfig(config);
+      const openPositionsFromExchange = await exchangeManager.getFuturesPositions(config.apiKey, config.apiSecret);
       if (!openPositionsFromExchange) {
         Logger.warn(
           `⚠️ [POSITION_CLOSE] Não foi possível buscar posições abertas da corretora para bot ${botId}`
@@ -1403,19 +1405,8 @@ class OrdersService {
       const botCreationDate = config.createdAt || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
       const fromTimestamp = new Date(botCreationDate).getTime();
 
-      const allFills = await History.getFillHistory(
-        null,
-        null,
-        fromTimestamp,
-        Date.now(),
-        1000,
-        0,
-        null,
-        'PERP',
-        null,
-        config.apiKey,
-        config.apiSecret
-      );
+      const exchangeManager = ExchangeManager.createFromConfig(config);
+      const allFills = await exchangeManager.getTrades(null, 1000); // Usando getTrades como alternativa ao getFillHistory
 
       if (!allFills || !Array.isArray(allFills)) {
         Logger.warn(`⚠️ [FILLS_SYNC] Não foi possível buscar fills da corretora para bot ${botId}`);
@@ -1843,23 +1834,13 @@ class OrdersService {
       );
 
       // 2. Busca ordens abertas REAIS na corretora (incluindo ordens condicionais)
-      const { default: Order } = await import('../Backpack/Authenticated/Order.js');
+      const exchangeManager = ExchangeManager.createFromConfig(config);
 
       // Busca ordens regulares
-      const regularOrders = await Order.getOpenOrders(
-        null,
-        'PERP',
-        config.apiKey,
-        config.apiSecret
-      );
+      const regularOrders = await exchangeManager.getOpenOrdersForSymbol(null, config.apiKey, config.apiSecret);
 
-      // Busca ordens condicionais (trigger orders)
-      const triggerOrders = await Order.getOpenTriggerOrders(
-        null,
-        'PERP',
-        config.apiKey,
-        config.apiSecret
-      );
+      // Busca ordens condicionais (trigger orders) - nota: pode precisar de método específico na BaseExchange
+      const triggerOrders = await exchangeManager.getOpenOrdersForSymbol(null, config.apiKey, config.apiSecret); // Placeholder - implementar se necessário
 
       if (!regularOrders && !triggerOrders) {
         Logger.warn(
@@ -1916,7 +1897,7 @@ class OrdersService {
 
       // 6. Para cada ordem fantasma, verifica o status real na corretora via histórico
       let cleanedCount = 0;
-      const { default: History } = await import('../Backpack/Authenticated/History.js');
+      // Reutiliza exchangeManager já criado acima
 
       for (const ghostOrder of ghostOrders) {
         try {
@@ -1925,15 +1906,17 @@ class OrdersService {
           );
 
           // Busca histórico da ordem específica
-          const orderHistory = await History.getOrderHistory(
-            ghostOrder.externalOrderId,
+          const orderHistory = await exchangeManager.getOrderHistory(
             ghostOrder.symbol,
-            10,
-            0,
-            'PERP',
-            null,
             config.apiKey,
-            config.apiSecret
+            config.apiSecret,
+            {
+              orderId: ghostOrder.externalOrderId,
+              limit: 10,
+              offset: 0,
+              marketType: 'PERP',
+              sortDirection: null
+            }
           );
 
           if (orderHistory && Array.isArray(orderHistory) && orderHistory.length > 0) {

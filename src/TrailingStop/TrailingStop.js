@@ -1,4 +1,4 @@
-import Futures from '../Backpack/Authenticated/Futures.js';
+import ExchangeManager from '../Exchange/ExchangeManager.js';
 import OrderController from '../Controllers/OrderController.js';
 import { StopLossFactory } from '../Decision/Strategies/StopLossFactory.js';
 import PnlController from '../Controllers/PnlController.js';
@@ -902,7 +902,8 @@ class TrailingStop {
       const apiKey = config.apiKey;
       const apiSecret = config.apiSecret;
 
-      const positions = await Futures.getOpenPositions(apiKey, apiSecret);
+      const exchangeManager = ExchangeManager.createFromConfig({ apiKey, apiSecret });
+      const positions = await exchangeManager.getFuturesPositions(apiKey, apiSecret);
 
       // 🔧 CORREÇÃO: Filtra apenas posições realmente abertas (netQuantity > 0)
       const activePositions = positions
@@ -1342,7 +1343,8 @@ class TrailingStop {
       }
 
       // Busca todas as posições abertas na exchange
-      const openPositionsResult = await Futures.getOpenPositions(apiKey, apiSecret);
+      const exchangeManager = ExchangeManager.createFromConfig({ apiKey, apiSecret });
+      const openPositionsResult = await exchangeManager.getFuturesPositions(apiKey, apiSecret);
       const openPositions = Array.isArray(openPositionsResult) ? openPositionsResult : [];
       const openSymbols = new Set(openPositions.map(pos => pos.symbol));
 
@@ -1637,7 +1639,8 @@ class TrailingStop {
       }
 
       // Valida se a posição ainda existe na exchange
-      const exchangePositionsResult = await Futures.getOpenPositions(
+      const exchangeManager = ExchangeManager.createFromConfig(this.config);
+      const exchangePositionsResult = await exchangeManager.getFuturesPositions(
         this.config.apiKey,
         this.config.apiSecret
       );
@@ -2754,7 +2757,8 @@ class TrailingStop {
       const apiKey = this.config.apiKey;
       const apiSecret = this.config.apiSecret;
 
-      const positions = await Futures.getOpenPositions(apiKey, apiSecret);
+      const exchangeManager = ExchangeManager.createFromConfig({ apiKey, apiSecret });
+      const positions = await exchangeManager.getFuturesPositions(apiKey, apiSecret);
 
       if (!positions || !Array.isArray(positions) || positions.length === 0) {
         Logger.debug(`[TRAILING_STOP] Nenhuma posição encontrada ou positions não é array`);

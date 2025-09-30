@@ -464,8 +464,7 @@ class Decision {
       }
 
       // Verificação adicional: também verifica ordens abertas para evitar duplicatas
-      // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
-      const exchangeManager = this.getExchangeManager({ apiKey, apiSecret });
+      // 🔧 MIGRAÇÃO: Reutiliza ExchangeManager já criado acima
       const openOrders = await exchangeManager.getOpenOrdersForSymbol(null, apiKey, apiSecret);
       const marketsWithOpenOrders = openOrders ? openOrders.map(order => order.symbol) : [];
       const allClosedMarkets = [...new Set([...closed_markets, ...marketsWithOpenOrders])];
