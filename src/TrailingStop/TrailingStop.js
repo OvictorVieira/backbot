@@ -324,9 +324,44 @@ class TrailingStop {
           lastPrice: currentPrice.toString(),
         };
 
+        // 🚨 NOVA FUNCIONALIDADE: Verifica se deve fechar por SL/TP via WebSocket
+        const shouldClosePosition = await TrailingStop.checkPositionThresholds(
+          updatedPosition,
+          Account,
+          config
+        );
+
+        if (shouldClosePosition.shouldClose) {
+          Logger.info(
+            `🔥 [WS_AUTO_CLOSE] ${symbol}: Fechamento automático acionado via WebSocket - Razão: ${shouldClosePosition.reason}, PnL: ${shouldClosePosition.pnlPct?.toFixed(2)}%`
+          );
+
+          // Fecha a posição imediatamente a mercado
+          const closeResult = await TrailingStop.protectedForceClose(
+            updatedPosition,
+            Account,
+            config
+          );
+
+          if (closeResult.success) {
+            Logger.info(
+              `✅ [WS_AUTO_CLOSE] ${symbol}: Posição fechada com sucesso via WebSocket`
+            );
+            // Unsubscribe após fechamento bem-sucedido
+            await TrailingStop.unsubscribePositionReactive(symbol);
+          } else {
+            Logger.warn(
+              `⚠️ [WS_AUTO_CLOSE] ${symbol}: Falha ao fechar posição - ${closeResult.reason}`
+            );
+          }
+
+          return; // Não atualiza trailing stop se posição foi fechada
+        }
+
+        // Se não fechou, atualiza trailing stop normalmente
         await trailingStopInstance.updateTrailingStopForPosition(updatedPosition);
       } catch (error) {
-        Logger.error(`Sistema reativo ${symbol}: Erro:`, error.message);
+        Logger.error(`❌ [WS_REACTIVE] Sistema reativo ${symbol}: Erro:`, error.message);
       } finally {
         TrailingStop.reactiveProcessing.set(symbol, false);
       }
@@ -336,7 +371,7 @@ class TrailingStop {
       await TrailingStop.backpackWS.subscribeSymbol(symbol, priceUpdateCallback);
       return true;
     } catch (error) {
-      Logger.error(`Falha ao subscribe ${symbol}:`, error.message);
+      Logger.error(`❌ [WS_SUBSCRIBE] Falha ao subscribe ${symbol}:`, error.message);
       return false;
     }
   }
@@ -352,6 +387,101 @@ class TrailingStop {
       } catch (error) {
         Logger.error(`Falha ao unsubscribe ${symbol}:`, error.message);
       }
+    }
+  }
+
+  /**
+   * Verifica se a posição atingiu thresholds de SL/TP configurados
+   * e deve ser fechada automaticamente via WebSocket
+   *
+   * @param {object} position - Posição com preço atualizado via WebSocket
+   * @param {object} Account - Dados da conta (leverage, etc)
+   * @param {object} config - Configuração do bot (maxNegativePnlStopPct, minProfitPercentage)
+   * @returns {Promise<object>} { shouldClose: boolean, reason: string, pnlPct: number }
+   */
+  static async checkPositionThresholds(position, Account, config) {
+    try {
+      const symbol = position.symbol;
+
+      // Valida dados obrigatórios
+      if (!Account || !Account.leverage) {
+        Logger.error(
+          `❌ [WS_THRESHOLD] ${symbol}: Dados da conta inválidos - leverage ausente`
+        );
+        return { shouldClose: false, reason: 'invalid_account_data' };
+      }
+
+      // Calcula PnL atual
+      const { pnl, pnlPct } = TrailingStop.calculatePnL(position, Account);
+
+      if (isNaN(pnlPct) || !isFinite(pnlPct)) {
+        Logger.error(`❌ [WS_THRESHOLD] ${symbol}: PnL inválido - ${pnlPct}`);
+        return { shouldClose: false, reason: 'invalid_pnl' };
+      }
+
+      // 1️⃣ VERIFICA STOP LOSS (maxNegativePnlStopPct)
+      const maxNegativePnlStopPct = parseFloat(config?.maxNegativePnlStopPct || -10);
+
+      if (
+        maxNegativePnlStopPct !== undefined &&
+        maxNegativePnlStopPct !== null &&
+        !isNaN(maxNegativePnlStopPct)
+      ) {
+        if (pnlPct <= maxNegativePnlStopPct) {
+          Logger.warn(
+            `🚨 [WS_THRESHOLD] ${symbol}: STOP LOSS atingido via WebSocket - PnL: ${pnlPct.toFixed(3)}% <= Limite: ${maxNegativePnlStopPct.toFixed(3)}%`
+          );
+          return {
+            shouldClose: true,
+            reason: `STOP_LOSS (${pnlPct.toFixed(2)}% <= ${maxNegativePnlStopPct.toFixed(2)}%)`,
+            pnlPct: pnlPct,
+            pnl: pnl,
+          };
+        }
+      }
+
+      // 2️⃣ VERIFICA TAKE PROFIT (minProfitPercentage)
+      const minProfitPercentage = parseFloat(config?.minProfitPercentage || 0.5);
+
+      if (
+        minProfitPercentage !== undefined &&
+        minProfitPercentage !== null &&
+        !isNaN(minProfitPercentage)
+      ) {
+        // Calcula taxas estimadas
+        const notional = parseFloat(position.netExposureNotional || position.notional || 0);
+
+        // Usa taxas padrão se não disponível (maker + taker)
+        const makerFee = 0.0002; // 0.02%
+        const takerFee = 0.0005; // 0.05%
+        const totalFeeRate = makerFee + takerFee;
+        const totalFees = notional * totalFeeRate;
+
+        // PnL líquido após taxas
+        const netProfit = pnl - totalFees;
+        const netProfitPct = notional > 0 ? (netProfit / notional) * 100 : 0;
+
+        if (netProfitPct >= minProfitPercentage) {
+          Logger.info(
+            `💰 [WS_THRESHOLD] ${symbol}: TAKE PROFIT atingido via WebSocket - PnL Líquido: ${netProfitPct.toFixed(3)}% >= Mínimo: ${minProfitPercentage.toFixed(3)}%`
+          );
+          return {
+            shouldClose: true,
+            reason: `TAKE_PROFIT (${netProfitPct.toFixed(2)}% >= ${minProfitPercentage.toFixed(2)}%)`,
+            pnlPct: netProfitPct,
+            pnl: netProfit,
+          };
+        }
+      }
+
+      // Nenhum threshold atingido
+      return { shouldClose: false, reason: 'thresholds_not_reached', pnlPct: pnlPct };
+    } catch (error) {
+      Logger.error(
+        `❌ [WS_THRESHOLD] Erro ao verificar thresholds para ${position.symbol}:`,
+        error.message
+      );
+      return { shouldClose: false, reason: 'error', error: error.message };
     }
   }
 
