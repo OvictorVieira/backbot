@@ -344,9 +344,10 @@ class TrailingStop {
         );
 
         if (shouldClosePosition.shouldClose) {
-          const pnlPctFormatted = (shouldClosePosition.pnlPct != null && !isNaN(shouldClosePosition.pnlPct))
-            ? `${shouldClosePosition.pnlPct.toFixed(2)}%`
-            : 'N/A';
+          const pnlPctFormatted =
+            shouldClosePosition.pnlPct != null && !isNaN(shouldClosePosition.pnlPct)
+              ? `${shouldClosePosition.pnlPct.toFixed(2)}%`
+              : 'N/A';
           Logger.info(
             `🔥 [WS_AUTO_CLOSE] ${symbol}: Fechamento automático acionado via WebSocket - Razão: ${shouldClosePosition.reason}, PnL: ${pnlPctFormatted}`
           );
@@ -450,11 +451,15 @@ class TrailingStop {
       // 🔒 Valida todos os valores antes de usar .toFixed()
       const markPrice = parseFloat(position.markPrice || position.lastPrice);
       const entryPrice = parseFloat(position.entryPrice);
-      const markPriceStr = (markPrice && !isNaN(markPrice)) ? `$${markPrice.toFixed(4)}` : 'N/A';
-      const entryPriceStr = (entryPrice && !isNaN(entryPrice)) ? `$${entryPrice.toFixed(4)}` : 'N/A';
-      const pnlStr = (pnl != null && !isNaN(pnl)) ? `$${pnl.toFixed(2)}` : 'N/A';
-      const pnlPctStr = (pnlPct != null && !isNaN(pnlPct) && Number.isFinite(pnlPct)) ? `${pnlPct.toFixed(2)}%` : 'N/A';
-      const costBasisStr = (costBasis != null && !isNaN(costBasis)) ? `$${costBasis.toFixed(2)}` : 'N/A';
+      const markPriceStr = markPrice && !isNaN(markPrice) ? `$${markPrice.toFixed(4)}` : 'N/A';
+      const entryPriceStr = entryPrice && !isNaN(entryPrice) ? `$${entryPrice.toFixed(4)}` : 'N/A';
+      const pnlStr = pnl != null && !isNaN(pnl) ? `$${pnl.toFixed(2)}` : 'N/A';
+      const pnlPctStr =
+        pnlPct != null && !isNaN(pnlPct) && Number.isFinite(pnlPct)
+          ? `${pnlPct.toFixed(2)}%`
+          : 'N/A';
+      const costBasisStr =
+        costBasis != null && !isNaN(costBasis) ? `$${costBasis.toFixed(2)}` : 'N/A';
 
       Logger.debug(
         `📊 [WS_THRESHOLD] ${symbol} - Preço atual: ${markPriceStr} | ` +
@@ -475,13 +480,19 @@ class TrailingStop {
         !isNaN(maxNegativePnlStopPct)
       ) {
         if (pnlPct <= maxNegativePnlStopPct) {
-          const pnlPctStr = (pnlPct != null && !isNaN(pnlPct)) ? pnlPct.toFixed(3) : 'N/A';
-          const slStr = (maxNegativePnlStopPct != null && !isNaN(maxNegativePnlStopPct)) ? maxNegativePnlStopPct.toFixed(3) : 'N/A';
+          const pnlPctStr = pnlPct != null && !isNaN(pnlPct) ? pnlPct.toFixed(3) : 'N/A';
+          const slStr =
+            maxNegativePnlStopPct != null && !isNaN(maxNegativePnlStopPct)
+              ? maxNegativePnlStopPct.toFixed(3)
+              : 'N/A';
           Logger.warn(
             `🚨 [WS_THRESHOLD] ${symbol}: STOP LOSS atingido via WebSocket - PnL: ${pnlPctStr}% <= Limite: ${slStr}%`
           );
-          const reasonPnl = (pnlPct != null && !isNaN(pnlPct)) ? pnlPct.toFixed(2) : 'N/A';
-          const reasonSl = (maxNegativePnlStopPct != null && !isNaN(maxNegativePnlStopPct)) ? maxNegativePnlStopPct.toFixed(2) : 'N/A';
+          const reasonPnl = pnlPct != null && !isNaN(pnlPct) ? pnlPct.toFixed(2) : 'N/A';
+          const reasonSl =
+            maxNegativePnlStopPct != null && !isNaN(maxNegativePnlStopPct)
+              ? maxNegativePnlStopPct.toFixed(2)
+              : 'N/A';
           return {
             shouldClose: true,
             reason: `STOP_LOSS (${reasonPnl}% <= ${reasonSl}%)`,
@@ -513,13 +524,21 @@ class TrailingStop {
         const netProfitPct = notional > 0 ? (netProfit / notional) * 100 : 0;
 
         if (netProfitPct >= minProfitPercentage) {
-          const netProfitPctStr = (netProfitPct != null && !isNaN(netProfitPct)) ? netProfitPct.toFixed(3) : 'N/A';
-          const tpStr = (minProfitPercentage != null && !isNaN(minProfitPercentage)) ? minProfitPercentage.toFixed(3) : 'N/A';
+          const netProfitPctStr =
+            netProfitPct != null && !isNaN(netProfitPct) ? netProfitPct.toFixed(3) : 'N/A';
+          const tpStr =
+            minProfitPercentage != null && !isNaN(minProfitPercentage)
+              ? minProfitPercentage.toFixed(3)
+              : 'N/A';
           Logger.info(
             `💰 [WS_THRESHOLD] ${symbol}: TAKE PROFIT atingido via WebSocket - PnL Líquido: ${netProfitPctStr}% >= Mínimo: ${tpStr}%`
           );
-          const reasonPnl = (netProfitPct != null && !isNaN(netProfitPct)) ? netProfitPct.toFixed(2) : 'N/A';
-          const reasonTp = (minProfitPercentage != null && !isNaN(minProfitPercentage)) ? minProfitPercentage.toFixed(2) : 'N/A';
+          const reasonPnl =
+            netProfitPct != null && !isNaN(netProfitPct) ? netProfitPct.toFixed(2) : 'N/A';
+          const reasonTp =
+            minProfitPercentage != null && !isNaN(minProfitPercentage)
+              ? minProfitPercentage.toFixed(2)
+              : 'N/A';
           return {
             shouldClose: true,
             reason: `TAKE_PROFIT (${reasonPnl}% >= ${reasonTp}%)`,

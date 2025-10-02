@@ -144,7 +144,7 @@ class PositionUtils {
         const result = isLong ? triggerValue < entryPrice : triggerValue > entryPrice;
         Logger.debug(
           `🔍 [SL_FILTER] ${symbol}: Trigger ${triggerValue.toFixed(4)} vs Entry ${entryPrice.toFixed(4)} ` +
-          `(${isLong ? 'LONG' : 'SHORT'}) = ${result ? '✅ SL' : '❌ não é SL'}`
+            `(${isLong ? 'LONG' : 'SHORT'}) = ${result ? '✅ SL' : '❌ não é SL'}`
         );
         return result;
       },
@@ -168,7 +168,7 @@ class PositionUtils {
         const result = isLong ? triggerValue > entryPrice : triggerValue < entryPrice;
         Logger.debug(
           `🔍 [TP_FILTER] ${symbol}: Trigger ${triggerValue.toFixed(4)} vs Entry ${entryPrice.toFixed(4)} ` +
-          `(${isLong ? 'LONG' : 'SHORT'}) = ${result ? '✅ TP' : '❌ não é TP'}`
+            `(${isLong ? 'LONG' : 'SHORT'}) = ${result ? '✅ TP' : '❌ não é TP'}`
         );
         return result;
       },
@@ -187,7 +187,7 @@ class PositionUtils {
     try {
       const stopLossOrders = await this.getStopLossOrders(symbol, position, config);
 
-      Logger.debug (
+      Logger.debug(
         `🔍 [STOP_LOSS_UTILS] ${symbol}: hasStopLoss encontrou ${stopLossOrders.length} ordens de stop loss`
       );
 

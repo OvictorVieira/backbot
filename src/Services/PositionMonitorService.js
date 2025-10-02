@@ -85,9 +85,7 @@ class PositionMonitorService {
       const { position, botConfig } = cached;
 
       if (!currentPrice || isNaN(currentPrice) || currentPrice <= 0) {
-        Logger.error(
-          `❌ [POSITION_MONITOR] ${symbol}: Current price inválido: ${currentPrice}`
-        );
+        Logger.error(`❌ [POSITION_MONITOR] ${symbol}: Current price inválido: ${currentPrice}`);
         return;
       }
 
@@ -102,9 +100,7 @@ class PositionMonitorService {
       }
 
       if (!rawLeverage || isNaN(rawLeverage) || rawLeverage <= 0) {
-        Logger.error(
-          `❌ [POSITION_MONITOR] ${symbol}: Leverage inválido: ${rawLeverage}`
-        );
+        Logger.error(`❌ [POSITION_MONITOR] ${symbol}: Leverage inválido: ${rawLeverage}`);
         return;
       }
 
@@ -121,8 +117,8 @@ class PositionMonitorService {
       // Calcula PnL% considerando alavancagem
       const priceDiff = currentPrice - entryPrice;
       const pnlPct = isLong
-        ? ((priceDiff / entryPrice) * 100 * leverage)
-        : ((-priceDiff / entryPrice) * 100 * leverage);
+        ? (priceDiff / entryPrice) * 100 * leverage
+        : (-priceDiff / entryPrice) * 100 * leverage;
 
       const maxNegativePnlStopPct = parseFloat(botConfig.maxNegativePnlStopPct);
       const minProfitPercentage = parseFloat(botConfig.minProfitPercentage);
@@ -148,21 +144,17 @@ class PositionMonitorService {
           ? `${pnlPct.toFixed(2)}%`
           : 'N/A';
       const slStr =
-        !isNaN(maxNegativePnlStopPct) &&
-        Number.isFinite(maxNegativePnlStopPct)
+        !isNaN(maxNegativePnlStopPct) && Number.isFinite(maxNegativePnlStopPct)
           ? `${maxNegativePnlStopPct.toFixed(2)}%`
           : 'N/A';
       const tpStr =
-        !isNaN(minProfitPercentage) &&
-        Number.isFinite(minProfitPercentage)
+        !isNaN(minProfitPercentage) && Number.isFinite(minProfitPercentage)
           ? `${minProfitPercentage.toFixed(2)}%`
           : 'N/A';
 
       // 🔒 VALIDAÇÃO ADICIONAL: Garante que pnlPct é válido antes de verificar thresholds
       if (isNaN(pnlPct) || !Number.isFinite(pnlPct)) {
-        Logger.error(
-          `❌ [POSITION_MONITOR] ${symbol}: PnL% inválido calculado: ${pnlPct}`
-        );
+        Logger.error(`❌ [POSITION_MONITOR] ${symbol}: PnL% inválido calculado: ${pnlPct}`);
         return;
       }
 
@@ -182,10 +174,7 @@ class PositionMonitorService {
         return;
       }
     } catch (error) {
-      Logger.error(
-        `❌ [WS_THRESHOLD] Erro ao verificar thresholds para ${symbol}:`,
-        error.message
-      );
+      Logger.error(`❌ [WS_THRESHOLD] Erro ao verificar thresholds para ${symbol}:`, error.message);
       Logger.error(`❌ [WS_THRESHOLD] Stack trace:`, error.stack);
     }
   }
@@ -202,7 +191,7 @@ class PositionMonitorService {
   async closePosition(symbol, position, botConfig, reason, pnlPct) {
     try {
       // 🔒 Valida pnlPct antes de usar .toFixed()
-      const pnlPctFormatted = (pnlPct != null && !isNaN(pnlPct)) ? pnlPct.toFixed(2) : 'N/A';
+      const pnlPctFormatted = pnlPct != null && !isNaN(pnlPct) ? pnlPct.toFixed(2) : 'N/A';
 
       // 🔒 VALIDAÇÃO CRÍTICA: Verifica se credenciais estão presentes
       if (!botConfig.apiKey || !botConfig.apiSecret) {
@@ -219,7 +208,8 @@ class PositionMonitorService {
       const closeResult = await OrderController.forceClose(position, botConfig);
 
       // Verifica se houve sucesso (result.id existe e não há erro)
-      const hasSuccess = closeResult && (closeResult.id || closeResult.orderId) && !closeResult.error;
+      const hasSuccess =
+        closeResult && (closeResult.id || closeResult.orderId) && !closeResult.error;
 
       if (hasSuccess) {
         Logger.info(
@@ -249,10 +239,7 @@ class PositionMonitorService {
 
       return closeResult;
     } catch (error) {
-      Logger.error(
-        `❌ [WS_AUTO_CLOSE] Erro ao fechar posição ${symbol}:`,
-        error.message
-      );
+      Logger.error(`❌ [WS_AUTO_CLOSE] Erro ao fechar posição ${symbol}:`, error.message);
 
       // 🔒 Se erro indica que posição não existe, remove do cache
       const errorMsg = error.message.toLowerCase();

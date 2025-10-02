@@ -545,7 +545,9 @@ export class DefaultStrategy extends BaseStrategy {
       // Se Heikin Ashi está configurado E não há reversão confirmada, rejeita sinal
       if (!heikinAshiValidation.hasReversal) {
         if (isBTCAnalysis) {
-          Logger.debug(`   ❌ BTC: Sem reversão Heikin Ashi confirmada - ${heikinAshiValidation.reason}`);
+          Logger.debug(
+            `   ❌ BTC: Sem reversão Heikin Ashi confirmada - ${heikinAshiValidation.reason}`
+          );
         }
         return {
           hasSignal: false,
