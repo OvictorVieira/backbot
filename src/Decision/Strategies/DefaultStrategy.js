@@ -1523,7 +1523,7 @@ export class DefaultStrategy extends BaseStrategy {
     const velaPattern = `[${beforePreviousDirection}] → [${previousDirection}] → [${currentDirection}]`;
 
     // Log para TODOS os símbolos (não só BTC)
-    Logger.debug(
+    Logger.info(
       `📊 [HEIKIN_ASHI] ${symbol}: Velas: ${velaPattern} | ` +
         `Reversão: ${hasChanged ? changeType : 'NENHUMA'} | Tendência: ${confirmedTrend}`
     );
