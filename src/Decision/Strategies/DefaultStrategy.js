@@ -536,6 +536,30 @@ export class DefaultStrategy extends BaseStrategy {
       return this.analyzeSignalsByConfluence(data, options);
     }
 
+    // 🔧 HEIKIN ASHI FILTER - Valida reversão de 3 velas ANTES de outros indicadores
+    // Se habilitado, SÓ permite sinais quando houver reversão confirmada
+    let heikinAshiValidation = null;
+    if (config.enableHeikinAshiFilter !== false) {
+      heikinAshiValidation = this.validateHeikinAshiReversal(data, { isBTCAnalysis, config });
+
+      // Se Heikin Ashi está configurado E não há reversão confirmada, rejeita sinal
+      if (!heikinAshiValidation.hasReversal) {
+        if (isBTCAnalysis) {
+          Logger.debug(`   ❌ BTC: Sem reversão Heikin Ashi confirmada - ${heikinAshiValidation.reason}`);
+        }
+        return {
+          hasSignal: false,
+          signalType: 'Rejeitado - Sem reversão Heikin Ashi',
+          analysisDetails: [heikinAshiValidation.reason],
+        };
+      }
+
+      // Se há reversão, continua com os outros indicadores
+      if (isBTCAnalysis) {
+        Logger.debug(`   ✅ BTC: Reversão Heikin Ashi confirmada - ${heikinAshiValidation.reason}`);
+      }
+    }
+
     // COMPORTAMENTO ORIGINAL: Sistema de prioridade (primeiro que der sinal ganha)
     const rsi = data.rsi;
     const stoch = data.stoch;
@@ -970,6 +994,35 @@ export class DefaultStrategy extends BaseStrategy {
       analysisDetails.push(`ADX: ${(adx.adx || 0).toFixed(1)} (já definido anteriormente)`);
     } else {
       analysisDetails.push(`ADX: Não disponível`);
+    }
+
+    // 🔧 VALIDAÇÃO FINAL: Se Heikin Ashi está habilitado E um sinal foi detectado,
+    // valida que a direção do Heikin Ashi está alinhada com o sinal
+    if (heikinAshiValidation && heikinAshiValidation.hasReversal && (isLong || isShort)) {
+      const heikinDirection = heikinAshiValidation.direction; // 'LONG' ou 'SHORT'
+      const signalDirection = isLong ? 'LONG' : 'SHORT';
+
+      // Se as direções NÃO estão alinhadas, rejeita o sinal
+      if (heikinDirection !== signalDirection) {
+        if (isBTCAnalysis) {
+          Logger.debug(
+            `   ❌ BTC: Heikin Ashi (${heikinDirection}) NÃO está alinhado com sinal (${signalDirection})`
+          );
+        }
+        return {
+          hasSignal: false,
+          signalType: `Rejeitado - Heikin Ashi ${heikinDirection} vs Sinal ${signalDirection}`,
+          analysisDetails: [
+            ...analysisDetails,
+            `Heikin Ashi indica ${heikinDirection}, mas sinal é ${signalDirection}`,
+          ],
+        };
+      }
+
+      // Se estão alinhados, adiciona aos detalhes
+      analysisDetails.push(
+        `Heikin Ashi: ${heikinAshiValidation.reason} (alinhado com ${signalDirection})`
+      );
     }
 
     return {
@@ -1430,6 +1483,71 @@ export class DefaultStrategy extends BaseStrategy {
       mfPrev,
       direction,
       isStrong,
+    };
+  }
+
+  /**
+   * Valida se há reversão confirmada no Heikin Ashi (3 velas)
+   * @param {object} data - Dados de mercado com indicadores
+   * @param {object} options - Opções: { isBTCAnalysis, config }
+   * @returns {object} - Resultado da validação
+   */
+  validateHeikinAshiReversal(data, options = {}) {
+    const { isBTCAnalysis = false, config = {} } = options;
+
+    const heikinAshi = data.heikinAshi;
+    const symbol = data.market?.symbol || 'UNKNOWN';
+
+    // Verifica se o Heikin Ashi está disponível
+    if (!heikinAshi || !heikinAshi.trendChange) {
+      return {
+        hasReversal: false,
+        reason: 'Heikin Ashi não disponível nos dados',
+        details: 'Indicador Heikin Ashi não encontrado',
+      };
+    }
+
+    // Extrai dados da reversão
+    const hasChanged = heikinAshi.trendChange.hasChanged;
+    const changeType = heikinAshi.trendChange.changeType; // 'BULLISH' ou 'BEARISH'
+    const confirmedTrend = heikinAshi.trendChange.confirmedTrend; // 'UP', 'DOWN', 'NEUTRAL'
+
+    // Extrai direções das 3 velas
+    const currentDirection = heikinAshi.current?.direction || 'NEUTRAL';
+    const previousDirection = heikinAshi.previous?.direction || 'NEUTRAL';
+    const beforePreviousDirection = heikinAshi.beforePrevious?.direction || 'NEUTRAL';
+
+    // Log do padrão das 3 velas
+    const velaPattern = `[${beforePreviousDirection}] → [${previousDirection}] → [${currentDirection}]`;
+
+    // Log para TODOS os símbolos (não só BTC)
+    Logger.debug(
+      `📊 [HEIKIN_ASHI] ${symbol}: Velas: ${velaPattern} | ` +
+        `Reversão: ${hasChanged ? changeType : 'NENHUMA'} | Tendência: ${confirmedTrend}`
+    );
+
+    // Se NÃO há reversão confirmada, rejeita
+    if (!hasChanged) {
+      return {
+        hasReversal: false,
+        reason: `Sem reversão confirmada - Velas: ${velaPattern}`,
+        details: `Padrão atual não representa reversão de 3 velas`,
+        velaPattern,
+        confirmedTrend,
+      };
+    }
+
+    // Se há reversão, valida que está na direção correta
+    // BULLISH: [DOWN] → [UP] → [UP] = Permite LONG
+    // BEARISH: [UP] → [DOWN] → [DOWN] = Permite SHORT
+    return {
+      hasReversal: true,
+      direction: changeType === 'BULLISH' ? 'LONG' : 'SHORT',
+      reason: `Reversão ${changeType} confirmada - Velas: ${velaPattern}`,
+      details: `Padrão de reversão de 3 velas detectado`,
+      velaPattern,
+      confirmedTrend,
+      changeType,
     };
   }
 
