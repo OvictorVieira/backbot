@@ -180,6 +180,14 @@ class OrderController {
    */
   static async generateUniqueOrderId(config) {
     try {
+      // 🔍 DEBUG: Log detalhado do config recebido
+      Logger.debug(`🆔 [ORDER_ID] Config recebido:`, {
+        hasConfig: !!config,
+        hasId: !!(config && config.id),
+        hasBotClientOrderId: !!(config && config.botClientOrderId),
+        configKeys: config ? Object.keys(config) : 'null'
+      });
+
       // Se temos o config, usamos diretamente o botClientOrderId
       if (config && config.botClientOrderId) {
         const orderId = await ConfigManagerSQLite.getNextOrderId(config.id);

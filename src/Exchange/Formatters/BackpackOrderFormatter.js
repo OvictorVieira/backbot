@@ -70,7 +70,10 @@ class BackpackOrderFormatter extends OrderPayloadFormatter {
     const backpackOrderType = this.convertUnifiedTypeToBackpack(unifiedOrder.type);
 
     // Formata quantidade
-    const formattedQuantity = this.formatQuantity(unifiedOrder.quantity, marketInfo.decimal_quantity);
+    const formattedQuantity = this.formatQuantity(
+      unifiedOrder.quantity,
+      marketInfo.decimal_quantity
+    );
 
     // Monta payload base
     const backpackPayload = {
@@ -113,7 +116,9 @@ class BackpackOrderFormatter extends OrderPayloadFormatter {
 
     // Take Profit integrado
     if (unifiedOrder.takeProfit) {
-      backpackPayload.takeProfitTriggerBy = this.convertTriggerBy(unifiedOrder.takeProfit.triggerBy);
+      backpackPayload.takeProfitTriggerBy = this.convertTriggerBy(
+        unifiedOrder.takeProfit.triggerBy
+      );
       backpackPayload.takeProfitTriggerPrice = this.formatPrice(
         unifiedOrder.takeProfit.triggerPrice,
         marketInfo.decimal_price
@@ -126,9 +131,12 @@ class BackpackOrderFormatter extends OrderPayloadFormatter {
 
     // Para ordens de STOP_LOSS ou TAKE_PROFIT standalone
     if (unifiedOrder.type === 'STOP_LOSS' || unifiedOrder.type === 'TAKE_PROFIT') {
-      const triggerBy = unifiedOrder.type === 'STOP_LOSS' ? 'stopLossTriggerBy' : 'takeProfitTriggerBy';
-      const triggerPrice = unifiedOrder.type === 'STOP_LOSS' ? 'stopLossTriggerPrice' : 'takeProfitTriggerPrice';
-      const limitPrice = unifiedOrder.type === 'STOP_LOSS' ? 'stopLossLimitPrice' : 'takeProfitLimitPrice';
+      const triggerBy =
+        unifiedOrder.type === 'STOP_LOSS' ? 'stopLossTriggerBy' : 'takeProfitTriggerBy';
+      const triggerPrice =
+        unifiedOrder.type === 'STOP_LOSS' ? 'stopLossTriggerPrice' : 'takeProfitTriggerPrice';
+      const limitPrice =
+        unifiedOrder.type === 'STOP_LOSS' ? 'stopLossLimitPrice' : 'takeProfitLimitPrice';
 
       backpackPayload[triggerBy] = 'LastPrice';
       backpackPayload[triggerPrice] = this.formatPrice(

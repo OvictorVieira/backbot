@@ -320,6 +320,8 @@ class TrailingStop {
       botName: config.botName,
       apiKey: config.apiKey, // 🔑 Credenciais necessárias para fechar posição
       apiSecret: config.apiSecret,
+      id: config.id, // 🔑 Adicionado: ID do bot para geração de ID único
+      botClientOrderId: config.botClientOrderId, // 🔑 Adicionado: botClientOrderId para geração de ID único
     });
 
     const priceUpdateCallback = async (symbol, currentPrice, rawData) => {

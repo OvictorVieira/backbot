@@ -97,9 +97,7 @@ export class UnifiedOrderModel {
 
     // STOP_LOSS e TAKE_PROFIT precisam de triggerPrice
     if ((this.type === 'STOP_LOSS' || this.type === 'TAKE_PROFIT') && !this.triggerPrice) {
-      throw new Error(
-        `UnifiedOrderModel: ${this.type} orders require triggerPrice`
-      );
+      throw new Error(`UnifiedOrderModel: ${this.type} orders require triggerPrice`);
     }
 
     return true;

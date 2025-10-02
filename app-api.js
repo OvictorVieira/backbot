@@ -46,6 +46,8 @@ import AccountController from './src/Controllers/AccountController.js';
 import CachedOrdersService from './src/Utils/CachedOrdersService.js';
 import HFTController from './src/Controllers/HFTController.js';
 import FeatureToggleService from './src/Services/FeatureToggleService.js';
+import Account from './src/Backpack/Authenticated/Account.js';
+import Capital from './src/Backpack/Authenticated/Capital.js';
 
 // Instância global do HFTController
 const hftController = new HFTController();

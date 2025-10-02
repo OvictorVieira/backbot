@@ -502,6 +502,8 @@ class Decision {
             botName: config.botName,
             apiKey: config.apiKey,
             apiSecret: config.apiSecret, // 🔑 Corrigido: era secretKey, deve ser apiSecret
+            id: config.id, // 🔑 Adicionado: ID do bot para geração de ID único
+            botClientOrderId: config.botClientOrderId, // 🔑 Adicionado: botClientOrderId para geração de ID único
           });
         });
 
