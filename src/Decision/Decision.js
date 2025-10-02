@@ -595,7 +595,10 @@ class Decision {
                 }
               } else {
                 // Lógica tradicional para outras estratégias
-                const btcAnalysis = this.strategy.analyzeSignals(btcIndicators, true, config);
+                const btcAnalysis = this.strategy.analyzeSignals(btcIndicators, {
+                  isBTCAnalysis: true,
+                  config,
+                });
 
                 if (btcAnalysis && btcAnalysis.hasSignal) {
                   Logger.debug(`   🟢 BTC: ${btcAnalysis.signalType}`);
