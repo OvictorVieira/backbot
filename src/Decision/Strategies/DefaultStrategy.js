@@ -539,7 +539,7 @@ export class DefaultStrategy extends BaseStrategy {
     // 🔧 HEIKIN ASHI FILTER - Valida reversão de 3 velas ANTES de outros indicadores
     // Se habilitado, SÓ permite sinais quando houver reversão confirmada
     let heikinAshiValidation = null;
-    if (config.enableHeikinAshiFilter !== false) {
+    if (config.enableHeikinAshi === true || config.enableHeikinAshi === 'true') {
       heikinAshiValidation = this.validateHeikinAshiReversal(data, { isBTCAnalysis, config });
 
       // Se Heikin Ashi está configurado E não há reversão confirmada, rejeita sinal
