@@ -1498,7 +1498,7 @@ export class DefaultStrategy extends BaseStrategy {
     const { isBTCAnalysis = false, config = {} } = options;
 
     const heikinAshi = data.heikinAshi;
-    const symbol = data.market?.symbol || 'UNKNOWN';
+    const symbol = data.market?.symbol || data.symbol || 'UNKNOWN';
 
     // Verifica se o Heikin Ashi está disponível
     if (!heikinAshi || !heikinAshi.trendChange) {
