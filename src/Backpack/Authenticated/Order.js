@@ -235,6 +235,7 @@ class Order {
 
   async executeOrder(body, apiKey = null, apiSecret = null) {
     const timestamp = Date.now();
+
     const headers = auth({
       instruction: 'orderExecute',
       timestamp,

@@ -257,7 +257,9 @@ export class BaseExchange {
    * @returns {Array} Lista de posições de futuros atualizada
    */
   async getFuturesPositionsForceRefresh(apiKey, apiSecret) {
-    throw new Error('O método getFuturesPositionsForceRefresh deve ser implementado pela subclasse.');
+    throw new Error(
+      'O método getFuturesPositionsForceRefresh deve ser implementado pela subclasse.'
+    );
   }
 
   /**
@@ -307,7 +309,9 @@ export class BaseExchange {
    */
   async isOrderFilled(symbol, orderId, apiKey, apiSecret) {
     const orderStatus = await this.getOrderStatus(symbol, orderId, apiKey, apiSecret);
-    return orderStatus && (orderStatus.status === 'FILLED' || orderStatus.status === 'PARTIALLY_FILLED');
+    return (
+      orderStatus && (orderStatus.status === 'FILLED' || orderStatus.status === 'PARTIALLY_FILLED')
+    );
   }
 }
 

@@ -33,6 +33,12 @@ export function auth({ instruction, params = {}, timestamp, window = 30000, apiK
     const baseString = sortedParams ? `${sortedParams}&` : '';
     const payload = `instruction=${instruction}&${baseString}timestamp=${timestamp}&window=${window}`;
 
+    // Log apenas para ordens (não para todas as requisições)
+    if (instruction === 'orderExecute' && params.triggerPrice) {
+      Logger.info(`🔐 [AUTH_DEBUG] Trigger order - Payload: ${payload.substring(0, 200)}...`);
+      Logger.info(`🔐 [AUTH_DEBUG] Params keys: ${Object.keys(params).sort().join(', ')}`);
+    }
+
     // Gera a assinatura
     const signature = nacl.sign.detached(Buffer.from(payload), keyPair.secretKey);
 

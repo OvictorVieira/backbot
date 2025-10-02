@@ -56,9 +56,7 @@ class OrderPayloadFormatter {
 
     // Valida side
     if (!['BUY', 'SELL'].includes(standardOrder.side)) {
-      Logger.error(
-        `❌ [OrderFormatter] Side inválido: ${standardOrder.side}. Use "BUY" ou "SELL"`
-      );
+      Logger.error(`❌ [OrderFormatter] Side inválido: ${standardOrder.side}. Use "BUY" ou "SELL"`);
       return false;
     }
 

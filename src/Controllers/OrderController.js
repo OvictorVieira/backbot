@@ -17,6 +17,7 @@ import StopLossUtilsModule from '../Utils/PositionUtils.js';
 import QuantityCalculator from '../Utils/QuantityCalculator.js';
 import OrderBookAnalyzer from '../Utils/OrderBookAnalyzer.js';
 import LimitOrderValidator from '../Utils/LimitOrderValidator.js';
+import Markets from '../Backpack/Public/Markets.js';
 
 class OrderController {
   // Instância centralizada do OrdersService
@@ -293,7 +294,11 @@ class OrderController {
       );
       // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
       const exchangeManager = OrderController.getExchangeManager(config);
-      const allOrders = await exchangeManager.getOpenOrdersForSymbol(null, config.apiKey, config.apiSecret);
+      const allOrders = await exchangeManager.getOpenOrdersForSymbol(
+        null,
+        config.apiKey,
+        config.apiSecret
+      );
 
       if (!allOrders || allOrders.length === 0) {
         Logger.debug(`📋 [BOT_ORDERS] Nenhuma ordem encontrada na conta`);
@@ -377,7 +382,11 @@ class OrderController {
       // Obtém todas as ordens da exchange
       // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
       const exchangeManager = OrderController.getExchangeManager(config);
-      const allOrders = await exchangeManager.getOpenOrdersForSymbol(null, config.apiKey, config.apiSecret);
+      const allOrders = await exchangeManager.getOpenOrdersForSymbol(
+        null,
+        config.apiKey,
+        config.apiSecret
+      );
       if (!allOrders || allOrders.length === 0) {
         Logger.debug(`📋 [ALL_BOTS_ORDERS] Nenhuma ordem encontrada`);
         return {};
@@ -1147,7 +1156,11 @@ class OrderController {
         };
         // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
         const exchangeManager = OrderController.getExchangeManager(config);
-        const result = await exchangeManager.executeOrder(orderBody, config?.apiKey, config?.apiSecret);
+        const result = await exchangeManager.executeOrder(
+          orderBody,
+          config?.apiKey,
+          config?.apiSecret
+        );
         if (result && !result.error) {
           Logger.debug(
             `✅ [PRO_MAX] ${position.symbol}: Take Profit ${i + 1}/${actualTargets} criado - Preço: ${targetPrice.toFixed(6)}, Quantidade: ${qty}, OrderID: ${result.id || 'N/A'}`
@@ -1195,7 +1208,11 @@ class OrderController {
         };
         // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
         const exchangeManager = OrderController.getExchangeManager(config);
-        const stopResult = await exchangeManager.executeOrder(stopBody, config?.apiKey, config?.apiSecret);
+        const stopResult = await exchangeManager.executeOrder(
+          stopBody,
+          config?.apiKey,
+          config?.apiSecret
+        );
         if (stopResult) {
           Logger.debug(
             `🛡️ [PRO_MAX] ${position.symbol}: Stop loss criado - Preço: ${stop.toFixed(6)}`
@@ -1375,13 +1392,7 @@ class OrderController {
     }
   }
 
-  static async forceClose(position, account = null, config = null) {
-    // Se account não foi fornecido, obtém da API
-    const configWithSymbol = { ...config, symbol: position.symbol };
-    const Account = account || (await AccountController.get(configWithSymbol));
-
-    // Log detalhado para debug
-    // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+  static async forceClose(position, config = null) {
     const exchangeManager = OrderController.getExchangeManager(config || {});
     const allMarkets = await exchangeManager.getMarkets();
 
@@ -1456,12 +1467,12 @@ class OrderController {
     if (closeResult) {
       await this.cancelPendingOrders(position.symbol, config);
       // Cancela ordens de segurança (failsafe)
-      await OrderController.cancelFailsafeOrders(position.symbol, 'DEFAULT', config);
+      await OrderController.cancelFailsafeOrders(position.symbol, config.botName, config);
 
       // Limpa o estado do trailing stop após fechar a posição
       try {
         const TrailingStop = (await import('../TrailingStop/TrailingStop.js')).default;
-        TrailingStop.clearTrailingState(position.symbol);
+        await TrailingStop.clearTrailingState(position.symbol);
       } catch (error) {
         Logger.error(
           `[FORCE_CLOSE] Erro ao limpar trailing state para ${position.symbol}:`,
@@ -1760,9 +1771,7 @@ class OrderController {
 
       // Log detalhado para debug
       Logger.info(`🔍 [CLOSE_PARTIAL] Procurando market para ${position.symbol}`);
-      Logger.info(
-        `🔍 [CLOSE_PARTIAL] Total de markets disponíveis: ${allMarkets?.length || 0}`
-      );
+      Logger.info(`🔍 [CLOSE_PARTIAL] Total de markets disponíveis: ${allMarkets?.length || 0}`);
 
       let market = allMarkets.find(el => {
         return el.symbol === position.symbol;
@@ -1816,7 +1825,11 @@ class OrderController {
 
       // Fecha parcialmente a posição
       // 🔧 MIGRAÇÃO: Reutiliza ExchangeManager já criado acima
-      const closeResult = await exchangeManager.executeOrder(body, config?.apiKey, config?.apiSecret);
+      const closeResult = await exchangeManager.executeOrder(
+        body,
+        config?.apiKey,
+        config?.apiSecret
+      );
 
       if (closeResult) {
         // Log detalhado da taxa de fechamento parcial
@@ -2179,100 +2192,72 @@ class OrderController {
         Logger.info(`   • Take Profit: $${targetPrice.toFixed(6)} (ajustado por alavancagem)`);
       }
 
-      // 🎯 INTEGRAÇÃO ORDER BOOK: Ajusta preços para evitar execução imediata
-      Logger.info(`🔍 [ORDER_BOOK] ${market}: Ajustando preços com base no order book...`);
-
-      // Ajusta preço principal da ordem (busca por preços próximos ao preço final calculado)
-      // Para a entrada, queremos preços muito próximos (0.1% de diferença máxima)
-      const entryPriceRef = finalPrice; // Usar o preço final como referência
-      const entryDeviation = 0.1; // Máximo 0.1% de diferença para entrada
-      // Para bot tradicional: usa preço calculado sem ajuste de OrderBook para entrada
-      // Apenas Stop Loss e Take Profit usam OrderBook para encontrar preços EXATOS
-      const adjustedEntryPrice = finalPrice;
-
-      // Para bot tradicional: usa preço calculado (não precisa verificar null)
-
-      // Ajusta preço de Stop Loss baseado na porcentagem configurada
-      const stopLossPercentage = action === 'long' ? -actualStopLossPct : actualStopLossPct;
-      const adjustedStopLossPrice = await OrderBookAnalyzer.findClosestOrderBookPrice(
-        market,
-        side === 'BUY' ? 'SELL' : 'BUY', // Lado oposto para SL
-        entryPrice, // Usar preço de entrada como referência
-        stopLossPercentage // Usar porcentagem configurada
+      // 🎯 INTEGRAÇÃO ORDER BOOK: Ajusta preço de ENTRADA para evitar execução imediata
+      Logger.info(
+        `🔍 [ORDER_BOOK] ${market}: Ajustando preço de entrada com base no order book...`
       );
 
-      // 🚨 CRÍTICO: Se OrderBook não encontrou preço de Stop Loss, CANCELAR
-      if (adjustedStopLossPrice === null) {
+      // Ajusta APENAS o preço de entrada usando OrderBook
+      // Para SHORT: busca preço no lado ASK (venda)
+      // Para LONG: busca preço no lado BID (compra)
+      const adjustedEntryPrice = await OrderBookAnalyzer.findClosestOrderBookPrice(
+        market,
+        side, // Mesmo lado da ordem (BUY busca em bids, SELL busca em asks)
+        finalPrice, // Preço calculado como referência
+        0.1 // Máximo 0.1% de diferença permitida
+      );
+
+      // 🚨 CRÍTICO: Se OrderBook não encontrou preço de entrada válido, CANCELAR
+      if (adjustedEntryPrice === null) {
         Logger.error(
-          `❌ [ORDER_EXECUTION] ${market}: Impossível ajustar Stop Loss via OrderBook - CANCELANDO operação`
+          `❌ [ORDER_EXECUTION] ${market}: Impossível ajustar preço de entrada via OrderBook - CANCELANDO operação`
         );
         return {
-          error:
-            'OrderBook falhou ao encontrar preço de Stop Loss - operação cancelada por segurança',
+          error: 'OrderBook falhou ao encontrar preço de entrada seguro - operação cancelada',
         };
       }
 
-      // Ajusta preço de Take Profit baseado na porcentagem configurada (apenas se não for trailing stop)
-      let adjustedTakeProfitPrice = targetPrice;
-      if (!enableTrailingStop) {
-        const takeProfitPercentage = action === 'long' ? actualTakeProfitPct : -actualTakeProfitPct;
+      // 🔧 CORREÇÃO CRÍTICA: Recalcula SL/TP baseado no entry AJUSTADO pelo order book
+      // Problema: SL/TP foram calculados com entry original, mas order book mudou o entry
+      // Solução: Recalcular SL/TP usando adjustedEntryPrice
+      let finalStopLossPrice = leverageAdjustedStopPrice;
+      let finalTakeProfitPrice = targetPrice;
 
-        // Log dos valores para Take Profit
+      // Se entry foi ajustado, recalcular SL/TP mantendo as mesmas porcentagens
+      if (adjustedEntryPrice !== finalPrice) {
+        const isLong = action === 'long';
+
+        // Recalcula Stop Loss com a porcentagem já ajustada por alavancagem
+        finalStopLossPrice = isLong
+          ? adjustedEntryPrice * (1 - actualStopLossPct / 100)
+          : adjustedEntryPrice * (1 + actualStopLossPct / 100);
+
+        // Recalcula Take Profit com a porcentagem já ajustada por alavancagem
+        finalTakeProfitPrice = isLong
+          ? adjustedEntryPrice * (1 + actualTakeProfitPct / 100)
+          : adjustedEntryPrice * (1 - actualTakeProfitPct / 100);
+
         Logger.debug(
-          `🎯 [TP_CALC] ${market}: Entry=${entryPrice.toFixed(6)}, TP%=${takeProfitPercentage}%, Target=${(entryPrice * (1 + takeProfitPercentage / 100)).toFixed(6)}`
+          `🔄 [SL_TP_RECALC] ${market}: Entry ajustado ${finalPrice.toFixed(6)} → ${adjustedEntryPrice.toFixed(6)}`
         );
-
-        adjustedTakeProfitPrice = await OrderBookAnalyzer.findClosestOrderBookPrice(
-          market,
-          action === 'long' ? 'SELL' : 'BUY', // LONG = SELL para TP, SHORT = BUY para TP
-          entryPrice, // Usar preço de entrada como referência
-          takeProfitPercentage // Usar porcentagem configurada
-        );
-
-        Logger.debug(`🎯 [TP_BOOK] ${market}: Adjusted TP price: ${adjustedTakeProfitPrice}`);
-
-        // 🚨 CRÍTICO: Se OrderBook não encontrou preço, CANCELAR operação
-        if (adjustedTakeProfitPrice === null) {
-          Logger.error(
-            `❌ [ORDER_EXECUTION] ${market}: Impossível ajustar Take Profit via OrderBook - CANCELANDO operação`
-          );
-          return {
-            error:
-              'OrderBook falhou ao encontrar preço de Take Profit - operação cancelada por segurança',
-          };
-        }
-      }
-
-      // Log dos ajustes realizados
-      if (adjustedEntryPrice && adjustedEntryPrice !== finalPrice) {
         Logger.debug(
-          `   📊 [ORDER_BOOK] Preço entrada ajustado: $${finalPrice.toFixed(6)} → $${adjustedEntryPrice.toFixed(6)}`
+          `   • SL recalculado: ${leverageAdjustedStopPrice.toFixed(6)} → ${finalStopLossPrice.toFixed(6)}`
         );
-      }
-      if (adjustedStopLossPrice && adjustedStopLossPrice !== leverageAdjustedStopPrice) {
         Logger.debug(
-          `   📊 [ORDER_BOOK] Stop Loss ajustado: $${leverageAdjustedStopPrice.toFixed(6)} → $${adjustedStopLossPrice.toFixed(6)}`
-        );
-      }
-      if (
-        !enableTrailingStop &&
-        adjustedTakeProfitPrice &&
-        adjustedTakeProfitPrice !== targetPrice
-      ) {
-        Logger.debug(
-          `   📊 [ORDER_BOOK] Take Profit ajustado: $${targetPrice.toFixed(6)} → $${adjustedTakeProfitPrice.toFixed(6)}`
+          `   • TP recalculado: ${targetPrice.toFixed(6)} → ${finalTakeProfitPrice.toFixed(6)}`
         );
       }
 
-      // Log de debug dos preços ajustados
-      Logger.debug(
-        `📊 [PRICE_ADJ] ${market}: Entry=${adjustedEntryPrice || finalPrice}, Original=${finalPrice}`
-      );
-
-      // Usa preços ajustados ou fallback para os originais
+      // Define entry price final
       const finalEntryPrice = adjustedEntryPrice || finalPrice;
-      const finalStopLossPrice = adjustedStopLossPrice || leverageAdjustedStopPrice;
-      const finalTakeProfitPrice = adjustedTakeProfitPrice || targetPrice;
+
+      // 🔍 DEBUG: Verifica se SL/TP estão corretos ANTES de criar o payload
+      Logger.info(
+        `🔍 [SL_TP_DEBUG] ${market}: Entry=${finalEntryPrice.toFixed(6)}, SL=${finalStopLossPrice.toFixed(6)}, TP=${finalTakeProfitPrice.toFixed(6)}`
+      );
+      Logger.info(
+        `🔍 [SL_TP_CHECK] ${market}: isLong=${action === 'long'}, SL ${finalStopLossPrice < finalEntryPrice ? '✅ ABAIXO' : '❌ ACIMA'}, TP ${finalTakeProfitPrice > finalEntryPrice ? '✅ ACIMA' : '❌ ABAIXO'}`
+      );
 
       const body = {
         symbol: market,
@@ -2314,7 +2299,10 @@ class OrderController {
         if (!limitResult || limitResult.error) {
           const errorMessage = limitResult && limitResult.error ? limitResult.error.toString() : '';
 
-          if (errorMessage.includes('Order would immediately match and take') && config.orderExecutionMode !== "LIMIT") {
+          if (
+            errorMessage.includes('Order would immediately match and take') &&
+            config.orderExecutionMode !== 'LIMIT'
+          ) {
             Logger.info(
               `🟡 [INFO] ${market}: A ordem com desconto (LIMIT) não foi aceita porque o mercado se moveu muito rápido.`
             );
@@ -2343,6 +2331,61 @@ class OrderController {
         Logger.info(
           `✅ [${strategyNameToUse}] ${market}: Ordem LIMIT enviada com sucesso (ID: ${limitResult.id || 'N/A'})`
         );
+
+        // 🔍 VALIDAÇÃO CRÍTICA: Verifica se SL/TP foram aceitos pela Backpack
+        if (limitResult && limitResult.id) {
+          // Aguarda 1s para API processar
+          await new Promise(resolve => setTimeout(resolve, 1000));
+
+          // Busca a ordem criada para verificar se tem SL/TP
+          try {
+            const exchangeManager = this.getExchangeManager(config);
+            const openOrders = await exchangeManager.getOpenOrdersForSymbol(
+              market,
+              config?.apiKey,
+              config?.apiSecret
+            );
+
+            const createdOrder = openOrders.find(o => o.id === limitResult.id);
+
+            if (createdOrder) {
+              const hasStopLoss =
+                createdOrder.stopLossTriggerPrice ||
+                createdOrder.triggerPrice ||
+                createdOrder.stopLossLimitPrice;
+              const hasTakeProfit =
+                createdOrder.takeProfitTriggerPrice || createdOrder.takeProfitLimitPrice;
+
+              if (!hasStopLoss) {
+                Logger.warn(
+                  `⚠️ [SL_TP_VALIDATION] ${market}: Ordem criada SEM Stop Loss! Backpack rejeitou o campo.`
+                );
+                Logger.warn(
+                  `   → Ordem ID: ${limitResult.id} | Entry: ${formatPrice(finalEntryPrice)} | SL Esperado: ${formatPrice(finalStopLossPrice)}`
+                );
+              }
+
+              if (!enableTrailingStop && !hasTakeProfit) {
+                Logger.warn(
+                  `⚠️ [SL_TP_VALIDATION] ${market}: Ordem criada SEM Take Profit! Backpack rejeitou o campo.`
+                );
+                Logger.warn(
+                  `   → Ordem ID: ${limitResult.id} | Entry: ${formatPrice(finalEntryPrice)} | TP Esperado: ${formatPrice(finalTakeProfitPrice)}`
+                );
+              }
+
+              if (hasStopLoss && (enableTrailingStop || hasTakeProfit)) {
+                Logger.info(
+                  `✅ [SL_TP_VALIDATION] ${market}: Ordem criada com SL/TP integrados com sucesso`
+                );
+              }
+            }
+          } catch (validationError) {
+            Logger.debug(
+              `⚠️ [SL_TP_VALIDATION] ${market}: Não foi possível validar SL/TP: ${validationError.message}`
+            );
+          }
+        }
 
         // Registra a ordem no sistema de persistência
         if (limitResult && limitResult.id && config && config.id) {
@@ -2733,7 +2776,11 @@ class OrderController {
 
       // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
       const exchangeManager = OrderController.getExchangeManager(config);
-      const marketResult = await exchangeManager.executeOrder(marketBody, config.apiKey, config.apiSecret);
+      const marketResult = await exchangeManager.executeOrder(
+        marketBody,
+        config.apiKey,
+        config.apiSecret
+      );
       if (marketResult && !marketResult.error) {
         // Calcula slippage real
         const executionPrice = parseFloat(
@@ -2896,7 +2943,11 @@ class OrderController {
 
     // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
     const exchangeManager = OrderController.getExchangeManager(config);
-    const orders = await exchangeManager.getOpenOrdersForSymbol(market, config.apiKey, config.apiSecret);
+    const orders = await exchangeManager.getOpenOrdersForSymbol(
+      market,
+      config.apiKey,
+      config.apiSecret
+    );
 
     if (!orders || orders.length === 0) {
       return [];
@@ -3172,11 +3223,15 @@ class OrderController {
       }
 
       // Verifica se já existe uma ordem de stop loss para esta posição
-      Logger.debug(`🔍 [${botName}] ${position.symbol}: Verificando se já existe stop loss...`);
+      Logger.info(`🔍 [${botName}] ${position.symbol}: Verificando se já existe stop loss...`);
       const hasStopLossOrders = await PositionUtils.hasStopLoss(position.symbol, position, config);
 
+      Logger.info(
+        `🔍 [${botName}] ${position.symbol}: Resultado hasStopLoss = ${hasStopLossOrders}`
+      );
+
       if (hasStopLossOrders) {
-        Logger.debug(`✅ [${botName}] ${position.symbol}: Stop loss já existe, não criando novo`);
+        Logger.info(`✅ [${botName}] ${position.symbol}: Stop loss já existe, não criando novo`);
         return true;
       }
 
@@ -3299,7 +3354,11 @@ class OrderController {
 
         // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
         const exchangeManager = OrderController.getExchangeManager(config);
-        const stopResult = await exchangeManager.executeOrder(stopBody, config?.apiKey, config?.apiSecret);
+        const stopResult = await exchangeManager.executeOrder(
+          stopBody,
+          config?.apiKey,
+          config?.apiSecret
+        );
 
         if (stopResult && !stopResult.error) {
           Logger.info(
@@ -3913,7 +3972,10 @@ class OrderController {
       // Busca posições abertas
       // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
       const exchangeManager = OrderController.getExchangeManager(config);
-      const positions = await exchangeManager.getFuturesPositions(config?.apiKey, config?.apiSecret);
+      const positions = await exchangeManager.getFuturesPositions(
+        config?.apiKey,
+        config?.apiSecret
+      );
       const position = positions?.find(
         p => p.symbol === market && Math.abs(Number(p.netQuantity)) > 0
       );
@@ -4422,7 +4484,11 @@ class OrderController {
 
       // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
       const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
-      const existingOrders = await exchangeManager.getOpenOrdersForSymbol(symbol, apiKey, apiSecret);
+      const existingOrders = await exchangeManager.getOpenOrdersForSymbol(
+        symbol,
+        apiKey,
+        apiSecret
+      );
 
       Logger.debug(
         `🔍 [STOP_LOSS_CHECK] ${symbol}: Encontradas ${existingOrders?.length || 0} ordens abertas`
@@ -4658,8 +4724,12 @@ class OrderController {
           }
 
           // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
-      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
-      const openOrders = await exchangeManager.getOpenOrdersForSymbol(symbol, apiKey, apiSecret);
+          const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+          const openOrders = await exchangeManager.getOpenOrdersForSymbol(
+            symbol,
+            apiKey,
+            apiSecret
+          );
 
           if (!openOrders || openOrders.length === 0) {
             Logger.debug(`🧹 [${config.botName}][ORPHAN_MONITOR] ${symbol}: Nenhuma ordem aberta`);
@@ -4910,7 +4980,8 @@ class OrderController {
       // 1. Busca TODAS as ordens abertas na corretora (sem especificar símbolo)
       // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
       const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
-      const allOpenOrders = (await exchangeManager.getOpenOrdersForSymbol(null, apiKey, apiSecret)) || [];
+      const allOpenOrders =
+        (await exchangeManager.getOpenOrdersForSymbol(null, apiKey, apiSecret)) || [];
       Logger.debug(
         `🔍 [${config.botName}][SCAN_CLEANUP] Encontradas ${allOpenOrders.length} ordens abertas na corretora`
       );
@@ -5182,8 +5253,12 @@ class OrderController {
           await new Promise(resolve => setTimeout(resolve, 300));
 
           // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
-      const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
-      const openOrders = await exchangeManager.getOpenOrdersForSymbol(symbol, apiKey, apiSecret);
+          const exchangeManager = OrderController.getExchangeManager({ apiKey, apiSecret });
+          const openOrders = await exchangeManager.getOpenOrdersForSymbol(
+            symbol,
+            apiKey,
+            apiSecret
+          );
 
           if (!openOrders || openOrders.length === 0) {
             continue;
@@ -5488,7 +5563,11 @@ class OrderController {
       try {
         // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
         const exchangeManager = OrderController.getExchangeManager(config);
-        const response = await exchangeManager.executeOrder(orderBody, config.apiKey, config.apiSecret);
+        const response = await exchangeManager.executeOrder(
+          orderBody,
+          config.apiKey,
+          config.apiSecret
+        );
 
         if (response && (response.orderId || response.id)) {
           const orderId = response.orderId || response.id;
@@ -5805,7 +5884,10 @@ class OrderController {
       try {
         // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
         const exchangeManager = OrderController.getExchangeManager(config);
-        currentPositions = await exchangeManager.getFuturesPositions(config.apiKey, config.apiSecret);
+        currentPositions = await exchangeManager.getFuturesPositions(
+          config.apiKey,
+          config.apiSecret
+        );
       } catch (error) {
         Logger.error(`❌ [TP_CREATE] ${symbol}: Erro ao obter posições:`, error.message);
         return { success: false, message: `Erro ao obter posições: ${error.message}` };

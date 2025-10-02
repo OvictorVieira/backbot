@@ -36,6 +36,8 @@ import ImportOrdersFromBackpack from './src/Config/ImportOrdersFromBackpack.js';
 import ImportPositionsFromBackpack from './src/Config/ImportPositionsFromBackpack.js';
 import DatabaseService from './src/Services/DatabaseService.js';
 import Markets from './src/Backpack/Public/Markets.js';
+import Futures from './src/Backpack/Authenticated/Futures.js';
+import Order from './src/Backpack/Authenticated/Order.js';
 import RequestManager from './src/Utils/RequestManager.js';
 import PositionSyncServiceClass from './src/Services/PositionSyncService.js';
 import PositionTrackingService from './src/Services/PositionTrackingService.js';

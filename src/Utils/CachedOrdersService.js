@@ -129,7 +129,13 @@ class CachedOrdersService {
   static async cancelOrder(symbol, orderId, clientId, apiKey, apiSecret) {
     try {
       const exchangeManager = ExchangeManager.create('backpack');
-      const result = await exchangeManager.cancelOpenOrder(symbol, orderId, clientId, apiKey, apiSecret);
+      const result = await exchangeManager.cancelOpenOrder(
+        symbol,
+        orderId,
+        clientId,
+        apiKey,
+        apiSecret
+      );
 
       // Cache já é invalidado automaticamente no cancelOpenOrder()
       Logger.debug(`✅ [CACHED_ORDERS_SERVICE] Ordem cancelada ${orderId} para ${symbol}`);

@@ -76,9 +76,18 @@ class BackpackMarketFormatter extends MarketDataFormatter {
   formatMarket(rawMarket) {
     // Validação dos dados de entrada
     if (!rawMarket?.filters?.quantity?.stepSize || !rawMarket?.filters?.price?.tickSize) {
-      throw new Error(
-        `Dados de filtros ausentes para ${rawMarket?.symbol || 'unknown market'}`
+      Logger.warn(
+        `⚠️ [BackpackFormatter] Dados de filtros ausentes para ${rawMarket?.symbol || 'unknown market'}:`,
+        {
+          hasFilters: !!rawMarket?.filters,
+          hasQuantity: !!rawMarket?.filters?.quantity,
+          hasStepSize: !!rawMarket?.filters?.quantity?.stepSize,
+          hasPrice: !!rawMarket?.filters?.price,
+          hasTickSize: !!rawMarket?.filters?.price?.tickSize,
+          rawMarket: JSON.stringify(rawMarket, null, 2),
+        }
       );
+      throw new Error(`Dados de filtros ausentes para ${rawMarket?.symbol || 'unknown market'}`);
     }
 
     const { symbol, filters } = rawMarket;
@@ -98,9 +107,7 @@ class BackpackMarketFormatter extends MarketDataFormatter {
       decimal_price: decimal_price,
       stepSize_quantity: Number(quantity.stepSize),
       tickSize: Number(price.tickSize),
-      minQuantity: quantity.minQuantity
-        ? Number(quantity.minQuantity)
-        : Number(quantity.stepSize),
+      minQuantity: quantity.minQuantity ? Number(quantity.minQuantity) : Number(quantity.stepSize),
     };
 
     return formattedMarket;

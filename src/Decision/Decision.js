@@ -10,6 +10,8 @@ import { calculateIndicators } from './Indicators.js';
 import { StrategyFactory } from './Strategies/StrategyFactory.js';
 import Logger from '../Utils/Logger.js';
 import RiskManager from '../Risk/RiskManager.js';
+import PositionMonitorService from '../Services/PositionMonitorService.js';
+import TrailingStop from '../TrailingStop/TrailingStop.js';
 
 class Decision {
   constructor(strategyType = null) {
@@ -339,6 +341,57 @@ class Decision {
     }
   }
 
+  /**
+   * Subscribe WebSocket para posições existentes quando bot reinicia
+   * @param {Array} positions - Array de posições abertas
+   * @param {Object} config - Configuração do bot
+   */
+  async subscribeExistingPositions(positions, config) {
+    if (!positions || positions.length === 0) {
+      return;
+    }
+
+    try {
+      // Inicializa WebSocket se não estiver inicializado
+      await TrailingStop.initializeReactiveSystem();
+
+      if (!TrailingStop.backpackWS || !TrailingStop.backpackWS.connected) {
+        Logger.warn(`📡 [WS_SUBSCRIBE] WebSocket não conectado - posições não serão monitoradas`);
+        return;
+      }
+
+      const Account = await AccountController.get({
+        apiKey: config.apiKey,
+        apiSecret: config.apiSecret,
+        strategy: config.strategyName || 'DEFAULT',
+      });
+
+      for (const position of positions) {
+        // Verifica se já está subscrito
+        if (TrailingStop.backpackWS.subscribedSymbols.has(position.symbol)) {
+          Logger.debug(`📡 [WS_SUBSCRIBE] ${position.symbol}: Já subscrito`);
+          continue;
+        }
+
+        // Subscribe para monitoramento
+        const subscribed = await TrailingStop.subscribePositionReactive(
+          position,
+          Account,
+          config,
+          this
+        );
+
+        if (subscribed) {
+          Logger.info(`📡 [WS_SUBSCRIBE] ${position.symbol}: WebSocket subscrito com sucesso`);
+        } else {
+          Logger.warn(`⚠️ [WS_SUBSCRIBE] ${position.symbol}: Falha ao subscrever WebSocket`);
+        }
+      }
+    } catch (error) {
+      Logger.error(`❌ [WS_SUBSCRIBE] Erro ao subscrever posições:`, error.message);
+    }
+  }
+
   async analyze(timeframe = null, logger = null, config = null) {
     try {
       // 🚫 VERIFICAÇÃO: Bloqueia análises durante manutenção para evitar rate limit
@@ -418,7 +471,10 @@ class Decision {
       );
       // 🔧 MIGRAÇÃO: Usa ExchangeManager - TODO: Implementar getOpenPositionsForceRefresh
       const exchangeManager = this.getExchangeManager({ apiKey, apiSecret });
-      const exchangePositions = await exchangeManager.getFuturesPositionsForceRefresh(apiKey, apiSecret);
+      const exchangePositions = await exchangeManager.getFuturesPositionsForceRefresh(
+        apiKey,
+        apiSecret
+      );
 
       // Filtra apenas posições que realmente têm quantidade (evita posições "fantasma")
       const activePositions = exchangePositions.filter(
@@ -438,7 +494,20 @@ class Decision {
           Logger.info(
             `   📍 ${pos.symbol}: ${side} ${Math.abs(quantity)} @ $${entryPrice.toFixed(4)}`
           );
+
+          PositionMonitorService.updatePositionCache(pos.symbol, pos, {
+            leverage: Account?.leverage,
+            maxNegativePnlStopPct: config.maxNegativePnlStopPct,
+            minProfitPercentage: config.minProfitPercentage,
+            botName: config.botName,
+            apiKey: config.apiKey,
+            apiSecret: config.apiSecret, // 🔑 Corrigido: era secretKey, deve ser apiSecret
+          });
         });
+
+        // 📡 CRITICAL: Subscribe WebSocket para monitorar posições existentes
+        // Quando bot reinicia, precisa subscrever as posições que já estão abertas
+        await this.subscribeExistingPositions(activePositions, config);
       } else {
         Logger.info(
           `   ✅ Nenhuma posição ativa encontrada - todos os tokens disponíveis para análise`
@@ -865,8 +934,8 @@ class Decision {
 
               // Verifica se já existe uma posição ativa para este mercado
               // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
-            const exchangeManager = this.getExchangeManager({ apiKey, apiSecret });
-            const positions = await exchangeManager.getFuturesPositions(apiKey, apiSecret);
+              const exchangeManager = this.getExchangeManager({ apiKey, apiSecret });
+              const positions = await exchangeManager.getFuturesPositions(apiKey, apiSecret);
               const existingPosition = positions.find(
                 p => p.symbol === marketSymbol && Math.abs(Number(p.netQuantity)) > 0
               );
@@ -899,8 +968,8 @@ class Decision {
                     `   🗑️  ${marketSymbol}: Cancelando ordens antigas (${orderAge.toFixed(1)} min)`
                   );
                   // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
-                const exchangeManager = this.getExchangeManager({ apiKey, apiSecret });
-                await exchangeManager.cancelOpenOrders(marketSymbol, null, apiKey, apiSecret);
+                  const exchangeManager = this.getExchangeManager({ apiKey, apiSecret });
+                  await exchangeManager.cancelOpenOrders(marketSymbol, null, apiKey, apiSecret);
                 }
               }
 

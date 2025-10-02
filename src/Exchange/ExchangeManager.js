@@ -133,13 +133,23 @@ export class ExchangeManager {
 
     // Adapta formato do orderBody para interface da exchange
     const exchangeSide = side === 'Bid' ? 'BUY' : side === 'Ask' ? 'SELL' : side;
+
+    // 🚨 CRITICAL: Não incluir campos undefined (causa Invalid signature)
     const exchangeOptions = {
       orderType,
-      timeInForce: orderBody.timeInForce,
-      postOnly: orderBody.postOnly,
-      clientId: orderBody.clientId,
-      ...options
+      ...options,
     };
+
+    // Adiciona campos opcionais apenas se definidos
+    if (orderBody.timeInForce !== undefined) {
+      exchangeOptions.timeInForce = orderBody.timeInForce;
+    }
+    if (orderBody.postOnly !== undefined) {
+      exchangeOptions.postOnly = orderBody.postOnly;
+    }
+    if (orderBody.clientId !== undefined) {
+      exchangeOptions.clientId = orderBody.clientId;
+    }
 
     return this.exchange.placeOrder(
       symbol,
@@ -185,7 +195,10 @@ export class ExchangeManager {
    * Método de utilidade para logging
    */
   logOperation(operation, symbol, additional = {}) {
-    Logger.debug(`🔄 [ExchangeManager] ${operation} - Exchange: ${this.exchangeName}, Symbol: ${symbol}`, additional);
+    Logger.debug(
+      `🔄 [ExchangeManager] ${operation} - Exchange: ${this.exchangeName}, Symbol: ${symbol}`,
+      additional
+    );
   }
 }
 

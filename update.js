@@ -21,13 +21,7 @@ const ZIP_URL = `https://github.com/${GITHUB_REPO}/archive/refs/heads/main.zip`;
 // - node_modules/: dependências instaladas
 // - .update_flag: flag de controle de atualização
 // - .git/: repositório Git (NUNCA remover)
-const PRESERVE_ITEMS = [
-  '.env',
-  'src/persistence/',
-  'node_modules/',
-  '.update_flag',
-  '.git/',
-];
+const PRESERVE_ITEMS = ['.env', 'src/persistence/', 'node_modules/', '.update_flag', '.git/'];
 const BACKUP_DIR = 'backup_temp';
 const TEMP_DIR = 'temp_update';
 const UPDATE_FLAG_FILE = '.update_flag';
@@ -52,7 +46,7 @@ class AutoUpdater {
       await this.checkDependencies();
 
       // Verifica se atualização já foi executada recentemente (a menos que seja --force)
-      if (!forceUpdate && await this.checkRecentUpdate()) {
+      if (!forceUpdate && (await this.checkRecentUpdate())) {
         console.log('⏸️ Atualização já foi executada recentemente (últimas 24h)');
         console.log('💡 Para forçar atualização, use: npm run update -- --force');
         console.log('💡 Ou delete o arquivo .update_flag');

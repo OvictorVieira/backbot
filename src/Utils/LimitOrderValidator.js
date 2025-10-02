@@ -1,6 +1,7 @@
 import Logger from './Logger.js';
 import BackpackWebSocket from '../Backpack/Public/WebSocket.js';
 import ExchangeManager from '../Exchange/ExchangeManager.js';
+import CachedOrdersService from './CachedOrdersService.js';
 
 /**
  * LimitOrderValidator - Sistema de validação e cancelamento automático de ordens LIMIT
@@ -349,6 +350,10 @@ class LimitOrderValidator {
 
       if (result && result.success !== false) {
         Logger.info(`✅ [LIMIT_VALIDATOR] Ordem ${orderId} cancelada com sucesso`);
+
+        // 🔒 Invalida cache de ordens para forçar atualização
+        CachedOrdersService.invalidateCache(symbol, botConfig.apiKey);
+        Logger.debug(`🔄 [LIMIT_VALIDATOR] Cache de ordens invalidado para ${symbol}`);
 
         // Notifica que a ordem foi cancelada para que o sistema de decisão possa criar nova
         this.notifyOrderCancelled(orderId, orderData, 'SLIPPAGE_HIGH');

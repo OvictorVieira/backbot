@@ -48,13 +48,14 @@ class BackpackOrderFormatter extends OrderPayloadFormatter {
     }
 
     // Valida marketInfo
-    if (!marketInfo?.decimal_quantity || marketInfo?.decimal_price === undefined) {
+    // IMPORTANTE: decimal_quantity pode ser 0 (válido para stepSize inteiro como "1")
+    if (marketInfo?.decimal_quantity === undefined || marketInfo?.decimal_price === undefined) {
       throw new Error(
         `MarketInfo inválido para ${standardOrder.symbol}: decimal_quantity e decimal_price obrigatórios`
       );
     }
 
-    Logger.debug(
+    Logger.info(
       `[BackpackOrderFormatter] Formatando ordem: ${standardOrder.symbol} ${standardOrder.side} ${standardOrder.quantity} @ ${standardOrder.price || 'MARKET'}`
     );
 
@@ -78,15 +79,17 @@ class BackpackOrderFormatter extends OrderPayloadFormatter {
       quantity: formattedQuantity,
       timeInForce: standardOrder.timeInForce || this.getDefaultTimeInForce(backpackOrderType),
       selfTradePrevention: 'RejectTaker', // Padrão da Backpack
-      clientId: standardOrder.clientId || null,
     };
+
+    // Adiciona clientId apenas se fornecido (não inclui se null/undefined)
+    if (standardOrder.clientId) {
+      backpackPayload.clientId = standardOrder.clientId; // Backpack espera integer
+    }
 
     // Para ordens LIMIT, adiciona preço e postOnly
     if (backpackOrderType === 'Limit') {
       if (!standardOrder.price) {
-        throw new Error(
-          `Preço obrigatório para ordens LIMIT: ${standardOrder.symbol}`
-        );
+        throw new Error(`Preço obrigatório para ordens LIMIT: ${standardOrder.symbol}`);
       }
 
       // Formata preço com decimais corretos
@@ -106,13 +109,18 @@ class BackpackOrderFormatter extends OrderPayloadFormatter {
     // Adiciona opções extras se fornecidas (sem sobrescrever campos obrigatórios)
     if (standardOrder.options) {
       const { symbol, side, orderType, quantity, price, ...extraOptions } = standardOrder.options;
-      Object.assign(backpackPayload, extraOptions);
-    }
 
-    Logger.debug(
-      `[BackpackOrderFormatter] ✅ Payload formatado:`,
-      JSON.stringify(backpackPayload, null, 2)
-    );
+      // 🚨 CRITICAL: Remove campos undefined antes de adicionar ao payload
+      // Campos undefined na assinatura causam "Invalid signature"
+      const cleanedOptions = {};
+      for (const [key, value] of Object.entries(extraOptions)) {
+        if (value !== undefined && value !== null) {
+          cleanedOptions[key] = value;
+        }
+      }
+
+      Object.assign(backpackPayload, cleanedOptions);
+    }
 
     return backpackPayload;
   }
@@ -129,9 +137,7 @@ class BackpackOrderFormatter extends OrderPayloadFormatter {
     if (normalizedSide === 'BUY') return 'Bid';
     if (normalizedSide === 'SELL') return 'Ask';
 
-    Logger.warn(
-      `⚠️ [BackpackOrderFormatter] Side desconhecido: ${side}, usando como está`
-    );
+    Logger.warn(`⚠️ [BackpackOrderFormatter] Side desconhecido: ${side}, usando como está`);
     return side;
   }
 
@@ -343,7 +349,7 @@ class BackpackOrderFormatter extends OrderPayloadFormatter {
     return backpackPositions.map(pos => ({
       symbol: pos.symbol,
       side: pos.side || (pos.positionSide === 'LONG' ? 'BUY' : 'SELL'),
-      quantity: parseFloat(pos.quantity || pos.positionAmt || 0),
+      netQuantity: parseFloat(pos.netQuantity || pos.quantity || pos.positionAmt || 0),
       entryPrice: parseFloat(pos.entryPrice || pos.avgPrice || 0),
       markPrice: parseFloat(pos.markPrice || 0),
       liquidationPrice: parseFloat(pos.liquidationPrice || 0),

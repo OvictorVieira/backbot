@@ -24,6 +24,31 @@ class PositionUtils {
         config.apiSecret
       );
 
+      Logger.debug(
+        `🔍 [ORDER_FILTER] ${symbol}: CachedOrdersService retornou ${allOrders?.length || 0} ordens`
+      );
+
+      // 🔍 DEBUG: Log detalhado das ordens para identificar estrutura
+      if (allOrders && allOrders.length > 0) {
+        Logger.debug(
+          `🔍 [ORDER_FILTER] ${symbol}: Estrutura das ordens:`,
+          JSON.stringify(
+            allOrders.map(o => ({
+              id: o.id || o.orderId,
+              orderType: o.orderType,
+              side: o.side,
+              triggerPrice: o.triggerPrice,
+              price: o.price,
+              stopLossTriggerPrice: o.stopLossTriggerPrice,
+              stopLossLimitPrice: o.stopLossLimitPrice,
+              takeProfitTriggerPrice: o.takeProfitTriggerPrice,
+            })),
+            null,
+            2
+          )
+        );
+      }
+
       // 🔒 VALIDAÇÃO CRÍTICA: Garante que allOrders é um array iterável antes do loop
       if (!allOrders || !Array.isArray(allOrders)) {
         Logger.warn(
@@ -33,12 +58,12 @@ class PositionUtils {
       }
 
       if (allOrders.length === 0) {
+        Logger.info(`⚠️ [ORDER_FILTER] ${symbol}: Nenhuma ordem retornada pelo cache`);
         return [];
       }
 
       const filteredOrders = [];
 
-      // 🔒 CORREÇÃO: Busca preço atual se não estiver disponível na posição
       let currentPrice = parseFloat(position.markPrice);
       if (!currentPrice || isNaN(currentPrice)) {
         try {
@@ -68,13 +93,20 @@ class PositionUtils {
 
       for (const order of allOrders) {
         const triggerRaw =
-          order.triggerPrice ??
-          order.price ??
-          order.stopLossTriggerPrice ??
-          order.stopLossLimitPrice;
+          order.triggerPrice ?? order.stopLossTriggerPrice ?? order.takeProfitTriggerPrice;
         const triggerValue = triggerRaw != null ? Number(triggerRaw) : null;
 
-        if (triggerValue !== null && Number.isFinite(triggerValue)) {
+        // Valida que é realmente uma ordem trigger (não ordem de entrada)
+        const isTriggerOrder =
+          triggerValue !== null &&
+          Number.isFinite(triggerValue) &&
+          (order.triggerPrice ||
+            order.stopLossTriggerPrice ||
+            order.takeProfitTriggerPrice ||
+            order.orderType === 'STOP_MARKET' ||
+            order.orderType === 'TAKE_PROFIT_MARKET');
+
+        if (isTriggerOrder) {
           if (filterLogic(triggerValue, currentPrice, isLong)) {
             filteredOrders.push(order);
           }
@@ -97,28 +129,49 @@ class PositionUtils {
 
   /**
    * Busca ordens de Stop Loss para um símbolo
+   * 🔧 CORREÇÃO: Compara trigger com ENTRY PRICE, não current price
+   * Stop Loss está SEMPRE do lado oposto à posição (LONG = abaixo, SHORT = acima)
    */
   static async getStopLossOrders(symbol, position, config) {
+    const entryPrice = parseFloat(position.avgEntryPrice || position.entryPrice || 0);
+
     return await this.getFilteredOrders(
       symbol,
       position,
       config,
-      (triggerValue, currentPrice, isLong) =>
-        isLong ? triggerValue < currentPrice : triggerValue > currentPrice,
+      (triggerValue, currentPrice, isLong) => {
+        // 🔍 DEBUG: Log para ver a comparação
+        const result = isLong ? triggerValue < entryPrice : triggerValue > entryPrice;
+        Logger.debug(
+          `🔍 [SL_FILTER] ${symbol}: Trigger ${triggerValue.toFixed(4)} vs Entry ${entryPrice.toFixed(4)} ` +
+          `(${isLong ? 'LONG' : 'SHORT'}) = ${result ? '✅ SL' : '❌ não é SL'}`
+        );
+        return result;
+      },
       'Stop Loss'
     );
   }
 
   /**
    * Busca ordens de Take Profit para um símbolo
+   * 🔧 CORREÇÃO: Compara trigger com ENTRY PRICE, não current price
+   * Take Profit está SEMPRE do lado favorável à posição (LONG = acima, SHORT = abaixo)
    */
   static async getTakeProfitOrders(symbol, position, config) {
+    const entryPrice = parseFloat(position.avgEntryPrice || position.entryPrice || 0);
+
     return await this.getFilteredOrders(
       symbol,
       position,
       config,
-      (triggerValue, currentPrice, isLong) =>
-        isLong ? triggerValue > currentPrice : triggerValue < currentPrice,
+      (triggerValue, currentPrice, isLong) => {
+        const result = isLong ? triggerValue > entryPrice : triggerValue < entryPrice;
+        Logger.debug(
+          `🔍 [TP_FILTER] ${symbol}: Trigger ${triggerValue.toFixed(4)} vs Entry ${entryPrice.toFixed(4)} ` +
+          `(${isLong ? 'LONG' : 'SHORT'}) = ${result ? '✅ TP' : '❌ não é TP'}`
+        );
+        return result;
+      },
       'Take Profit'
     );
   }
@@ -133,6 +186,11 @@ class PositionUtils {
   static async hasStopLoss(symbol, position, config) {
     try {
       const stopLossOrders = await this.getStopLossOrders(symbol, position, config);
+
+      Logger.debug (
+        `🔍 [STOP_LOSS_UTILS] ${symbol}: hasStopLoss encontrou ${stopLossOrders.length} ordens de stop loss`
+      );
+
       return stopLossOrders.length > 0;
     } catch (error) {
       Logger.error(
