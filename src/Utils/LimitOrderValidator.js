@@ -1,6 +1,7 @@
 import Logger from './Logger.js';
 import BackpackWebSocket from '../Backpack/Public/WebSocket.js';
-import Order from '../Backpack/Authenticated/Order.js';
+import ExchangeManager from '../Exchange/ExchangeManager.js';
+import CachedOrdersService from './CachedOrdersService.js';
 
 /**
  * LimitOrderValidator - Sistema de validação e cancelamento automático de ordens LIMIT
@@ -23,6 +24,10 @@ class LimitOrderValidator {
     this.defaultSlippageThreshold = 0.8; // 0.8% - Conservador mas não muito agressivo
     this.validationIntervalMs = 15000; // Verifica a cada 15 segundos
     this.maxOrderAge = 5 * 60 * 1000; // Remove ordens após 5 minutos sem validação
+
+    // 🔒 Sistema de cooldown para evitar criação imediata de nova ordem após cancelamento
+    this.recentCancellations = new Map(); // symbol -> { timestamp, orderId, botId }
+    this.cancellationCooldown = 10000; // 10 segundos de cooldown após cancelamento
 
     Logger.info('🎯 [LIMIT_VALIDATOR] Inicializador criado');
   }
@@ -124,8 +129,18 @@ class LimitOrderValidator {
       await this.subscribeToSymbol(symbol);
     }
 
+    // 📊 Log detalhado: mostra total de ordens e de quais bots
+    const botsByOrders = new Map();
+    for (const [id, order] of this.monitoredOrders) {
+      const botName = order.botConfig?.botName || order.botConfig?.id || 'UNKNOWN';
+      botsByOrders.set(botName, (botsByOrders.get(botName) || 0) + 1);
+    }
+    const botsInfo = Array.from(botsByOrders.entries())
+      .map(([name, count]) => `${name}(${count})`)
+      .join(', ');
+
     Logger.info(
-      `📝 [LIMIT_VALIDATOR] Ordem adicionada: ${orderId} | ${symbol} ${side} @ $${price} | Slippage máx: ${slippageThreshold || this.defaultSlippageThreshold}%`
+      `📝 [LIMIT_VALIDATOR] Ordem adicionada: ${orderId} | ${symbol} ${side} @ $${price} | Bot: ${botConfig?.botName || botConfig?.id || 'UNKNOWN'} | Total: ${this.monitoredOrders.size} ordens [${botsInfo}]`
     );
   }
 
@@ -136,10 +151,24 @@ class LimitOrderValidator {
   removeOrderFromMonitor(orderId) {
     if (this.monitoredOrders.has(orderId)) {
       const orderData = this.monitoredOrders.get(orderId);
+      const botName = orderData.botConfig?.botName || orderData.botConfig?.id || 'UNKNOWN';
       this.monitoredOrders.delete(orderId);
 
-      Logger.debug(
-        `🗑️ [LIMIT_VALIDATOR] Ordem removida do monitoramento: ${orderId} (${orderData.symbol})`
+      // 📊 Log detalhado: mostra quantas ordens restam e de quais bots
+      const botsByOrders = new Map();
+      for (const [id, order] of this.monitoredOrders) {
+        const name = order.botConfig?.botName || order.botConfig?.id || 'UNKNOWN';
+        botsByOrders.set(name, (botsByOrders.get(name) || 0) + 1);
+      }
+      const botsInfo =
+        botsByOrders.size > 0
+          ? Array.from(botsByOrders.entries())
+              .map(([name, count]) => `${name}(${count})`)
+              .join(', ')
+          : 'nenhum';
+
+      Logger.info(
+        `🗑️ [LIMIT_VALIDATOR] Ordem removida: ${orderId} (${orderData.symbol}) | Bot: ${botName} | Restam: ${this.monitoredOrders.size} ordens [${botsInfo}]`
       );
 
       // Se não há mais ordens para este símbolo, unsubscribe
@@ -196,18 +225,57 @@ class LimitOrderValidator {
   }
 
   /**
-   * Atualiza preço no cache
+   * Atualiza preço no cache e valida ordens em tempo real
    * @param {string} symbol - Símbolo do mercado
    * @param {number} price - Preço atual
    */
-  updatePrice(symbol, price) {
+  async updatePrice(symbol, price) {
     const previousPrice = this.priceCache.get(symbol);
-    this.priceCache.set(symbol, parseFloat(price));
+    this.priceCache.set(symbol, price);
 
     // Só loga se o preço mudou significativamente (> 0.1%)
     if (!previousPrice || Math.abs((price - previousPrice) / previousPrice) > 0.001) {
       Logger.debug(`💰 [LIMIT_VALIDATOR] ${symbol}: $${parseFloat(price).toFixed(6)}`);
     }
+
+    await this.validateOrdersForSymbol(symbol);
+  }
+
+  /**
+   * Valida todas as ordens de um símbolo específico
+   * @param {string} symbol - Símbolo do mercado
+   */
+  async validateOrdersForSymbol(symbol) {
+    if (!this.isActive || this.monitoredOrders.size === 0) {
+      return;
+    }
+
+    const now = Date.now();
+    const ordersToRemove = [];
+
+    // Filtra ordens apenas deste símbolo
+    for (const [orderId, orderData] of this.monitoredOrders.entries()) {
+      if (orderData.symbol !== symbol) {
+        continue;
+      }
+
+      try {
+        const shouldCancel = await this.validateOrderSlippage(orderId, orderData);
+
+        if (shouldCancel) {
+          await this.cancelOrderDueToSlippage(orderId, orderData);
+          ordersToRemove.push(orderId);
+        } else {
+          orderData.lastValidation = now;
+        }
+      } catch (error) {
+        Logger.error(`❌ [LIMIT_VALIDATOR] Erro ao validar ordem ${orderId}:`, error.message);
+      }
+    }
+
+    ordersToRemove.forEach(orderId => {
+      this.removeOrderFromMonitor(orderId);
+    });
   }
 
   /**
@@ -242,7 +310,6 @@ class LimitOrderValidator {
 
     for (const [orderId, orderData] of this.monitoredOrders.entries()) {
       try {
-        // Remove ordens muito antigas
         if (now - orderData.addedAt > this.maxOrderAge) {
           Logger.debug(
             `⏰ [LIMIT_VALIDATOR] Ordem ${orderId} removida por idade (${Math.round((now - orderData.addedAt) / 60000)}min)`
@@ -251,21 +318,17 @@ class LimitOrderValidator {
           continue;
         }
 
-        // Valida slippage da ordem
         const shouldCancel = await this.validateOrderSlippage(orderId, orderData);
 
         if (shouldCancel) {
-          // Cancela ordem e remove do monitoramento
           await this.cancelOrderDueToSlippage(orderId, orderData);
           ordersToRemove.push(orderId);
         } else {
-          // Atualiza timestamp da última validação
           orderData.lastValidation = now;
         }
       } catch (error) {
         Logger.error(`❌ [LIMIT_VALIDATOR] Erro ao validar ordem ${orderId}:`, error.message);
 
-        // Se erro persistir, remove a ordem após 3 tentativas
         if (!orderData.errorCount) orderData.errorCount = 0;
         orderData.errorCount++;
 
@@ -276,7 +339,6 @@ class LimitOrderValidator {
       }
     }
 
-    // Remove ordens marcadas para remoção
     ordersToRemove.forEach(orderId => {
       this.removeOrderFromMonitor(orderId);
     });
@@ -291,7 +353,6 @@ class LimitOrderValidator {
   async validateOrderSlippage(orderId, orderData) {
     const { symbol, side, price, slippageThreshold } = orderData;
 
-    // Obtém preço atual do cache
     const currentPrice = this.priceCache.get(symbol);
     if (!currentPrice) {
       Logger.debug(`⚠️ [LIMIT_VALIDATOR] ${orderId}: Preço atual não disponível para ${symbol}`);
@@ -302,10 +363,8 @@ class LimitOrderValidator {
     let slippage = 0;
 
     if (side === 'Bid') {
-      // Ordem de compra: problema se preço subiu muito
       slippage = ((currentPrice - price) / price) * 100;
     } else if (side === 'Ask') {
-      // Ordem de venda: problema se preço desceu muito
       slippage = ((price - currentPrice) / price) * 100;
     }
 
@@ -334,36 +393,105 @@ class LimitOrderValidator {
 
     try {
       Logger.warn(
-        `🚫 [LIMIT_VALIDATOR] Cancelando ordem ${orderId} (${symbol}) por slippage alto...`
+        `🚫 [LIMIT_VALIDATOR] Slippage alto detectado para ${symbol} - verificando ordens pendentes na corretora...`
       );
 
-      // Cancela ordem na exchange (Order já é uma instância exportada)
-      const result = await Order.cancelOpenOrder(
+      // 🔍 BUSCA ORDENS PENDENTES DIRETAMENTE DA EXCHANGE
+      const exchangeManager = ExchangeManager.createFromConfig(botConfig);
+      const openOrders = await exchangeManager.getOpenOrdersForSymbol(
         symbol,
-        orderId,
-        null,
         botConfig.apiKey,
         botConfig.apiSecret
       );
 
-      if (result && result.success !== false) {
-        Logger.info(`✅ [LIMIT_VALIDATOR] Ordem ${orderId} cancelada com sucesso`);
+      // Filtra apenas ordens LIMIT de entrada (não SL/TP)
+      const limitOrders = openOrders.filter(order => {
+        const isLimitOrder = order.orderType === 'Limit';
+        const isPending = order.status === 'Pending' || order.status === 'New';
+        const isNotReduceOnly = !order.reduceOnly;
+        const isNotStopLoss = !order.stopLossTriggerPrice && !order.stopLossLimitPrice;
+        const isNotTakeProfit = !order.takeProfitTriggerPrice && !order.takeProfitLimitPrice;
 
-        // Notifica que a ordem foi cancelada para que o sistema de decisão possa criar nova
+        return isLimitOrder && isPending && isNotReduceOnly && isNotStopLoss && isNotTakeProfit;
+      });
+
+      if (limitOrders.length === 0) {
+        Logger.info(
+          `✅ [LIMIT_VALIDATOR] Nenhuma ordem LIMIT pendente encontrada para ${symbol} - provavelmente foi EXECUTADA (filled)`
+        );
+
+        // 🔒 Invalida cache - ordem pode ter sido executada
+        CachedOrdersService.invalidateCache(symbol, botConfig.apiKey);
+
+        Logger.info(
+          `📢 [LIMIT_VALIDATOR] ORDEM_EXECUTADA: ${symbol} | Sistema não criará nova ordem (já foi executada)`
+        );
+
+        // Remove do monitoramento sem criar cooldown
+        return;
+      }
+
+      // 📋 Log das ordens encontradas
+      Logger.info(
+        `📋 [LIMIT_VALIDATOR] ${symbol}: ${limitOrders.length} ordem(ns) LIMIT pendente(s) encontrada(s)`
+      );
+
+      limitOrders.forEach(order => {
+        Logger.debug(
+          `   📝 ID: ${order.id} | ${order.side} @ $${order.price} | Qty: ${order.quantity}`
+        );
+      });
+
+      // 🎯 Cancela TODAS as ordens LIMIT de entrada deste símbolo
+      let cancelCount = 0;
+      for (const order of limitOrders) {
+        try {
+          Logger.warn(
+            `🚫 [LIMIT_VALIDATOR] Cancelando ordem ${order.id} (${symbol}) por slippage alto...`
+          );
+
+          const result = await exchangeManager.cancelOpenOrder(
+            symbol,
+            order.id,
+            null,
+            botConfig.apiKey,
+            botConfig.apiSecret
+          );
+
+          if (result && result.success !== false) {
+            Logger.info(`✅ [LIMIT_VALIDATOR] Ordem ${order.id} cancelada com sucesso`);
+            cancelCount++;
+          } else {
+            Logger.warn(
+              `⚠️ [LIMIT_VALIDATOR] Resposta inesperada ao cancelar ordem ${order.id}:`,
+              JSON.stringify(result)
+            );
+          }
+        } catch (error) {
+          Logger.error(`❌ [LIMIT_VALIDATOR] Erro ao cancelar ordem ${order.id}:`, error.message);
+        }
+      }
+
+      if (cancelCount > 0) {
+        Logger.info(
+          `✅ [LIMIT_VALIDATOR] ${symbol}: ${cancelCount} ordem(ns) cancelada(s) com sucesso`
+        );
+
+        // 🔒 Invalida cache de ordens para forçar atualização
+        CachedOrdersService.invalidateCache(symbol, botConfig.apiKey);
+        Logger.debug(`🔄 [LIMIT_VALIDATOR] Cache de ordens invalidado para ${symbol}`);
+
+        // Notifica que ordens foram canceladas (ativa cooldown)
         this.notifyOrderCancelled(orderId, orderData, 'SLIPPAGE_HIGH');
       } else {
-        Logger.error(`❌ [LIMIT_VALIDATOR] Falha ao cancelar ordem ${orderId}:`, result);
+        Logger.warn(`⚠️ [LIMIT_VALIDATOR] ${symbol}: Nenhuma ordem foi cancelada com sucesso`);
       }
     } catch (error) {
-      Logger.error(`❌ [LIMIT_VALIDATOR] Erro ao cancelar ordem ${orderId}:`, error.message);
-
-      // Se erro de "ordem não encontrada", provavelmente já foi executada/cancelada
-      if (error.message.includes('Order not found') || error.message.includes('não encontrada')) {
-        Logger.info(`ℹ️ [LIMIT_VALIDATOR] Ordem ${orderId} já foi executada/cancelada`);
-        this.notifyOrderCancelled(orderId, orderData, 'ALREADY_EXECUTED');
-      } else {
-        throw error;
-      }
+      Logger.error(
+        `❌ [LIMIT_VALIDATOR] Erro crítico ao processar cancelamento para ${symbol}:`,
+        error.message
+      );
+      throw error;
     }
   }
 
@@ -374,12 +502,55 @@ class LimitOrderValidator {
    * @param {string} reason - Motivo do cancelamento
    */
   notifyOrderCancelled(orderId, orderData, reason) {
-    Logger.info(
-      `📢 [LIMIT_VALIDATOR] ORDEM_CANCELADA: ${orderId} | ${orderData.symbol} | Motivo: ${reason} | Sistema de decisão pode criar nova ordem`
+    const { symbol, botConfig } = orderData;
+
+    // 🔒 Registra cancelamento para cooldown
+    this.recentCancellations.set(symbol, {
+      timestamp: Date.now(),
+      orderId,
+      botId: botConfig?.id || 'UNKNOWN',
+      reason,
+    });
+
+    Logger.info(`📢 [LIMIT_VALIDATOR] ORDEM_CANCELADA: ${orderId} | ${symbol} | Motivo: ${reason}`);
+    Logger.warn(
+      `⏱️ [LIMIT_VALIDATOR] ${symbol}: Cooldown de ${this.cancellationCooldown / 1000}s ativado - Sistema não criará nova ordem imediatamente`
     );
+
+    // Limpa cooldown automaticamente após o tempo definido
+    setTimeout(() => {
+      if (this.recentCancellations.get(symbol)?.orderId === orderId) {
+        this.recentCancellations.delete(symbol);
+        Logger.info(
+          `✅ [LIMIT_VALIDATOR] ${symbol}: Cooldown expirado - Sistema pode criar nova ordem`
+        );
+      }
+    }, this.cancellationCooldown);
 
     // TODO: Integrar com sistema de eventos se necessário
     // EventEmitter.emit('limitOrderCancelled', { orderId, orderData, reason });
+  }
+
+  /**
+   * Verifica se um símbolo está em cooldown (cancelamento recente)
+   * @param {string} symbol - Símbolo do mercado
+   * @returns {boolean} True se está em cooldown
+   */
+  isSymbolInCooldown(symbol) {
+    const cancellation = this.recentCancellations.get(symbol);
+    if (!cancellation) return false;
+
+    const elapsed = Date.now() - cancellation.timestamp;
+    const isInCooldown = elapsed < this.cancellationCooldown;
+
+    if (isInCooldown) {
+      const remaining = Math.ceil((this.cancellationCooldown - elapsed) / 1000);
+      Logger.debug(
+        `⏱️ [LIMIT_VALIDATOR] ${symbol}: Em cooldown - ${remaining}s restantes (ordem ${cancellation.orderId} cancelada por ${cancellation.reason})`
+      );
+    }
+
+    return isInCooldown;
   }
 
   /**

@@ -8,6 +8,57 @@ import RiskManager from '../Risk/RiskManager.js';
  */
 class QuantityCalculator {
   /**
+   * 📊 Calcula e exibe requisitos mínimos para todos os mercados
+   * Útil para configuração inicial do bot
+   * @param {Array} markets - Lista de mercados disponíveis
+   * @param {object} config - Configuração do bot
+   * @returns {Array} Lista de mercados com requisitos calculados
+   */
+  static calculateMinimumRequirements(markets, config) {
+    try {
+      const capitalPercentage = config?.capitalPercentage || 20; // padrão 20%
+
+      Logger.info(
+        `\n📊 [CAPITAL_REQUIREMENTS] Requisitos Mínimos por Token (${capitalPercentage}% do capital):`
+      );
+      Logger.info(`${'═'.repeat(80)}`);
+
+      const requirements = markets
+        .map(market => {
+          const minQty = market.minQuantity || market.stepSize_quantity || 0;
+          const currentPrice = market.currentPrice || 0; // Precisa ser passado externamente
+          const minOrderValueUSD = minQty * currentPrice;
+          const capitalNeeded = minOrderValueUSD / (capitalPercentage / 100);
+
+          return {
+            symbol: market.symbol,
+            minQuantity: minQty,
+            minOrderValueUSD,
+            capitalNeeded,
+            currentPrice,
+          };
+        })
+        .filter(req => req.currentPrice > 0) // Só mostra tokens com preço disponível
+        .sort((a, b) => b.capitalNeeded - a.capitalNeeded); // Ordena por capital necessário (maior primeiro)
+
+      requirements.forEach(req => {
+        Logger.info(
+          `   ${req.symbol.padEnd(20)} | ` +
+            `Ordem Min: $${req.minOrderValueUSD.toFixed(2).padStart(8)} | ` +
+            `Capital: $${req.capitalNeeded.toFixed(2).padStart(8)} | ` +
+            `Qty: ${req.minQuantity} @ $${req.currentPrice.toFixed(6)}`
+        );
+      });
+
+      Logger.info(`${'═'.repeat(80)}\n`);
+
+      return requirements;
+    } catch (error) {
+      Logger.error(`❌ [CAPITAL_REQUIREMENTS] Erro ao calcular requisitos:`, error.message);
+      return [];
+    }
+  }
+  /**
    * 🎯 MÉTODO PRINCIPAL - Calcula quantidade respeitando RIGOROSAMENTE o capitalPercentage
    * Este é o ÚNICO método que deve ser usado para calcular tamanho de posições
    * @param {number} entryPrice - Preço de entrada
@@ -156,9 +207,34 @@ class QuantityCalculator {
         return { quantity: '0', orderValue: 0, isValid: false, error };
       }
 
+      // 🎯 VALIDAÇÃO PREVENTIVA: Calcula valor mínimo ANTES de processar
+      const minQuantity = marketInfo?.minQuantity ? parseFloat(marketInfo.minQuantity) : 0;
+      const minOrderValueUSD = minQuantity * entryPrice;
+
+      // Se há quantidade mínima, verifica se o volume é suficiente
+      if (minQuantity > 0 && volumeUSD < minOrderValueUSD) {
+        const shortfallPct = (((minOrderValueUSD - volumeUSD) / minOrderValueUSD) * 100).toFixed(1);
+        const error = `Volume insuficiente: $${volumeUSD.toFixed(2)} < mínimo $${minOrderValueUSD.toFixed(2)} (faltam ${shortfallPct}%)`;
+        Logger.error(`❌ [QUANTITY_CALC] ${market}: ${error}`);
+        Logger.info(
+          `💡 [QUANTITY_CALC] ${market}: Quantidade mínima: ${minQuantity} × Preço: $${entryPrice.toFixed(6)} = Ordem mínima: $${minOrderValueUSD.toFixed(2)}`
+        );
+        Logger.info(
+          `💡 [QUANTITY_CALC] ${market}: Para operar este token, configure capital maior ou aumente capitalPercentage`
+        );
+        return {
+          quantity: '0',
+          orderValue: 0,
+          isValid: false,
+          error,
+          minOrderValueUSD,
+          volumeShortfall: minOrderValueUSD - volumeUSD,
+        };
+      }
+
       // Log do cálculo de quantidade
       Logger.debug(
-        `[QUANTITY_CALC] ${market} - Volume: $${volumeUSD.toFixed(2)}, Price: $${entryPrice.toFixed(6)}, StepSize: ${stepSize}`
+        `[QUANTITY_CALC] ${market} - Volume: $${volumeUSD.toFixed(2)}, Price: $${entryPrice.toFixed(6)}, StepSize: ${stepSize}, MinQty: ${minQuantity}`
       );
 
       // Cálculo principal: Volume USD / Preço = Quantidade
@@ -187,7 +263,7 @@ class QuantityCalculator {
         if (stepAdjusted <= 0 && marketInfo?.minQuantity) {
           adjustedQuantity = parseFloat(marketInfo.minQuantity);
           Logger.debug(
-            `⚠️ [QUANTITY_CALC] ${market}: stepSize zeraria quantidade, mantendo minQuantity ${adjustedQuantity}`
+            `⚠️ [QUANTITY_CALC] ${market}: stepSize zeraria quantidade, usando minQuantity ${adjustedQuantity}`
           );
         } else {
           adjustedQuantity = stepAdjusted;
@@ -212,8 +288,39 @@ class QuantityCalculator {
 
       // Validação final
       if (finalQuantity <= 0) {
+        // Calcula e exibe informações detalhadas sobre por que falhou
+        const minQty = marketInfo?.minQuantity || 0;
+        const minOrderValueUSD = minQty * entryPrice;
+        const shortfallPct =
+          minOrderValueUSD > 0
+            ? (((minOrderValueUSD - volumeUSD) / minOrderValueUSD) * 100).toFixed(1)
+            : 0;
+
         const error = `Quantidade calculada inválida: ${finalQuantity}`;
         Logger.error(`❌ [QUANTITY_CALC] ${market}: ${error}`);
+        Logger.info(`💡 [QUANTITY_CALC] ${market}: Detalhes do cálculo:`);
+        Logger.info(`   • Volume disponível: $${volumeUSD.toFixed(2)}`);
+        Logger.info(`   • Preço de entrada: $${entryPrice.toFixed(6)}`);
+        Logger.info(`   • Quantidade bruta: ${rawQuantity.toFixed(8)}`);
+        Logger.info(`   • StepSize: ${stepSize || 'N/A'}`);
+        Logger.info(`   • Quantidade mínima: ${minQty || 'N/A'}`);
+
+        if (minQty > 0) {
+          Logger.info(
+            `   • Ordem mínima: ${minQty} × $${entryPrice.toFixed(6)} = $${minOrderValueUSD.toFixed(2)}`
+          );
+          Logger.info(
+            `   • Déficit: $${(minOrderValueUSD - volumeUSD).toFixed(2)} (${shortfallPct}%)`
+          );
+          Logger.info(
+            `💡 [QUANTITY_CALC] ${market}: Aumente capital ou capitalPercentage para atingir mínimo de $${minOrderValueUSD.toFixed(2)}`
+          );
+        } else {
+          Logger.info(
+            `💡 [QUANTITY_CALC] ${market}: StepSize muito grande para o volume disponível`
+          );
+        }
+
         return { quantity: '0', orderValue: 0, isValid: false, error };
       }
 

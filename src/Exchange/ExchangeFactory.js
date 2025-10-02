@@ -8,7 +8,8 @@ import { BackpackExchange } from './BackpackExchange.js';
 export class ExchangeFactory {
   /**
    * Cria uma instância de uma exchange com base no nome.
-   * @param {string} exchangeName - Nome da exchange (ex: 'Backpack', 'Bingx').
+   * @param {string} exchangeName - Nome da exchange (ex:
+   * 'Backpack', 'Pacifica').
    * @returns {BaseExchange} - Instância da exchange.
    */
   static createExchange(exchangeName) {
@@ -18,11 +19,11 @@ export class ExchangeFactory {
       case 'BACKPACK':
         Logger.debug(`✅ ExchangeFactory: Criando instância para Backpack`);
         return new BackpackExchange();
-      case 'BINGX':
+      case 'PACIFICA':
         // Futura implementação
-        // import { BingxExchange } from './BingxExchange.js';
-        // return new BingxExchange();
-        throw new Error('Exchange Bingx ainda não implementada.');
+        // import { PacificaExchange } from './PacificaExchange.js';
+        // return new PacificaExchange();
+        throw new Error('Exchange Pacifica ainda não implementada.');
       default:
         Logger.warn(`⚠️ Exchange "${name}" não encontrada, usando Backpack por padrão.`);
         return new BackpackExchange();

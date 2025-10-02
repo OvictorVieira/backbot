@@ -19,9 +19,7 @@ import { WebSocketServer } from 'ws';
 import http from 'http';
 import { execSync } from 'child_process';
 import fetch from 'node-fetch';
-import Account from './src/Backpack/Authenticated/Account.js';
-import Capital from './src/Backpack/Authenticated/Capital.js';
-import Futures from './src/Backpack/Authenticated/Futures.js';
+import ExchangeManager from './src/Exchange/ExchangeManager.js';
 
 import Decision from './src/Decision/Decision.js';
 import { StrategyFactory } from './src/Decision/Strategies/StrategyFactory.js';
@@ -33,21 +31,23 @@ import MultiBotManager from './src/MultiBot/MultiBotManager.js';
 import AccountConfig from './src/Config/AccountConfig.js';
 import TimeframeConfig from './src/Config/TimeframeConfig.js';
 import ConfigManagerSQLite from './src/Config/ConfigManagerSQLite.js';
-import History from './src/Backpack/Authenticated/History.js';
 import BotOrdersManager, { initializeBotOrdersManager } from './src/Config/BotOrdersManager.js';
 import ImportOrdersFromBackpack from './src/Config/ImportOrdersFromBackpack.js';
 import ImportPositionsFromBackpack from './src/Config/ImportPositionsFromBackpack.js';
 import DatabaseService from './src/Services/DatabaseService.js';
 import Markets from './src/Backpack/Public/Markets.js';
+import Futures from './src/Backpack/Authenticated/Futures.js';
+import Order from './src/Backpack/Authenticated/Order.js';
 import RequestManager from './src/Utils/RequestManager.js';
 import PositionSyncServiceClass from './src/Services/PositionSyncService.js';
 import PositionTrackingService from './src/Services/PositionTrackingService.js';
 import OrdersService from './src/Services/OrdersService.js';
-import Order from './src/Backpack/Authenticated/Order.js';
 import AccountController from './src/Controllers/AccountController.js';
 import CachedOrdersService from './src/Utils/CachedOrdersService.js';
 import HFTController from './src/Controllers/HFTController.js';
 import FeatureToggleService from './src/Services/FeatureToggleService.js';
+import Account from './src/Backpack/Authenticated/Account.js';
+import Capital from './src/Backpack/Authenticated/Capital.js';
 
 // Instância global do HFTController
 const hftController = new HFTController();

@@ -1,6 +1,8 @@
 import WebSocket from 'ws';
 import Logger from '../../Utils/Logger.js';
 import { auth } from '../Authenticated/Authentication.js';
+import PositionMonitorService from '../../Services/PositionMonitorService.js';
+import LimitOrderValidator from '../../Utils/LimitOrderValidator.js';
 
 class BackpackWebSocket {
   constructor() {
@@ -18,6 +20,9 @@ class BackpackWebSocket {
     // Throttling para evitar spam de atualizações
     this.lastUpdate = new Map(); // symbol -> timestamp
     this.updateThrottle = 10000; // 10 segundos mínimo entre atualizações (reduz spam de logs)
+
+    // Injeção do serviço de monitoramento de posições
+    this.positionMonitor = PositionMonitorService;
   }
 
   /**
@@ -158,7 +163,7 @@ class BackpackWebSocket {
   /**
    * Processa atualizações de preço com throttling
    */
-  handlePriceUpdate(data) {
+  async handlePriceUpdate(data) {
     const now = Date.now();
     const symbol = data.s;
     const lastUpdateTime = this.lastUpdate.get(symbol) || 0;
@@ -183,16 +188,15 @@ class BackpackWebSocket {
         currentPrice = (askPrice * bidQty + bidPrice * askQty) / (askQty + bidQty);
       }
 
+      // 1️⃣ Valida posições abertas (SL/TP)
+      if (this.positionMonitor) {
+        await this.positionMonitor.checkPositionThresholds(symbol, currentPrice);
+      }
+
+      await LimitOrderValidator.updatePrice(symbol, currentPrice);
+
+      // 3️⃣ Executa callbacks customizados
       if (this.priceCallbacks.has(symbol)) {
-        // Throttling para logs (evita spam)
-        const now = Date.now();
-        const lastLog = this.lastUpdate.get(symbol) || 0;
-
-        if (now - lastLog > this.updateThrottle) {
-          Logger.info(`📊 [BACKPACK_WS] ${symbol}: Preço atualizado para ${currentPrice}`);
-          this.lastUpdate.set(symbol, now);
-        }
-
         const callback = this.priceCallbacks.get(symbol);
         try {
           callback(symbol, currentPrice, data);
