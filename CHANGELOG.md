@@ -5,6 +5,110 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.9.0] - 2025-02-10
+
+### ✨ **MAJOR FEATURE: UnifiedOrderModel & Heikin Ashi Filter**
+
+#### 🎯 **Nova Arquitetura de Ordens**
+- ✅ **UnifiedOrderModel Implementado:** Modelo unificado de ordens abstraindo especificidades das exchanges
+  - **Benefícios:**
+    - Abstração completa: código de negócio não conhece detalhes de exchanges
+    - Multi-exchange ready: facilita adição de novas exchanges
+    - Type safety: validação centralizada e consistente
+    - Testabilidade: mocks simplificados e testes robustos
+  - **Estrutura:**
+    - Tipos: MARKET, LIMIT, STOP_LOSS, TAKE_PROFIT
+    - Sides: LONG, SHORT, CLOSE_LONG, CLOSE_SHORT
+    - Stop Loss e Take Profit integrados
+    - Metadata para tracking e auditoria
+  - **Factory Methods:**
+    - `createOpenLong()` / `createOpenShort()` - Abertura de posições
+    - `createCloseLong()` / `createCloseShort()` - Fechamento de posições
+    - `createStopLoss()` / `createTakeProfit()` - Ordens de proteção
+
+#### 🔄 **BackpackOrderFormatter Estendido**
+- ✅ **Método formatUnifiedOrder():** Tradutor de UnifiedOrderModel para formato Backpack
+  - Conversão de sides: LONG→Bid, SHORT→Ask, CLOSE_LONG→Ask, CLOSE_SHORT→Bid
+  - Conversão de types: MARKET/LIMIT/STOP_LOSS/TAKE_PROFIT → Market/Limit
+  - Suporte a Stop Loss e Take Profit integrados
+  - Validação completa antes de enviar para exchange
+
+#### 📋 **Plano de Migração Criado**
+- ✅ **UNIFIED_ORDER_MODEL_MIGRATION.md:** Documento completo de migração
+  - Status em 5 fases (Infraestrutura, Helpers, Migração, Validação, Limpeza)
+  - Lista completa de arquivos a migrar (OrderController, OrdersService, app-api.js)
+  - Checklist detalhado por arquivo e método
+  - Testes unitários e de integração obrigatórios
+  - Cronograma sugerido (5 semanas)
+  - Pontos de atenção críticos e métricas de sucesso
+
+### 🎯 **FEATURE: Heikin Ashi Reversal Filter**
+
+#### 📊 **Validação de Reversão de 3 Velas**
+- ✅ **Filtro Heikin Ashi Implementado:** Previne entradas "meio de movimento"
+  - **Lógica de Reversão:**
+    - LONG: [DOWN] → [UP] → [UP] (1 vela vermelha + 2 verdes)
+    - SHORT: [UP] → [DOWN] → [DOWN] (1 vela verde + 2 vermelhas)
+  - **Comportamento:**
+    - Habilitado quando `enableHeikinAshi: true` no config do bot
+    - Rejeita sinais sem reversão confirmada
+    - Valida alinhamento da direção com sinal do Momentum
+    - Logs detalhados: `📊 [HEIKIN_ASHI] {symbol}: Velas: [...] | Reversão: ... | Tendência: ...`
+
+#### 🛠️ **Integração na DefaultStrategy**
+- ✅ **Método validateHeikinAshiReversal():** Validação completa de padrão de velas
+  - Extrai direções das 3 últimas velas (current, previous, beforePrevious)
+  - Detecta reversões BULLISH e BEARISH
+  - Retorna hasReversal, direction, reason, velaPattern
+  - Integrado no fluxo analyzeSignals() antes de outros indicadores
+
+#### 🔧 **Correções de Integração**
+- ✅ **Decision.js:** Corrigidos parâmetros de analyzeSignals() para análise do BTC
+  - Mudou de: `analyzeSignals(btcIndicators, true, config)`
+  - Para: `analyzeSignals(btcIndicators, { isBTCAnalysis: true, config })`
+  - Resolve problema de "UNKNOWN" nos logs do Heikin Ashi
+- ✅ **Validação Condicional:** Heikin Ashi só valida quando explicitamente habilitado
+  - Antes: `config.enableHeikinAshiFilter !== false` (habilitado por padrão)
+  - Depois: `config.enableHeikinAshi === true` (desabilitado por padrão)
+  - Previne validação em bots sem Heikin Ashi configurado
+
+### 🔧 **Fixes & Improvements**
+
+#### 🐛 **Bug Fixes**
+- ✅ **Log Level Ajustado:** Mudado de Logger.debug() para Logger.info() no Heikin Ashi
+  - Garante visibilidade dos logs independente do nível configurado
+- ✅ **Symbol Fallback:** Adicionar data.symbol como fallback em validateHeikinAshiReversal()
+  - Resolve casos onde data.market.symbol não está disponível
+
+#### 📝 **Documentação**
+- ✅ **CLAUDE.md Atualizado:** Regras de import e fallbacks documentadas
+- ✅ **Migration Plan:** Guia completo para migração para UnifiedOrderModel
+
+### 🎯 **Impact & Next Steps**
+
+#### 📊 **Impacto Imediato**
+- Bots com `enableHeikinAshi: true` agora validam reversões de 3 velas
+- Previne entradas "meio de movimento" (ex: 3 velas verdes seguidas)
+- Logs mais informativos sobre padrões de velas
+
+#### 🚀 **Próximos Passos**
+- Fase 2: Criar helper executeUnifiedOrder() no OrderController
+- Fase 3: Migração incremental de todos os pontos de criação de payload
+- Fase 4: Validação e testes completos
+- Fase 5: Limpeza e remoção de código legado
+
+### 📦 **Commits Principais**
+```
+bcffe79 ✨ FEATURE: Criar UnifiedOrderModel e tradutor para Backpack
+c12753f 📋 DOCS: Criar plano de migração para UnifiedOrderModel
+3e3d010 🐛 FIX: Validar Heikin Ashi apenas quando explicitamente habilitado
+a06f4a2 🐛 FIX: Corrigir parâmetros de analyzeSignals para análise do BTC
+e7c8b1d 🔧 CONFIG: Mudar log de Heikin Ashi de debug para info
+5c1f89a ✨ FEATURE: Adicionar validação de reversão Heikin Ashi na DefaultStrategy
+```
+
+---
+
 ## [1.8.20] - 2025-09-29
 
 ### 🔧 **CRITICAL FIX: TrailingStop Maintenance Integration**

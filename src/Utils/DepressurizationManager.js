@@ -145,6 +145,8 @@ class DepressurizationManager {
       Logger.error('❌ [DEPRESSURIZATION] Erro durante despressurização:', error.message);
     } finally {
       this.isDepressurizationActive = false;
+      // Limpar cache de logs de bloqueio quando manutenção terminar
+      DepressurizationManager.clearBlockedLogs();
     }
   }
 
@@ -320,14 +322,37 @@ class DepressurizationManager {
   }
 
   /**
-   * Função helper para logging de operações bloqueadas
+   * Função helper para logging de operações bloqueadas com debounce
    * @param {string} operation - Nome da operação que foi bloqueada
    * @param {string} component - Componente que tentou executar a operação
    */
   static logBlockedOperation(operation, component = 'UNKNOWN') {
-    Logger.info(
-      `🚫 [MAINTENANCE_BLOCK] ${operation} bloqueada em ${component} - Evitando rate limit durante manutenção`
-    );
+    // Sistema de debounce - só loga uma vez por componente a cada 30 segundos
+    const key = `${component}_${operation}`;
+    const now = Date.now();
+    const debounceTime = 30000; // 30 segundos
+
+    if (!this.lastBlockedLogs) {
+      this.lastBlockedLogs = new Map();
+    }
+
+    const lastLog = this.lastBlockedLogs.get(key);
+    if (!lastLog || now - lastLog > debounceTime) {
+      this.lastBlockedLogs.set(key, now);
+      Logger.info(
+        `🚫 [MAINTENANCE_BLOCK] ${operation} bloqueada em ${component} - Evitando rate limit durante manutenção`
+      );
+    }
+  }
+
+  /**
+   * Limpa o cache de logs de operações bloqueadas
+   */
+  static clearBlockedLogs() {
+    if (this.lastBlockedLogs) {
+      this.lastBlockedLogs.clear();
+      Logger.debug('🧹 [MAINTENANCE_CLEANUP] Cache de logs de bloqueio limpo');
+    }
   }
 
   /**

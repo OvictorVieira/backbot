@@ -178,7 +178,7 @@ function calculateWaveTrend(candles, channelLen = 9, avgLen = 12, maLen = 3) {
     }
   }
 
-  // Detectar reversão
+  // 🎯 Detectar reversão com validação de zona (acima/abaixo de zero)
   let reversal = null;
   if (wt1.length >= 2 && wt2.length >= 2) {
     const currentWt1 = wt1[wt1.length - 1];
@@ -196,12 +196,12 @@ function calculateWaveTrend(candles, channelLen = 9, avgLen = 12, maLen = 3) {
       !isNaN(currentWt2) &&
       !isNaN(prevWt2)
     ) {
-      // Crossover (Golden Cross)
-      if (prevWt1 <= prevWt2 && currentWt1 > currentWt2) {
+      // 🟢 SINAL DE COMPRA: Crossover (WT1 cruza WT2 para cima) ABAIXO de zero
+      if (prevWt1 <= prevWt2 && currentWt1 > currentWt2 && currentWt1 < 0) {
         reversal = { type: 'GREEN', strength: Math.abs(currentWt1 - currentWt2) };
       }
-      // Crossunder (Death Cross)
-      else if (prevWt1 >= prevWt2 && currentWt1 < currentWt2) {
+      // 🔴 SINAL DE VENDA: Crossunder (WT1 cruza WT2 para baixo) ACIMA de zero
+      else if (prevWt1 >= prevWt2 && currentWt1 < currentWt2 && currentWt1 > 0) {
         reversal = { type: 'RED', strength: Math.abs(currentWt1 - currentWt2) };
       }
     }
@@ -1076,9 +1076,11 @@ function calculateHeikinAshi(candles, timeframe = '5m') {
     };
   }
 
-  // Obter dados atuais e anteriores (HeikinAshi retorna arrays separados)
+  // 🔧 CORREÇÃO: Precisamos das últimas 3 velas para detectar reversão confirmada
+  // Vela -2 (antes da reversão), Vela -1 (reversão), Vela 0 (confirmação)
   const currentIndex = heikinAshiCandles.open.length - 1;
   const previousIndex = currentIndex - 1;
+  const beforePreviousIndex = currentIndex - 2;
 
   const current = {
     open: heikinAshiCandles.open[currentIndex] || null,
@@ -1094,38 +1096,67 @@ function calculateHeikinAshi(candles, timeframe = '5m') {
     close: previousIndex >= 0 ? heikinAshiCandles.close[previousIndex] : null,
   };
 
+  const beforePrevious = {
+    open: beforePreviousIndex >= 0 ? heikinAshiCandles.open[beforePreviousIndex] : null,
+    high: beforePreviousIndex >= 0 ? heikinAshiCandles.high[beforePreviousIndex] : null,
+    low: beforePreviousIndex >= 0 ? heikinAshiCandles.low[beforePreviousIndex] : null,
+    close: beforePreviousIndex >= 0 ? heikinAshiCandles.close[beforePreviousIndex] : null,
+  };
+
   // Determinar direção dos candles (verde = close > open, vermelho = close < open)
   const currentDirection =
     current.close > current.open ? 'UP' : current.close < current.open ? 'DOWN' : 'NEUTRAL';
   const previousDirection =
     previous.close > previous.open ? 'UP' : previous.close < previous.open ? 'DOWN' : 'NEUTRAL';
+  const beforePreviousDirection =
+    beforePrevious.close > beforePrevious.open
+      ? 'UP'
+      : beforePrevious.close < beforePrevious.open
+        ? 'DOWN'
+        : 'NEUTRAL';
 
-  // Detectar mudança de tendência (mudança de cor)
+  // 🎯 NOVA LÓGICA: Detectar REVERSÃO CONFIRMADA (não pegar meio de movimento)
+  // LONG: Vela vermelha → Vela verde → Vela verde (reversão + confirmação)
+  // SHORT: Vela verde → Vela vermelha → Vela vermelha (reversão + confirmação)
   let hasChanged = false;
   let changeType = null;
   let confirmedTrend = 'NEUTRAL';
 
-  if (currentDirection !== 'NEUTRAL' && previousDirection !== 'NEUTRAL') {
-    // Mudança de vermelho para verde (reversão bullish)
-    if (previousDirection === 'DOWN' && currentDirection === 'UP') {
+  // Valida que temos as 3 velas necessárias
+  if (
+    currentDirection !== 'NEUTRAL' &&
+    previousDirection !== 'NEUTRAL' &&
+    beforePreviousDirection !== 'NEUTRAL'
+  ) {
+    // 🟢 REVERSÃO BULLISH CONFIRMADA: Vermelha → Verde → Verde
+    if (
+      beforePreviousDirection === 'DOWN' &&
+      previousDirection === 'UP' &&
+      currentDirection === 'UP'
+    ) {
       hasChanged = true;
       changeType = 'BULLISH';
       confirmedTrend = 'UP';
     }
-    // Mudança de verde para vermelho (reversão bearish)
-    else if (previousDirection === 'UP' && currentDirection === 'DOWN') {
+    // 🔴 REVERSÃO BEARISH CONFIRMADA: Verde → Vermelha → Vermelha
+    else if (
+      beforePreviousDirection === 'UP' &&
+      previousDirection === 'DOWN' &&
+      currentDirection === 'DOWN'
+    ) {
       hasChanged = true;
       changeType = 'BEARISH';
       confirmedTrend = 'DOWN';
     }
-    // Sem mudança, mantém tendência atual
+    // ➡️ Sem reversão confirmada, mantém tendência atual
     else {
       confirmedTrend = currentDirection;
     }
   }
 
   Logger.debug(
-    `📊 [HEIKIN_ASHI] Atual: ${currentDirection}, Anterior: ${previousDirection}, Mudança: ${hasChanged ? changeType : 'NENHUMA'}, Tendência: ${confirmedTrend}`
+    `📊 [HEIKIN_ASHI] Velas: [${beforePreviousDirection}] → [${previousDirection}] → [${currentDirection}] | ` +
+      `Reversão: ${hasChanged ? changeType : 'NENHUMA'} | Tendência: ${confirmedTrend}`
   );
 
   return {
@@ -1146,6 +1177,15 @@ function calculateHeikinAshi(candles, timeframe = '5m') {
       isBullish: previousDirection === 'UP',
       isBearish: previousDirection === 'DOWN',
       direction: previousDirection,
+    },
+    beforePrevious: {
+      open: beforePrevious.open,
+      high: beforePrevious.high,
+      low: beforePrevious.low,
+      close: beforePrevious.close,
+      isBullish: beforePreviousDirection === 'UP',
+      isBearish: beforePreviousDirection === 'DOWN',
+      direction: beforePreviousDirection,
     },
     trendChange: {
       hasChanged,

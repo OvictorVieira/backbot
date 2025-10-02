@@ -1,6 +1,7 @@
 import Logger from './Logger.js';
 import BackpackWebSocket from '../Backpack/Public/WebSocket.js';
-import Order from '../Backpack/Authenticated/Order.js';
+import ExchangeManager from '../Exchange/ExchangeManager.js';
+import CachedOrdersService from './CachedOrdersService.js';
 
 /**
  * LimitOrderValidator - Sistema de validação e cancelamento automático de ordens LIMIT
@@ -23,6 +24,10 @@ class LimitOrderValidator {
     this.defaultSlippageThreshold = 0.8; // 0.8% - Conservador mas não muito agressivo
     this.validationIntervalMs = 15000; // Verifica a cada 15 segundos
     this.maxOrderAge = 5 * 60 * 1000; // Remove ordens após 5 minutos sem validação
+
+    // 🔒 Sistema de cooldown para evitar criação imediata de nova ordem após cancelamento
+    this.recentCancellations = new Map(); // symbol -> { timestamp, orderId, botId }
+    this.cancellationCooldown = 10000; // 10 segundos de cooldown após cancelamento
 
     Logger.info('🎯 [LIMIT_VALIDATOR] Inicializador criado');
   }
@@ -337,8 +342,9 @@ class LimitOrderValidator {
         `🚫 [LIMIT_VALIDATOR] Cancelando ordem ${orderId} (${symbol}) por slippage alto...`
       );
 
-      // Cancela ordem na exchange (Order já é uma instância exportada)
-      const result = await Order.cancelOpenOrder(
+      // Cancela ordem na exchange via ExchangeManager
+      const exchangeManager = ExchangeManager.createFromConfig(botConfig);
+      const result = await exchangeManager.cancelOpenOrder(
         symbol,
         orderId,
         null,
@@ -348,6 +354,10 @@ class LimitOrderValidator {
 
       if (result && result.success !== false) {
         Logger.info(`✅ [LIMIT_VALIDATOR] Ordem ${orderId} cancelada com sucesso`);
+
+        // 🔒 Invalida cache de ordens para forçar atualização
+        CachedOrdersService.invalidateCache(symbol, botConfig.apiKey);
+        Logger.debug(`🔄 [LIMIT_VALIDATOR] Cache de ordens invalidado para ${symbol}`);
 
         // Notifica que a ordem foi cancelada para que o sistema de decisão possa criar nova
         this.notifyOrderCancelled(orderId, orderData, 'SLIPPAGE_HIGH');
@@ -374,12 +384,55 @@ class LimitOrderValidator {
    * @param {string} reason - Motivo do cancelamento
    */
   notifyOrderCancelled(orderId, orderData, reason) {
+    const { symbol, botConfig } = orderData;
+    
+    // 🔒 Registra cancelamento para cooldown
+    this.recentCancellations.set(symbol, {
+      timestamp: Date.now(),
+      orderId,
+      botId: botConfig?.id || 'UNKNOWN',
+      reason
+    });
+
     Logger.info(
-      `📢 [LIMIT_VALIDATOR] ORDEM_CANCELADA: ${orderId} | ${orderData.symbol} | Motivo: ${reason} | Sistema de decisão pode criar nova ordem`
+      `📢 [LIMIT_VALIDATOR] ORDEM_CANCELADA: ${orderId} | ${symbol} | Motivo: ${reason}`
     );
+    Logger.warn(
+      `⏱️ [LIMIT_VALIDATOR] ${symbol}: Cooldown de ${this.cancellationCooldown/1000}s ativado - Sistema não criará nova ordem imediatamente`
+    );
+
+    // Limpa cooldown automaticamente após o tempo definido
+    setTimeout(() => {
+      if (this.recentCancellations.get(symbol)?.orderId === orderId) {
+        this.recentCancellations.delete(symbol);
+        Logger.info(`✅ [LIMIT_VALIDATOR] ${symbol}: Cooldown expirado - Sistema pode criar nova ordem`);
+      }
+    }, this.cancellationCooldown);
 
     // TODO: Integrar com sistema de eventos se necessário
     // EventEmitter.emit('limitOrderCancelled', { orderId, orderData, reason });
+  }
+
+  /**
+   * Verifica se um símbolo está em cooldown (cancelamento recente)
+   * @param {string} symbol - Símbolo do mercado
+   * @returns {boolean} True se está em cooldown
+   */
+  isSymbolInCooldown(symbol) {
+    const cancellation = this.recentCancellations.get(symbol);
+    if (!cancellation) return false;
+
+    const elapsed = Date.now() - cancellation.timestamp;
+    const isInCooldown = elapsed < this.cancellationCooldown;
+
+    if (isInCooldown) {
+      const remaining = Math.ceil((this.cancellationCooldown - elapsed) / 1000);
+      Logger.debug(
+        `⏱️ [LIMIT_VALIDATOR] ${symbol}: Em cooldown - ${remaining}s restantes (ordem ${cancellation.orderId} cancelada por ${cancellation.reason})`
+      );
+    }
+
+    return isInCooldown;
   }
 
   /**

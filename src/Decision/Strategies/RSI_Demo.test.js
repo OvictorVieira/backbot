@@ -41,6 +41,7 @@ describe('Demonstração da validação RSI implementada', () => {
       enableMomentumSignals: true,
       enableVwapFilter: true,
       enableMoneyFlowFilter: true,
+      enableHeikinAshiFilter: false, // Desabilita Heikin Ashi para este teste
       maxNegativePnlStopPct: -10,
       minProfitPercentage: 0.5,
     };
@@ -111,6 +112,7 @@ describe('Demonstração da validação RSI implementada', () => {
       enableMomentumSignals: true,
       enableVwapFilter: true,
       enableMoneyFlowFilter: true,
+      enableHeikinAshiFilter: false, // Desabilita Heikin Ashi para este teste
       maxNegativePnlStopPct: -10,
       minProfitPercentage: 0.5,
     };

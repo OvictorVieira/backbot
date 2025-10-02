@@ -59,7 +59,26 @@ export function HFTConfigForm({ config, onSave, onCancel, isEditMode }: HFTConfi
   const [tokenSearchTerm, setTokenSearchTerm] = useState('')
   const [saving, setSaving] = useState(false)
   const [apiKeysChanged, setApiKeysChanged] = useState(false)
-  const [apiKeysValidated, setApiKeysValidated] = useState(isEditMode)
+  const [testedApiKey, setTestedApiKey] = useState<string>('') // Rastreia qual API Key foi testada
+
+  // Helper function to determine if save button should be disabled
+  const isSaveButtonDisabled = () => {
+    if (saving) return true;
+    
+    // Verifica se a API Key atual foi testada com sucesso
+    const currentKeyWasTested = testedApiKey === formData.apiKey && apiTestResult?.success === true;
+    
+    // In edit mode, only require API test if keys were changed
+    if (isEditMode) {
+      if (apiKeysChanged) {
+        return !currentKeyWasTested;
+      }
+      return false; // Keys not changed, allow save
+    }
+    
+    // In creation mode, always require successful API test with current key
+    return !currentKeyWasTested;
+  };
 
   // Fetch available tokens on component mount
   useEffect(() => {
@@ -86,12 +105,8 @@ export function HFTConfigForm({ config, onSave, onCancel, isEditMode }: HFTConfi
     if (isEditMode && config) {
       const keysChanged = formData.apiKey !== config.apiKey || formData.apiSecret !== config.apiSecret;
       setApiKeysChanged(keysChanged);
-      if (keysChanged) {
-        setApiKeysValidated(false);
-        setApiTestResult(null);
-      }
     }
-  }, [formData.apiKey, formData.apiSecret, config, isEditMode]);
+  }, [formData.apiKey, formData.apiSecret, config, isEditMode, testedApiKey]);
 
   // Test API Keys function
   const handleTestApiKeys = async () => {
@@ -115,7 +130,7 @@ export function HFTConfigForm({ config, onSave, onCancel, isEditMode }: HFTConfi
           success: true,
           message: 'API Keys válidas! Conexão estabelecida com sucesso.'
         });
-        setApiKeysValidated(true);
+        setTestedApiKey(formData.apiKey); // Salva qual API Key foi testada
       } else {
         setApiTestResult({
           success: false,
@@ -377,7 +392,10 @@ export function HFTConfigForm({ config, onSave, onCancel, isEditMode }: HFTConfi
                 ? 'bg-green-50 border-green-200 text-green-800 dark:bg-green-950/20 dark:border-green-800 dark:text-green-300'
                 : 'bg-red-50 border-red-200 text-red-800 dark:bg-red-950/20 dark:border-red-800 dark:text-red-300'
             }`}>
-              <p className="text-sm">{apiTestResult.message}</p>
+              <p className="text-sm font-medium">{apiTestResult.message}</p>
+              {apiTestResult.success && (
+                <p className="text-xs mt-1 opacity-75">✅ Você pode salvar a configuração agora</p>
+              )}
             </div>
           )}
         </div>
@@ -836,7 +854,7 @@ export function HFTConfigForm({ config, onSave, onCancel, isEditMode }: HFTConfi
           <Button
             type="submit"
             onClick={handleSubmit}
-            disabled={saving || (isEditMode ? (apiKeysChanged && !apiKeysValidated) : !apiKeysValidated)}
+            disabled={isSaveButtonDisabled()}
             className="bg-orange-600 hover:bg-orange-700 text-white flex items-center gap-2"
           >
             {saving ? (

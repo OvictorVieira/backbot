@@ -5,7 +5,7 @@ import AccountController from '../Controllers/AccountController.js';
 import OrderController from '../Controllers/OrderController.js';
 import PositionTrackingService from '../Services/PositionTrackingService.js';
 import DatabaseService from '../Services/DatabaseService.js';
-import History from '../Backpack/Authenticated/History.js';
+import ExchangeManager from '../Exchange/ExchangeManager.js';
 import LimitOrderValidator from '../Utils/LimitOrderValidator.js';
 
 /**

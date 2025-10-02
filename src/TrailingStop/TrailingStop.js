@@ -1,4 +1,4 @@
-import Futures from '../Backpack/Authenticated/Futures.js';
+import ExchangeManager from '../Exchange/ExchangeManager.js';
 import OrderController from '../Controllers/OrderController.js';
 import { StopLossFactory } from '../Decision/Strategies/StopLossFactory.js';
 import PnlController from '../Controllers/PnlController.js';
@@ -183,7 +183,7 @@ class TrailingStop {
     TrailingStop.closingInProgress.set(symbol, now);
 
     try {
-      await OrderController.forceClose(position, Account, config);
+      await OrderController.forceClose(position, config);
       Logger.info(`${symbol}: Fechamento concluído com sucesso`);
       return { success: true, reason: 'completed' };
     } catch (error) {
@@ -310,6 +310,20 @@ class TrailingStop {
 
     const symbol = position.symbol;
 
+    // 🔧 CORREÇÃO CRÍTICA: Alimenta cache do PositionMonitorService ANTES de subscrever
+    // O WebSocket vai chamar PositionMonitorService.checkPositionThresholds que precisa do cache
+    const PositionMonitorService = (await import('../Services/PositionMonitorService.js')).default;
+    PositionMonitorService.updatePositionCache(symbol, position, {
+      leverage: Account.leverage,
+      maxNegativePnlStopPct: config.maxNegativePnlStopPct,
+      minProfitPercentage: config.minProfitPercentage,
+      botName: config.botName,
+      apiKey: config.apiKey, // 🔑 Credenciais necessárias para fechar posição
+      apiSecret: config.apiSecret,
+      id: config.id, // 🔑 Adicionado: ID do bot para geração de ID único
+      botClientOrderId: config.botClientOrderId, // 🔑 Adicionado: botClientOrderId para geração de ID único
+    });
+
     const priceUpdateCallback = async (symbol, currentPrice, rawData) => {
       try {
         if (TrailingStop.reactiveProcessing.get(symbol)) {
@@ -324,9 +338,55 @@ class TrailingStop {
           lastPrice: currentPrice.toString(),
         };
 
-        await trailingStopInstance.updateTrailingStopForPosition(updatedPosition);
+        // 🚨 NOVA FUNCIONALIDADE: Verifica se deve fechar por SL/TP via WebSocket
+        const shouldClosePosition = await TrailingStop.checkPositionThresholds(
+          updatedPosition,
+          Account,
+          config
+        );
+
+        if (shouldClosePosition.shouldClose) {
+          const pnlPctFormatted =
+            shouldClosePosition.pnlPct != null && !isNaN(shouldClosePosition.pnlPct)
+              ? `${shouldClosePosition.pnlPct.toFixed(2)}%`
+              : 'N/A';
+          Logger.info(
+            `🔥 [WS_AUTO_CLOSE] ${symbol}: Fechamento automático acionado via WebSocket - Razão: ${shouldClosePosition.reason}, PnL: ${pnlPctFormatted}`
+          );
+
+          // Fecha a posição imediatamente a mercado
+          const closeResult = await TrailingStop.protectedForceClose(
+            updatedPosition,
+            Account,
+            config
+          );
+
+          if (closeResult.success) {
+            Logger.info(`✅ [WS_AUTO_CLOSE] ${symbol}: Posição fechada com sucesso via WebSocket`);
+            // Unsubscribe após fechamento bem-sucedido
+            await TrailingStop.unsubscribePositionReactive(symbol);
+          } else {
+            Logger.warn(
+              `⚠️ [WS_AUTO_CLOSE] ${symbol}: Falha ao fechar posição - ${closeResult.reason}`
+            );
+          }
+
+          return; // Não atualiza trailing stop se posição foi fechada
+        }
+
+        // Se não fechou, atualiza trailing stop normalmente (se instância tiver o método)
+        if (
+          trailingStopInstance &&
+          typeof trailingStopInstance.updateTrailingStopForPosition === 'function'
+        ) {
+          await trailingStopInstance.updateTrailingStopForPosition(updatedPosition);
+        } else {
+          Logger.debug(
+            `📡 [WS_REACTIVE] ${symbol}: Trailing stop não disponível para esta estratégia`
+          );
+        }
       } catch (error) {
-        Logger.error(`Sistema reativo ${symbol}: Erro:`, error.message);
+        Logger.error(`❌ [WS_REACTIVE] Sistema reativo ${symbol}: Erro:`, error.message);
       } finally {
         TrailingStop.reactiveProcessing.set(symbol, false);
       }
@@ -336,7 +396,8 @@ class TrailingStop {
       await TrailingStop.backpackWS.subscribeSymbol(symbol, priceUpdateCallback);
       return true;
     } catch (error) {
-      Logger.error(`Falha ao subscribe ${symbol}:`, error.message);
+      Logger.error(`❌ [WS_SUBSCRIBE] Falha ao subscribe ${symbol}:`, error.message);
+      Logger.error(`❌ [WS_SUBSCRIBE] Stack trace:`, error.stack);
       return false;
     }
   }
@@ -349,9 +410,154 @@ class TrailingStop {
       try {
         await TrailingStop.backpackWS.unsubscribeSymbol(symbol);
         TrailingStop.reactiveProcessing.delete(symbol);
+
+        // 🔧 CORREÇÃO: Remove do cache do PositionMonitorService quando unsubscribe
+        const PositionMonitorService = (await import('../Services/PositionMonitorService.js'))
+          .default;
+        PositionMonitorService.removePositionFromCache(symbol);
+        Logger.debug(`🗑️ [CACHE_CLEAN] ${symbol}: Removido do cache de monitoramento`);
       } catch (error) {
         Logger.error(`Falha ao unsubscribe ${symbol}:`, error.message);
       }
+    }
+  }
+
+  /**
+   * Verifica se a posição atingiu thresholds de SL/TP configurados
+   * e deve ser fechada automaticamente via WebSocket
+   *
+   * @param {object} position - Posição com preço atualizado via WebSocket
+   * @param {object} Account - Dados da conta (leverage, etc)
+   * @param {object} config - Configuração do bot (maxNegativePnlStopPct, minProfitPercentage)
+   * @returns {Promise<object>} { shouldClose: boolean, reason: string, pnlPct: number }
+   */
+  static async checkPositionThresholds(position, Account, config) {
+    try {
+      const symbol = position.symbol;
+
+      // Valida dados obrigatórios
+      if (!Account || !Account.leverage) {
+        Logger.error(`❌ [WS_THRESHOLD] ${symbol}: Dados da conta inválidos - leverage ausente`);
+        return { shouldClose: false, reason: 'invalid_account_data' };
+      }
+
+      // Calcula PnL atual
+      const { pnl, pnlPct, costBasis } = TrailingStop.calculatePnL(position, Account);
+
+      if (isNaN(pnlPct) || !isFinite(pnlPct)) {
+        Logger.error(`❌ [WS_THRESHOLD] ${symbol}: PnL inválido - ${pnlPct}`);
+        return { shouldClose: false, reason: 'invalid_pnl' };
+      }
+
+      // 📊 LOG DETALHADO: Mostra todos os valores da validação
+      // 🔒 Valida todos os valores antes de usar .toFixed()
+      const markPrice = parseFloat(position.markPrice || position.lastPrice);
+      const entryPrice = parseFloat(position.entryPrice);
+      const markPriceStr = markPrice && !isNaN(markPrice) ? `$${markPrice.toFixed(4)}` : 'N/A';
+      const entryPriceStr = entryPrice && !isNaN(entryPrice) ? `$${entryPrice.toFixed(4)}` : 'N/A';
+      const pnlStr = pnl != null && !isNaN(pnl) ? `$${pnl.toFixed(2)}` : 'N/A';
+      const pnlPctStr =
+        pnlPct != null && !isNaN(pnlPct) && Number.isFinite(pnlPct)
+          ? `${pnlPct.toFixed(2)}%`
+          : 'N/A';
+      const costBasisStr =
+        costBasis != null && !isNaN(costBasis) ? `$${costBasis.toFixed(2)}` : 'N/A';
+
+      Logger.debug(
+        `📊 [WS_THRESHOLD] ${symbol} - Preço atual: ${markPriceStr} | ` +
+          `Entry: ${entryPriceStr} | ` +
+          `Leverage: ${Account.leverage}x | ` +
+          `PnL: ${pnlStr} (${pnlPctStr}) | ` +
+          `CostBasis: ${costBasisStr} | ` +
+          `SL: ${config?.maxNegativePnlStopPct || -10}% | ` +
+          `TP: ${config?.minProfitPercentage || 0.5}%`
+      );
+
+      // 1️⃣ VERIFICA STOP LOSS (maxNegativePnlStopPct)
+      const maxNegativePnlStopPct = parseFloat(config?.maxNegativePnlStopPct || -10);
+
+      if (
+        maxNegativePnlStopPct !== undefined &&
+        maxNegativePnlStopPct !== null &&
+        !isNaN(maxNegativePnlStopPct)
+      ) {
+        if (pnlPct <= maxNegativePnlStopPct) {
+          const pnlPctStr = pnlPct != null && !isNaN(pnlPct) ? pnlPct.toFixed(3) : 'N/A';
+          const slStr =
+            maxNegativePnlStopPct != null && !isNaN(maxNegativePnlStopPct)
+              ? maxNegativePnlStopPct.toFixed(3)
+              : 'N/A';
+          Logger.warn(
+            `🚨 [WS_THRESHOLD] ${symbol}: STOP LOSS atingido via WebSocket - PnL: ${pnlPctStr}% <= Limite: ${slStr}%`
+          );
+          const reasonPnl = pnlPct != null && !isNaN(pnlPct) ? pnlPct.toFixed(2) : 'N/A';
+          const reasonSl =
+            maxNegativePnlStopPct != null && !isNaN(maxNegativePnlStopPct)
+              ? maxNegativePnlStopPct.toFixed(2)
+              : 'N/A';
+          return {
+            shouldClose: true,
+            reason: `STOP_LOSS (${reasonPnl}% <= ${reasonSl}%)`,
+            pnlPct: pnlPct,
+            pnl: pnl,
+          };
+        }
+      }
+
+      // 2️⃣ VERIFICA TAKE PROFIT (minProfitPercentage)
+      const minProfitPercentage = parseFloat(config?.minProfitPercentage || 0.5);
+
+      if (
+        minProfitPercentage !== undefined &&
+        minProfitPercentage !== null &&
+        !isNaN(minProfitPercentage)
+      ) {
+        // Calcula taxas estimadas
+        const notional = parseFloat(position.netExposureNotional || position.notional || 0);
+
+        // Usa taxas padrão se não disponível (maker + taker)
+        const makerFee = 0.0002; // 0.02%
+        const takerFee = 0.0005; // 0.05%
+        const totalFeeRate = makerFee + takerFee;
+        const totalFees = notional * totalFeeRate;
+
+        // PnL líquido após taxas
+        const netProfit = pnl - totalFees;
+        const netProfitPct = notional > 0 ? (netProfit / notional) * 100 : 0;
+
+        if (netProfitPct >= minProfitPercentage) {
+          const netProfitPctStr =
+            netProfitPct != null && !isNaN(netProfitPct) ? netProfitPct.toFixed(3) : 'N/A';
+          const tpStr =
+            minProfitPercentage != null && !isNaN(minProfitPercentage)
+              ? minProfitPercentage.toFixed(3)
+              : 'N/A';
+          Logger.info(
+            `💰 [WS_THRESHOLD] ${symbol}: TAKE PROFIT atingido via WebSocket - PnL Líquido: ${netProfitPctStr}% >= Mínimo: ${tpStr}%`
+          );
+          const reasonPnl =
+            netProfitPct != null && !isNaN(netProfitPct) ? netProfitPct.toFixed(2) : 'N/A';
+          const reasonTp =
+            minProfitPercentage != null && !isNaN(minProfitPercentage)
+              ? minProfitPercentage.toFixed(2)
+              : 'N/A';
+          return {
+            shouldClose: true,
+            reason: `TAKE_PROFIT (${reasonPnl}% >= ${reasonTp}%)`,
+            pnlPct: netProfitPct,
+            pnl: netProfit,
+          };
+        }
+      }
+
+      // Nenhum threshold atingido
+      return { shouldClose: false, reason: 'thresholds_not_reached', pnlPct: pnlPct };
+    } catch (error) {
+      Logger.error(
+        `❌ [WS_THRESHOLD] Erro ao verificar thresholds para ${position.symbol}:`,
+        error.message
+      );
+      return { shouldClose: false, reason: 'error', error: error.message };
     }
   }
 
@@ -902,7 +1108,8 @@ class TrailingStop {
       const apiKey = config.apiKey;
       const apiSecret = config.apiSecret;
 
-      const positions = await Futures.getOpenPositions(apiKey, apiSecret);
+      const exchangeManager = ExchangeManager.createFromConfig({ apiKey, apiSecret });
+      const positions = await exchangeManager.getFuturesPositions(apiKey, apiSecret);
 
       // 🔧 CORREÇÃO: Filtra apenas posições realmente abertas (netQuantity > 0)
       const activePositions = positions
@@ -1342,7 +1549,8 @@ class TrailingStop {
       }
 
       // Busca todas as posições abertas na exchange
-      const openPositionsResult = await Futures.getOpenPositions(apiKey, apiSecret);
+      const exchangeManager = ExchangeManager.createFromConfig({ apiKey, apiSecret });
+      const openPositionsResult = await exchangeManager.getFuturesPositions(apiKey, apiSecret);
       const openPositions = Array.isArray(openPositionsResult) ? openPositionsResult : [];
       const openSymbols = new Set(openPositions.map(pos => pos.symbol));
 
@@ -1637,7 +1845,8 @@ class TrailingStop {
       }
 
       // Valida se a posição ainda existe na exchange
-      const exchangePositionsResult = await Futures.getOpenPositions(
+      const exchangeManager = ExchangeManager.createFromConfig(this.config);
+      const exchangePositionsResult = await exchangeManager.getFuturesPositions(
         this.config.apiKey,
         this.config.apiSecret
       );
@@ -2754,7 +2963,8 @@ class TrailingStop {
       const apiKey = this.config.apiKey;
       const apiSecret = this.config.apiSecret;
 
-      const positions = await Futures.getOpenPositions(apiKey, apiSecret);
+      const exchangeManager = ExchangeManager.createFromConfig({ apiKey, apiSecret });
+      const positions = await exchangeManager.getFuturesPositions(apiKey, apiSecret);
 
       if (!positions || !Array.isArray(positions) || positions.length === 0) {
         Logger.debug(`[TRAILING_STOP] Nenhuma posição encontrada ou positions não é array`);

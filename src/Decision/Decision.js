@@ -1,3 +1,5 @@
+// 🔧 MIGRAÇÃO PARA EXCHANGE FACTORY
+import ExchangeManager from '../Exchange/ExchangeManager.js';
 import Futures from '../Backpack/Authenticated/Futures.js';
 import Order from '../Backpack/Authenticated/Order.js';
 import OrderController from '../Controllers/OrderController.js';
@@ -8,6 +10,8 @@ import { calculateIndicators } from './Indicators.js';
 import { StrategyFactory } from './Strategies/StrategyFactory.js';
 import Logger from '../Utils/Logger.js';
 import RiskManager from '../Risk/RiskManager.js';
+import PositionMonitorService from '../Services/PositionMonitorService.js';
+import TrailingStop from '../TrailingStop/TrailingStop.js';
 
 class Decision {
   constructor(strategyType = null) {
@@ -26,6 +30,26 @@ class Decision {
     // Cache simples para dados de mercado
     this.marketCache = new Map();
     this.cacheTimeout = 10000; // 10 segundos - garante que dados sejam atualizados a cada análise
+
+    // 🔧 MIGRAÇÃO: Cache para ExchangeManager instances
+    this.exchangeManagerCache = new Map();
+  }
+
+  /**
+   * 🔧 MIGRAÇÃO: Helper method para obter ExchangeManager com cache
+   * Similar ao padrão usado no OrderController
+   */
+  getExchangeManager(config) {
+    const exchangeName = config?.exchangeName || config?.exchange || 'backpack';
+    const cacheKey = `${exchangeName}_${config?.apiKey || 'default'}`;
+
+    if (!this.exchangeManagerCache.has(cacheKey)) {
+      const exchangeManager = ExchangeManager.createFromConfig(config);
+      this.exchangeManagerCache.set(cacheKey, exchangeManager);
+      Logger.debug(`✅ [Decision] ExchangeManager criado para ${exchangeName}`);
+    }
+
+    return this.exchangeManagerCache.get(cacheKey);
   }
 
   async getDataset(Account, closed_markets, timeframe = null, logger = null, config = null) {
@@ -51,7 +75,10 @@ class Decision {
     const candleCount = 1000;
 
     // Filtra mercados baseado em tokens autorizados do config
-    let markets = Account.markets.filter(el => {
+    // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+    const exchangeManager = this.getExchangeManager(config || {});
+    const allMarkets = await exchangeManager.getMarkets();
+    let markets = allMarkets.filter(el => {
       return !closed_markets.includes(el.symbol);
     });
 
@@ -289,13 +316,16 @@ class Decision {
       // Obtém os dados da conta
       const Account = await AccountController.get(configWithSymbol);
 
-      if (!Account || !Account.markets) {
+      if (!Account) {
         Logger.error(`❌ [${config?.strategyName || 'DEFAULT'}] Dados da conta não disponíveis`);
         return null;
       }
 
       // Encontra o market correspondente ao símbolo
-      const marketInfo = Account.markets.find(el => el.symbol === symbol);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+      const exchangeManager = this.getExchangeManager(config || {});
+      const allMarkets = await exchangeManager.getMarkets();
+      const marketInfo = allMarkets.find(el => el.symbol === symbol);
 
       if (!marketInfo) {
         Logger.error(
@@ -308,6 +338,57 @@ class Decision {
     } catch (error) {
       Logger.error(`❌ Erro ao obter dados de mercado para ${symbol}: ${error.message}`);
       return null;
+    }
+  }
+
+  /**
+   * Subscribe WebSocket para posições existentes quando bot reinicia
+   * @param {Array} positions - Array de posições abertas
+   * @param {Object} config - Configuração do bot
+   */
+  async subscribeExistingPositions(positions, config) {
+    if (!positions || positions.length === 0) {
+      return;
+    }
+
+    try {
+      // Inicializa WebSocket se não estiver inicializado
+      await TrailingStop.initializeReactiveSystem();
+
+      if (!TrailingStop.backpackWS || !TrailingStop.backpackWS.connected) {
+        Logger.warn(`📡 [WS_SUBSCRIBE] WebSocket não conectado - posições não serão monitoradas`);
+        return;
+      }
+
+      const Account = await AccountController.get({
+        apiKey: config.apiKey,
+        apiSecret: config.apiSecret,
+        strategy: config.strategyName || 'DEFAULT',
+      });
+
+      for (const position of positions) {
+        // Verifica se já está subscrito
+        if (TrailingStop.backpackWS.subscribedSymbols.has(position.symbol)) {
+          Logger.debug(`📡 [WS_SUBSCRIBE] ${position.symbol}: Já subscrito`);
+          continue;
+        }
+
+        // Subscribe para monitoramento
+        const subscribed = await TrailingStop.subscribePositionReactive(
+          position,
+          Account,
+          config,
+          this
+        );
+
+        if (subscribed) {
+          Logger.info(`📡 [WS_SUBSCRIBE] ${position.symbol}: WebSocket subscrito com sucesso`);
+        } else {
+          Logger.warn(`⚠️ [WS_SUBSCRIBE] ${position.symbol}: Falha ao subscrever WebSocket`);
+        }
+      }
+    } catch (error) {
+      Logger.error(`❌ [WS_SUBSCRIBE] Erro ao subscrever posições:`, error.message);
     }
   }
 
@@ -388,7 +469,12 @@ class Decision {
       Logger.debug(
         `🔄 [${config?.botName || 'DEFAULT'}] Carregando posições abertas da corretora...`
       );
-      const exchangePositions = await Futures.getOpenPositionsForceRefresh(apiKey, apiSecret);
+      // 🔧 MIGRAÇÃO: Usa ExchangeManager - TODO: Implementar getOpenPositionsForceRefresh
+      const exchangeManager = this.getExchangeManager({ apiKey, apiSecret });
+      const exchangePositions = await exchangeManager.getFuturesPositionsForceRefresh(
+        apiKey,
+        apiSecret
+      );
 
       // Filtra apenas posições que realmente têm quantidade (evita posições "fantasma")
       const activePositions = exchangePositions.filter(
@@ -408,7 +494,22 @@ class Decision {
           Logger.info(
             `   📍 ${pos.symbol}: ${side} ${Math.abs(quantity)} @ $${entryPrice.toFixed(4)}`
           );
+
+          PositionMonitorService.updatePositionCache(pos.symbol, pos, {
+            leverage: Account?.leverage,
+            maxNegativePnlStopPct: config.maxNegativePnlStopPct,
+            minProfitPercentage: config.minProfitPercentage,
+            botName: config.botName,
+            apiKey: config.apiKey,
+            apiSecret: config.apiSecret, // 🔑 Corrigido: era secretKey, deve ser apiSecret
+            id: config.id, // 🔑 Adicionado: ID do bot para geração de ID único
+            botClientOrderId: config.botClientOrderId, // 🔑 Adicionado: botClientOrderId para geração de ID único
+          });
         });
+
+        // 📡 CRITICAL: Subscribe WebSocket para monitorar posições existentes
+        // Quando bot reinicia, precisa subscrever as posições que já estão abertas
+        await this.subscribeExistingPositions(activePositions, config);
       } else {
         Logger.info(
           `   ✅ Nenhuma posição ativa encontrada - todos os tokens disponíveis para análise`
@@ -434,7 +535,8 @@ class Decision {
       }
 
       // Verificação adicional: também verifica ordens abertas para evitar duplicatas
-      const openOrders = await Order.getOpenOrders(null, 'PERP', apiKey, apiSecret);
+      // 🔧 MIGRAÇÃO: Reutiliza ExchangeManager já criado acima
+      const openOrders = await exchangeManager.getOpenOrdersForSymbol(null, apiKey, apiSecret);
       const marketsWithOpenOrders = openOrders ? openOrders.map(order => order.symbol) : [];
       const allClosedMarkets = [...new Set([...closed_markets, ...marketsWithOpenOrders])];
 
@@ -495,7 +597,10 @@ class Decision {
                 }
               } else {
                 // Lógica tradicional para outras estratégias
-                const btcAnalysis = this.strategy.analyzeSignals(btcIndicators, true, config);
+                const btcAnalysis = this.strategy.analyzeSignals(btcIndicators, {
+                  isBTCAnalysis: true,
+                  config,
+                });
 
                 if (btcAnalysis && btcAnalysis.hasSignal) {
                   Logger.debug(`   🟢 BTC: ${btcAnalysis.signalType}`);
@@ -711,7 +816,7 @@ class Decision {
           const MarketAccount = await AccountController.get(marketSpecificConfig);
 
           // ✅ DEFENSIVE CHECK: Se MarketAccount ou markets não disponíveis
-          if (!MarketAccount || !MarketAccount.markets) {
+          if (!MarketAccount) {
             Logger.debug(
               `⚠️ [${config?.botName || 'DEFAULT'}] Dados da conta não disponíveis para ${marketSymbol}`
             );
@@ -723,12 +828,15 @@ class Decision {
             continue;
           }
 
-          const marketInfo = MarketAccount.markets.find(el => el.symbol === marketSymbol);
+          // 🔧 MIGRAÇÃO: Usa ExchangeManager para obter markets em vez de Account.markets direto
+          const exchangeManager = this.getExchangeManager(config || {});
+          const allMarkets = await exchangeManager.getMarkets();
+          const marketInfo = allMarkets.find(el => el.symbol === marketSymbol);
 
           // Verifica se o market foi encontrado
           if (!marketInfo) {
             Logger.error(
-              `❌ [${config?.botName || 'DEFAULT'}] Market não encontrado para ${marketSymbol}. Markets disponíveis: ${MarketAccount.markets?.map(m => m.symbol).join(', ') || 'nenhum'}`
+              `❌ [${config?.botName || 'DEFAULT'}] Market não encontrado para ${marketSymbol}. Markets disponíveis: ${allMarkets?.map(m => m.symbol).join(', ') || 'nenhum'}`
             );
             orderResults.push({
               index,
@@ -830,7 +938,9 @@ class Decision {
               };
 
               // Verifica se já existe uma posição ativa para este mercado
-              const positions = await Futures.getOpenPositions(apiKey, apiSecret);
+              // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
+              const exchangeManager = this.getExchangeManager({ apiKey, apiSecret });
+              const positions = await exchangeManager.getFuturesPositions(apiKey, apiSecret);
               const existingPosition = positions.find(
                 p => p.symbol === marketSymbol && Math.abs(Number(p.netQuantity)) > 0
               );
@@ -862,7 +972,9 @@ class Decision {
                   Logger.info(
                     `   🗑️  ${marketSymbol}: Cancelando ordens antigas (${orderAge.toFixed(1)} min)`
                   );
-                  await Order.cancelOpenOrders(marketSymbol, null, apiKey, apiSecret);
+                  // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+                  const exchangeManager = this.getExchangeManager({ apiKey, apiSecret });
+                  await exchangeManager.cancelOpenOrders(marketSymbol, null, apiKey, apiSecret);
                 }
               }
 
@@ -926,7 +1038,9 @@ class Decision {
             row.stepSize_quantity = row.stepSize_quantity || marketInfo.stepSize_quantity;
 
             // Verifica se já existe uma posição ativa para este mercado
-            const positions = await Futures.getOpenPositions(apiKey, apiSecret);
+            // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Futures direto
+            const exchangeManager = this.getExchangeManager({ apiKey, apiSecret });
+            const positions = await exchangeManager.getFuturesPositions(apiKey, apiSecret);
             const existingPosition = positions.find(
               p => p.symbol === marketSymbol && Math.abs(Number(p.netQuantity)) > 0
             );
@@ -940,12 +1054,24 @@ class Decision {
               continue;
             }
 
+            // 🔒 VERIFICA COOLDOWN: Se ordem foi cancelada recentemente, aguarda
+            const LimitOrderValidator = (await import('../Utils/LimitOrderValidator.js')).default;
+            if (LimitOrderValidator.isSymbolInCooldown(marketSymbol)) {
+              Logger.info(
+                `   ⏸️ ${marketSymbol}: Cooldown ativo (ordem cancelada recentemente) - aguardando antes de criar nova ordem`
+              );
+              orderResults.push({ index, market: marketSymbol, result: null });
+              continue;
+            }
+
             // Verifica se já existe uma ordem pendente
             const orders = await OrderController.getRecentOpenOrders(marketSymbol, config);
 
             if (orders.length > 0) {
               if (orders[0].minutes > 3) {
-                await Order.cancelOpenOrders(marketSymbol, null, apiKey, apiSecret);
+                // 🔧 MIGRAÇÃO: Usa ExchangeManager em vez de Order direto
+                const exchangeManager = this.getExchangeManager({ apiKey, apiSecret });
+                await exchangeManager.cancelOpenOrders(marketSymbol, null, apiKey, apiSecret);
                 const result = await OrderController.openOrder(
                   { ...row, strategyName: config?.strategyName || 'DEFAULT' },
                   config
