@@ -1,5 +1,6 @@
 import OrderPayloadFormatter from './OrderPayloadFormatter.js';
 import Logger from '../../Utils/Logger.js';
+import UnifiedOrderModel from '../../Models/UnifiedOrderModel.js';
 
 /**
  * Formatador específico para payloads de ordem da Backpack Exchange
@@ -33,6 +34,173 @@ import Logger from '../../Utils/Logger.js';
  * }
  */
 class BackpackOrderFormatter extends OrderPayloadFormatter {
+  /**
+   * 🆕 Formata UnifiedOrderModel para o formato da Backpack
+   * Este é o método RECOMENDADO para usar com o novo modelo unificado
+   *
+   * @param {UnifiedOrderModel} unifiedOrder - Ordem no modelo unificado
+   * @param {Object} marketInfo - Informações do mercado (decimal_quantity, decimal_price)
+   * @returns {Object} Ordem no formato específico da Backpack
+   * @throws {Error} Se a ordem for inválida
+   */
+  formatUnifiedOrder(unifiedOrder, marketInfo) {
+    // Valida se é instância de UnifiedOrderModel
+    if (!(unifiedOrder instanceof UnifiedOrderModel)) {
+      throw new Error('formatUnifiedOrder() espera uma instância de UnifiedOrderModel');
+    }
+
+    // Valida a ordem
+    unifiedOrder.isValid();
+
+    // Valida marketInfo
+    if (marketInfo?.decimal_quantity === undefined || marketInfo?.decimal_price === undefined) {
+      throw new Error(
+        `MarketInfo inválido para ${unifiedOrder.symbol}: decimal_quantity e decimal_price obrigatórios`
+      );
+    }
+
+    Logger.info(
+      `[BackpackOrderFormatter] Formatando ordem unificada: ${unifiedOrder.symbol} ${unifiedOrder.side} ${unifiedOrder.quantity} @ ${unifiedOrder.price || 'MARKET'}`
+    );
+
+    // Converte side unificado para Backpack
+    const backpackSide = this.convertUnifiedSideToBackpack(unifiedOrder.side);
+
+    // Converte type unificado para Backpack
+    const backpackOrderType = this.convertUnifiedTypeToBackpack(unifiedOrder.type);
+
+    // Formata quantidade
+    const formattedQuantity = this.formatQuantity(unifiedOrder.quantity, marketInfo.decimal_quantity);
+
+    // Monta payload base
+    const backpackPayload = {
+      symbol: unifiedOrder.symbol,
+      side: backpackSide,
+      orderType: backpackOrderType,
+      quantity: formattedQuantity,
+      timeInForce: unifiedOrder.timeInForce || this.getDefaultTimeInForce(backpackOrderType),
+      selfTradePrevention: 'RejectTaker',
+    };
+
+    // Adiciona clientId se fornecido
+    if (unifiedOrder.clientId) {
+      backpackPayload.clientId = unifiedOrder.clientId;
+    }
+
+    // Para ordens LIMIT, adiciona preço
+    if (backpackOrderType === 'Limit' && unifiedOrder.price) {
+      backpackPayload.price = this.formatPrice(unifiedOrder.price, marketInfo.decimal_price);
+      backpackPayload.postOnly = unifiedOrder.postOnly;
+    }
+
+    // ReduceOnly
+    if (unifiedOrder.reduceOnly) {
+      backpackPayload.reduceOnly = true;
+    }
+
+    // Stop Loss integrado
+    if (unifiedOrder.stopLoss) {
+      backpackPayload.stopLossTriggerBy = this.convertTriggerBy(unifiedOrder.stopLoss.triggerBy);
+      backpackPayload.stopLossTriggerPrice = this.formatPrice(
+        unifiedOrder.stopLoss.triggerPrice,
+        marketInfo.decimal_price
+      );
+      backpackPayload.stopLossLimitPrice = this.formatPrice(
+        unifiedOrder.stopLoss.limitPrice,
+        marketInfo.decimal_price
+      );
+    }
+
+    // Take Profit integrado
+    if (unifiedOrder.takeProfit) {
+      backpackPayload.takeProfitTriggerBy = this.convertTriggerBy(unifiedOrder.takeProfit.triggerBy);
+      backpackPayload.takeProfitTriggerPrice = this.formatPrice(
+        unifiedOrder.takeProfit.triggerPrice,
+        marketInfo.decimal_price
+      );
+      backpackPayload.takeProfitLimitPrice = this.formatPrice(
+        unifiedOrder.takeProfit.limitPrice,
+        marketInfo.decimal_price
+      );
+    }
+
+    // Para ordens de STOP_LOSS ou TAKE_PROFIT standalone
+    if (unifiedOrder.type === 'STOP_LOSS' || unifiedOrder.type === 'TAKE_PROFIT') {
+      const triggerBy = unifiedOrder.type === 'STOP_LOSS' ? 'stopLossTriggerBy' : 'takeProfitTriggerBy';
+      const triggerPrice = unifiedOrder.type === 'STOP_LOSS' ? 'stopLossTriggerPrice' : 'takeProfitTriggerPrice';
+      const limitPrice = unifiedOrder.type === 'STOP_LOSS' ? 'stopLossLimitPrice' : 'takeProfitLimitPrice';
+
+      backpackPayload[triggerBy] = 'LastPrice';
+      backpackPayload[triggerPrice] = this.formatPrice(
+        unifiedOrder.triggerPrice,
+        marketInfo.decimal_price
+      );
+      if (unifiedOrder.limitPrice) {
+        backpackPayload[limitPrice] = this.formatPrice(
+          unifiedOrder.limitPrice,
+          marketInfo.decimal_price
+        );
+      }
+    }
+
+    return backpackPayload;
+  }
+
+  /**
+   * Converte side unificado (LONG/SHORT/CLOSE_LONG/CLOSE_SHORT) para Backpack (Bid/Ask)
+   *
+   * @param {string} side - Side do UnifiedOrderModel
+   * @returns {string} "Bid" ou "Ask"
+   */
+  convertUnifiedSideToBackpack(side) {
+    switch (side) {
+      case 'LONG':
+        return 'Bid'; // Comprar = Bid
+      case 'SHORT':
+        return 'Ask'; // Vender = Ask
+      case 'CLOSE_LONG':
+        return 'Ask'; // Fechar LONG = Vender
+      case 'CLOSE_SHORT':
+        return 'Bid'; // Fechar SHORT = Comprar
+      default:
+        Logger.warn(`⚠️ [BackpackOrderFormatter] Side unificado desconhecido: ${side}`);
+        return side;
+    }
+  }
+
+  /**
+   * Converte type unificado para Backpack
+   *
+   * @param {string} type - Type do UnifiedOrderModel
+   * @returns {string} "Limit" ou "Market"
+   */
+  convertUnifiedTypeToBackpack(type) {
+    switch (type) {
+      case 'MARKET':
+        return 'Market';
+      case 'LIMIT':
+      case 'STOP_LOSS':
+      case 'TAKE_PROFIT':
+        return 'Limit'; // Backpack usa Limit para stop/take profit
+      default:
+        Logger.warn(`⚠️ [BackpackOrderFormatter] Type unificado desconhecido: ${type}`);
+        return 'Limit';
+    }
+  }
+
+  /**
+   * Converte triggerBy unificado para Backpack
+   *
+   * @param {string} triggerBy - TriggerBy do UnifiedOrderModel
+   * @returns {string} "LastPrice", "MarkPrice", "IndexPrice"
+   */
+  convertTriggerBy(triggerBy) {
+    if (!triggerBy || triggerBy === 'LAST_PRICE') return 'LastPrice';
+    if (triggerBy === 'MARK_PRICE') return 'MarkPrice';
+    if (triggerBy === 'INDEX_PRICE') return 'IndexPrice';
+    return 'LastPrice'; // Padrão
+  }
+
   /**
    * Formata um payload de ordem do formato padrão para o formato da Backpack
    *
