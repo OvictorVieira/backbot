@@ -5,6 +5,35 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.9.1] - 2025-10-06
+
+### 🔧 **Melhorias e Refinamentos**
+
+#### 🎯 **Order Validation & System Monitoring**
+- ✅ **LimitOrderValidator:** Melhorias na lógica de validação de ordens limitadas
+  - Validações mais robustas para ordens com triggers
+  - Melhor tratamento de edge cases
+- ✅ **WebSocket (Backpack):** Aprimoramentos na gestão de conexões WebSocket
+  - Maior estabilidade na conexão
+  - Melhor handling de reconexões
+- ✅ **OrderController:** Refinamentos na funcionalidade do controller de ordens
+  - Melhor coordenação entre criação e validação de ordens
+  - Otimizações em métodos internos
+- ✅ **Decision Engine:** Ajustes finos na lógica de decisão
+  - Melhor análise de sinais de mercado
+  - Otimizações de performance
+- ✅ **PositionMonitorService:** Melhorias no tracking de posições
+  - Monitoramento mais preciso de posições abertas
+  - Melhor sincronização de estado
+- ✅ **Achievements Display:** Atualização na visualização de conquistas
+  - Interface refinada
+  - Melhor apresentação dos dados
+
+### 📝 **Observações**
+- Versão de manutenção focada em estabilidade e refinamentos
+- Não há breaking changes
+- Compatível com configurações existentes
+
 ## [1.9.0] - 2025-02-10
 
 ### ✨ **MAJOR FEATURE: UnifiedOrderModel & Heikin Ashi Filter**
